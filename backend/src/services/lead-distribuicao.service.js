@@ -36,6 +36,16 @@ function obterNomeEmpresa(dadosJson, linhaId, razaoSocial = '') {
   return String(entrada?.[1] || `Futuro cliente #${linhaId}`).trim();
 }
 
+function obterCnpjEmpresa(dadosJson, cnpj = '') {
+  if (cnpj) return String(cnpj).trim();
+  const dados = parseJson(dadosJson);
+  const entrada = Object.entries(dados).find(([chave, valor]) => {
+    const nome = String(chave || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return valor && nome.includes('cnpj');
+  });
+  return String(entrada?.[1] || 'Não informado').trim();
+}
+
 function dataEmOuDepois(valor, limite) {
   if (!valor) return false;
   if (!limite) return true;
@@ -193,7 +203,7 @@ async function aceitar(linhaId, usuarioId) {
       status_operacional: 'distribuido_venda',
       updated_at: agora
     });
-    const sondagem = await trx('lead_sondagens').where('lead_linha_id', linha.id).first('razao_social');
+    const sondagem = await trx('lead_sondagens').where('lead_linha_id', linha.id).first('razao_social', 'cnpj');
     await trx('lead_envios').where('id', atribuicao.envio_id).update({
       nome: obterNomeEmpresa(linha.dados_json, linha.id, sondagem?.razao_social).slice(0, 240),
       updated_at: agora
@@ -206,12 +216,12 @@ async function aceitar(linhaId, usuarioId) {
 
     return {
       atribuicao: { ...atribuicao, aceite_status: ACEITE_ACEITO, aceite_em: agora, prazo_acao_em: prazo },
-      linha
+      linha: { ...linha, sondagem }
     };
   });
 
   if (!resultado.repetido) {
-    await notificarAceiteTelegram(resultado.atribuicao, usuarioId);
+    await notificarAceiteTelegram(resultado.atribuicao, usuarioId, resultado.linha);
   }
   return {
     status: ACEITE_ACEITO,
@@ -267,22 +277,38 @@ async function carregarLinhaTelegram(linhaId) {
   };
 }
 
-async function notificarAceiteTelegram(atribuicao, usuarioId) {
-  const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
-  if (!chatId) return;
-  const usuario = await db('usuarios').where('id', Number(usuarioId)).first('nome');
+function montarMensagemAceiteTelegram(atribuicao, nomeConsultora, linha = {}) {
   const prazo = new Date(atribuicao.prazo_acao_em);
   const horaPrazo = Number.isNaN(prazo.getTime())
-    ? ''
+    ? 'Não informado'
     : prazo.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
       timeZone: 'America/Sao_Paulo'
     });
+  const sondagem = linha.sondagem || {};
+  const empresa = obterNomeEmpresa(linha.dados_json, linha.id, sondagem.razao_social);
+  const cnpj = obterCnpjEmpresa(linha.dados_json, sondagem.cnpj);
+
+  return [
+    `Empresa: ${empresa}`,
+    `CNPJ: ${cnpj}`,
+    '',
+    `✅ Indicação aceita por ${nomeConsultora || 'consultor(a)'}. Prazo para registrar o contato no CRM: ${horaPrazo}`
+  ].join('\n');
+}
+
+async function notificarAceiteTelegram(atribuicao, usuarioId, linha) {
+  const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
+  if (!chatId) return;
+  const usuario = await db('usuarios').where('id', Number(usuarioId)).first('nome');
   try {
+    // Recarrega os dados completos: a atribuicao e criada com os detalhes do lead
+    // ocultos ate o aceite, portanto nunca deve depender de uma versao parcial da linha.
+    const linhaCompleta = await carregarLinhaTelegram(atribuicao.lead_linha_id) || linha;
     await telegramService.chamarApi('sendMessage', {
       chat_id: chatId,
-      text: `\u2705 Indicacao aceita por ${usuario?.nome || 'consultor(a)'}.${horaPrazo ? ` Prazo para registrar o contato no CRM: ${horaPrazo}.` : ''}`
+      text: montarMensagemAceiteTelegram(atribuicao, usuario?.nome, linhaCompleta)
     });
     if (atribuicao.telegram_message_id) {
       await telegramService.chamarApi('editMessageReplyMarkup', {
@@ -538,6 +564,7 @@ module.exports = {
     linhaTemAcaoValida,
     prazoAcaoMinutos,
     tipoAcaoValida,
-    deveRepublicarPendenteAntiga
+    deveRepublicarPendenteAntiga,
+    montarMensagemAceiteTelegram
   }
 };

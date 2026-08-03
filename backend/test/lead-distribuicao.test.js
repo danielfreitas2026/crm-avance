@@ -7,6 +7,7 @@ const { _internals: leadPlanilhaInternals } = require('../src/services/lead-plan
 const {
   adicionarMinutos,
   linhaTemAcaoValida,
+  montarMensagemAceiteTelegram,
   prazoAcaoMinutos,
   tipoAcaoValida
 } = leadDistribuicaoService._internals;
@@ -22,6 +23,23 @@ test('inicia o prazo de acao 30 minutos depois do aceite por padrao', () => {
     if (anterior === undefined) delete process.env.FUTURO_CLIENTE_PRAZO_ACAO_MINUTOS;
     else process.env.FUTURO_CLIENTE_PRAZO_ACAO_MINUTOS = anterior;
   }
+});
+
+test('monta a notificacao de aceite com empresa, CNPJ, consultora e prazo', () => {
+  const texto = montarMensagemAceiteTelegram({
+    prazo_acao_em: '2026-07-30T15:30:00.000Z'
+  }, 'Ana Consultora', {
+    id: 42,
+    dados_json: { Empresa: 'Empresa de fallback', CNPJ: '00.000.000/0001-00' },
+    sondagem: { razao_social: 'Empresa Teste LTDA', cnpj: '12.345.678/0001-90' }
+  });
+
+  assert.equal(texto, [
+    'Empresa: Empresa Teste LTDA',
+    'CNPJ: 12.345.678/0001-90',
+    '',
+    '✅ Indicação aceita por Ana Consultora. Prazo para registrar o contato no CRM: 12:30'
+  ].join('\n'));
 });
 
 test('reconhece os desfechos do CRM que impedem a devolucao automatica', () => {
