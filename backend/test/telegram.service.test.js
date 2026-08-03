@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { _internals } = require('../src/services/telegram.service');
+const { enviarVenda, _internals } = require('../src/services/telegram.service');
 
 test('monta notificacao de futuro cliente com dados da sondagem e primeira ligacao', () => {
   const texto = _internals.montarMensagemFuturoCliente({
@@ -82,6 +82,25 @@ test('usa chats distintos para resumo e novas vendas', () => {
   } finally {
     if (resumoAnterior === undefined) delete process.env.TELEGRAM_RESUMO_VENDAS_CHAT_ID;
     else process.env.TELEGRAM_RESUMO_VENDAS_CHAT_ID = resumoAnterior;
+    if (vendasAnterior === undefined) delete process.env.TELEGRAM_VENDAS_CHAT_ID;
+    else process.env.TELEGRAM_VENDAS_CHAT_ID = vendasAnterior;
+  }
+});
+
+test('nao considera uma venda enviada quando o bot ou o grupo nao estao configurados', async () => {
+  const tokenAnterior = process.env.TELEGRAM_BOT_TOKEN;
+  const vendasAnterior = process.env.TELEGRAM_VENDAS_CHAT_ID;
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_VENDAS_CHAT_ID;
+
+  try {
+    assert.deepEqual(await enviarVenda({ id: 1 }), {
+      enviado: false,
+      motivo: 'telegram_nao_configurado'
+    });
+  } finally {
+    if (tokenAnterior === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = tokenAnterior;
     if (vendasAnterior === undefined) delete process.env.TELEGRAM_VENDAS_CHAT_ID;
     else process.env.TELEGRAM_VENDAS_CHAT_ID = vendasAnterior;
   }

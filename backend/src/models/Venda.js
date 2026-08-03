@@ -24,6 +24,7 @@ class Venda extends Model {
         email_2: { type: ['string', 'null'], maxLength: 160 },
         criado_em: { type: ['string', 'null'] },
         ultima_atividade_em: { type: ['string', 'null'] },
+        telegram_notificada_em: { type: ['string', 'null'] },
         nome_representante_legal: { type: ['string', 'null'], maxLength: 240 },
         fixo_ddd: { type: ['string', 'null'], maxLength: 40 },
         nome_fechou_venda: { type: ['string', 'null'], maxLength: 240 },

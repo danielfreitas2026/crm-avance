@@ -2901,17 +2901,29 @@ async function criarVenda(dados, usuarioId) {
     return venda;
   });
 
-  try {
-    const vendaParaTelegram = await Venda.query()
-      .findById(venda.id)
-      .withGraphFetched('[cliente, vendedora, vendedoras, origemSondador, operadora, operadoraAtual, tipoProduto, tipoVenda, servico, criador]');
-    await telegramService.enviarVenda(vendaParaTelegram || venda);
-  } catch (error) {
-    // A indisponibilidade do Telegram nao pode desfazer o cadastro da venda.
-    console.error('Erro ao notificar nova venda no Telegram:', {
-      vendaId: venda.id,
-      message: error.message
-    });
+  // Edicoes usam atualizarVenda e nunca passam por este bloco. A marca so e gravada
+  // depois de o Telegram confirmar o envio, para que uma configuracao ausente nao
+  // bloqueie uma tentativa futura.
+  if (!venda.telegram_notificada_em) {
+    try {
+      const vendaParaTelegram = await Venda.query()
+        .findById(venda.id)
+        .withGraphFetched('[cliente, vendedora, vendedoras, origemSondador, operadora, operadoraAtual, tipoProduto, tipoVenda, servico, criador]');
+      const resultadoTelegram = await telegramService.enviarVenda(vendaParaTelegram || venda);
+
+      if (resultadoTelegram.enviado) {
+        await Venda.query()
+          .patch({ telegram_notificada_em: agora })
+          .findById(venda.id)
+          .whereNull('telegram_notificada_em');
+      }
+    } catch (error) {
+      // A indisponibilidade do Telegram nao pode desfazer o cadastro da venda.
+      console.error('Erro ao notificar nova venda no Telegram:', {
+        vendaId: venda.id,
+        message: error.message
+      });
+    }
   }
 
   venda.integracao_dashboard = await dashboardIntegracaoService.enviarVendaCriada(venda.id);
