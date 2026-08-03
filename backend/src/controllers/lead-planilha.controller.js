@@ -369,6 +369,16 @@ async function listarTodosFuturosClientes(req, res) {
   }
 }
 
+/** Republica no Telegram somente futuros clientes antigos que nunca foram encaminhados. */
+async function republicarPendentesAntigosTelegram(req, res) {
+  try {
+    return res.json(await leadDistribuicaoService.republicarPendentesAntigosNoTelegram());
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Erro ao republicar futuros clientes pendentes.' });
+  }
+}
+
 async function metricasFuturosClientes(req, res) {
   try {
     return res.json(await leadPlanilhaService.obterMetricasFuturosClientes(req.query));
@@ -640,6 +650,7 @@ module.exports = {
   aceitarFuturoCliente,
   recusarFuturoCliente,
   listarTodosFuturosClientes,
+  republicarPendentesAntigosTelegram,
   metricasFuturosClientes,
   exportarMetricasFuturosClientes,
   vincularVenda,

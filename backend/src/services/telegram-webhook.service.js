@@ -25,6 +25,13 @@ function obterNomeEmpresa(dadosJson, linhaId) {
 async function listarVendedoras() {
   return Usuario.query().select('id', 'nome').where('ativo', true).orderBy('nome', 'asc');
 }
+
+function botoesVendedoras(vendedoras, linhaId) {
+  return vendedoras.map(vendedora => ([{
+    text: vendedora.nome,
+    callback_data: `fc:atribuir:${linhaId}:${vendedora.id}`
+  }]));
+}
 async function distribuir(linhaId, vendedoraId, gerenteTelegramId, telegramContexto = {}) {
   return db.transaction(async trx => {
     const linha = await trx('lead_linhas').where('id', linhaId).where('futuro_cliente', true).whereNull('futuro_cliente_excluido_em').first();
@@ -76,7 +83,7 @@ async function processarCallback(query) {
   const [, acao, linhaId, vendedoraId] = callbackPartes(query.data);
   if (acao === 'selecionar') {
     const vendedoras = await listarVendedoras();
-    await telegramService.chamarApi('editMessageReplyMarkup', { chat_id: query.message.chat.id, message_id: query.message.message_id, reply_markup: { inline_keyboard: vendedoras.map(v => [{ text: v.nome, callback_data: `fc:atribuir:${linhaId}:${v.id}` }]) } });
+    await telegramService.chamarApi('editMessageReplyMarkup', { chat_id: query.message.chat.id, message_id: query.message.message_id, reply_markup: { inline_keyboard: botoesVendedoras(vendedoras, linhaId) } });
     return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: 'Selecione a vendedora.' });
   }
   if (acao === 'atribuir') {
@@ -100,4 +107,10 @@ async function receberWebhook(req, res) {
   res.sendStatus(200);
   if (req.body?.callback_query) processarCallback(req.body.callback_query).catch(error => console.error('Erro ao processar callback do Telegram:', error.message));
 }
-module.exports = { receberWebhook, processarCallback, distribuir, cancelarEnvio };
+module.exports = {
+  receberWebhook,
+  processarCallback,
+  distribuir,
+  cancelarEnvio,
+  _internals: { botoesVendedoras }
+};

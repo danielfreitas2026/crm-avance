@@ -323,6 +323,75 @@ async function republicarNoTelegram(linhaId) {
   }
 }
 
+function deveRepublicarPendenteAntiga(linha, possuiEncaminhamentoDeVenda) {
+  return Boolean(
+    linha
+    && linha.futuro_cliente
+    && !linha.futuro_cliente_excluido_em
+    && linha.status_operacional === 'qualificado'
+    && !possuiEncaminhamentoDeVenda
+  );
+}
+
+async function reservarRepublicacaoPendente(linhaId) {
+  try {
+    await db('lead_telegram_republicacoes').insert({
+      lead_linha_id: Number(linhaId),
+      status: 'processando',
+      tentativas: 1
+    });
+    return true;
+  } catch (error) {
+    if (error.code !== 'ER_DUP_ENTRY') throw error;
+    const atualizada = await db('lead_telegram_republicacoes')
+      .where({ lead_linha_id: Number(linhaId), status: 'falhou' })
+      .update({ status: 'processando', tentativas: db.raw('tentativas + 1'), updated_at: new Date() });
+    return Boolean(atualizada);
+  }
+}
+
+async function republicarPendentesAntigosNoTelegram() {
+  const pendentes = await db('lead_linhas as ll')
+    .where({ 'll.futuro_cliente': true, 'll.status_operacional': 'qualificado' })
+    .whereNull('ll.futuro_cliente_excluido_em')
+    .whereNotExists(function semEncaminhamentoDeVenda() {
+      this.select('*')
+        .from('lead_atribuicoes as la')
+        .whereRaw('la.lead_linha_id = ll.id')
+        .where('la.etapa', 'venda');
+    })
+    .select('ll.id');
+
+  let publicados = 0;
+  let falhas = 0;
+  for (const pendente of pendentes) {
+    const linhaId = Number(pendente.id);
+    if (!await reservarRepublicacaoPendente(linhaId)) continue;
+    try {
+      const linha = await carregarLinhaTelegram(linhaId);
+      if (!deveRepublicarPendenteAntiga(linha, false)) {
+        await db('lead_telegram_republicacoes').where('lead_linha_id', linhaId).update({ status: 'ignorado', updated_at: new Date() });
+        continue;
+      }
+      const resultado = await telegramService.enviarFuturoCliente(linha);
+      if (!resultado.enviado) throw new Error(resultado.motivo || 'Telegram nao configurado');
+      await db('lead_telegram_republicacoes').where('lead_linha_id', linhaId).update({
+        status: 'publicado',
+        telegram_chat_id: String(process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID || ''),
+        telegram_message_id: String(resultado.message_id || ''),
+        publicado_em: new Date(),
+        updated_at: new Date()
+      });
+      publicados += 1;
+    } catch (error) {
+      console.error(`Erro ao republicar futuro cliente pendente #${linhaId}:`, error.message);
+      await db('lead_telegram_republicacoes').where('lead_linha_id', linhaId).update({ status: 'falhou', updated_at: new Date() });
+      falhas += 1;
+    }
+  }
+  return { encontrados: pendentes.length, publicados, falhas };
+}
+
 async function finalizarAtribuicao(linhaId, opcoes = {}) {
   const aceiteStatusFinal = opcoes.aceiteStatus || ACEITE_CANCELADO;
   const agora = new Date();
@@ -458,6 +527,7 @@ module.exports = {
   finalizarAtribuicao,
   registrarAcaoValida,
   processarPrazosVencidos,
+  republicarPendentesAntigosNoTelegram,
   buscarAtribuicaoAtiva,
   obterDistribuicoesUsuario,
   dadosDistribuicao,
@@ -467,6 +537,7 @@ module.exports = {
     dataEmOuDepois,
     linhaTemAcaoValida,
     prazoAcaoMinutos,
-    tipoAcaoValida
+    tipoAcaoValida,
+    deveRepublicarPendenteAntiga
   }
 };
