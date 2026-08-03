@@ -6,3 +6,9 @@ dist/
 build/
 .DS_Store
 backend/storage/lead-imports/
+# Arquivos persistentes enviados pelos usuários (devem permanecer no servidor).
+backend/storage/venda-arquivos/
+
+# Arquivos operacionais e dados locais de cruzamento/importação.
+backend/*.log
+planilhasParaCruzamento/
