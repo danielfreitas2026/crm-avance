@@ -29,12 +29,19 @@ const app = express();
 app.disable('x-powered-by');
 app.use(securityHeadersMiddleware);
 
+const extraAllowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
 const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:5175',
   'http://127.0.0.1:5175',
-  process.env.FRONTEND_URL
+  'https://pos-venda.avancevip.net.br',
+  process.env.FRONTEND_URL,
+  ...extraAllowedOrigins
 ].filter(Boolean);
 
 app.use(cors({
