@@ -1000,6 +1000,7 @@ button.urgent-alert-panel__header {
 }
 .kanban-column {
   flex: 0 0 280px;
+  min-width: 0;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
