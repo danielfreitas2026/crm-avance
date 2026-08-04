@@ -77,6 +77,18 @@ class Cliente extends Model {
           to: 'usuarios.id'
         }
       },
+      consultoras: {
+        relation: Model.ManyToManyRelation,
+        modelClass: Usuario,
+        join: {
+          from: 'clientes.id',
+          through: {
+            from: 'cliente_consultoras.cliente_id',
+            to: 'cliente_consultoras.usuario_id'
+          },
+          to: 'usuarios.id'
+        }
+      },
       excluidoPor: {
         relation: Model.BelongsToOneRelation,
         modelClass: Usuario,

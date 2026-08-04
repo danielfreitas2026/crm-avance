@@ -4,7 +4,7 @@ const router = express.Router();
 const clienteController = require('../controllers/cliente.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const { auditar } = require('../middlewares/audit.middleware');
-const { exigirUmaPermissao } = require('../middlewares/permissao.middleware');
+const { exigirPermissao, exigirUmaPermissao } = require('../middlewares/permissao.middleware');
 
 router.use(authMiddleware);
 
@@ -54,6 +54,17 @@ router.post(
     })
   }),
   clienteController.store
+);
+router.put(
+  '/:id/consultoras',
+  exigirPermissao('clientes_atribuir_vendedora'),
+  auditar({
+    acao: 'cliente.consultoras_atualizadas',
+    entidade: 'clientes',
+    entidade_id: req => req.params.id,
+    dados: req => ({ consultora_ids: req.body?.consultora_ids || [] })
+  }),
+  clienteController.atualizarConsultoras
 );
 router.put(
   '/:id',

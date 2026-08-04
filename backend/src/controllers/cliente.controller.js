@@ -203,6 +203,18 @@ async function update(req, res) {
   }
 }
 
+/** Atualiza exclusivamente as consultoras vinculadas ao cliente. */
+async function atualizarConsultoras(req, res) {
+  try {
+    const cliente = await clienteService.atualizarConsultorasCliente(req.params.id, req.body?.consultora_ids, req.usuario.id);
+    if (!cliente) return res.status(404).json({ message: 'Cliente não encontrado.' });
+    return res.json(cliente);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao vincular consultoras.' });
+  }
+}
+
 /**
  * Move um cliente para a lixeira.
  *
@@ -346,6 +358,7 @@ module.exports = {
   previewImportacaoBaseAnterior,
   importarBaseAnterior,
   update,
+  atualizarConsultoras,
   destroy,
   lixeira,
   restore,

@@ -155,7 +155,7 @@ function formatarDataHoraBR(valor) {
 /**
  * Lista usuarios destinatarios conforme os filtros e parametros informados.
  */
-async function listarUsuariosDestinatarios(cliente) {
+async function listarUsuariosDestinatarios(cliente, trx = null) {
   const usuarios = await Usuario.query()
     .withGraphFetched('role')
     .where('ativo', true);
@@ -174,6 +174,11 @@ async function listarUsuariosDestinatarios(cliente) {
       ids.add(Number(cliente.criado_por_id));
     }
   }
+
+  const consultoras = await (trx || db)('cliente_consultoras')
+    .where('cliente_id', cliente.id)
+    .pluck('usuario_id');
+  consultoras.forEach(id => ids.add(Number(id)));
 
   return Array.from(ids);
 }
@@ -287,7 +292,7 @@ async function sincronizarFidelidadeCliente(clienteId, trx = null) {
         .insertAndFetch(payload);
     }
 
-    const destinatarios = await listarUsuariosDestinatarios(cliente);
+    const destinatarios = await listarUsuariosDestinatarios(cliente, trx);
 
     const destinatariosQuery = NotificacaoDestinatario.query(trx)
       .where('notificacao_id', notificacao.id);

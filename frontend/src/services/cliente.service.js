@@ -117,6 +117,10 @@ export async function criarCliente(dados) {
   return apiPost('/clientes', dados);
 }
 
+export async function atualizarConsultorasCliente(id, consultoraIds) {
+  return apiPut(`/clientes/${id}/consultoras`, { consultora_ids: consultoraIds });
+}
+
 export async function criarClienteSecreto(dados) {
   return apiPost('/clientes-secretos', dados);
 }

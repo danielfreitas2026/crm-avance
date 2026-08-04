@@ -1008,12 +1008,13 @@ async function buscarEscopoClientes(usuarioId) {
     .withGraphFetched('role');
 
   if (!usuario || !usuario.ativo) {
-    return { podeVerTodos: false, podeVerProprios: false };
+    return { podeVerTodos: false, podeVerProprios: false, podeAtribuirConsultoras: false };
   }
 
   return {
     podeVerTodos: usuarioTemPermissaoLocal(usuario, 'clientes_ver_todos'),
-    podeVerProprios: usuarioTemPermissaoLocal(usuario, 'clientes_ver_proprios')
+    podeVerProprios: usuarioTemPermissaoLocal(usuario, 'clientes_ver_proprios'),
+    podeAtribuirConsultoras: usuarioTemPermissaoLocal(usuario, 'clientes_atribuir_vendedora')
   };
 }
 
@@ -1031,7 +1032,15 @@ function aplicarEscopoClientes(query, usuarioId, escopo) {
     return query;
   }
 
-  query.where('criado_por_id', usuarioId);
+  query.where(builder => {
+    builder.where('criado_por_id', usuarioId)
+      .orWhereExists(
+        Cliente.knex().select(Cliente.knex().raw('1'))
+          .from('cliente_consultoras as cc')
+          .whereRaw('cc.cliente_id = clientes.id')
+          .where('cc.usuario_id', usuarioId)
+      );
+  });
   return query;
 }
 
@@ -1472,7 +1481,8 @@ async function listarClientes(filtros = {}, usuarioId) {
   const { page, perPage } = normalizarPaginacao(filtros);
 
   const query = Cliente.query()
-    .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador]')
+    .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador, consultoras]')
+    .modifyGraph('consultoras', builder => builder.select('id', 'nome', 'email'))
     .whereNull('excluido_em');
 
   aplicarEscopoClientes(query, usuarioId, escopo);
@@ -1587,7 +1597,8 @@ async function listarClientesSelect(filtros = {}, usuarioId) {
       'base_anterior_sistema',
       'criado_por_id'
     )
-    .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora]')
+    .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, consultoras]')
+    .modifyGraph('consultoras', builder => builder.select('id', 'nome', 'email'))
     .whereNull('excluido_em')
     .orderBy('nome', 'asc')
     .limit(limite);
@@ -1613,7 +1624,8 @@ async function buscarClientePorId(id, usuarioId) {
   const query = Cliente.query()
     .findById(id)
     .whereNull('excluido_em')
-    .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador]');
+    .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador, consultoras]')
+    .modifyGraph('consultoras', builder => builder.select('id', 'nome', 'email'));
 
   if (usuarioId) {
     aplicarEscopoClientes(query, usuarioId, escopo);
@@ -1651,7 +1663,61 @@ async function usuarioPodeAcessarCliente(id, usuarioId, opcoes = {}) {
 
   const cliente = await query;
 
-  return Number(cliente?.criado_por_id) === Number(usuarioId);
+  if (Number(cliente?.criado_por_id) === Number(usuarioId)) return true;
+
+  return Boolean(await Cliente.knex()('cliente_consultoras')
+    .where({ cliente_id: id, usuario_id: usuarioId })
+    .first());
+}
+
+/** Normaliza e valida a lista de consultoras vinculadas a um cliente. */
+async function normalizarConsultoraIds(ids) {
+  if (!Array.isArray(ids)) {
+    const error = new Error('consultora_ids deve ser uma lista de identificadores.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalizados = ids.map(Number);
+  if (normalizados.some(id => !Number.isInteger(id) || id <= 0) || new Set(normalizados).size !== normalizados.length) {
+    const error = new Error('Informe consultoras válidas, sem duplicidades.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const ativos = normalizados.length ? await Usuario.query().whereIn('id', normalizados).where('ativo', true).select('id') : [];
+  if (ativos.length !== normalizados.length) {
+    const error = new Error('Uma ou mais consultoras não existem ou estão inativas.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return normalizados;
+}
+
+/** Substitui, transacionalmente, os vínculos de consultoras do cliente. */
+async function atualizarConsultorasCliente(id, consultoraIds, usuarioId) {
+  const escopo = await buscarEscopoClientes(usuarioId);
+  if (!escopo.podeAtribuirConsultoras) {
+    const error = new Error('Você não tem permissão para vincular consultoras a clientes.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const ids = await normalizarConsultoraIds(consultoraIds);
+  const cliente = await Cliente.transaction(async trx => {
+    const existente = await Cliente.query(trx).findById(id).whereNull('excluido_em');
+    if (!existente) return null;
+    await trx('cliente_consultoras').where('cliente_id', id).delete();
+    if (ids.length) {
+      await trx('cliente_consultoras').insert(ids.map(usuario_id => ({ cliente_id: Number(id), usuario_id })));
+    }
+    return formatarCliente(await Cliente.query(trx).findById(id)
+      .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador, consultoras]')
+      .modifyGraph('consultoras', builder => builder.select('id', 'nome', 'email')));
+  });
+
+  if (cliente) await notificacaoService.sincronizarFidelidadeCliente(cliente.id);
+  return cliente;
 }
 
 /**
@@ -1663,6 +1729,13 @@ async function usuarioPodeAcessarCliente(id, usuarioId, opcoes = {}) {
  */
 async function criarCliente(dados, usuarioId) {
   const payload = montarPayload(dados);
+  const recebeuConsultoras = Object.prototype.hasOwnProperty.call(dados, 'consultora_ids');
+  const consultoraIds = recebeuConsultoras ? await normalizarConsultoraIds(dados.consultora_ids) : [];
+  if (recebeuConsultoras && !(await buscarEscopoClientes(usuarioId)).podeAtribuirConsultoras) {
+    const error = new Error('Você não tem permissão para vincular consultoras a clientes.');
+    error.statusCode = 403;
+    throw error;
+  }
   const duplicado = await buscarClienteDuplicadoPorCnpj(payload.cnpj_digitos);
 
   if (duplicado) {
@@ -1675,10 +1748,15 @@ async function criarCliente(dados, usuarioId) {
       criado_por_id: usuarioId
     });
 
+    if (consultoraIds.length) {
+      await trx('cliente_consultoras').insert(consultoraIds.map(usuario_id => ({ cliente_id: criado.id, usuario_id })));
+    }
+
     await sincronizarOperadorasCliente(criado.id, dados.operadoras_atuais || dados.operadorasAtuais || normalizarOperadorasCliente(dados), trx);
     return formatarCliente(await Cliente.query(trx)
       .findById(criado.id)
-      .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador]'));
+      .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador, consultoras]')
+      .modifyGraph('consultoras', builder => builder.select('id', 'nome', 'email')));
   });
 
   await notificacaoService.sincronizarFidelidadeCliente(cliente.id);
@@ -1702,6 +1780,13 @@ async function atualizarCliente(id, dados, usuarioId) {
   }
 
   const payload = montarPayload(dados);
+  const recebeuConsultoras = Object.prototype.hasOwnProperty.call(dados, 'consultora_ids');
+  const consultoraIds = recebeuConsultoras ? await normalizarConsultoraIds(dados.consultora_ids) : [];
+  if (recebeuConsultoras && !(await buscarEscopoClientes(usuarioId)).podeAtribuirConsultoras) {
+    const error = new Error('Você não tem permissão para vincular consultoras a clientes.');
+    error.statusCode = 403;
+    throw error;
+  }
   const duplicado = await buscarClienteDuplicadoPorCnpj(payload.cnpj_digitos, id);
 
   if (duplicado) {
@@ -1716,6 +1801,13 @@ async function atualizarCliente(id, dados, usuarioId) {
 
     if (!atualizado) return null;
 
+    if (recebeuConsultoras) {
+      await trx('cliente_consultoras').where('cliente_id', id).delete();
+      if (consultoraIds.length) {
+        await trx('cliente_consultoras').insert(consultoraIds.map(usuario_id => ({ cliente_id: Number(id), usuario_id })));
+      }
+    }
+
     if (dados.operadoras_atuais !== undefined || dados.operadorasAtuais !== undefined
       || dados.operadora_atual_id !== undefined || dados.quantidade_chips !== undefined
       || dados.valor_pago !== undefined || dados.fidelidade_fim !== undefined) {
@@ -1724,7 +1816,8 @@ async function atualizarCliente(id, dados, usuarioId) {
 
     return formatarCliente(await Cliente.query(trx)
       .findById(id)
-      .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador]'));
+      .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador, consultoras]')
+      .modifyGraph('consultoras', builder => builder.select('id', 'nome', 'email')));
   });
 
   if (cliente) {
@@ -1896,7 +1989,8 @@ async function listarClientesLixeira(filtros = {}, usuarioId) {
 
   const escopo = await buscarEscopoClientes(usuarioId);
   const query = Cliente.query()
-    .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador, excluidoPor]')
+    .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador, consultoras, excluidoPor]')
+    .modifyGraph('consultoras', builder => builder.select('id', 'nome', 'email'))
     .whereNotNull('excluido_em')
     .orderBy('excluido_em', 'desc')
     .orderBy('id', 'desc');
@@ -2074,6 +2168,7 @@ module.exports = {
   excluirClienteDefinitivo,
   limparClientesBaseAnterior,
   usuarioPodeAcessarCliente,
+  atualizarConsultorasCliente,
   previewImportacaoBaseAnterior,
   importarBaseAnterior,
   gerarXlsxClientes

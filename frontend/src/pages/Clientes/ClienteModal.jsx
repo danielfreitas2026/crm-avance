@@ -4,7 +4,7 @@ import NotasEntidadeTab from '../../components/NotasEntidadeTab';
 import * as I from '../../components/Icons';
 import CnpjSugestoes, { formatarMensagemResumoCnpj } from '../../components/CnpjSugestoes';
 import { consultarCnpj, sanitizarCnpj, validarDigitosCnpj, formatarCpf, sanitizarCpf, validarDigitosCpf } from '../../services/cnpj.service';
-import { criarCliente, atualizarCliente, verificarDocumentoCliente } from '../../services/cliente.service';
+import { criarCliente, atualizarCliente, atualizarConsultorasCliente, verificarDocumentoCliente } from '../../services/cliente.service';
 import { criarNotaEntidade } from '../../services/nota.service';
 import { listarVendas } from '../../services/venda.service';
 import { useFormDraft } from '../../utils/useFormDraft';
@@ -361,7 +361,10 @@ function ClienteModal({
   draftKey: draftKeyProp,
   criarFn = criarCliente,
   atualizarFn = atualizarCliente,
-  verificarDocumentoFn = verificarDocumentoCliente
+  verificarDocumentoFn = verificarDocumentoCliente,
+  podeGerenciarConsultoras = false,
+  consultorasDisponiveis = [],
+  somenteConsultoras = false
 }) {
   const editando = Boolean(cliente);
   const isLead = entidade === 'lead';
@@ -400,6 +403,7 @@ function ClienteModal({
   const [tipoBusca, setTipoBusca] = useState(() => sanitizarCnpj(form.cnpj).length === 11 ? 'cpf' : 'cnpj');
   const [abaAtiva, setAbaAtiva] = useState(notesOnly ? 'notas' : initialTab);
   const [pendingNotas, setPendingNotas] = useState([]);
+  const [consultoraIds, setConsultoraIds] = useState(() => (cliente?.consultoras || []).map(item => Number(item.id)));
   const [vendasCliente, setVendasCliente] = useState([]);
   const [carregandoVendas, setCarregandoVendas] = useState(false);
   const [erroVendas, setErroVendas] = useState('');
@@ -795,6 +799,19 @@ function ClienteModal({
     event.preventDefault();
     setErro('');
 
+    if (somenteConsultoras) {
+      if (!cliente?.id) return;
+      setSalvando(true);
+      try {
+        const saved = await atualizarConsultorasCliente(cliente.id, consultoraIds);
+        await onSave(saved);
+      } catch (error) {
+        setErro(error.message || 'Erro ao vincular consultoras.');
+        setSalvando(false);
+      }
+      return;
+    }
+
     if (!form.nome.trim()) {
       setErro(`Preencha o nome do ${entidadeLabel}.`);
       setAbaAtiva('cliente');
@@ -872,6 +889,10 @@ function ClienteModal({
             // best effort
           }
         }
+      }
+
+      if (!isLead && podeGerenciarConsultoras && saved?.id) {
+        saved = await atualizarConsultorasCliente(saved.id, consultoraIds);
       }
 
       // Limpar rascunho após sucesso
@@ -980,7 +1001,41 @@ function ClienteModal({
             </div>
           ) : (
           <>
+            {somenteConsultoras && <div className="alert-info" style={{ marginBottom: 12 }}>Você pode alterar somente as consultoras vinculadas a este cliente.</div>}
             <div className="cliente-form-grid">
+            {!isLead && podeGerenciarConsultoras && (
+              <div className="form-field span-2 cliente-consultoras-field">
+                <div className="cliente-consultoras-field__head">
+                  <label>Consultoras vinculadas</label>
+                  <span>{consultoraIds.length} selecionada{consultoraIds.length === 1 ? '' : 's'}</span>
+                </div>
+                <div className="cliente-consultoras-list" role="group" aria-label="Consultoras vinculadas">
+                  {consultorasDisponiveis.length === 0 ? (
+                    <span className="cliente-consultoras-list__empty">Nenhuma consultora ativa disponível.</span>
+                  ) : consultorasDisponiveis.map(consultora => {
+                    const selecionada = consultoraIds.includes(Number(consultora.id));
+                    return (
+                      <label key={consultora.id} className={`cliente-consultora-option${selecionada ? ' is-selected' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={selecionada}
+                          onChange={event => setConsultoraIds(ids => (
+                            event.target.checked
+                              ? [...ids, Number(consultora.id)]
+                              : ids.filter(id => id !== Number(consultora.id))
+                          ))}
+                        />
+                        <span className="cliente-consultora-option__content">
+                          <strong>{consultora.nome}</strong>
+                          {consultora.email && <small>{consultora.email}</small>}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <span className="field-hint">Marque todas as consultoras que devem acessar este cliente.</span>
+              </div>
+            )}
             <div className="form-field">
               <label>Nome</label>
               <input value={form.nome} onChange={event => atualizarCampo('nome', event.target.value)} required />

@@ -2715,6 +2715,23 @@ async function salvarVendedoras(vendaId, vendedorasIds, trx) {
 }
 
 /**
+ * Garante acesso ao cliente para todas as consultoras responsáveis por uma venda.
+ * O vínculo é aditivo: removê-lo é uma decisão explícita no cadastro do cliente.
+ */
+async function vincularClienteAsVendedoras(clienteId, vendedorasIds, trx) {
+  const clienteIdNormalizado = Number(clienteId);
+  const ids = Array.from(new Set((vendedorasIds || []).map(Number)
+    .filter(id => Number.isInteger(id) && id > 0)));
+
+  if (!clienteIdNormalizado || ids.length === 0) return;
+
+  await trx('cliente_consultoras')
+    .insert(ids.map(usuario_id => ({ cliente_id: clienteIdNormalizado, usuario_id })))
+    .onConflict(['cliente_id', 'usuario_id'])
+    .ignore();
+}
+
+/**
  * Busca venda por id conforme os parametros informados.
  */
 async function buscarVendaPorId(id, usuarioId) {
@@ -2851,6 +2868,12 @@ async function criarVenda(dados, usuarioId) {
     if (vendedorasIds.length > 0) {
       await salvarVendedoras(venda.id, vendedorasIds, trx);
     }
+
+    await vincularClienteAsVendedoras(
+      payload.cliente_id,
+      vendedorasIds.length > 0 ? vendedorasIds : [payload.vendedora_id],
+      trx
+    );
 
     if (payload.cliente_id) {
       await copiarNotasClienteParaVenda({
@@ -3032,6 +3055,13 @@ async function atualizarVenda(id, dados, usuarioId) {
 
     if (vendedorasIds !== null) {
       await salvarVendedoras(id, vendedorasIds, trx);
+    }
+
+    if (venda.cliente_id && (Object.prototype.hasOwnProperty.call(payload, 'cliente_id') || vendedorasIds !== null)) {
+      const vendedorasParaVincular = vendedorasIds !== null
+        ? vendedorasIds
+        : await trx('venda_vendedoras').where('venda_id', id).pluck('usuario_id');
+      await vincularClienteAsVendedoras(venda.cliente_id, [venda.vendedora_id, ...vendedorasParaVincular], trx);
     }
 
     if (

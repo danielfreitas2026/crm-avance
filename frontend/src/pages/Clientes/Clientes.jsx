@@ -899,6 +899,7 @@ function Clientes() {
   const podeCriar = temPermissao(usuario, 'clientes_criar');
   const podeImportarPlanilhas = temPermissao(usuario, 'clientes_importar_planilhas');
   const podeEditar = temPermissao(usuario, 'clientes_editar');
+  const podeGerenciarConsultoras = temPermissao(usuario, 'clientes_atribuir_vendedora');
   const podeExcluir = temPermissao(usuario, 'clientes_excluir');
   const podeLimparBaseAnterior = podeExcluir;
   const podeListarClientes = temPermissao(usuario, ['clientes_ver_proprios', 'clientes_ver_todos']);
@@ -1016,12 +1017,14 @@ function Clientes() {
    */
   async function carregarDadosEstaticos() {
     try {
-      const [operadorasData, contagemData] = await Promise.all([
+      const [operadorasData, contagemData, consultorasData] = await Promise.all([
         listarOperadoras(),
-        contarVendasConcluidasPorCliente()
+        contarVendasConcluidasPorCliente(),
+        podeGerenciarConsultoras ? listarVendedoras() : Promise.resolve([])
       ]);
       setOperadoras(operadorasData);
       setVendasConcluidasContagem(contagemData || {});
+      if (podeGerenciarConsultoras) setVendedorasVenda(consultorasData || []);
     } catch (error) {
       setErro(error.message || 'Erro ao carregar dados.');
     }
@@ -1228,7 +1231,7 @@ function Clientes() {
    * Abre edicao cliente e prepara o estado necessario.
    */
   function abrirEdicaoCliente(cliente) {
-    if (!podeEditar) return;
+    if (!podeEditar && !podeGerenciarConsultoras) return;
     setClienteModal(cliente);
     setClienteModalAba('cliente');
     setClienteModalSomenteNotas(false);
@@ -1413,6 +1416,9 @@ function Clientes() {
           onSave={salvarCliente}
           onDraftChange={setClienteCadastroDraft}
           onOpenVenda={podeListarVendas ? abrirVendaDoCliente : null}
+          podeGerenciarConsultoras={podeGerenciarConsultoras}
+          consultorasDisponiveis={vendedorasVenda}
+          somenteConsultoras={!podeEditar && podeGerenciarConsultoras}
         />
       )}
 
@@ -1664,14 +1670,14 @@ function Clientes() {
                       <tr
                         key={cliente.id}
                         className={[
-                          podeEditar ? 'clickable-row is-tappable' : '',
+                          (podeEditar || podeGerenciarConsultoras) ? 'clickable-row is-tappable' : '',
                           String(cliente.id) === String(highlightClienteId) ? 'cliente-row-highlight' : ''
                         ].filter(Boolean).join(' ')}
-                        role={podeEditar ? 'button' : undefined}
-                        tabIndex={podeEditar ? 0 : undefined}
+                        role={podeEditar || podeGerenciarConsultoras ? 'button' : undefined}
+                        tabIndex={podeEditar || podeGerenciarConsultoras ? 0 : undefined}
                         onClick={() => abrirEdicaoCliente(cliente)}
                         onKeyDown={(event) => {
-                          if (!podeEditar) return;
+                          if (!podeEditar && !podeGerenciarConsultoras) return;
                           if (event.key === 'Enter' || event.key === ' ') {
                             event.preventDefault();
                             abrirEdicaoCliente(cliente);
