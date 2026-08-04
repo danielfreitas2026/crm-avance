@@ -1729,7 +1729,7 @@ function SaleCard({ sale, finalizada = false, onClick, onEmail, gerandoEmailId, 
         <span className="sale-card-finalizada-tag">Finalizada</span>
       )}
       <div className="sale-card-top">
-        <div className="client">{sale.client}</div>
+        <div className="client" title={sale.client}>{sale.client}</div>
         <div className="value">{formatBRL(sale.value)}</div>
       </div>
       <div className="sale-card-meta">
