@@ -315,20 +315,31 @@ async function notificarAceiteTelegram(atribuicao, usuarioId, linha) {
     // Recarrega os dados completos: a atribuicao e criada com os detalhes do lead
     // ocultos ate o aceite, portanto nunca deve depender de uma versao parcial da linha.
     const linhaCompleta = await carregarLinhaTelegram(atribuicao.lead_linha_id) || linha;
-    await telegramService.chamarApi('sendMessage', {
+    const textoAceite = montarMensagemAceiteTelegram(atribuicao, usuario?.nome, linhaCompleta);
+    const mensagemAceite = await telegramService.chamarApi('sendMessage', {
       chat_id: chatId,
-      text: montarMensagemAceiteTelegram(atribuicao, usuario?.nome, linhaCompleta)
+      text: textoAceite,
+      reply_markup: {
+        inline_keyboard: [[{
+          text: 'Cancelar venda',
+          callback_data: `fc:cancelar:${atribuicao.lead_linha_id}`
+        }]]
+      }
     });
-    if (atribuicao.telegram_message_id) {
+    const novoMessageId = mensagemAceite?.message_id;
+    if (novoMessageId) {
+      await db('lead_atribuicoes').where('id', atribuicao.id).update({
+        telegram_chat_id: String(chatId),
+        telegram_message_id: String(novoMessageId),
+        telegram_mensagem_texto: textoAceite,
+        updated_at: new Date()
+      });
+    }
+    if (atribuicao.telegram_message_id && novoMessageId) {
       await telegramService.chamarApi('editMessageReplyMarkup', {
         chat_id: chatId,
         message_id: atribuicao.telegram_message_id,
-        reply_markup: {
-          inline_keyboard: [[{
-            text: 'Cancelar venda',
-            callback_data: `fc:cancelar:${atribuicao.lead_linha_id}`
-          }]]
-        }
+        reply_markup: { inline_keyboard: [] }
       });
     }
   } catch (error) {
