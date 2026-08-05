@@ -458,6 +458,19 @@ function obterDataAtualSaoPaulo(data = new Date()) {
 }
 
 /**
+ * Impede o cadastro de vendas em uma data posterior ao dia atual.
+ */
+function validarDataVendaNaoFutura(dataVenda, agora = new Date()) {
+  if (!dataVenda || dataVenda <= obterDataAtualSaoPaulo(agora)) {
+    return;
+  }
+
+  const error = new Error('A data da venda não pode ser futura.');
+  error.statusCode = 400;
+  throw error;
+}
+
+/**
  * Vendas com data anterior a mais de dois dias nao devem gerar aviso no Telegram.
  * Datas futuras ou ausentes permanecem notificaveis.
  */
@@ -2818,6 +2831,8 @@ async function criarVenda(dados, usuarioId) {
   let payload = montarPayload(dados);
   const deveEnviarAutomaticamente = await usuarioTemPermissao(usuarioId, PERMISSAO_AUTO_POS_VENDA);
 
+  validarDataVendaNaoFutura(payload.data_venda);
+
   delete payload.data_ativacao;
   delete payload.numeros_ativados;
 
@@ -3027,6 +3042,8 @@ async function atualizarVenda(id, dados, usuarioId) {
   let payload = montarPayload(dados);
   const etapaFinal = await obterCodigoEtapaFinal();
   const vendaEstaNaEtapaFinal = vendaAtual.status_funil === etapaFinal;
+
+  validarDataVendaNaoFutura(payload.data_venda);
 
   if (!vendaAtual.enviada_pos_venda_em) {
     delete payload.status_funil;
@@ -3909,6 +3926,7 @@ module.exports = {
     normalizarClienteSolicitouServicos,
     normalizarData,
     obterDataAtualSaoPaulo,
+    validarDataVendaNaoFutura,
     vendaDeveNotificarTelegram,
     normalizarGigas,
     normalizarIdsVendedoras,

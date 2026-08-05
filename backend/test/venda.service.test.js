@@ -11,6 +11,7 @@ const {
   montarAtribuicoesVendedorasVenda,
   montarPayload,
   normalizarData,
+  validarDataVendaNaoFutura,
   normalizarItensChips,
   vendaDeveNotificarTelegram,
   obterDataLimiteConcluidaAntiga,
@@ -28,6 +29,14 @@ test('normaliza datas validas e rejeita datas invalidas', () => {
   assert.equal(normalizarData('18/05/26'), '2026-05-18');
   assert.equal(normalizarData('2026-02-31'), null);
   assert.equal(normalizarData('1899-12-31'), null);
+});
+
+test('impede data de venda futura considerando o fuso de Sao Paulo', () => {
+  const agora = new Date('2026-08-05T02:00:00.000Z');
+
+  assert.doesNotThrow(() => validarDataVendaNaoFutura('2026-08-04', agora));
+  assert.doesNotThrow(() => validarDataVendaNaoFutura('2026-08-03', agora));
+  assert.throws(() => validarDataVendaNaoFutura('2026-08-05', agora), /não pode ser futura/i);
 });
 
 test('notifica Telegram apenas para vendas com no maximo dois dias de atraso', () => {

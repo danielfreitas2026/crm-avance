@@ -47,6 +47,19 @@ function normalizarTextoLead(valor) {
     .trim();
 }
 
+/**
+ * Aplica a máscara padrão de CNPJ durante a digitação e para valores já salvos.
+ */
+function formatarCnpj(valor) {
+  const digitos = String(valor || '').replace(/\D/g, '').slice(0, 14);
+
+  if (digitos.length <= 2) return digitos;
+  if (digitos.length <= 5) return `${digitos.slice(0, 2)}.${digitos.slice(2)}`;
+  if (digitos.length <= 8) return `${digitos.slice(0, 2)}.${digitos.slice(2, 5)}.${digitos.slice(5)}`;
+  if (digitos.length <= 12) return `${digitos.slice(0, 2)}.${digitos.slice(2, 5)}.${digitos.slice(5, 8)}/${digitos.slice(8)}`;
+  return `${digitos.slice(0, 2)}.${digitos.slice(2, 5)}.${digitos.slice(5, 8)}/${digitos.slice(8, 12)}-${digitos.slice(12)}`;
+}
+
 const COLUMN_STOP_WORDS_LEAD = new Set(['a', 'as', 'o', 'os', 'de', 'da', 'das', 'do', 'dos', 'e', 'em', 'no', 'na', 'nos', 'nas', 'para']);
 
 const COLUMN_ALIAS_GROUPS_LEAD = [
@@ -1070,7 +1083,7 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
     && Number(linha.futuro_cliente_marcado_por_id) !== Number(usuario?.id);
   const dadosEmpresaInicial = useMemo(() => getDadosEmpresaFuturoCliente(linha), [linha]);
   const [razaoSocial, setRazaoSocial] = useState(() => dadosEmpresaInicial.razao_social);
-  const [cnpj, setCnpj] = useState(() => dadosEmpresaInicial.cnpj);
+  const [cnpj, setCnpj] = useState(() => formatarCnpj(dadosEmpresaInicial.cnpj));
   const [contatoNome, setContatoNome] = useState('');
   const [contatoTipo, setContatoTipo] = useState('');
   const [operadoraAtualId, setOperadoraAtualId] = useState('');
@@ -1540,7 +1553,7 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
               <div className="futuro-cliente-form__grid">
                 <div className="form-field">
                   <label>CNPJ</label>
-                  <input value={cnpj} onChange={event => setCnpj(event.target.value)} maxLength="20" disabled={salvando} />
+                  <input value={cnpj} onChange={event => setCnpj(formatarCnpj(event.target.value))} maxLength="18" disabled={salvando} />
                 </div>
                 <div className="form-field">
                   <label>Razão social</label>
@@ -2160,7 +2173,7 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
   const [operadoras, setOperadoras] = useState([]);
   const dadosEmpresaInicial = useMemo(() => getDadosEmpresaFuturoCliente(linha, linha.sondagem), [linha]);
   const [razaoSocial, setRazaoSocial] = useState(() => dadosEmpresaInicial.razao_social);
-  const [cnpj, setCnpj] = useState(() => dadosEmpresaInicial.cnpj);
+  const [cnpj, setCnpj] = useState(() => formatarCnpj(dadosEmpresaInicial.cnpj));
   const [contatoNome, setContatoNome] = useState(linha.sondagem?.contato_nome || '');
   const [contatoTipo, setContatoTipo] = useState(linha.sondagem?.contato_tipo || '');
   const [operadoraAtualId, setOperadoraAtualId] = useState(String(linha.sondagem?.operadora_atual_id || ''));
@@ -2325,7 +2338,7 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
             <div className="futuro-cliente-form__grid">
               <div className="form-field">
                 <label>CNPJ</label>
-                <input value={cnpj} onChange={event => setCnpj(event.target.value)} maxLength="20" disabled={salvando} />
+                <input value={cnpj} onChange={event => setCnpj(formatarCnpj(event.target.value))} maxLength="18" disabled={salvando} />
               </div>
               <div className="form-field">
                 <label>Razão social</label>

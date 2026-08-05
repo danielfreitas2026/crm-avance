@@ -181,12 +181,14 @@ const NUMERO_PORTADO_VAZIO = '';
  * Renderiza obter data atual input.
  */
 function obterDataAtualInput() {
-  const hoje = new Date();
-  return [
-    hoje.getFullYear(),
-    String(hoje.getMonth() + 1).padStart(2, '0'),
-    String(hoje.getDate()).padStart(2, '0')
-  ].join('-');
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+  const valores = Object.fromEntries(partes.map(({ type, value }) => [type, value]));
+  return `${valores.year}-${valores.month}-${valores.day}`;
 }
 
 /**
@@ -4525,6 +4527,13 @@ function VendaModal({
         return;
       }
 
+      if (normalizarDataVendaInput(form.data_venda) > obterDataAtualInput()) {
+        setErro('A data da venda não pode ser futura.');
+        setAbaAtiva('venda');
+        setSalvando(false);
+        return;
+      }
+
       let clienteIdResolvido = form.cliente_id;
       if (!clienteIdResolvido && clientePreenchido?.cnpj && typeof onResolveClient === 'function') {
         const clienteResolvido = await onResolveClient({
@@ -5274,7 +5283,7 @@ function VendaModal({
                       type={campo.type || 'text'}
                       step={campo.step}
                       min={campo.min}
-                      max={campo.max}
+                      max={campo.name === 'data_venda' ? obterDataAtualInput() : campo.max}
                       maxLength={getMaxLengthCampo(campo.name, campo.maxLength)}
                       inputMode={getInputModeCampo(campo.name)}
                       value={form[campo.name] ?? ''}
