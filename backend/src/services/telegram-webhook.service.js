@@ -41,7 +41,12 @@ function botoesCancelarVenda(linhaId) {
 }
 async function distribuir(linhaId, vendedoraId, gerenteTelegramId, telegramContexto = {}) {
   return db.transaction(async trx => {
-    const linha = await trx('lead_linhas').where('id', linhaId).where('futuro_cliente', true).whereNull('futuro_cliente_excluido_em').first();
+    const linha = await trx('lead_linhas')
+      .where('id', linhaId)
+      .where('futuro_cliente', true)
+      .whereNull('futuro_cliente_excluido_em')
+      .forUpdate()
+      .first();
     if (!linha) throw new Error('Este futuro cliente nao esta mais disponivel.');
     if (linha.status_operacional === 'distribuido_venda' || linha.status_operacional === 'vendido' || linha.status_operacional === 'perdido') throw new Error('Este futuro cliente ja foi encaminhado.');
     const vendedora = await trx('usuarios').where({ id: vendedoraId, ativo: true }).first();

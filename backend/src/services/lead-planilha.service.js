@@ -1236,8 +1236,20 @@ function combinarMetricasEnvio(metricas = {}, totalPendentesAceite = 0) {
   };
 }
 
+function deduplicarIndicacoesEnvio(envios = []) {
+  const indicacoesExibidas = new Set();
+  return envios.filter(envio => {
+    const nome = String(envio?.nome || '').trim();
+    const chaveIndicacao = nome.match(/^indicacao\s*#\s*(\d+)$/i)?.[1];
+    if (!chaveIndicacao) return true;
+    if (indicacoesExibidas.has(chaveIndicacao)) return false;
+    indicacoesExibidas.add(chaveIndicacao);
+    return true;
+  });
+}
+
 async function listarEnviosDoUsuario(usuarioId) {
-  const envios = await LeadEnvio.query()
+  const enviosEncontrados = await LeadEnvio.query()
     .whereNull('cancelado_em')
     .whereExists(
       LeadEnvioUsuario.query()
@@ -1249,6 +1261,10 @@ async function listarEnviosDoUsuario(usuarioId) {
     .modifyGraph('usuarios.usuario', builder => builder.select('id', 'nome', 'email'))
     .orderBy('created_at', 'desc')
     .orderBy('id', 'desc');
+
+  // Uma indicacao pode ter registros duplicados de versoes antigas. Exibe apenas
+  // o encaminhamento mais recente enquanto eles ainda usam o nome temporario.
+  const envios = deduplicarIndicacoesEnvio(enviosEncontrados);
 
   // O envio pode ter sido dividido entre varios vendedores: as metricas do card
   // sao pessoais, contando apenas as linhas atribuidas a este usuario.
@@ -3442,6 +3458,7 @@ module.exports = {
   excluirFuturoClienteDefinitivo,
   _internals: {
     combinarMetricasEnvio,
+    deduplicarIndicacoesEnvio,
     filtrosPermitemIndicacaoPendente,
     montarColecoesExcel,
     montarColecaoCsv,
