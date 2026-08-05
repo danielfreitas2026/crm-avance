@@ -12,6 +12,13 @@ test('inclui Josilaine entre os destinos ativos de encaminhamento', () => {
   assert.deepEqual(botoes[1], [{ text: 'Josilaine', callback_data: 'fc:atribuir:123:9' }]);
 });
 
+test('mantem o botao de cancelar venda no envio encaminhado', () => {
+  assert.deepEqual(telegramInternals.botoesCancelarVenda(123), [[{
+    text: 'Cancelar venda',
+    callback_data: 'fc:cancelar:123'
+  }]]);
+});
+
 test('republica somente futuro cliente antigo qualificado e nunca encaminhado', () => {
   const linhaPendente = { futuro_cliente: true, status_operacional: 'qualificado', futuro_cliente_excluido_em: null };
   assert.equal(distribuicaoInternals.deveRepublicarPendenteAntiga(linhaPendente, false), true);

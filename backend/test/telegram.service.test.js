@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { enviarVenda, _internals } = require('../src/services/telegram.service');
 
-test('monta notificacao de futuro cliente com dados da sondagem e primeira ligacao', () => {
+test('monta notificacao de futuro cliente com dados da sondagem e responsavel pelo cadastro', () => {
   const texto = _internals.montarMensagemFuturoCliente({
     futuro_cliente_marcado_em: '2026-07-15T12:00:00.000Z',
     futuro_cliente_retorno: '2026-07-20T15:30:00.000Z',
@@ -23,7 +23,7 @@ test('monta notificacao de futuro cliente com dados da sondagem e primeira ligac
   assert.match(texto, /Operadora de interesse: Vivo/);
   assert.match(texto, /Valor mensal estimado: R\$\s?99,80/);
   assert.match(texto, /Data do contato: 15\/07\/2026/);
-  assert.match(texto, /Primeira liga\u00E7\u00E3o: Consultor Teste/);
+  assert.match(texto, /Cadastro feito por: Consultor Teste/);
 });
 
 test('monta notificacao de venda destacando origem na sondagem da primeira ligacao', () => {

@@ -243,7 +243,7 @@ function montarMensagemFuturoCliente(linha = {}) {
   const descricaoChips = itensChips.length ? itensChips.map(item => `${item.quantidade}x ${formatarMoeda(item.preco_por_chip)}`).join(', ') : `${sondagem.quantidade_chips || 0} chip(s)`;
   const tipoContato = sondagem.contato_tipo === 'adm' ? 'ADM' : (sondagem.contato_tipo === 'rl' ? 'RL' : 'Não informado');
   return [
-    '📌 NOVO FUTURO CLIENTE', '', `Primeira ligação: ${sondagem.usuario?.nome || 'Não informado'}`, '',
+    '📌 NOVO FUTURO CLIENTE', '', `Cadastro feito por: ${sondagem.usuario?.nome || 'Não informado'}`, '',
     `Empresa: ${sondagem.razao_social || 'Não informada'}`, `CNPJ: ${sondagem.cnpj || 'Não informado'}`,
     `Contato: ${sondagem.contato_nome || 'Não informado'} (${tipoContato})`, `Melhor número para contato: ${formatarTelefone(sondagem.melhor_numero_contato)}`,
     `WhatsApp: ${formatarTelefone(telefone)}`, `Operadora atual: ${sondagem.operadoraAtual?.nome || 'Não informada'}`,

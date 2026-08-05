@@ -27,6 +27,7 @@ test('inicia o prazo de acao 30 minutos depois do aceite por padrao', () => {
 
 test('monta a notificacao de aceite com empresa, CNPJ, consultora e prazo', () => {
   const texto = montarMensagemAceiteTelegram({
+    atribuido_em: '2026-07-30T15:00:00.000Z',
     prazo_acao_em: '2026-07-30T15:30:00.000Z'
   }, 'Ana Consultora', {
     id: 42,
@@ -37,6 +38,7 @@ test('monta a notificacao de aceite com empresa, CNPJ, consultora e prazo', () =
   assert.equal(texto, [
     'Empresa: Empresa Teste LTDA',
     'CNPJ: 12.345.678/0001-90',
+    'Data e hora do envio à consultora: 30/07/2026, 12:00',
     '',
     '✅ Indicação aceita por Ana Consultora. Prazo para registrar o contato no CRM: 12:30'
   ].join('\n'));

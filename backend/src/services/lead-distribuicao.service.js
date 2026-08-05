@@ -289,10 +289,19 @@ function montarMensagemAceiteTelegram(atribuicao, nomeConsultora, linha = {}) {
   const sondagem = linha.sondagem || {};
   const empresa = obterNomeEmpresa(linha.dados_json, linha.id, sondagem.razao_social);
   const cnpj = obterCnpjEmpresa(linha.dados_json, sondagem.cnpj);
+  const enviadoEm = new Date(atribuicao.atribuido_em);
+  const dataHoraEnvio = Number.isNaN(enviadoEm.getTime())
+    ? 'Não informado'
+    : enviadoEm.toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: 'America/Sao_Paulo'
+    });
 
   return [
     `Empresa: ${empresa}`,
     `CNPJ: ${cnpj}`,
+    `Data e hora do envio à consultora: ${dataHoraEnvio}`,
     '',
     `✅ Indicação aceita por ${nomeConsultora || 'consultor(a)'}. Prazo para registrar o contato no CRM: ${horaPrazo}`
   ].join('\n');
@@ -314,7 +323,12 @@ async function notificarAceiteTelegram(atribuicao, usuarioId, linha) {
       await telegramService.chamarApi('editMessageReplyMarkup', {
         chat_id: chatId,
         message_id: atribuicao.telegram_message_id,
-        reply_markup: { inline_keyboard: [] }
+        reply_markup: {
+          inline_keyboard: [[{
+            text: 'Cancelar venda',
+            callback_data: `fc:cancelar:${atribuicao.lead_linha_id}`
+          }]]
+        }
       });
     }
   } catch (error) {

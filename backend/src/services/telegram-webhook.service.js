@@ -32,6 +32,13 @@ function botoesVendedoras(vendedoras, linhaId) {
     callback_data: `fc:atribuir:${linhaId}:${vendedora.id}`
   }]));
 }
+
+function botoesCancelarVenda(linhaId) {
+  return [[{
+    text: 'Cancelar venda',
+    callback_data: `fc:cancelar:${linhaId}`
+  }]];
+}
 async function distribuir(linhaId, vendedoraId, gerenteTelegramId, telegramContexto = {}) {
   return db.transaction(async trx => {
     const linha = await trx('lead_linhas').where('id', linhaId).where('futuro_cliente', true).whereNull('futuro_cliente_excluido_em').first();
@@ -92,7 +99,11 @@ async function processarCallback(query) {
       messageId: query.message.message_id,
       mensagemTexto: query.message.text || query.message.caption || ''
     });
-    await telegramService.chamarApi('editMessageReplyMarkup', { chat_id: query.message.chat.id, message_id: query.message.message_id, reply_markup: { inline_keyboard: [[{ text: `Cancelar envio ${vendedora.nome}`, callback_data: `fc:cancelar:${linhaId}` }]] } });
+    await telegramService.chamarApi('editMessageReplyMarkup', {
+      chat_id: query.message.chat.id,
+      message_id: query.message.message_id,
+      reply_markup: { inline_keyboard: botoesCancelarVenda(linhaId) }
+    });
     return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: `Encaminhado para ${vendedora.nome}.` });
   }
   if (acao === 'cancelar') {
@@ -112,5 +123,5 @@ module.exports = {
   processarCallback,
   distribuir,
   cancelarEnvio,
-  _internals: { botoesVendedoras }
+  _internals: { botoesVendedoras, botoesCancelarVenda }
 };
