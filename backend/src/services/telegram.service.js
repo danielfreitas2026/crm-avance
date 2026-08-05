@@ -141,8 +141,6 @@ function montarMensagemVenda(venda = {}) {
       ['Primeira ligação realizada por', veioDaPrimeiraLigacao ? venda.origemSondador?.nome : 'Não se aplica'],
       ['Cliente selecionado', venda.cliente?.nome || venda.nome],
       ['ID do cliente', venda.cliente_id],
-      ['Vendedora(s)', vendedoras],
-      ['Cadastrada por', venda.criador?.nome],
       ['Classificação do cliente', formatarBooleano(venda.cliente_da_base) === 'Sim' ? 'Cliente da base' : (formatarBooleano(venda.cliente_da_base) === 'Não' ? 'Cliente fora da base' : 'Não informado')],
       ['Possui documentação na casa', formatarBooleano(venda.possui_doc_na_casa)]
     ]),
@@ -206,7 +204,12 @@ function montarMensagemVenda(venda = {}) {
     ]),
     secao('OBSERVAÇÕES', [['Observações da venda', venda.observacoes]])
   ];
-  return [cabecalho, ...secoes].join('\n\n');
+  return [
+    cabecalho,
+    `Cadastrada por: ${valorInformado(venda.criador?.nome)}`,
+    `Consultora(s): ${valorInformado(vendedoras)}`,
+    ...secoes
+  ].join('\n\n');
 }
 
 function dividirTextoTelegram(texto, limite = 3900) {

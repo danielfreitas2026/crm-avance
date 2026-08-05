@@ -59,7 +59,10 @@ test('monta notificacao de venda destacando origem na sondagem da primeira ligac
 
   assert.match(texto, /Origem: Sondagem da primeira ligação/);
   assert.match(texto, /Primeira ligação realizada por: Ana Sondadora/);
-  assert.match(texto, /Vendedora\(s\): Beatriz Vendedora/);
+  assert.match(texto, /Cadastrada por: Carlos Operador/);
+  assert.match(texto, /Consultora\(s\): Beatriz Vendedora/);
+  assert.ok(texto.indexOf('Cadastrada por: Carlos Operador') < texto.indexOf('── ORIGEM E IDENTIFICAÇÃO ──'));
+  assert.ok(texto.indexOf('Consultora(s): Beatriz Vendedora') < texto.indexOf('── ORIGEM E IDENTIFICAÇÃO ──'));
   assert.match(texto, /Quantidade: 2/);
   assert.match(texto, /Franquia: 30 GB/);
   assert.match(texto, /Valor total: R\$\s?119,80/);

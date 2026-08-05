@@ -444,6 +444,36 @@ function normalizarData(valor) {
 }
 
 /**
+ * Retorna a data atual no fuso horario operacional do CRM.
+ */
+function obterDataAtualSaoPaulo(data = new Date()) {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(data);
+  const valores = Object.fromEntries(partes.map(({ type, value }) => [type, value]));
+  return `${valores.year}-${valores.month}-${valores.day}`;
+}
+
+/**
+ * Vendas com data anterior a mais de dois dias nao devem gerar aviso no Telegram.
+ * Datas futuras ou ausentes permanecem notificaveis.
+ */
+function vendaDeveNotificarTelegram(venda, agora = new Date()) {
+  const dataVenda = normalizarData(venda?.data_venda);
+  if (!dataVenda) return true;
+
+  const hoje = obterDataAtualSaoPaulo(agora);
+  const inicioHoje = Date.parse(`${hoje}T00:00:00Z`);
+  const inicioDataVenda = Date.parse(`${dataVenda}T00:00:00Z`);
+  const diferencaEmDias = (inicioHoje - inicioDataVenda) / (24 * 60 * 60 * 1000);
+
+  return diferencaEmDias <= 2;
+}
+
+/**
  * Formata date time sql para exibicao ou envio.
  */
 function formatarDateTimeSQL(data = new Date()) {
@@ -2927,7 +2957,7 @@ async function criarVenda(dados, usuarioId) {
   // Edicoes usam atualizarVenda e nunca passam por este bloco. A marca so e gravada
   // depois de o Telegram confirmar o envio, para que uma configuracao ausente nao
   // bloqueie uma tentativa futura.
-  if (!venda.telegram_notificada_em) {
+  if (!venda.telegram_notificada_em && vendaDeveNotificarTelegram(venda, new Date())) {
     try {
       const vendaParaTelegram = await Venda.query()
         .findById(venda.id)
@@ -3878,6 +3908,8 @@ module.exports = {
     normalizarClienteSolicitouNumeros,
     normalizarClienteSolicitouServicos,
     normalizarData,
+    obterDataAtualSaoPaulo,
+    vendaDeveNotificarTelegram,
     normalizarGigas,
     normalizarIdsVendedoras,
     normalizarItensChips,

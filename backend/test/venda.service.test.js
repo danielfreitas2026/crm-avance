@@ -12,6 +12,7 @@ const {
   montarPayload,
   normalizarData,
   normalizarItensChips,
+  vendaDeveNotificarTelegram,
   obterDataLimiteConcluidaAntiga,
   obterTipoLinhaPorNomeTipoVenda,
   obterQuantidadeChipsVenda,
@@ -27,6 +28,16 @@ test('normaliza datas validas e rejeita datas invalidas', () => {
   assert.equal(normalizarData('18/05/26'), '2026-05-18');
   assert.equal(normalizarData('2026-02-31'), null);
   assert.equal(normalizarData('1899-12-31'), null);
+});
+
+test('notifica Telegram apenas para vendas com no maximo dois dias de atraso', () => {
+  const agora = new Date('2026-08-05T15:00:00.000Z');
+
+  assert.equal(vendaDeveNotificarTelegram({ data_venda: '2026-08-05' }, agora), true);
+  assert.equal(vendaDeveNotificarTelegram({ data_venda: '2026-08-03' }, agora), true);
+  assert.equal(vendaDeveNotificarTelegram({ data_venda: '2026-08-02' }, agora), false);
+  assert.equal(vendaDeveNotificarTelegram({ data_venda: '2026-08-10' }, agora), true);
+  assert.equal(vendaDeveNotificarTelegram({}, agora), true);
 });
 
 test('converte valores monetarios brasileiros e numericos', () => {
