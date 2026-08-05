@@ -1678,15 +1678,38 @@ function LeadsRecebidosView({ agora }) {
     return Number.isInteger(id) && id > 0 ? id : null;
   }, [searchParams]);
 
-  /* eslint-disable react-hooks/exhaustive-deps */
+  function aplicarEnviosAtualizados(data) {
+    const enviosAtualizados = data || [];
+    const idsAtivos = new Set(enviosAtualizados.map(envio => Number(envio.id)));
+
+    setEnvios(enviosAtualizados);
+    setSelecionados(prev => prev.filter(id => idsAtivos.has(Number(id))));
+    setLinhas(prev => prev.filter(linha => idsAtivos.has(Number(linha.envio_id))));
+    setModalAdicionar(atual => (
+      atual && !idsAtivos.has(Number(atual.envio_id)) ? null : atual
+    ));
+    setModalAceite(atual => (
+      atual && !idsAtivos.has(Number(atual.envio_id)) ? null : atual
+    ));
+  }
+
   useEffect(() => {
     let cancelado = false;
-    setCarregando(true);
-    listarMeusLeadEnvios()
-      .then(data => { if (!cancelado) setEnvios(data); })
-      .catch(error => setErro(error.message || 'Erro ao carregar leads recebidos.'))
-      .finally(() => !cancelado && setCarregando(false));
-    return () => { cancelado = true; };
+    async function carregarEnvios(exibirCarregando = false) {
+      if (exibirCarregando) setCarregando(true);
+      try {
+        const data = await listarMeusLeadEnvios();
+        if (!cancelado) aplicarEnviosAtualizados(data);
+      } catch (error) {
+        if (!cancelado) setErro(error.message || 'Erro ao carregar leads recebidos.');
+      } finally {
+        if (!cancelado && exibirCarregando) setCarregando(false);
+      }
+    }
+
+    carregarEnvios(true);
+    const timer = setInterval(() => carregarEnvios(), 5000);
+    return () => { cancelado = true; clearInterval(timer); };
   }, []);
 
   useEffect(() => {
@@ -1709,8 +1732,6 @@ function LeadsRecebidosView({ agora }) {
       .finally(() => !cancelado && setCarregando(false));
     return () => { cancelado = true; };
   }, [selecionados, pagina, buscaDeferred, filtroStatus, linhaNotificacaoId]);
-  /* eslint-enable react-hooks/exhaustive-deps */
-
   useEffect(() => {
     if (!linhaNotificacaoId) {
       notificacaoAbertaRef.current = null;
@@ -1857,7 +1878,7 @@ function LeadsRecebidosView({ agora }) {
   async function recarregarEnvios() {
     try {
       const data = await listarMeusLeadEnvios();
-      setEnvios(data);
+      aplicarEnviosAtualizados(data);
     } catch (error) {
       setErro(error.message || 'Erro ao carregar leads recebidos.');
     }

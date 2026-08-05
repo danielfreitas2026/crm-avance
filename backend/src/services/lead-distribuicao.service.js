@@ -173,7 +173,7 @@ async function aceitar(linhaId, usuarioId) {
       if (atual?.aceite_status === ACEITE_ACEITO) {
         return { atribuicao: atual, repetido: true };
       }
-      const error = new Error('Esta indicacao nao esta mais aguardando o seu aceite.');
+      const error = new Error('Esta indicação não está mais aguardando o seu aceite.');
       error.statusCode = 409;
       throw error;
     }

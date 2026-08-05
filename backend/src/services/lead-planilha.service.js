@@ -1238,6 +1238,7 @@ function combinarMetricasEnvio(metricas = {}, totalPendentesAceite = 0) {
 
 async function listarEnviosDoUsuario(usuarioId) {
   const envios = await LeadEnvio.query()
+    .whereNull('cancelado_em')
     .whereExists(
       LeadEnvioUsuario.query()
         .select(1)
