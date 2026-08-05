@@ -8,6 +8,7 @@ const {
   adicionarMinutos,
   linhaTemAcaoValida,
   montarMensagemAceiteTelegram,
+  montarMensagemEnvioExpiradoTelegram,
   prazoAcaoMinutos,
   tipoAcaoValida
 } = leadDistribuicaoService._internals;
@@ -41,6 +42,23 @@ test('monta a notificacao de aceite com empresa, CNPJ, consultora e prazo', () =
     'Data e hora do envio à consultora: 30/07/2026, 12:00',
     '',
     '✅ Indicação aceita por Ana Consultora. Prazo para registrar o contato no CRM: 12:30'
+  ].join('\n'));
+});
+
+test('monta a mensagem de envio expirado apenas com cancelamento e dados essenciais', () => {
+  const texto = montarMensagemEnvioExpiradoTelegram({
+    atribuido_em: '2026-07-30T15:00:00.000Z'
+  }, {
+    id: 42,
+    dados_json: { Empresa: 'Empresa de fallback', CNPJ: '00.000.000/0001-00' },
+    sondagem: { razao_social: 'Empresa Teste LTDA', cnpj: '12.345.678/0001-90' }
+  });
+
+  assert.equal(texto, [
+    '⛔ ENVIO CANCELADO',
+    'Razão social: Empresa Teste LTDA',
+    'CNPJ: 12.345.678/0001-90',
+    'Data do envio: 30/07/2026, 12:00'
   ].join('\n'));
 });
 

@@ -307,6 +307,27 @@ function montarMensagemAceiteTelegram(atribuicao, nomeConsultora, linha = {}) {
   ].join('\n');
 }
 
+function montarMensagemEnvioExpiradoTelegram(atribuicao, linha = {}) {
+  const sondagem = linha.sondagem || {};
+  const empresa = obterNomeEmpresa(linha.dados_json, linha.id, sondagem.razao_social);
+  const cnpj = obterCnpjEmpresa(linha.dados_json, sondagem.cnpj);
+  const enviadoEm = new Date(atribuicao.atribuido_em);
+  const dataEnvio = Number.isNaN(enviadoEm.getTime())
+    ? 'Não informada'
+    : enviadoEm.toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: 'America/Sao_Paulo'
+    });
+
+  return [
+    '⛔ ENVIO CANCELADO',
+    `Razão social: ${empresa}`,
+    `CNPJ: ${cnpj}`,
+    `Data do envio: ${dataEnvio}`
+  ].join('\n');
+}
+
 async function notificarAceiteTelegram(atribuicao, usuarioId, linha) {
   const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
   if (!chatId) return;
@@ -347,12 +368,17 @@ async function notificarAceiteTelegram(atribuicao, usuarioId, linha) {
   }
 }
 
-async function encerrarMensagemTelegram(atribuicao, textoStatus) {
+async function encerrarMensagemTelegram(atribuicao, textoStatus, aceiteStatusFinal) {
   const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
   if (!chatId || !atribuicao.telegram_message_id) return;
   const original = String(atribuicao.telegram_mensagem_texto || 'Futuro cliente encaminhado.');
-  const texto = `\u26D4 ENVIO CANCELADO - ${textoStatus}\n\n${original}`.slice(0, 4096);
   try {
+    const linha = aceiteStatusFinal === ACEITE_EXPIRADO
+      ? await carregarLinhaTelegram(atribuicao.lead_linha_id)
+      : null;
+    const texto = aceiteStatusFinal === ACEITE_EXPIRADO
+      ? montarMensagemEnvioExpiradoTelegram(atribuicao, linha || {})
+      : `\u26D4 ENVIO CANCELADO - ${textoStatus}\n\n${original}`.slice(0, 4096);
     await telegramService.chamarApi('editMessageText', {
       chat_id: chatId,
       message_id: atribuicao.telegram_message_id,
@@ -528,7 +554,7 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
     : aceiteStatusFinal === ACEITE_EXPIRADO
       ? `prazo de ${prazoAcaoMinutos()} minutos expirado sem acao no CRM para ${usuario?.nome || 'consultor(a)'}`
       : `cancelado${usuario?.nome ? ` para ${usuario.nome}` : ''}`;
-  await encerrarMensagemTelegram(resultado.atribuicao, textoStatus);
+  await encerrarMensagemTelegram(resultado.atribuicao, textoStatus, aceiteStatusFinal);
   if (opcoes.republicar !== false) await republicarNoTelegram(resultado.linhaId);
   return resultado;
 }
@@ -590,6 +616,7 @@ module.exports = {
     prazoAcaoMinutos,
     tipoAcaoValida,
     deveRepublicarPendenteAntiga,
-    montarMensagemAceiteTelegram
+    montarMensagemAceiteTelegram,
+    montarMensagemEnvioExpiradoTelegram
   }
 };
