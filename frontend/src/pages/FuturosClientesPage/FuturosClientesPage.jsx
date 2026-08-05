@@ -1685,12 +1685,6 @@ function LeadsRecebidosView({ agora }) {
     setEnvios(enviosAtualizados);
     setSelecionados(prev => prev.filter(id => idsAtivos.has(Number(id))));
     setLinhas(prev => prev.filter(linha => idsAtivos.has(Number(linha.envio_id))));
-    setModalAdicionar(atual => (
-      atual && !idsAtivos.has(Number(atual.envio_id)) ? null : atual
-    ));
-    setModalAceite(atual => (
-      atual && !idsAtivos.has(Number(atual.envio_id)) ? null : atual
-    ));
   }
 
   useEffect(() => {
@@ -1708,8 +1702,12 @@ function LeadsRecebidosView({ agora }) {
     }
 
     carregarEnvios(true);
-    const timer = setInterval(() => carregarEnvios(), 5000);
-    return () => { cancelado = true; clearInterval(timer); };
+    const atualizarMailing = () => carregarEnvios();
+    window.addEventListener('pos-venda:mailing-atualizar', atualizarMailing);
+    return () => {
+      cancelado = true;
+      window.removeEventListener('pos-venda:mailing-atualizar', atualizarMailing);
+    };
   }, []);
 
   useEffect(() => {

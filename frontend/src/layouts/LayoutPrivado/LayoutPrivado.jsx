@@ -299,6 +299,7 @@ function LayoutPrivado({ children }) {
   const [aparenciasNotificacao, setAparenciasNotificacao] = useState([]);
   const carregandoAlertasUrgentesRef = useRef(false);
   const atualizacaoAlertasUrgentesPendenteRef = useRef(false);
+  const assinaturaAlertasUrgentesRef = useRef(null);
   const [aprovacoesPendentes, setAprovacoesPendentes] = useState(0);
   const [mensagensNaoLidas, setMensagensNaoLidas] = useState(0);
   const podeVerAprovacoes = usuario && temPermissao(usuario, 'vendas_aprovacoes_visualizar');
@@ -384,7 +385,17 @@ function LayoutPrivado({ children }) {
     carregandoAlertasUrgentesRef.current = true;
     try {
       const dados = await listarNotificacoesUrgentes();
-      setAlertasUrgentes(dados.notificacoes || []);
+      const notificacoes = dados.notificacoes || [];
+      const assinatura = notificacoes
+        .map(notificacao => `${notificacao.destinatario_id || notificacao.id}:${notificacao.tipo}:${notificacao.ativa ? 1 : 0}`)
+        .sort()
+        .join('|');
+      if (assinaturaAlertasUrgentesRef.current !== null
+        && assinaturaAlertasUrgentesRef.current !== assinatura) {
+        window.dispatchEvent(new CustomEvent('pos-venda:mailing-atualizar'));
+      }
+      assinaturaAlertasUrgentesRef.current = assinatura;
+      setAlertasUrgentes(notificacoes);
     } catch (error) {
       // Conserva o ultimo resultado valido; apagar a pilha em uma falha temporaria
       // torna o problema invisivel e faz parecer que a notificacao nao chegou.
