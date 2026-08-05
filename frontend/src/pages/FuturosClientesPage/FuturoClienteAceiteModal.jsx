@@ -21,7 +21,7 @@ function FuturoClienteAceiteModal({ linha, onClose, onAceito, onRecusado }) {
         detalhes_bloqueados: false
       });
     } catch (error) {
-      setErro(error.message || 'Erro ao aceitar a indicacao.');
+      setErro(error.message || 'Erro ao aceitar a indicação.');
       setProcessando(false);
     }
   }
@@ -33,7 +33,7 @@ function FuturoClienteAceiteModal({ linha, onClose, onAceito, onRecusado }) {
       await recusarFuturoCliente(linha.id, motivo);
       onRecusado();
     } catch (error) {
-      setErro(error.message || 'Erro ao recusar a indicacao.');
+      setErro(error.message || 'Erro ao recusar a indicação.');
       setProcessando(false);
     }
   }
@@ -49,13 +49,14 @@ function FuturoClienteAceiteModal({ linha, onClose, onAceito, onRecusado }) {
         <div className="modal-header">
           <div className="modal-header-row">
             <div>
-              <div className="modal-client" id="aceite-indicacao-titulo">Nova indicacao</div>
-              <div className="modal-sub">Os dados serao liberados somente depois do aceite.</div>
+              <div className="modal-client" id="aceite-indicacao-titulo">Nova indicação</div>
+              <div className="modal-sub">Os dados serão liberados somente depois do aceite.</div>
             </div>
             <button
               type="button"
               className="btn btn-icon btn-ghost"
               title="Fechar"
+              aria-label="Fechar modal"
               onClick={onClose}
               disabled={processando}
             >
@@ -68,8 +69,8 @@ function FuturoClienteAceiteModal({ linha, onClose, onAceito, onRecusado }) {
           <div className="trash-warning">
             <I.History size={20} />
             <div>
-              <strong>Ao aceitar, voce tera 30 minutos para registrar uma acao no CRM.</strong>
-              <span>Venda, cliente recusou, chamada nao atendida ou retorno agendado encerram a contagem.</span>
+              <strong>Ao aceitar, você terá 30 minutos para registrar uma ação no CRM.</strong>
+              <span>Venda, cliente recusou, chamada não atendida ou retorno agendado encerram a contagem.</span>
             </div>
           </div>
 
@@ -88,10 +89,10 @@ function FuturoClienteAceiteModal({ linha, onClose, onAceito, onRecusado }) {
 
         <div className="modal-footer">
           <button type="button" className="btn btn-danger" onClick={recusar} disabled={processando}>
-            {processando ? 'Processando...' : 'Recusar indicacao'}
+            {processando ? 'Processando...' : 'Recusar indicação'}
           </button>
           <div style={{ flex: 1 }} />
-          <button type="button" className="btn" onClick={onClose} disabled={processando}>Agora nao</button>
+          <button type="button" className="btn" onClick={onClose} disabled={processando}>Agora não</button>
           <button type="button" className="btn btn-primary" onClick={aceitar} disabled={processando}>
             {processando ? 'Processando...' : 'Aceitar e ver detalhes'}
           </button>
