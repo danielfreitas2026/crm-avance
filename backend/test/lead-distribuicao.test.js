@@ -7,6 +7,7 @@ const { _internals: leadPlanilhaInternals } = require('../src/services/lead-plan
 const {
   adicionarMinutos,
   linhaTemAcaoValida,
+  botaoCancelarEnvio,
   montarMensagemAceiteTelegram,
   montarMensagemEnvioExpiradoTelegram,
   prazoAcaoMinutos,
@@ -43,6 +44,17 @@ test('monta a notificacao de aceite com empresa, CNPJ, consultora e prazo', () =
     '',
     '✅ Indicação aceita por Ana Consultora. Prazo para registrar o contato no CRM: 12:30'
   ].join('\n'));
+});
+
+test('identifica a consultora no botao de cancelar envio da mensagem de aceite', () => {
+  assert.deepEqual(botaoCancelarEnvio(42, 'Ana Consultora'), {
+    text: 'Cancelar envio Ana Consultora',
+    callback_data: 'fc:cancelar:42'
+  });
+  assert.deepEqual(botaoCancelarEnvio(42), {
+    text: 'Cancelar envio',
+    callback_data: 'fc:cancelar:42'
+  });
 });
 
 test('monta a mensagem de envio expirado apenas com cancelamento e dados essenciais', () => {

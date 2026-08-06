@@ -328,6 +328,14 @@ function montarMensagemEnvioExpiradoTelegram(atribuicao, linha = {}) {
   ].join('\n');
 }
 
+function botaoCancelarEnvio(linhaId, nomeConsultora) {
+  const nome = String(nomeConsultora || '').trim();
+  return {
+    text: nome ? `Cancelar envio ${nome}` : 'Cancelar envio',
+    callback_data: `fc:cancelar:${linhaId}`
+  };
+}
+
 async function notificarAceiteTelegram(atribuicao, usuarioId, linha) {
   const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
   if (!chatId) return;
@@ -341,10 +349,7 @@ async function notificarAceiteTelegram(atribuicao, usuarioId, linha) {
       chat_id: chatId,
       text: textoAceite,
       reply_markup: {
-        inline_keyboard: [[{
-          text: 'Cancelar venda',
-          callback_data: `fc:cancelar:${atribuicao.lead_linha_id}`
-        }]]
+        inline_keyboard: [[botaoCancelarEnvio(atribuicao.lead_linha_id, usuario?.nome)]]
       }
     });
     const novoMessageId = mensagemAceite?.message_id;
@@ -617,6 +622,7 @@ module.exports = {
     tipoAcaoValida,
     deveRepublicarPendenteAntiga,
     montarMensagemAceiteTelegram,
-    montarMensagemEnvioExpiradoTelegram
+    montarMensagemEnvioExpiradoTelegram,
+    botaoCancelarEnvio
   }
 };

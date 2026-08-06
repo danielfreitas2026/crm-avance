@@ -33,9 +33,10 @@ function botoesVendedoras(vendedoras, linhaId) {
   }]));
 }
 
-function botoesCancelarVenda(linhaId) {
+function botoesCancelarVenda(linhaId, nomeConsultora) {
+  const nome = String(nomeConsultora || '').trim();
   return [[{
-    text: 'Cancelar venda',
+    text: nome ? `Cancelar envio ${nome}` : 'Cancelar envio',
     callback_data: `fc:cancelar:${linhaId}`
   }]];
 }
@@ -107,7 +108,7 @@ async function processarCallback(query) {
     await telegramService.chamarApi('editMessageReplyMarkup', {
       chat_id: query.message.chat.id,
       message_id: query.message.message_id,
-      reply_markup: { inline_keyboard: botoesCancelarVenda(linhaId) }
+      reply_markup: { inline_keyboard: botoesCancelarVenda(linhaId, vendedora.nome) }
     });
     return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: `Encaminhado para ${vendedora.nome}.` });
   }

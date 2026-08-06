@@ -12,9 +12,16 @@ test('inclui Josilaine entre os destinos ativos de encaminhamento', () => {
   assert.deepEqual(botoes[1], [{ text: 'Josilaine', callback_data: 'fc:atribuir:123:9' }]);
 });
 
-test('mantem o botao de cancelar venda no envio encaminhado', () => {
+test('identifica a consultora no botao de cancelar envio encaminhado', () => {
+  assert.deepEqual(telegramInternals.botoesCancelarVenda(123, 'Ana Consultora'), [[{
+    text: 'Cancelar envio Ana Consultora',
+    callback_data: 'fc:cancelar:123'
+  }]]);
+});
+
+test('mantem o botao de cancelar envio sem nome quando a consultora nao estiver disponivel', () => {
   assert.deepEqual(telegramInternals.botoesCancelarVenda(123), [[{
-    text: 'Cancelar venda',
+    text: 'Cancelar envio',
     callback_data: 'fc:cancelar:123'
   }]]);
 });
