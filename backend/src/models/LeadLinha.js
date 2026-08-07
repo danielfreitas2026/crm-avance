@@ -66,6 +66,7 @@ class LeadLinha extends Model {
     const LeadEnvio = require('./LeadEnvio');
     const Usuario = require('./Usuario');
     const LeadSondagem = require('./LeadSondagem');
+    const LeadEnriquecimento = require('./LeadEnriquecimento');
 
     return {
       planilha: {
@@ -98,6 +99,14 @@ class LeadLinha extends Model {
         join: {
           from: 'lead_linhas.id',
           to: 'lead_sondagens.lead_linha_id'
+        }
+      },
+      enriquecimento: {
+        relation: Model.HasOneRelation,
+        modelClass: LeadEnriquecimento,
+        join: {
+          from: 'lead_linhas.id',
+          to: 'lead_enriquecimento.lead_linha_id'
         }
       },
       futuroClienteExcluidoPor: {

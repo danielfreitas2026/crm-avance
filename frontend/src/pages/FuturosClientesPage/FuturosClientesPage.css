@@ -601,6 +601,10 @@
   border-radius: var(--radius);
 }
 
+.adicionar-lead-dados--with-enriquecimento {
+  margin-bottom: 8px;
+}
+
 .adicionar-lead-campo {
   display: flex;
   flex-direction: column;
@@ -1563,4 +1567,124 @@
   display: inline;
   color: var(--text);
   font-size: inherit;
+}
+
+/* ─── Resultados do Google com confiabilidade (busca de telefone) ─────────── */
+.google-candidatos {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.google-candidato {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 10px 12px;
+}
+
+.google-candidato__topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.google-candidato__nome {
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.google-candidato__meta {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--text-2);
+  font-size: 0.85rem;
+}
+
+.google-candidato__telefone {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.confianca-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.confianca-badge__pct {
+  font-size: 0.9rem;
+}
+
+.confianca-badge--alta {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+}
+
+.confianca-badge--media {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--warning) 38%, transparent);
+}
+
+.confianca-badge--baixa {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.google-candidato__apify {
+  margin-top: 8px;
+  display: flex;
+  gap: 7px;
+  padding: 7px 9px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+  border: 1px dashed color-mix(in srgb, var(--warning) 40%, transparent);
+  color: var(--text-2);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.google-candidato__apify strong {
+  color: var(--warning);
+}
+
+/* ─── Painel de enriquecimento automático no card do lead ────────────────── */
+.enriquecimento-auto {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+
+.enriquecimento-auto__titulo {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+
+.enriquecimento-auto .google-candidato {
+  background: var(--surface);
+}
+
+.enriquecimento-auto__status {
+  font-size: 0.85rem;
 }

@@ -1,8 +1,13 @@
 const axios = require('axios');
 const db = require('../database/connection');
+const fuzzy = require('../utils/fuzzy');
 
 const GOOGLE_PLACES_TIMEOUT_MS = Number(process.env.GOOGLE_PLACES_TIMEOUT_MS || 6000);
 const GOOGLE_PLACES_MIN_SCORE = Number(process.env.GOOGLE_PLACES_MIN_SCORE || 2);
+// Limiar (0-1) acima do qual consideramos o match do Google confiavel o
+// suficiente para dispensar uma busca extra (ex.: Apify).
+const CONFIANCA_BOA = Number(process.env.GOOGLE_PLACES_CONFIANCA_BOA || 0.72);
+const CONFIANCA_ALTA = Number(process.env.GOOGLE_PLACES_CONFIANCA_ALTA || 0.85);
 const GOOGLE_MAPS_KEY_PREFIX = 'GOOGLE_MAPS_API_KEY';
 const GOOGLE_PLACES_KEY_PREFIX = 'GOOGLE_PLACES_API_KEY';
 const GOOGLE_MAPS_API_KEYS_ESPERADAS = Array.from(
@@ -325,17 +330,66 @@ async function buscarDetalhesPlace(placeId, apiKey) {
   return response.data || {};
 }
 
-function resumirCandidatoPlace(item, detalhes = {}) {
+/**
+ * Classifica a confianca (0-1) em um nivel textual usado na interface.
+ */
+function nivelConfianca(confianca) {
+  if (confianca >= CONFIANCA_ALTA) return 'alta';
+  if (confianca >= CONFIANCA_BOA) return 'media';
+  return 'baixa';
+}
+
+/**
+ * Decide se vale a pena uma busca extra (ex.: Apify) para este candidato e
+ * explica o porque. NAO dispara nada: apenas sinaliza o caso recomendado.
+ *
+ * Regras:
+ *  - Nome pouco parecido (confianca baixa): o Google pode ter achado outra
+ *    empresa; uma busca extra ajudaria a confirmar/achar o contato certo.
+ *  - Nome confiavel mas sem telefone: a empresa foi identificada, porem o
+ *    Google nao expos telefone; uma busca extra no site/redes pode achar.
+ *  - Nome confiavel e com telefone: o Google ja basta.
+ */
+function recomendarApify(confianca, temTelefone) {
+  if (confianca < CONFIANCA_BOA) {
+    return {
+      recomenda: true,
+      motivo: 'Baixa correspondencia do nome: o Google pode ter encontrado outra empresa. Uma busca extra (Apify) ajudaria a confirmar e achar o contato certo.'
+    };
+  }
+  if (!temTelefone) {
+    return {
+      recomenda: true,
+      motivo: 'Empresa identificada com boa confianca, mas sem telefone publico no Google. Uma busca extra (Apify) no site/redes pode encontrar o numero.'
+    };
+  }
+  return { recomenda: false, motivo: '' };
+}
+
+function resumirCandidatoPlace(item, detalhes = {}, dados = {}) {
+  const nome = detalhes.displayName?.text || item.place?.displayName?.text || '';
+  const endereco = detalhes.formattedAddress || item.place?.formattedAddress || '';
+  const telefone = normalizarTelefone(primeiroValor(
+    detalhes.nationalPhoneNumber,
+    detalhes.internationalPhoneNumber
+  ));
+
+  const nomeBusca = primeiroValor(dados.nomeFantasia, dados.razaoSocial, dados.queryGoogle, dados.textoBusca);
+  const confianca = fuzzy.confiancaEmpresa(nomeBusca, dados, { nome, endereco });
+  const apify = recomendarApify(confianca, Boolean(telefone));
+
   return {
     id: detalhes.id || item.place?.id || '',
-    nome: detalhes.displayName?.text || item.place?.displayName?.text || '',
-    endereco: detalhes.formattedAddress || item.place?.formattedAddress || '',
-    telefone: normalizarTelefone(primeiroValor(
-      detalhes.nationalPhoneNumber,
-      detalhes.internationalPhoneNumber
-    )),
+    nome,
+    endereco,
+    telefone,
     site: detalhes.websiteUri || '',
-    score: item.score
+    score: item.score,
+    confianca,
+    confianca_pct: Math.round(confianca * 100),
+    confianca_nivel: nivelConfianca(confianca),
+    recomenda_apify: apify.recomenda,
+    apify_motivo: apify.motivo
   };
 }
 
@@ -357,7 +411,7 @@ async function buscarTelefoneEmpresaComChave(dados, query, apiKey, keyIndex, env
         query,
         google_key_index: keyIndex,
         google_key_env: env,
-        candidatos: candidatos.slice(0, 5).map(item => resumirCandidatoPlace(item))
+        candidatos: candidatos.slice(0, 5).map(item => resumirCandidatoPlace(item, {}, dados))
       };
     }
 
@@ -367,12 +421,12 @@ async function buscarTelefoneEmpresaComChave(dados, query, apiKey, keyIndex, env
       detalhes.internationalPhoneNumber
     ));
 
-    const candidatoPrincipal = resumirCandidatoPlace(melhor, detalhes);
+    const candidatoPrincipal = resumirCandidatoPlace(melhor, detalhes, dados);
     const candidatosResumo = [
       candidatoPrincipal,
       ...candidatos
         .filter(item => item.place?.id !== melhor.place?.id)
-        .map(item => resumirCandidatoPlace(item))
+        .map(item => resumirCandidatoPlace(item, {}, dados))
     ];
 
     if (!telefone) {
@@ -463,7 +517,7 @@ async function buscarEmpresasPorTextoComChave(dados, query, apiKey, keyIndex, en
       const detalhes = item.place?.id
         ? await buscarDetalhesPlace(item.place.id, apiKey)
         : {};
-      return resumirCandidatoPlace(item, detalhes);
+      return resumirCandidatoPlace(item, detalhes, dados);
     }));
 
     return {
@@ -695,6 +749,8 @@ module.exports = {
   buscarEmpresasPorTexto,
   buscarTelefoneEmpresa,
   calcularScore,
+  nivelConfianca,
+  recomendarApify,
   montarQueryEmpresa,
   normalizarTelefone,
   normalizarTexto,

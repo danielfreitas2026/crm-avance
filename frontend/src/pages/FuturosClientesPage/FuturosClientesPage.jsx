@@ -1046,7 +1046,27 @@ function BuscarTelefoneGoogleModal({ linha, onClose }) {
           {erroReceita && <div className="alert-error" style={{ marginTop: 12 }}>{erroReceita}</div>}          {resultado?.query && <div className="muted" style={{ marginTop: 12 }}>Busca enviada: {resultado.query}</div>}
           {resultado?.telefone && <div className="alert-success" style={{ marginTop: 12 }}>Telefone encontrado: <strong>{formatarWhatsappInput(resultado.telefone)}</strong></div>}
           {resultado && !resultado.telefone && <div className="alert-error" style={{ marginTop: 12 }}>{resultado.message || 'Nenhum telefone foi encontrado para esta busca.'}</div>}
-          {candidatos.length > 0 && <div className="adicionar-lead-dados" style={{ marginTop: 12 }}>{candidatos.map((candidato, index) => <div className="adicionar-lead-campo" key={candidato.id || `${candidato.nome}-${index}`}><span className="adicionar-lead-campo__label">{candidato.nome || 'Resultado do Google'}</span><span className="adicionar-lead-campo__valor">{candidato.telefone ? formatarWhatsappInput(candidato.telefone) : candidato.endereco || 'Telefone no informado'}</span></div>)}</div>}
+          {candidatos.length > 0 && <div className="google-candidatos">{candidatos.map((candidato, index) => {
+            const temPct = typeof candidato.confianca_pct === 'number';
+            const nivel = candidato.confianca_nivel || 'baixa';
+            const nivelTexto = nivel === 'alta' ? 'Alta' : nivel === 'media' ? 'Média' : 'Baixa';
+            return (
+              <div className="google-candidato" key={candidato.id || `${candidato.nome}-${index}`}>
+                <div className="google-candidato__topo">
+                  <span className="google-candidato__nome">{candidato.nome || 'Resultado do Google'}</span>
+                  {temPct && <span className={`confianca-badge confianca-badge--${nivel}`} title="Confiabilidade calculada pela semelhança do nome (fuzzy)">
+                    <span className="confianca-badge__pct">{candidato.confianca_pct}%</span>
+                    <span>{nivelTexto}</span>
+                  </span>}
+                </div>
+                <div className="google-candidato__meta">
+                  <span className="google-candidato__telefone">{candidato.telefone ? formatarWhatsappInput(candidato.telefone) : 'Sem telefone no Google'}</span>
+                  {candidato.endereco && <span>{candidato.endereco}</span>}
+                </div>
+                {candidato.recomenda_apify && candidato.apify_motivo && <div className="google-candidato__apify"><span><strong>Sugestão:</strong> {candidato.apify_motivo}</span></div>}
+              </div>
+            );
+          })}</div>}
           {erro && <div className="alert-error" style={{ marginTop: 12 }}>{erro}</div>}
         </div>
         <div className="modal-footer"><button type="button" className="btn" onClick={onClose} disabled={buscando}>Fechar</button><button type="submit" className="btn btn-primary" disabled={buscando || !texto.trim()}>{buscando ? 'Buscando...' : modo === 'cnpj' ? 'Buscar Receita e Google' : 'Buscar no Google'}</button></div>
@@ -1054,6 +1074,46 @@ function BuscarTelefoneGoogleModal({ linha, onClose }) {
     </div>
   );
 }
+
+/**
+ * Painel com o resultado do enriquecimento automatico de contatos (Google),
+ * disparado quando o mailing foi dividido para sondagem. Mostra o telefone
+ * encontrado, a % de confiabilidade e, quando aplicavel, a recomendacao de
+ * uma busca extra (Apify).
+ */
+function EnriquecimentoAutomatico({ enriquecimento }) {
+  if (!enriquecimento) return null;
+  const e = enriquecimento;
+  const emAndamento = e.status === 'pendente' || e.status === 'processando';
+  const nivel = e.confianca_nivel || 'baixa';
+  const nivelTexto = nivel === 'alta' ? 'Alta' : nivel === 'media' ? 'Média' : 'Baixa';
+  const temPct = typeof e.confianca_pct === 'number';
+
+  return (
+    <div className="enriquecimento-auto">
+      <div className="enriquecimento-auto__titulo">Contatos encontrados automaticamente (Google)</div>
+      {emAndamento && <div className="muted enriquecimento-auto__status">Buscando contatos… atualize a lista em instantes.</div>}
+      {e.status === 'concluido' && <div className="google-candidato">
+        <div className="google-candidato__topo">
+          <span className="google-candidato__nome">{e.nome_encontrado || 'Empresa localizada'}</span>
+          {temPct && <span className={`confianca-badge confianca-badge--${nivel}`} title="Confiabilidade calculada pela semelhança do nome (fuzzy)">
+            <span className="confianca-badge__pct">{e.confianca_pct}%</span>
+            <span>{nivelTexto}</span>
+          </span>}
+        </div>
+        <div className="google-candidato__meta">
+          <span className="google-candidato__telefone">{e.telefone ? formatarWhatsappInput(e.telefone) : 'Sem telefone no Google'}</span>
+          {e.site && <span>{e.site}</span>}
+          {e.endereco && <span>{e.endereco}</span>}
+        </div>
+        {e.recomenda_apify && e.apify_motivo && <div className="google-candidato__apify"><span><strong>Sugestão:</strong> {e.apify_motivo}</span></div>}
+      </div>}
+      {e.status === 'sem_resultado' && <div className="google-candidato__apify"><span><strong>Sugestão:</strong> {e.apify_motivo || 'O Google não retornou um telefone confiável para esta empresa.'}</span></div>}
+      {e.status === 'erro' && <div className="muted enriquecimento-auto__status">Não foi possível enriquecer os contatos automaticamente.</div>}
+    </div>
+  );
+}
+
 function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda, onFuturoClienteSalvo, onLinhaAtualizada }) {
   const vendaRegistrada = isFuturoClienteVendido(linha);
   const vendaRecusada = isFuturoClienteRecusado(linha);
@@ -1310,7 +1370,7 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
         </div>
 
         <div className="modal-body">
-          <div className="adicionar-lead-dados">
+          <div className={`adicionar-lead-dados${linha.enriquecimento ? ' adicionar-lead-dados--with-enriquecimento' : ''}`}>
             {camposLead.map(({ label, valor }) => (
               <div key={label} className="adicionar-lead-campo">
                 <span className="adicionar-lead-campo__label">{label}</span>
@@ -1321,6 +1381,8 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
               <div className="muted" style={{ textAlign: 'center', padding: '16px 0' }}>Sem dados disponíveis.</div>
             ) : null}
           </div>
+
+          <EnriquecimentoAutomatico enriquecimento={linha.enriquecimento} />
 
           {etapa === 'opcoes' && clienteRecusou && (
             <div className="adicionar-lead-acoes">

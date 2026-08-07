@@ -7,6 +7,7 @@ const resumoVendasTelegramService = require('./services/resumo-vendas-telegram.s
 const notificacaoService = require('./services/notificacao.service');
 const dashboardIntegracaoService = require('./services/dashboard-integracao.service');
 const leadDistribuicaoService = require('./services/lead-distribuicao.service');
+const leadEnriquecimentoService = require('./services/lead-enriquecimento.service');
 
 const PORT = process.env.APP_PORT || 3000;
 
@@ -57,6 +58,24 @@ function processarPrazosDistribuicao() {
     });
 }
 
+/**
+ * Consome a fila de enriquecimento automatico de contatos do mailing sem
+ * bloquear as consultas da interface. A reentrancia ja e tratada dentro do
+ * service; a flag aqui evita empilhar ciclos.
+ */
+let processandoEnriquecimento = false;
+function processarEnriquecimentoMailing() {
+  if (processandoEnriquecimento) return;
+  processandoEnriquecimento = true;
+  leadEnriquecimentoService.processarFila()
+    .catch(error => {
+      console.error('Erro ao enriquecer contatos do mailing:', error);
+    })
+    .finally(() => {
+      processandoEnriquecimento = false;
+    });
+}
+
 function iniciarAgendamentos() {
   setTimeout(limparArquivosVencidos, 60 * 1000);
   setInterval(limparArquivosVencidos, 24 * 60 * 60 * 1000);
@@ -66,6 +85,10 @@ function iniciarAgendamentos() {
   setInterval(sincronizarNotificacoesPendentes, 30 * 1000);
   setTimeout(processarPrazosDistribuicao, 10000);
   setInterval(processarPrazosDistribuicao, 30 * 1000);
+
+  const enriquecimentoIntervaloMs = Number(process.env.LEAD_ENRIQUECIMENTO_WORKER_MS || 15 * 1000);
+  setTimeout(processarEnriquecimentoMailing, 12000);
+  setInterval(processarEnriquecimentoMailing, enriquecimentoIntervaloMs);
 }
 
 iniciarAplicacao({

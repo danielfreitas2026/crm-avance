@@ -249,11 +249,41 @@ async function buscarGooglePlaces(req, res) {
     });
   }
 }
+
+/**
+ * Busca o telefone da empresa no Google Places para o fluxo de futuros
+ * clientes. Usa o caminho de telefone (detalhes apenas do melhor candidato,
+ * 1 consulta de Place Details em vez de 5) e devolve, junto de cada candidato,
+ * a confiabilidade calculada (0-100%) e a recomendacao de busca extra (Apify).
+ */
+async function buscarTelefoneGoogleFuturosClientes(req, res) {
+  const texto = String(req.body?.texto || '').trim();
+  if (!texto) return res.status(400).json({ message: 'Informe um CNPJ ou texto para buscar no Google.' });
+  if (texto.length > 240) return res.status(400).json({ message: 'A busca pode ter no maximo 240 caracteres.' });
+
+  try {
+    const referencia = req.body?.referencia || {};
+    const resultado = await googlePlacesService.buscarTelefoneEmpresa({
+      queryGoogle: texto,
+      razaoSocial: String(referencia.razaoSocial || '').trim(),
+      nomeFantasia: String(referencia.nomeFantasia || '').trim(),
+      municipio: String(referencia.municipio || '').trim(),
+      uf: String(referencia.uf || '').trim()
+    });
+    return res.json(resultado);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 500).json({
+      message: error.message || 'Erro ao buscar no Google Places.'
+    });
+  }
+}
 module.exports = {
   adicionarLeads,
   adicionarGooglePlacesKey,
   atualizarGooglePlacesKey,
   buscarGooglePlaces,
+  buscarTelefoneGoogleFuturosClientes,
   consultar,
   consultarPlanilha,
   consultarPlanilhaStream,

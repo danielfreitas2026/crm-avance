@@ -8,7 +8,7 @@ const { exigirUmaPermissao } = require('../middlewares/permissao.middleware');
 router.use(authMiddleware);
 
 router.post('/google-places/buscar', exigirUmaPermissao(['clientes_importar_planilhas']), cnpjController.buscarGooglePlaces);
-router.post('/google-places/buscar-futuros-clientes', exigirUmaPermissao(['futuros_clientes_buscar_telefone_google']), cnpjController.buscarGooglePlaces);
+router.post('/google-places/buscar-futuros-clientes', exigirUmaPermissao(['futuros_clientes_buscar_telefone_google']), cnpjController.buscarTelefoneGoogleFuturosClientes);
 router.get('/google-places/keys', exigirUmaPermissao(['clientes_importar_planilhas']), cnpjController.listarGooglePlacesKeys);
 router.post('/google-places/keys', exigirUmaPermissao(['clientes_importar_planilhas']), cnpjController.adicionarGooglePlacesKey);
 router.put('/google-places/keys/:id', exigirUmaPermissao(['clientes_importar_planilhas']), cnpjController.atualizarGooglePlacesKey);

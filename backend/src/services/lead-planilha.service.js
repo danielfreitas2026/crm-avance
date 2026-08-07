@@ -19,6 +19,7 @@ const clienteAntigoService = require('./cliente-antigo.service');
 const { restaurarZerosCnpj } = require('./cnpj.service');
 const telegramService = require('./telegram.service');
 const leadDistribuicaoService = require('./lead-distribuicao.service');
+const leadEnriquecimentoService = require('./lead-enriquecimento.service');
 
 const IMPORT_DIR = process.env.LEAD_IMPORT_DIR
   ? path.resolve(process.env.LEAD_IMPORT_DIR)
@@ -486,10 +487,35 @@ function formatarLinha(linha) {
     ...json,
     dados_json: parseJson(json.dados_json, {}),
     sondagem,
+    enriquecimento: formatarEnriquecimento(json.enriquecimento),
     futuro_cliente_retorno: retornoLinhaValido ? json.futuro_cliente_retorno : (sondagem?.retorno_em || null),
     futuro_cliente_marcado_em: marcadoLinhaValido ? json.futuro_cliente_marcado_em : (sondagem?.respondido_em || null),
     planilha: formatarPlanilha(json.planilha),
     envio: formatarEnvio(json.envio)
+  };
+}
+
+/**
+ * Normaliza o registro de enriquecimento para a interface, desserializando os
+ * contatos e expondo apenas o essencial do resultado da busca automatica.
+ */
+function formatarEnriquecimento(enriquecimento) {
+  if (!enriquecimento) return null;
+  const json = typeof enriquecimento?.toJSON === 'function' ? enriquecimento.toJSON() : enriquecimento;
+  if (!json) return null;
+
+  return {
+    status: json.status,
+    telefone: json.telefone || null,
+    site: json.site || null,
+    nome_encontrado: json.nome_encontrado || null,
+    endereco: json.endereco || null,
+    confianca_pct: json.confianca_pct ?? null,
+    confianca_nivel: json.confianca_nivel || null,
+    recomenda_apify: Boolean(json.recomenda_apify),
+    apify_motivo: json.apify_motivo || null,
+    contatos: parseJson(json.contatos_json, []),
+    processado_em: json.processado_em || null
   };
 }
 
@@ -1096,7 +1122,7 @@ async function listarLinhas(filtros = {}, opcoes = {}) {
   const offsetVinculadas = Math.max(0, offsetPagina - totalPendentes);
   const linhasVinculadas = limiteVinculadas > 0
     ? await baseQuery
-      .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario]]')
+      .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
       .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'))
       .orderBy('planilha_id', 'asc')
       .orderBy('row_index', 'asc')
@@ -1214,7 +1240,7 @@ async function avaliarPrimeiraLigacao(linhaId, usuarioId, dados = {}) {
 
   const atualizada = await LeadLinha.query()
     .findById(linha.id)
-    .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario]]')
+    .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
     .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'));
 
   return { linha: formatarLinha(atualizada) };
@@ -1545,6 +1571,18 @@ async function dividirLeads(dados, usuarioId) {
         for (let i = 0; i < atribuicoes.length; i += 500) {
           await trx('lead_atribuicoes').insert(atribuicoes.slice(i, i + 500));
         }
+      }
+    }
+
+    // Enriquecimento automatico de contatos: so na sondagem (quando as
+    // consultoras vao ligar). Apenas enfileira; o worker em background consome
+    // a fila sem bloquear a divisao. Idempotente por lead_linha_id.
+    if (etapa === 'sondagem') {
+      try {
+        await leadEnriquecimentoService.enfileirarLinhas(linhaIds, trx);
+      } catch (error) {
+        // Nunca deixar o enriquecimento derrubar a divisao do mailing.
+        console.error('Erro ao enfileirar linhas para enriquecimento:', error.message);
       }
     }
 
@@ -2548,7 +2586,7 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
 
   const atualizada = await LeadLinha.query()
     .findById(linhaId)
-    .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario]]')
+    .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
     .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'));
 
   const linhaFormatada = formatarLinha(atualizada);
@@ -2612,7 +2650,7 @@ async function listarFuturosClientes(filtros = {}, usuarioId) {
 
   const total = await query.clone().resultSize();
   const linhas = await query
-    .withGraphFetched('[planilha, envio, sondagem.[operadoraAtual, operadoraInteresse, usuario]]')
+    .withGraphFetched('[planilha, envio, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
     .orderBy('futuro_cliente_marcado_em', 'desc')
     .orderBy('id', 'desc')
     .offset((page - 1) * pageSize)
@@ -3004,7 +3042,7 @@ async function marcarVendaRecusadaLead(linhaId, usuarioId, dados = {}, opcoes = 
 
   const atualizada = await LeadLinha.query()
     .findById(linha.id)
-    .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario]]')
+    .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
     .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'));
 
   return { linha: formatarLinha(atualizada) };
@@ -3054,7 +3092,7 @@ async function reverterVendaRecusadaLead(linhaId, usuarioId, opcoes = {}) {
 async function buscarLinhaFormatada(linhaId) {
   const atualizada = await LeadLinha.query()
     .findById(Number(linhaId))
-    .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario]]')
+    .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
     .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'));
 
   return { linha: formatarLinha(atualizada) };
