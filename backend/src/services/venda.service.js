@@ -2158,6 +2158,46 @@ function nomesVendedorasExportacao(venda) {
 }
 
 /**
+ * Formata valor monetario para a descricao de chips na exportacao.
+ */
+function formatarMoedaExportacao(valor) {
+  return Number(valor || 0).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  }).replace(/\u00a0/g, ' ');
+}
+
+/**
+ * Monta os detalhes por grupo de chips para a linha da exportacao.
+ */
+function montarDetalhesChipsExportacao(venda = {}) {
+  const itens = normalizarItensChips(venda.valores_unitarios_chips);
+  const valoresUnitarios = itens.length > 0
+    ? itens.map(item => `${item.quantidade} chip(s) × ${formatarMoedaExportacao(item.valor_unitario)}`).join('\n')
+    : '—';
+
+  const vendedoras = Array.isArray(venda.vendedoras) ? venda.vendedoras : [];
+  const idsVendedoras = new Set(vendedoras.map(item => Number(item.id)).filter(Boolean));
+  const vendaCompartilhada = idsVendedoras.size > 1;
+  const nomesPorId = new Map(
+    vendedoras
+      .filter(item => item.id && item.nome)
+      .map(item => [Number(item.id), item.nome])
+  );
+  const vendedoraPrincipal = venda.vendedora?.nome || vendedoras[0]?.nome || '';
+  const vendedorasPorChip = itens.length > 0
+    ? itens.map(item => {
+      const nome = vendaCompartilhada
+        ? nomesPorId.get(Number(item.vendedora_id)) || 'Não informado'
+        : vendedoraPrincipal || 'Não informado';
+      return `${item.quantidade} chip(s) — ${nome}`;
+    }).join('\n')
+    : nomesVendedorasExportacao(venda) || '—';
+
+  return { valoresUnitarios, vendedoras: vendedorasPorChip, quantidadeLinhas: Math.max(1, itens.length) };
+}
+
+/**
  * Retorna status venda exportacao no formato esperado pelo fluxo.
  */
 function statusVendaExportacao(venda) {
@@ -2192,6 +2232,7 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
     { header: 'LINHAS', key: 'quantidade_linhas', width: 10 },
     { header: 'GB', key: 'gb', width: 12 },
     { header: 'VALOR', key: 'valor_total', width: 14, style: { numFmt: 'R$ #,##0.00' } },
+    { header: 'VALORES UNITÁRIOS DOS CHIPS', key: 'valores_unitarios_chips', width: 28 },
     { header: 'VENCIMENTO', key: 'dia_vencimento', width: 12 },
     { header: 'DATA VENDA', key: 'data_venda', width: 16, style: { numFmt: 'dd/mm/yyyy' } },
     { header: 'DATA ATIVACAO', key: 'data_ativacao', width: 16, style: { numFmt: 'dd/mm/yyyy' } },
@@ -2209,18 +2250,20 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
   ];
 
   vendas.forEach(venda => {
-    worksheet.addRow({
+    const detalhesChips = montarDetalhesChipsExportacao(venda);
+    const row = worksheet.addRow({
       id: venda.id,
       cliente: venda.nome || venda.cliente?.nome || '',
       razao_social: venda.razao_social || venda.cliente?.razao_social || '',
       cnpj: venda.cnpj || venda.cliente?.cnpj || '',
-      vendedoras: nomesVendedorasExportacao(venda),
+      vendedoras: detalhesChips.vendedoras,
       operadora: venda.operadora?.nome || '',
       tipo: venda.tipoVenda?.nome || '',
       produto: venda.servico?.nome || venda.produto_fechado || '',
       quantidade_linhas: venda.quantidade_linhas ?? null,
       gb: venda.gb || '',
       valor_total: venda.valor_total === null || venda.valor_total === undefined ? null : Number(venda.valor_total),
+      valores_unitarios_chips: detalhesChips.valoresUnitarios,
       dia_vencimento: venda.dia_vencimento ?? null,
       data_venda: valorDataExcel(venda.data_venda),
       data_ativacao: valorDataExcel(venda.data_ativacao),
@@ -2236,10 +2279,19 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
       enviada_pos_venda_em: valorDataExcel(venda.enviada_pos_venda_em),
       cancelada_em: valorDataExcel(venda.cancelada_em)
     });
+
+    row.height = 15 * detalhesChips.quantidadeLinhas;
   });
 
   aplicarEstiloExportacao(worksheet);
   worksheet.getColumn('valor_total').numFmt = 'R$ #,##0.00';
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+
+    ['vendedoras', 'valores_unitarios_chips'].forEach(key => {
+      row.getCell(key).alignment = { vertical: 'middle', wrapText: true };
+    });
+  });
   ['data_venda', 'data_ativacao', 'created_at', 'enviada_pos_venda_em', 'cancelada_em'].forEach(key => {
     worksheet.getColumn(key).numFmt = 'dd/mm/yyyy';
   });
@@ -3934,6 +3986,7 @@ module.exports = {
     aplicarDadosClienteNaVenda,
     adicionarMesesDataISO,
     calcularTotalChips,
+    montarDetalhesChipsExportacao,
     limparValor,
     montarDadosSincronizacaoClienteVenda,
     montarAtribuicoesVendedorasVenda,

@@ -8,6 +8,7 @@ const {
   aplicarDadosClienteNaVenda,
   filtrarVendasRelatorioPorVendedora,
   montarDadosSincronizacaoClienteVenda,
+  montarDetalhesChipsExportacao,
   montarAtribuicoesVendedorasVenda,
   montarPayload,
   normalizarData,
@@ -74,6 +75,46 @@ test('normaliza chips de array, JSON e texto legado', () => {
     { quantidade: 2, gb: '', tipo_linha: 'novo', valor_unitario: 49.9 },
     { quantidade: 1, gb: '', tipo_linha: 'novo', valor_unitario: 39.9 }
   ]);
+});
+
+test('monta detalhes da exportacao com valores e vendedoras por grupo de chips', () => {
+  const detalhes = montarDetalhesChipsExportacao({
+    valores_unitarios_chips: [
+      { quantidade: 2, valor_unitario: '29,90', vendedora_id: 10 },
+      { quantidade: 1, valor_unitario: 49.9, vendedora_id: 11 }
+    ],
+    vendedoras: [
+      { id: 10, nome: 'Ana' },
+      { id: 11, nome: 'Bia' }
+    ]
+  });
+
+  assert.equal(detalhes.valoresUnitarios, '2 chip(s) × R$ 29,90\n1 chip(s) × R$ 49,90');
+  assert.equal(detalhes.vendedoras, '2 chip(s) — Ana\n1 chip(s) — Bia');
+  assert.equal(detalhes.quantidadeLinhas, 2);
+});
+
+test('marca vendedora nao informada em venda compartilhada legada', () => {
+  const detalhes = montarDetalhesChipsExportacao({
+    valores_unitarios_chips: '2x49,90',
+    vendedoras: [
+      { id: 10, nome: 'Ana' },
+      { id: 11, nome: 'Bia' }
+    ]
+  });
+
+  assert.equal(detalhes.valoresUnitarios, '2 chip(s) × R$ 49,90');
+  assert.equal(detalhes.vendedoras, '2 chip(s) — Não informado');
+});
+
+test('atribui cada grupo a vendedora principal em venda nao compartilhada', () => {
+  const detalhes = montarDetalhesChipsExportacao({
+    valores_unitarios_chips: [{ quantidade: 1, valor_unitario: 29.9 }],
+    vendedora: { id: 10, nome: 'Ana' },
+    vendedoras: [{ id: 10, nome: 'Ana' }]
+  });
+
+  assert.equal(detalhes.vendedoras, '1 chip(s) — Ana');
 });
 
 test('mapeia tipo de venda para fallback dos chips exibidos na tabela', () => {
