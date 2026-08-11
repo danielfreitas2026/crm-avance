@@ -93,6 +93,7 @@
 
 .admin-campanhas-page label {
   display: grid;
+  align-content: start;
   gap: 6px;
   min-width: 0;
   color: var(--text-2);
@@ -134,6 +135,12 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
+}
+
+.admin-campanhas-checkboxes--participants {
+  grid-template-columns: repeat(2, minmax(130px, 1fr));
+  max-height: 160px;
+  overflow-y: auto;
 }
 
 .admin-campanhas-page label.admin-campanhas-checkbox {
@@ -236,4 +243,5 @@
   .admin-campanhas-fields--audience { grid-template-columns: 1fr; }
   .admin-campanhas-fields--audience > label:first-child { grid-column: auto; }
   .admin-campanhas-section { padding: 14px; }
+  .admin-campanhas-checkboxes--participants { grid-template-columns: 1fr; }
 }

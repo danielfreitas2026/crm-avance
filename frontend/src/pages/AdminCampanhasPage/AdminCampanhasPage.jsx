@@ -8,7 +8,6 @@ import './AdminCampanhasPage.css';
 const PERIODOS = [['diaria', 'Diária'], ['semanal', 'Semanal'], ['mensal', 'Mensal']];
 const CATEGORIAS = [['registro_cliente', 'Registro de cliente'], ['chip_novo', 'Chip novo'], ['portabilidade', 'Portabilidade'], ['internet', 'Internet'], ['valor_monetario', 'Valor em vendas'], ['outros', 'Outros']];
 const PUBLICOS = [['ambos', 'Clientes base e não base'], ['base', 'Somente clientes base'], ['nao_base', 'Somente clientes não base']];
-const idsSelecionados = event => Array.from(event.target.selectedOptions, option => Number(option.value));
 const alternarId = (ids, id) => ids.map(Number).includes(Number(id)) ? ids.filter(item => Number(item) !== Number(id)) : [...ids, Number(id)];
 
 function AdminCampanhasPage() {
@@ -79,7 +78,7 @@ function AdminCampanhasPage() {
             <div className="admin-campanhas-fields admin-campanhas-fields--audience">
               <label>Filtro de base<select disabled={campanha.categoria === 'registro_cliente'} value={campanha.categoria === 'registro_cliente' ? 'ambos' : (campanha.publico_base || 'ambos')} onChange={e => change(campanha.id, 'publico_base', e.target.value)}>{PUBLICOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>{campanha.categoria === 'registro_cliente' && <small>Definido automaticamente para esta categoria.</small>}</label>
               <div className="admin-campanhas-choice-field"><span>Operadoras <small>(deixe vazio para todas)</small></span><div className="admin-campanhas-checkboxes">{operadoras.map(o => <label key={o.id} className="admin-campanhas-checkbox"><input type="checkbox" checked={campanha.operadora_ids.map(Number).includes(Number(o.id))} onChange={() => change(campanha.id, 'operadora_ids', alternarId(campanha.operadora_ids, o.id))} /><span>{o.nome}</span></label>)}</div></div>
-              <label>Participantes <small>(deixe vazio para todos)</small><select multiple value={campanha.participante_ids.map(String)} onChange={e => change(campanha.id, 'participante_ids', idsSelecionados(e))}>{usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</select><button type="button" className="btn btn-sm admin-campanhas-select-all" onClick={() => change(campanha.id, 'participante_ids', usuarios.map(u => Number(u.id)))}>Selecionar todos os ativos</button></label>
+              <div className="admin-campanhas-choice-field"><span>Participantes <small>(deixe vazio para todos)</small></span><div className="admin-campanhas-checkboxes admin-campanhas-checkboxes--participants">{usuarios.map(u => <label key={u.id} className="admin-campanhas-checkbox"><input type="checkbox" checked={campanha.participante_ids.map(Number).includes(Number(u.id))} onChange={() => change(campanha.id, 'participante_ids', alternarId(campanha.participante_ids, u.id))} /><span>{u.nome}</span></label>)}</div><button type="button" className="btn btn-sm admin-campanhas-select-all" onClick={() => change(campanha.id, 'participante_ids', usuarios.map(u => Number(u.id)))}>Selecionar todos os ativos</button></div>
             </div>
           </div>
           <div className="admin-campanhas-section admin-campanhas-section--last">
