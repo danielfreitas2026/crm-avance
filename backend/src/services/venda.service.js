@@ -2146,18 +2146,6 @@ function aplicarEstiloExportacao(worksheet) {
 }
 
 /**
- * Retorna nomes vendedoras exportacao no formato esperado pelo fluxo.
- */
-function nomesVendedorasExportacao(venda) {
-  const nomes = Array.isArray(venda.vendedoras)
-    ? venda.vendedoras.map(item => item.nome).filter(Boolean)
-    : [];
-
-  if (nomes.length > 0) return nomes.join(', ');
-  return venda.vendedora?.nome || '';
-}
-
-/**
  * Formata valor monetario para a descricao de chips na exportacao.
  */
 function formatarMoedaExportacao(valor) {
@@ -2168,14 +2156,10 @@ function formatarMoedaExportacao(valor) {
 }
 
 /**
- * Monta os detalhes por grupo de chips para a linha da exportacao.
+ * Monta uma linha de detalhe por vendedora para a exportacao.
  */
 function montarDetalhesChipsExportacao(venda = {}) {
   const itens = normalizarItensChips(venda.valores_unitarios_chips);
-  const valoresUnitarios = itens.length > 0
-    ? itens.map(item => `${item.quantidade} chip(s) × ${formatarMoedaExportacao(item.valor_unitario)}`).join('\n')
-    : '—';
-
   const vendedoras = Array.isArray(venda.vendedoras) ? venda.vendedoras : [];
   const idsVendedoras = new Set(vendedoras.map(item => Number(item.id)).filter(Boolean));
   const vendaCompartilhada = idsVendedoras.size > 1;
@@ -2185,18 +2169,37 @@ function montarDetalhesChipsExportacao(venda = {}) {
       .map(item => [Number(item.id), item.nome])
   );
   const vendedoraPrincipal = venda.vendedora?.nome || vendedoras[0]?.nome || '';
-  const vendedorasPorChip = itens.length > 0
-    ? itens.map(item => {
-      const nome = vendaCompartilhada
-        ? nomesPorId.get(Number(item.vendedora_id)) || 'Não informado'
-        : vendedoraPrincipal || 'Não informado';
-      return `${item.quantidade} chip(s) — ${nome}`;
-    }).join('\n')
-    : `${obterQuantidadeChipsVenda(venda)} chip(s) — ${vendaCompartilhada
-      ? 'Não informado'
-      : vendedoraPrincipal || 'Não informado'}`;
 
-  return { valoresUnitarios, vendedoras: vendedorasPorChip, quantidadeLinhas: Math.max(1, itens.length) };
+  if (itens.length === 0) {
+    return [{
+      vendedora: vendaCompartilhada ? 'Não informado' : vendedoraPrincipal || 'Não informado',
+      quantidadeChips: obterQuantidadeChipsVenda(venda),
+      valoresUnitarios: '—',
+      quantidadeLinhas: 1
+    }];
+  }
+
+  const grupos = new Map();
+
+  itens.forEach(item => {
+    const vendedoraId = vendaCompartilhada ? Number(item.vendedora_id) : Number(venda.vendedora?.id || vendedoras[0]?.id);
+    const vendedora = vendaCompartilhada
+      ? nomesPorId.get(vendedoraId) || 'Não informado'
+      : vendedoraPrincipal || 'Não informado';
+    const chave = vendaCompartilhada && !nomesPorId.has(vendedoraId) ? 'nao-informado' : `vendedora:${vendedoraId || vendedora}`;
+    const grupo = grupos.get(chave) || { vendedora, quantidadeChips: 0, itens: [] };
+
+    grupo.quantidadeChips += Number(item.quantidade || 0);
+    grupo.itens.push(item);
+    grupos.set(chave, grupo);
+  });
+
+  return Array.from(grupos.values()).map(grupo => ({
+    vendedora: grupo.vendedora,
+    quantidadeChips: grupo.quantidadeChips,
+    valoresUnitarios: grupo.itens.map(item => formatarMoedaExportacao(item.valor_unitario)).join('\n'),
+    quantidadeLinhas: Math.max(1, grupo.itens.length)
+  }));
 }
 
 /**
@@ -2227,7 +2230,8 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
     { header: 'CLIENTE', key: 'cliente', width: 34 },
     { header: 'RAZAO SOCIAL', key: 'razao_social', width: 34 },
     { header: 'CNPJ/CPF', key: 'cnpj', width: 20 },
-    { header: 'VENDEDORA(S)', key: 'vendedoras', width: 28 },
+    { header: 'VENDEDORA', key: 'vendedora', width: 28 },
+    { header: 'CHIPS DA VENDEDORA', key: 'quantidade_chips_vendedora', width: 20 },
     { header: 'OPERADORA', key: 'operadora', width: 18 },
     { header: 'TIPO', key: 'tipo', width: 18 },
     { header: 'PRODUTO', key: 'produto', width: 20 },
@@ -2252,37 +2256,41 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
   ];
 
   vendas.forEach(venda => {
-    const detalhesChips = montarDetalhesChipsExportacao(venda);
-    const row = worksheet.addRow({
-      id: venda.id,
-      cliente: venda.nome || venda.cliente?.nome || '',
-      razao_social: venda.razao_social || venda.cliente?.razao_social || '',
-      cnpj: venda.cnpj || venda.cliente?.cnpj || '',
-      vendedoras: detalhesChips.vendedoras,
-      operadora: venda.operadora?.nome || '',
-      tipo: venda.tipoVenda?.nome || '',
-      produto: venda.servico?.nome || venda.produto_fechado || '',
-      quantidade_linhas: venda.quantidade_linhas ?? null,
-      gb: venda.gb || '',
-      valor_total: venda.valor_total === null || venda.valor_total === undefined ? null : Number(venda.valor_total),
-      valores_unitarios_chips: detalhesChips.valoresUnitarios,
-      dia_vencimento: venda.dia_vencimento ?? null,
-      data_venda: valorDataExcel(venda.data_venda),
-      data_ativacao: valorDataExcel(venda.data_ativacao),
-      status: statusVendaExportacao(venda),
-      prioridade: venda.prioridade_funil || '',
-      protocolo: venda.protocolo || '',
-      uf: venda.uf || '',
-      municipio: venda.municipio || '',
-      telefone: venda.telefone || '',
-      email: venda.email || '',
-      criado_por: venda.criador?.nome || '',
-      created_at: valorDataExcel(venda.criado_em || venda.created_at),
-      enviada_pos_venda_em: valorDataExcel(venda.enviada_pos_venda_em),
-      cancelada_em: valorDataExcel(venda.cancelada_em)
-    });
+    const detalhesVendedoras = montarDetalhesChipsExportacao(venda);
 
-    row.height = 15 * detalhesChips.quantidadeLinhas;
+    detalhesVendedoras.forEach(detalhes => {
+      const row = worksheet.addRow({
+        id: venda.id,
+        cliente: venda.nome || venda.cliente?.nome || '',
+        razao_social: venda.razao_social || venda.cliente?.razao_social || '',
+        cnpj: venda.cnpj || venda.cliente?.cnpj || '',
+        vendedora: detalhes.vendedora,
+        quantidade_chips_vendedora: detalhes.quantidadeChips,
+        operadora: venda.operadora?.nome || '',
+        tipo: venda.tipoVenda?.nome || '',
+        produto: venda.servico?.nome || venda.produto_fechado || '',
+        quantidade_linhas: venda.quantidade_linhas ?? null,
+        gb: venda.gb || '',
+        valor_total: venda.valor_total === null || venda.valor_total === undefined ? null : Number(venda.valor_total),
+        valores_unitarios_chips: detalhes.valoresUnitarios,
+        dia_vencimento: venda.dia_vencimento ?? null,
+        data_venda: valorDataExcel(venda.data_venda),
+        data_ativacao: valorDataExcel(venda.data_ativacao),
+        status: statusVendaExportacao(venda),
+        prioridade: venda.prioridade_funil || '',
+        protocolo: venda.protocolo || '',
+        uf: venda.uf || '',
+        municipio: venda.municipio || '',
+        telefone: venda.telefone || '',
+        email: venda.email || '',
+        criado_por: venda.criador?.nome || '',
+        created_at: valorDataExcel(venda.criado_em || venda.created_at),
+        enviada_pos_venda_em: valorDataExcel(venda.enviada_pos_venda_em),
+        cancelada_em: valorDataExcel(venda.cancelada_em)
+      });
+
+      row.height = 15 * detalhes.quantidadeLinhas;
+    });
   });
 
   aplicarEstiloExportacao(worksheet);
@@ -2290,9 +2298,7 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
 
-    ['vendedoras', 'valores_unitarios_chips'].forEach(key => {
-      row.getCell(key).alignment = { vertical: 'middle', wrapText: true };
-    });
+    row.getCell('valores_unitarios_chips').alignment = { vertical: 'middle', wrapText: true };
   });
   ['data_venda', 'data_ativacao', 'created_at', 'enviada_pos_venda_em', 'cancelada_em'].forEach(key => {
     worksheet.getColumn(key).numFmt = 'dd/mm/yyyy';

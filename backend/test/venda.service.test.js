@@ -77,10 +77,11 @@ test('normaliza chips de array, JSON e texto legado', () => {
   ]);
 });
 
-test('monta detalhes da exportacao com valores e vendedoras por grupo de chips', () => {
+test('monta uma linha de exportacao para cada vendedora com sua quantidade de chips', () => {
   const detalhes = montarDetalhesChipsExportacao({
     valores_unitarios_chips: [
       { quantidade: 2, valor_unitario: '29,90', vendedora_id: 10 },
+      { quantidade: 1, valor_unitario: '39,90', vendedora_id: 10 },
       { quantidade: 1, valor_unitario: 49.9, vendedora_id: 11 }
     ],
     vendedoras: [
@@ -89,9 +90,10 @@ test('monta detalhes da exportacao com valores e vendedoras por grupo de chips',
     ]
   });
 
-  assert.equal(detalhes.valoresUnitarios, '2 chip(s) × R$ 29,90\n1 chip(s) × R$ 49,90');
-  assert.equal(detalhes.vendedoras, '2 chip(s) — Ana\n1 chip(s) — Bia');
-  assert.equal(detalhes.quantidadeLinhas, 2);
+  assert.deepEqual(detalhes, [
+    { vendedora: 'Ana', quantidadeChips: 3, valoresUnitarios: 'R$ 29,90\nR$ 39,90', quantidadeLinhas: 2 },
+    { vendedora: 'Bia', quantidadeChips: 1, valoresUnitarios: 'R$ 49,90', quantidadeLinhas: 1 }
+  ]);
 });
 
 test('marca vendedora nao informada em venda compartilhada legada', () => {
@@ -103,8 +105,9 @@ test('marca vendedora nao informada em venda compartilhada legada', () => {
     ]
   });
 
-  assert.equal(detalhes.valoresUnitarios, '2 chip(s) × R$ 49,90');
-  assert.equal(detalhes.vendedoras, '2 chip(s) — Não informado');
+  assert.deepEqual(detalhes, [
+    { vendedora: 'Não informado', quantidadeChips: 2, valoresUnitarios: 'R$ 49,90', quantidadeLinhas: 1 }
+  ]);
 });
 
 test('nao lista vendedoras por virgula quando venda compartilhada legada nao tem grupos salvos', () => {
@@ -116,18 +119,24 @@ test('nao lista vendedoras por virgula quando venda compartilhada legada nao tem
     ]
   });
 
-  assert.equal(detalhes.valoresUnitarios, '—');
-  assert.equal(detalhes.vendedoras, '4 chip(s) — Não informado');
+  assert.deepEqual(detalhes, [
+    { vendedora: 'Não informado', quantidadeChips: 4, valoresUnitarios: '—', quantidadeLinhas: 1 }
+  ]);
 });
 
-test('atribui cada grupo a vendedora principal em venda nao compartilhada', () => {
+test('soma os grupos da vendedora principal em venda nao compartilhada', () => {
   const detalhes = montarDetalhesChipsExportacao({
-    valores_unitarios_chips: [{ quantidade: 1, valor_unitario: 29.9 }],
+    valores_unitarios_chips: [
+      { quantidade: 1, valor_unitario: 29.9 },
+      { quantidade: 2, valor_unitario: 49.9 }
+    ],
     vendedora: { id: 10, nome: 'Ana' },
     vendedoras: [{ id: 10, nome: 'Ana' }]
   });
 
-  assert.equal(detalhes.vendedoras, '1 chip(s) — Ana');
+  assert.deepEqual(detalhes, [
+    { vendedora: 'Ana', quantidadeChips: 3, valoresUnitarios: 'R$ 29,90\nR$ 49,90', quantidadeLinhas: 2 }
+  ]);
 });
 
 test('mapeia tipo de venda para fallback dos chips exibidos na tabela', () => {
