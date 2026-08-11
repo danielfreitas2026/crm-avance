@@ -23,7 +23,7 @@ const formatBRL = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency
  * Verifica se money goal atende a condicao esperada.
  */
 const isMoneyGoal = (campanha) => (
-  /R\$/i.test(campanha.desc || '') ||
+  campanha.categoria === 'valor_monetario' || /R\$/i.test(campanha.desc || '') ||
   ['valor', 'receita', 'faturamento'].some(key => String(campanha.tipo || '').toLowerCase().includes(key))
 );
 
@@ -45,6 +45,8 @@ const CATEGORY_LABELS = {
   chip_novo: 'Chip novo',
   portabilidade: 'Portabilidade',
   internet: 'Internet',
+  valor_monetario: 'Valor em vendas',
+  outros: 'Outros',
 };
 
 const TIPOS_RETORNO_NOTA = [
@@ -96,8 +98,9 @@ function getCampanhaKey(campanha) {
 function getCampanhaScope(campanha) {
   const periodo = PERIOD_LABELS[campanha.periodo] || 'Diária';
   const categoria = CATEGORY_LABELS[campanha.categoria] || campanha.categoria || 'Campanha';
-  const operadora = campanha.operadora_nome ? ` - ${campanha.operadora_nome}` : '';
-  return `${periodo} - ${categoria}${operadora}`;
+  const operadoras = campanha.operadoras?.map(item => item.nome).join(', ') || campanha.operadora_nome || '';
+  const grupo = campanha.em_grupo ? ' · Meta em grupo' : '';
+  return `${periodo} - ${categoria}${operadoras ? ` - ${operadoras}` : ''}${grupo}`;
 }
 
 const EMPTY_STATS = {
@@ -1308,7 +1311,7 @@ function DashboardPage() {
       .some(valor => String(valor).toLowerCase().includes(buscaUsuarioCampanhaNormalizada));
   });
 
-  const giftCampanhas = campanhas.filter(m => m.is_gift);
+  const giftCampanhas = campanhas.filter(m => m.is_gift && (!m.participante_ids?.length || m.participante_ids.map(Number).includes(Number(usuario?.id))));
   const campanhasComProgresso = giftCampanhas.map(campanha => {
     const current = progresso.campanhas?.[campanha.id] ?? progresso[getCampanhaKey(campanha)] ?? 0;
     const target = Number(campanha.target) || 0;

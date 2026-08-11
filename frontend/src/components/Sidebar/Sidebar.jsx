@@ -63,7 +63,7 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
     campanha.tipo || `${campanha.periodo || 'diaria'}_${campanha.categoria || 'registro_cliente'}`
   );
 
-  const giftCampanhas = campanhas.filter(m => m.is_gift);
+  const giftCampanhas = campanhas.filter(m => m.is_gift && (!m.participante_ids?.length || m.participante_ids.map(Number).includes(Number(usuario?.id))));
   const resgatadas = new Set((progresso.resgatadas || []).map(Number));
 
   return (
@@ -135,7 +135,7 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
               <div
                 key={campanha.id}
                 className={`sidebar-goal ${achieved ? 'achieved' : ''} ${claimed ? 'claimed' : ''}`}
-                title={`${claimed ? 'Recompensa resgatada' : 'Recompensa ainda não resgatada'}${campanha.operadora_nome ? ` - ${campanha.operadora_nome}` : ''}`}
+                title={`${claimed ? 'Recompensa resgatada' : 'Recompensa ainda não resgatada'}${campanha.em_grupo ? ' · Meta em grupo' : ''}${campanha.operadora_nome ? ` - ${campanha.operadora_nome}` : ''}`}
               >
                 <div className="top">
                   <span className="g-icon">{claimed ? '✅' : '🎁'}</span>

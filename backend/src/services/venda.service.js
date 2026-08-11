@@ -42,6 +42,7 @@ const CAMPOS = [
   'gb',
   'valores_unitarios_chips',
   'cliente_da_base',
+  'categoria_campanha',
   'possui_doc_na_casa',
   'cliente_solicitou_servicos',
   'cliente_solicitou_bloqueio_qtd',

@@ -38,6 +38,7 @@ class Venda extends Model {
         gb: { type: ['string', 'null'], maxLength: 40 },
         valores_unitarios_chips: { type: ['string', 'null'] },
         cliente_da_base: { type: ['boolean', 'integer', 'null'] },
+        categoria_campanha: { type: ['string', 'null'], maxLength: 120 },
         possui_doc_na_casa: { type: ['boolean', 'integer', 'null'] },
         cliente_solicitou_servicos: { type: ['string', 'null'] },
         cliente_solicitou_bloqueio_qtd: { type: ['integer', 'null'] },

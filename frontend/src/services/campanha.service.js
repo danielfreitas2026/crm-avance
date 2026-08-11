@@ -11,6 +11,9 @@ export const getCampanhas = async () => {
   return data;
 };
 
+/** Lista usuários ativos elegíveis para participar de campanhas. */
+export const getParticipantesCampanha = async () => apiGet('/campanhas/participantes');
+
 /**
  * Atualiza campanhas com o estado mais recente.
  */
