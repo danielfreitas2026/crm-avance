@@ -8,6 +8,13 @@ function tokenConfigurado() {
 
 async function chamarApi(metodo, dados) {
   const token = tokenConfigurado();
+  return chamarApiComToken(token, metodo, dados);
+}
+
+/**
+ * Chama a API do Telegram com o token informado.
+ */
+async function chamarApiComToken(token, metodo, dados) {
   if (!token) return null;
   try {
     const resposta = await axios.post(`${TELEGRAM_API_URL}/bot${token}/${metodo}`, dados, { timeout: 10000 });
@@ -303,6 +310,7 @@ module.exports = {
   enviarResumoVendas,
   enviarVenda,
   chamarApi,
+  chamarApiComToken,
   _internals: {
     formatarDataHora,
     formatarMoeda,

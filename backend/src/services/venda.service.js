@@ -17,6 +17,7 @@ const notificacaoService = require('./notificacao.service');
 const { renderEmailVenda } = require('./venda-email-template.service');
 const dashboardIntegracaoService = require('./dashboard-integracao.service');
 const telegramService = require('./telegram.service');
+const telegramAprovacoesService = require('./telegram-aprovacoes.service');
 const { parseUtcDateTime } = require('../utils/datetime');
 const { listarPermissoesEfetivas, usuarioTemPermissaoLocal } = require('../utils/permissoes');
 const ExcelJS = require('exceljs');
@@ -2865,6 +2866,7 @@ async function criarVenda(dados, usuarioId) {
 
   await validarProtocoloCliente(payload, usuarioId);
 
+  let solicitacaoAprovacaoCriadaId = null;
   const venda = await Venda.transaction(async trx => {
     let leadOrigem = null;
     if (origemLeadLinhaId) {
@@ -2966,8 +2968,18 @@ async function criarVenda(dados, usuarioId) {
       return enviarVendaCriadaAutomaticamenteParaPosVenda(venda, usuarioId, agora, trx);
     }
 
+    const validacaoAprovacao = await vendaAprovacaoService.validarEnvioPosVenda(venda.id, usuarioId, {}, trx);
+    if (validacaoAprovacao.status === 'pendente') {
+      solicitacaoAprovacaoCriadaId = validacaoAprovacao.solicitacao?.id || null;
+    }
+
     return venda;
   });
+
+  if (solicitacaoAprovacaoCriadaId) {
+    telegramAprovacoesService.notificarSolicitacaoPendente(solicitacaoAprovacaoCriadaId)
+      .catch(error => console.error('Erro ao notificar nova aprovação de venda no Telegram:', error.message));
+  }
 
   // Edicoes usam atualizarVenda e nunca passam por este bloco. A marca so e gravada
   // depois de o Telegram confirmar o envio, para que uma configuracao ausente nao
@@ -3463,6 +3475,10 @@ async function enviarVendaParaPosVenda(id, usuarioId, dados = {}) {
   });
 
   if (vendaAtualizada?.status && vendaAtualizada.status !== 'liberada') {
+    if (vendaAtualizada.status === 'pendente' && vendaAtualizada.solicitacao?.id) {
+      telegramAprovacoesService.notificarSolicitacaoPendente(vendaAtualizada.solicitacao.id)
+        .catch(error => console.error('Erro ao notificar aprovação de venda no Telegram:', error.message));
+    }
     return vendaAtualizada;
   }
 
