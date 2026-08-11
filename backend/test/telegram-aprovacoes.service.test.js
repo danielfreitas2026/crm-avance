@@ -17,11 +17,22 @@ test('monta mensagem de solicitacao com os motivos de aprovacao', () => {
     motivos: JSON.stringify(['cliente_venda_em_andamento', 'venda_compartilhada']),
     motivo_descricao: 'Cliente possui contrato ativo.',
     solicitante: { nome: 'Bruno Vendas' },
-    venda: { cliente: { nome: 'Empresa Teste' } }
+    venda: {
+      razao_social: 'Empresa Teste Ltda.',
+      cnpj: '12.345.678/0001-90',
+      quantidade_linhas: 8,
+      valor_total: 399.2,
+      vendedora: { nome: 'Ana Consultora' },
+      cliente: { nome: 'Empresa Teste' }
+    }
   });
 
   assert.match(texto, /VENDA AGUARDANDO APROVAÇÃO/);
-  assert.match(texto, /Venda: Empresa Teste/);
+  assert.match(texto, /Razão social: Empresa Teste Ltda\./);
+  assert.match(texto, /CNPJ: 12\.345\.678\/0001-90/);
+  assert.match(texto, /Quantidade de chips: 8/);
+  assert.match(texto, /Receita: R\$ 399,20/);
+  assert.match(texto, /Consultor\(a\): Ana Consultora/);
   assert.match(texto, /ID da venda: 72/);
   assert.match(texto, /Cliente com venda em andamento/);
   assert.match(texto, /Venda compartilhada/);

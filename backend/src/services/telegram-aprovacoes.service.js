@@ -43,6 +43,24 @@ function nomeVenda(venda = {}) {
   return venda.cliente?.nome || venda.nome || venda.razao_social || `Venda #${venda.id}`;
 }
 
+function valorInformado(valor) {
+  return valor === null || valor === undefined || valor === '' ? 'Não informado' : String(valor);
+}
+
+function formatarMoeda(valor) {
+  const numero = Number(valor);
+  return Number.isFinite(numero)
+    ? numero.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace(/\u00a0/g, ' ')
+    : 'Não informado';
+}
+
+function nomesConsultores(venda = {}) {
+  const vendedoras = Array.isArray(venda.vendedoras)
+    ? venda.vendedoras.map(item => item?.nome).filter(Boolean)
+    : [];
+  return vendedoras.length ? vendedoras.join(', ') : valorInformado(venda.vendedora?.nome);
+}
+
 function botoesDecisao(solicitacaoId) {
   return [[
     { text: '✅ Aprovar', callback_data: `va:aprovar:${solicitacaoId}` },
@@ -52,11 +70,16 @@ function botoesDecisao(solicitacaoId) {
 
 function montarMensagemSolicitacao(solicitacao) {
   const venda = solicitacao?.venda || {};
+  const cliente = venda.cliente || {};
   return [
     '🔐 VENDA AGUARDANDO APROVAÇÃO',
     '',
-    `Venda: ${nomeVenda(venda)}`,
     `ID da venda: ${solicitacao?.venda_id || venda.id || 'Não informado'}`,
+    `Razão social: ${valorInformado(venda.razao_social || cliente.razao_social || nomeVenda(venda))}`,
+    `CNPJ: ${valorInformado(venda.cnpj || cliente.cnpj)}`,
+    `Quantidade de chips: ${valorInformado(venda.quantidade_linhas ?? cliente.quantidade_chips)}`,
+    `Receita: ${formatarMoeda(venda.valor_total ?? cliente.valor_pago)}`,
+    `Consultor(a): ${nomesConsultores(venda)}`,
     `Solicitada por: ${solicitacao?.solicitante?.nome || 'Não informado'}`,
     `Motivos: ${motivosTexto(solicitacao?.motivos)}`,
     `Descrição: ${solicitacao?.motivo_descricao || 'Não informada'}`
@@ -177,7 +200,12 @@ async function processarCallback(query) {
 
 async function receberWebhook(req, res) {
   const segredo = String(process.env.TELEGRAM_APROVACOES_WEBHOOK_SECRET || '');
-  if (segredo && req.get('X-Telegram-Bot-Api-Secret-Token') !== segredo) return res.sendStatus(401);
+  const segredoPadrao = String(process.env.TELEGRAM_WEBHOOK_SECRET || '');
+  const segredoRecebido = req.get('X-Telegram-Bot-Api-Secret-Token');
+  // O segredo do webhook padrão é aceito para instalações que já usavam
+  // /api/telegram/webhook antes da separação do bot de aprovações.
+  const segredosAceitos = [segredo, segredoPadrao].filter(Boolean);
+  if (segredosAceitos.length && !segredosAceitos.includes(segredoRecebido)) return res.sendStatus(401);
 
   res.sendStatus(200);
   if (req.body?.callback_query) {
@@ -190,5 +218,5 @@ module.exports = {
   receberWebhook,
   processarCallback,
   notificarSolicitacaoPendente,
-  _internals: { botoesDecisao, mapaAprovadores, montarMensagemSolicitacao, motivosTexto }
+  _internals: { botoesDecisao, mapaAprovadores, montarMensagemSolicitacao, motivosTexto, nomesConsultores }
 };
