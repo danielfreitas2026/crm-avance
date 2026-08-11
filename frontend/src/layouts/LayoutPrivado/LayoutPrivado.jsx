@@ -16,6 +16,7 @@ import {
   marcarPopupNotificacaoVisto
 } from '../../services/notificacao.service';
 import { contarMensagensNaoLidas } from '../../services/mensagem.service';
+import { listarFuturosClientesLeads } from '../../services/lead-planilha.service';
 
 const routeConfigs = [
   { path: '/', title: 'Dashboard', sub: 'Indicadores, campanhas e gamificação', id: 'dashboard', end: true },
@@ -302,8 +303,10 @@ function LayoutPrivado({ children }) {
   const assinaturaAlertasUrgentesRef = useRef(null);
   const [aprovacoesPendentes, setAprovacoesPendentes] = useState(0);
   const [mensagensNaoLidas, setMensagensNaoLidas] = useState(0);
+  const [futurosClientesPendentes, setFuturosClientesPendentes] = useState(0);
   const podeVerAprovacoes = usuario && temPermissao(usuario, 'vendas_aprovacoes_visualizar');
   const podeUsarChat = usuario && temPermissao(usuario, 'chat_usar');
+  const podeVerFuturosClientes = usuario && temPermissao(usuario, 'futuros_clientes_ver');
 
   useEffect(() => {
     if (!podeVerAprovacoes) {
@@ -365,6 +368,33 @@ function LayoutPrivado({ children }) {
       window.removeEventListener('pos-venda:mensagens-atualizar', carregar);
     };
   }, [podeUsarChat]);
+
+  useEffect(() => {
+    if (!podeVerFuturosClientes) {
+      return undefined;
+    }
+
+    let ativo = true;
+
+    async function carregar() {
+      try {
+        const dados = await listarFuturosClientesLeads({ page: 1, page_size: 1, aguardando_aceite: true });
+        if (ativo) setFuturosClientesPendentes(Number(dados?.total || 0));
+      } catch {
+        if (ativo) setFuturosClientesPendentes(0);
+      }
+    }
+
+    carregar();
+    const timer = setInterval(carregar, 15000);
+    window.addEventListener('pos-venda:mailing-atualizar', carregar);
+
+    return () => {
+      ativo = false;
+      clearInterval(timer);
+      window.removeEventListener('pos-venda:mailing-atualizar', carregar);
+    };
+  }, [podeVerFuturosClientes]);
 
   /**
    * Carrega alertas urgentes e atualiza o estado relacionado.
@@ -585,7 +615,7 @@ function LayoutPrivado({ children }) {
       <Sidebar
         page={currentConfig.id}
         setPage={handleSetPage}
-        counts={{ active: 0, returns: 0, aprovacoes: aprovacoesPendentes, mensagens: mensagensNaoLidas }}
+        counts={{ active: 0, returns: 0, aprovacoes: aprovacoesPendentes, futurosClientes: futurosClientesPendentes, mensagens: mensagensNaoLidas }}
         usuario={usuario}
         onLogout={handleLogout}
         isMobileOpen={mobileMenuOpen}

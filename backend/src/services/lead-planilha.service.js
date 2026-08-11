@@ -2645,6 +2645,20 @@ async function listarFuturosClientes(filtros = {}, usuarioId) {
       .orWhere('atribuido_para_id', usuarioId));
   }
 
+  // O indicador da navegacao deve considerar somente os encaminhamentos que
+  // chegaram para o usuario e ainda dependem do seu aceite. Um futuro cliente
+  // cadastrado pelo proprio usuario nao representa uma nova indicacao.
+  if (filtros.aguardando_aceite && usuarioId) {
+    query.whereExists(
+      db('lead_atribuicoes as la')
+        .select(db.raw('1'))
+        .whereRaw('la.lead_linha_id = lead_linhas.id')
+        .where('la.usuario_id', Number(usuarioId))
+        .where('la.etapa', 'venda')
+        .where('la.aceite_status', leadDistribuicaoService.ACEITE_AGUARDANDO)
+    );
+  }
+
   query = aplicarBuscaFuturosClientes(query, filtros.busca);
   query = aplicarFiltrosFuturosClientes(query, filtros);
 
