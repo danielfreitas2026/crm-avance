@@ -8,10 +8,13 @@ const {
   adicionarMinutos,
   linhaTemAcaoValida,
   botaoCancelarEnvio,
+  enviarNotificacaoVendaFechada,
   montarMensagemAceiteTelegram,
   montarMensagemEnvioExpiradoTelegram,
+  montarMensagemVendaFechadaTelegram,
   prazoAcaoMinutos,
-  tipoAcaoValida
+  tipoAcaoValida,
+  vendaCorrespondeAtribuicao
 } = leadDistribuicaoService._internals;
 
 test('inicia o prazo de acao 30 minutos depois do aceite por padrao', () => {
@@ -72,6 +75,133 @@ test('monta a mensagem de envio expirado apenas com cancelamento e dados essenci
     'CNPJ: 12.345.678/0001-90',
     'Data do envio: 30/07/2026, 12:00'
   ].join('\n'));
+});
+
+test('monta o aviso de venda fechada com consultora, cliente, chips e valores', () => {
+  const texto = montarMensagemVendaFechadaTelegram({
+    id: 91,
+    origem_lead_linha_id: 42,
+    criado_por_id: 7,
+    razao_social: 'Empresa Teste LTDA',
+    cnpj: '12.345.678/0001-90',
+    valores_unitarios_chips: JSON.stringify([
+      { quantidade: 2, valor_unitario: 49.9 },
+      { quantidade: 1, valor_unitario: 79.9 }
+    ]),
+    quantidade_linhas: 3,
+    valor_total: 179.7
+  }, {
+    lead_linha_id: 42,
+    usuario_id: 7,
+    consultora_nome: 'Ana Consultora'
+  });
+
+  assert.match(texto, /^🎉 VENDA FECHADA/);
+  assert.match(texto, /Ana Consultora fechou uma venda/);
+  assert.match(texto, /Razão social: Empresa Teste LTDA/);
+  assert.match(texto, /CNPJ: 12\.345\.678\/0001-90/);
+  assert.match(texto, /Quantidade de chips: 3/);
+  assert.match(texto, /- 2 chip\(s\): R\$\s?49,90 cada/);
+  assert.match(texto, /- 1 chip\(s\): R\$\s?79,90 cada/);
+  assert.match(texto, /Valor total da venda: R\$\s?179,70/);
+  assert.match(texto, /Venda: #91/);
+  assert.match(texto, /Futuro cliente: #42/);
+});
+
+test('usa quantidade de linhas como fallback quando nao ha itens de chips', () => {
+  const texto = montarMensagemVendaFechadaTelegram({
+    id: 92,
+    quantidade_linhas: 4
+  }, { lead_linha_id: 43 });
+
+  assert.match(texto, /Razão social: Não informada/);
+  assert.match(texto, /CNPJ: Não informado/);
+  assert.match(texto, /Quantidade de chips: 4/);
+  assert.match(texto, /Valores unitários:\nNão informado/);
+  assert.match(texto, /Valor total da venda: Não informado/);
+});
+
+test('remove o botao e envia o aviso de venda fechada ao mesmo grupo', async () => {
+  const chamadas = [];
+  const venda = {
+    id: 91,
+    origem_lead_linha_id: 42,
+    criado_por_id: 7,
+    razao_social: 'Empresa Teste',
+    quantidade_linhas: 2,
+    valor_total: 100
+  };
+  const atribuicao = {
+    lead_linha_id: 42,
+    usuario_id: 7,
+    etapa: 'venda',
+    telegram_chat_id: '-100123',
+    telegram_message_id: '777',
+    consultora_nome: 'Ana Consultora'
+  };
+
+  const resultado = await enviarNotificacaoVendaFechada(venda, atribuicao, {
+    chamarApi: async (metodo, dados) => {
+      chamadas.push({ metodo, dados });
+      return metodo === 'sendMessage' ? { message_id: 888 } : {};
+    }
+  });
+
+  assert.equal(resultado.enviado, true);
+  assert.equal(resultado.botao_removido, true);
+  assert.equal(resultado.message_id, 888);
+  assert.deepEqual(chamadas.map(item => item.metodo), ['editMessageReplyMarkup', 'sendMessage']);
+  assert.equal(chamadas[0].dados.chat_id, '-100123');
+  assert.equal(chamadas[0].dados.message_id, '777');
+  assert.deepEqual(chamadas[0].dados.reply_markup, { inline_keyboard: [] });
+  assert.equal(chamadas[1].dados.chat_id, '-100123');
+  assert.match(chamadas[1].dados.text, /Ana Consultora fechou uma venda/);
+});
+
+test('nao notifica venda direta ou atribuicao de outra consultora', async () => {
+  const atribuicao = {
+    lead_linha_id: 42,
+    usuario_id: 7,
+    etapa: 'venda',
+    telegram_chat_id: '-100123',
+    telegram_message_id: '777'
+  };
+  let chamadas = 0;
+  const chamarApi = async () => { chamadas += 1; };
+
+  assert.equal(vendaCorrespondeAtribuicao({ id: 1, criado_por_id: 7 }, atribuicao), false);
+  assert.equal(vendaCorrespondeAtribuicao({ id: 2, origem_lead_linha_id: 42, criado_por_id: 8 }, atribuicao), false);
+  assert.deepEqual(
+    await enviarNotificacaoVendaFechada({ id: 2, origem_lead_linha_id: 42, criado_por_id: 8 }, atribuicao, { chamarApi }),
+    { enviado: false, motivo: 'atribuicao_nao_corresponde' }
+  );
+  assert.equal(chamadas, 0);
+});
+
+test('falhas do Telegram nao interrompem o processamento da venda fechada', async () => {
+  const erroAnterior = console.error;
+  console.error = () => {};
+  try {
+    const resultado = await enviarNotificacaoVendaFechada({
+      id: 91,
+      origem_lead_linha_id: 42,
+      criado_por_id: 7
+    }, {
+      lead_linha_id: 42,
+      usuario_id: 7,
+      etapa: 'venda',
+      telegram_chat_id: '-100123',
+      telegram_message_id: '777'
+    }, {
+      chamarApi: async () => { throw new Error('Telegram indisponivel'); }
+    });
+
+    assert.equal(resultado.enviado, false);
+    assert.equal(resultado.botao_removido, false);
+    assert.deepEqual(resultado.erros.map(item => item.operacao), ['remover_botao', 'enviar_mensagem']);
+  } finally {
+    console.error = erroAnterior;
+  }
 });
 
 test('reconhece os desfechos do CRM que impedem a devolucao automatica', () => {

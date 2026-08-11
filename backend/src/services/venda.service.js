@@ -18,6 +18,7 @@ const { renderEmailVenda } = require('./venda-email-template.service');
 const dashboardIntegracaoService = require('./dashboard-integracao.service');
 const telegramService = require('./telegram.service');
 const telegramAprovacoesService = require('./telegram-aprovacoes.service');
+const leadDistribuicaoService = require('./lead-distribuicao.service');
 const { parseUtcDateTime } = require('../utils/datetime');
 const { listarPermissoesEfetivas, usuarioTemPermissaoLocal } = require('../utils/permissoes');
 const ExcelJS = require('exceljs');
@@ -2928,6 +2929,7 @@ async function criarVenda(dados, usuarioId) {
   await validarProtocoloCliente(payload, usuarioId);
 
   let solicitacaoAprovacaoCriadaId = null;
+  let atribuicaoVendaFechadaId = null;
   const venda = await Venda.transaction(async trx => {
     let leadOrigem = null;
     if (origemLeadLinhaId) {
@@ -3007,17 +3009,24 @@ async function criarVenda(dados, usuarioId) {
         status_operacional: 'vendido',
         updated_at: new Date()
       });
-      await trx('lead_atribuicoes')
+      const atribuicaoVenda = await trx('lead_atribuicoes')
         .where({ lead_linha_id: leadOrigem.id, usuario_id: Number(usuarioId), etapa: 'venda' })
         .orderBy('id', 'desc')
-        .limit(1)
-        .update({
-          status: 'vendido',
-          finalizado_em: agora,
-          acao_registrada_em: agora,
-          acao_registrada_tipo: 'venda_registrada',
-          updated_at: new Date()
-        });
+        .first('id', 'aceite_status');
+      if (atribuicaoVenda) {
+        if (atribuicaoVenda.aceite_status === leadDistribuicaoService.ACEITE_ACEITO) {
+          atribuicaoVendaFechadaId = Number(atribuicaoVenda.id);
+        }
+        await trx('lead_atribuicoes')
+          .where('id', Number(atribuicaoVenda.id))
+          .update({
+            status: 'vendido',
+            finalizado_em: agora,
+            acao_registrada_em: agora,
+            acao_registrada_tipo: 'venda_registrada',
+            updated_at: new Date()
+          });
+      }
       await trx('notificacoes')
         .where('source_key', `futuro_cliente_distribuido:${leadOrigem.id}`)
         .update({ ativa: false, updated_at: new Date() });
@@ -3040,6 +3049,18 @@ async function criarVenda(dados, usuarioId) {
   if (solicitacaoAprovacaoCriadaId) {
     telegramAprovacoesService.notificarSolicitacaoPendente(solicitacaoAprovacaoCriadaId)
       .catch(error => console.error('Erro ao notificar nova aprovação de venda no Telegram:', error.message));
+  }
+
+  if (atribuicaoVendaFechadaId) {
+    try {
+      await leadDistribuicaoService.notificarVendaFechadaTelegram(venda.id, atribuicaoVendaFechadaId);
+    } catch (error) {
+      console.error('Erro ao processar aviso de venda fechada no grupo de pre-venda:', {
+        vendaId: venda.id,
+        atribuicaoId: atribuicaoVendaFechadaId,
+        message: error.message
+      });
+    }
   }
 
   // Edicoes usam atualizarVenda e nunca passam por este bloco. A marca so e gravada

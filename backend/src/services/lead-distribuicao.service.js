@@ -336,6 +336,114 @@ function botaoCancelarEnvio(linhaId, nomeConsultora) {
   };
 }
 
+function normalizarItensChipsVenda(valor) {
+  if (Array.isArray(valor)) return valor;
+  try {
+    const itens = valor ? JSON.parse(valor) : [];
+    return Array.isArray(itens) ? itens : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatarMoedaVenda(valor) {
+  if (valor === null || valor === undefined || String(valor).trim() === '') return 'Não informado';
+  const numero = Number(valor);
+  if (!Number.isFinite(numero)) return 'Não informado';
+  return numero.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function montarMensagemVendaFechadaTelegram(venda = {}, atribuicao = {}) {
+  const itensChips = normalizarItensChipsVenda(venda.valores_unitarios_chips)
+    .map(item => ({
+      quantidade: Number(item?.quantidade || 0),
+      valorUnitario: Number(item?.valor_unitario)
+    }))
+    .filter(item => item.quantidade > 0);
+  const quantidadeItens = itensChips.reduce((total, item) => total + item.quantidade, 0);
+  const quantidadeFallback = Number(venda.quantidade_linhas || 0);
+  const quantidadeChips = quantidadeItens > 0
+    ? quantidadeItens
+    : (quantidadeFallback > 0 ? quantidadeFallback : 'Não informado');
+  const valoresUnitarios = itensChips.length
+    ? itensChips.map(item => `- ${item.quantidade} chip(s): ${formatarMoedaVenda(item.valorUnitario)} cada`)
+    : ['Não informado'];
+
+  return [
+    '🎉 VENDA FECHADA',
+    '',
+    `${atribuicao.consultora_nome || 'Consultora não informada'} fechou uma venda com o futuro cliente encaminhado.`,
+    '',
+    `Consultora: ${atribuicao.consultora_nome || 'Não informada'}`,
+    `Razão social: ${venda.razao_social || venda.nome || 'Não informada'}`,
+    `CNPJ: ${venda.cnpj || 'Não informado'}`,
+    `Quantidade de chips: ${quantidadeChips}`,
+    'Valores unitários:',
+    ...valoresUnitarios,
+    `Valor total da venda: ${formatarMoedaVenda(venda.valor_total)}`,
+    '',
+    `Venda: #${venda.id || 'Não informado'}`,
+    `Futuro cliente: #${atribuicao.lead_linha_id || venda.origem_lead_linha_id || 'Não informado'}`
+  ].join('\n');
+}
+
+function vendaCorrespondeAtribuicao(venda = {}, atribuicao = {}) {
+  return Number(venda.origem_lead_linha_id) > 0
+    && Number(venda.origem_lead_linha_id) === Number(atribuicao.lead_linha_id)
+    && Number(venda.criado_por_id) === Number(atribuicao.usuario_id)
+    && atribuicao.etapa === 'venda';
+}
+
+async function enviarNotificacaoVendaFechada(venda, atribuicao, opcoes = {}) {
+  if (!vendaCorrespondeAtribuicao(venda, atribuicao)) {
+    return { enviado: false, motivo: 'atribuicao_nao_corresponde' };
+  }
+  const chatId = String(atribuicao.telegram_chat_id || '').trim();
+  const messageId = String(atribuicao.telegram_message_id || '').trim();
+  if (!chatId || !messageId) return { enviado: false, motivo: 'mensagem_telegram_nao_encontrada' };
+
+  const chamarApi = opcoes.chamarApi || telegramService.chamarApi;
+  const resultado = { enviado: false, botao_removido: false, erros: [] };
+  try {
+    await chamarApi('editMessageReplyMarkup', {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: [] }
+    });
+    resultado.botao_removido = true;
+  } catch (error) {
+    resultado.erros.push({ operacao: 'remover_botao', mensagem: error.message });
+    console.error('Erro ao remover botao de cancelamento da venda fechada no Telegram:', error.message);
+  }
+
+  try {
+    const mensagem = await chamarApi('sendMessage', {
+      chat_id: chatId,
+      text: montarMensagemVendaFechadaTelegram(venda, atribuicao),
+      disable_web_page_preview: true
+    });
+    resultado.enviado = true;
+    resultado.message_id = mensagem?.message_id || null;
+  } catch (error) {
+    resultado.erros.push({ operacao: 'enviar_mensagem', mensagem: error.message });
+    console.error('Erro ao notificar venda fechada no Telegram:', error.message);
+  }
+  return resultado;
+}
+
+async function notificarVendaFechadaTelegram(vendaId, atribuicaoId, opcoes = {}) {
+  const [venda, atribuicao] = await Promise.all([
+    db('vendas').where('id', Number(vendaId)).first(),
+    db('lead_atribuicoes as la')
+      .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
+      .where('la.id', Number(atribuicaoId))
+      .select('la.*', 'u.nome as consultora_nome')
+      .first()
+  ]);
+  if (!venda || !atribuicao) return { enviado: false, motivo: 'venda_ou_atribuicao_nao_encontrada' };
+  return enviarNotificacaoVendaFechada(venda, atribuicao, opcoes);
+}
+
 async function notificarAceiteTelegram(atribuicao, usuarioId, linha) {
   const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
   if (!chatId) return;
@@ -607,6 +715,7 @@ module.exports = {
   aceitar,
   recusar,
   finalizarAtribuicao,
+  notificarVendaFechadaTelegram,
   registrarAcaoValida,
   processarPrazosVencidos,
   republicarPendentesAntigosNoTelegram,
@@ -623,6 +732,9 @@ module.exports = {
     deveRepublicarPendenteAntiga,
     montarMensagemAceiteTelegram,
     montarMensagemEnvioExpiradoTelegram,
+    montarMensagemVendaFechadaTelegram,
+    enviarNotificacaoVendaFechada,
+    vendaCorrespondeAtribuicao,
     botaoCancelarEnvio
   }
 };
