@@ -74,13 +74,13 @@ function montarMensagemSolicitacao(solicitacao) {
   return [
     '🔐 VENDA AGUARDANDO APROVAÇÃO',
     '',
-    `ID da venda: ${solicitacao?.venda_id || venda.id || 'Não informado'}`,
     `Razão social: ${valorInformado(venda.razao_social || cliente.razao_social || nomeVenda(venda))}`,
     `CNPJ: ${valorInformado(venda.cnpj || cliente.cnpj)}`,
     `Quantidade de chips: ${valorInformado(venda.quantidade_linhas ?? cliente.quantidade_chips)}`,
     `Receita: ${formatarMoeda(venda.valor_total ?? cliente.valor_pago)}`,
     `Consultor(a): ${nomesConsultores(venda)}`,
     `Solicitada por: ${solicitacao?.solicitante?.nome || 'Não informado'}`,
+    '',
     `Motivos: ${motivosTexto(solicitacao?.motivos)}`,
     `Descrição: ${solicitacao?.motivo_descricao || 'Não informada'}`
   ].join('\n');
@@ -148,7 +148,7 @@ function grupoAutorizado(id) {
 }
 
 async function finalizarMensagem(query, solicitacao, decisao, aprovador) {
-  const texto = `${decisao === 'aprovar' ? '✅ APROVADA' : '❌ RECUSADA'} por ${aprovador.nome}\n\n${montarMensagemSolicitacao(solicitacao)}`;
+  const texto = montarMensagemDecisao(solicitacao, decisao, aprovador);
   await chamarApi('editMessageText', {
     chat_id: query.message.chat.id,
     message_id: query.message.message_id,
@@ -156,6 +156,28 @@ async function finalizarMensagem(query, solicitacao, decisao, aprovador) {
     disable_web_page_preview: true,
     reply_markup: { inline_keyboard: [] }
   });
+}
+
+function montarMensagemDecisao(solicitacao, decisao = null, aprovador = null) {
+  const aprovada = (decisao || solicitacao?.status) === 'aprovar' || solicitacao?.status === 'aprovada';
+  const nomeAprovador = aprovador?.nome || solicitacao?.decisor?.nome || 'Não informado';
+  return `${aprovada ? '✅ APROVADA' : '❌ RECUSADA'} por ${nomeAprovador}\n\n${montarMensagemSolicitacao(solicitacao)}`;
+}
+
+/** Atualiza a mensagem original quando a decisão foi tomada pelo CRM. */
+async function atualizarMensagemDecisao(solicitacao) {
+  if (!token() || !solicitacao?.telegram_chat_id || !solicitacao?.telegram_message_id) {
+    return { atualizado: false, motivo: 'mensagem_telegram_nao_encontrada' };
+  }
+
+  await chamarApi('editMessageText', {
+    chat_id: solicitacao.telegram_chat_id,
+    message_id: solicitacao.telegram_message_id,
+    text: montarMensagemDecisao(solicitacao),
+    disable_web_page_preview: true,
+    reply_markup: { inline_keyboard: [] }
+  });
+  return { atualizado: true };
 }
 
 async function processarCallback(query) {
@@ -218,5 +240,6 @@ module.exports = {
   receberWebhook,
   processarCallback,
   notificarSolicitacaoPendente,
-  _internals: { botoesDecisao, mapaAprovadores, montarMensagemSolicitacao, motivosTexto, nomesConsultores }
+  atualizarMensagemDecisao,
+  _internals: { botoesDecisao, mapaAprovadores, montarMensagemSolicitacao, montarMensagemDecisao, motivosTexto, nomesConsultores }
 };

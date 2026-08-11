@@ -102,18 +102,20 @@ function VendasAprovacoesPage() {
   /**
    * Carrega  e atualiza o estado relacionado.
    */
-  async function carregar() {
-    setCarregando(true);
-    setErro('');
+  async function carregar(silencioso = false) {
+    if (!silencioso) {
+      setCarregando(true);
+      setErro('');
+    }
 
     try {
       const filtros = status ? { status } : {};
       const dados = await listarAprovacoesVenda(filtros);
       setSolicitacoes(Array.isArray(dados) ? dados : []);
     } catch (error) {
-      setErro(error.message || 'Erro ao carregar aprovações.');
+      if (!silencioso) setErro(error.message || 'Erro ao carregar aprovações.');
     } finally {
-      setCarregando(false);
+      if (!silencioso) setCarregando(false);
     }
   }
 
@@ -143,6 +145,10 @@ function VendasAprovacoesPage() {
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     carregar();
+    // Decisões feitas pelo Telegram não passam pelo navegador. Atualizamos a
+    // lista em segundo plano para refletir a decisão quase imediatamente.
+    const intervalo = setInterval(() => carregar(true), 3000);
+    return () => clearInterval(intervalo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
   /* eslint-enable react-hooks/set-state-in-effect */

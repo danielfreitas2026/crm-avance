@@ -33,10 +33,22 @@ test('monta mensagem de solicitacao com os motivos de aprovacao', () => {
   assert.match(texto, /Quantidade de chips: 8/);
   assert.match(texto, /Receita: R\$ 399,20/);
   assert.match(texto, /Consultor\(a\): Ana Consultora/);
-  assert.match(texto, /ID da venda: 72/);
+  assert.doesNotMatch(texto, /ID da venda:/);
+  assert.match(texto, /Solicitada por: Bruno Vendas\n\nMotivos:/);
   assert.match(texto, /Cliente com venda em andamento/);
   assert.match(texto, /Venda compartilhada/);
   assert.match(texto, /Cliente possui contrato ativo/);
+});
+
+test('monta mensagem de decisão para refletir o resultado no Telegram', () => {
+  const texto = _internals.montarMensagemDecisao({
+    status: 'aprovada',
+    decisor: { nome: 'Gestora ADM' },
+    venda: { razao_social: 'Empresa Teste' }
+  });
+
+  assert.match(texto, /^✅ APROVADA por Gestora ADM/);
+  assert.match(texto, /Razão social: Empresa Teste/);
 });
 
 test('aceita apenas mapa de aprovadores Telegram para e-mail', () => {

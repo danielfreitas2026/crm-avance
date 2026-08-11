@@ -1,4 +1,14 @@
 const vendaAprovacaoService = require('../services/venda-aprovacao.service');
+const telegramAprovacoesService = require('../services/telegram-aprovacoes.service');
+
+async function sincronizarDecisaoNoTelegram(solicitacao) {
+  try {
+    await telegramAprovacoesService.atualizarMensagemDecisao(solicitacao);
+  } catch (error) {
+    // A decisão no CRM já foi concluída e não deve ser revertida por uma falha externa.
+    console.error('Erro ao refletir decisão de aprovação no Telegram:', error.message);
+  }
+}
 
 /**
  * Lista solicitacoes de aprovacao de vendas.
@@ -27,6 +37,7 @@ async function index(req, res) {
 async function aprovar(req, res) {
   try {
     const solicitacao = await vendaAprovacaoService.aprovarSolicitacao(req.params.id, req.body, req.usuario.id);
+    await sincronizarDecisaoNoTelegram(solicitacao);
     return res.json(solicitacao);
   } catch (error) {
     console.error(error);
@@ -46,6 +57,7 @@ async function aprovar(req, res) {
 async function recusar(req, res) {
   try {
     const solicitacao = await vendaAprovacaoService.recusarSolicitacao(req.params.id, req.body, req.usuario.id);
+    await sincronizarDecisaoNoTelegram(solicitacao);
     return res.json(solicitacao);
   } catch (error) {
     console.error(error);
