@@ -107,6 +107,19 @@ test('marca vendedora nao informada em venda compartilhada legada', () => {
   assert.equal(detalhes.vendedoras, '2 chip(s) — Não informado');
 });
 
+test('nao lista vendedoras por virgula quando venda compartilhada legada nao tem grupos salvos', () => {
+  const detalhes = montarDetalhesChipsExportacao({
+    quantidade_linhas: 4,
+    vendedoras: [
+      { id: 10, nome: 'Natalia' },
+      { id: 11, nome: 'Thayara' }
+    ]
+  });
+
+  assert.equal(detalhes.valoresUnitarios, '—');
+  assert.equal(detalhes.vendedoras, '4 chip(s) — Não informado');
+});
+
 test('atribui cada grupo a vendedora principal em venda nao compartilhada', () => {
   const detalhes = montarDetalhesChipsExportacao({
     valores_unitarios_chips: [{ quantidade: 1, valor_unitario: 29.9 }],

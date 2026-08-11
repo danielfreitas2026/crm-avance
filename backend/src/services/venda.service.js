@@ -2192,7 +2192,9 @@ function montarDetalhesChipsExportacao(venda = {}) {
         : vendedoraPrincipal || 'Não informado';
       return `${item.quantidade} chip(s) — ${nome}`;
     }).join('\n')
-    : nomesVendedorasExportacao(venda) || '—';
+    : `${obterQuantidadeChipsVenda(venda)} chip(s) — ${vendaCompartilhada
+      ? 'Não informado'
+      : vendedoraPrincipal || 'Não informado'}`;
 
   return { valoresUnitarios, vendedoras: vendedorasPorChip, quantidadeLinhas: Math.max(1, itens.length) };
 }
