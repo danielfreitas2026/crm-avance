@@ -537,10 +537,11 @@ async function listarSolicitacoes(filtros = {}) {
 /**
  * Processa decidir solicitacao conforme as regras do dominio.
  */
-async function decidirSolicitacao(id, dados, usuarioId, decisao) {
+async function decidirSolicitacao(id, dados, usuarioId, decisao, contexto = {}) {
   const status = decisao === 'aprovar' ? STATUS_APROVADA : STATUS_RECUSADA;
   const acao = decisao === 'aprovar' ? 'venda.aprovacao_aprovada' : 'venda.aprovacao_recusada';
   const observacaoDecisao = String(dados?.observacao || '').trim() || null;
+  const decisorTelegram = contexto?.telegram || null;
 
   const resultado = await VendaAprovacaoSolicitacao.transaction(async trx => {
     const solicitacao = await VendaAprovacaoSolicitacao.query(trx).findById(id);
@@ -563,7 +564,7 @@ async function decidirSolicitacao(id, dados, usuarioId, decisao) {
     const agora = formatarDateTimeSQL();
     const atualizada = await VendaAprovacaoSolicitacao.query(trx).patchAndFetchById(solicitacao.id, {
       status,
-      decidido_por_id: usuarioId,
+      decidido_por_id: decisorTelegram ? null : usuarioId,
       decidido_em: agora,
       observacao_decisao: observacaoDecisao,
       updated_at: agora
@@ -579,7 +580,8 @@ async function decidirSolicitacao(id, dados, usuarioId, decisao) {
       dados: {
         solicitacao_id: solicitacao.id,
         motivos: motivosSolicitacao,
-        status
+        status,
+        ...(decisorTelegram ? { decisor_telegram: decisorTelegram } : {})
       },
       trx
     });
@@ -610,8 +612,8 @@ module.exports = {
   validarEnvioPosVenda,
   sincronizarAprovacaoAposAlteracao,
   listarSolicitacoes,
-  aprovarSolicitacao: (id, dados, usuarioId) => decidirSolicitacao(id, dados, usuarioId, 'aprovar'),
-  recusarSolicitacao: (id, dados, usuarioId) => decidirSolicitacao(id, dados, usuarioId, 'recusar'),
+  aprovarSolicitacao: (id, dados, usuarioId, contexto) => decidirSolicitacao(id, dados, usuarioId, 'aprovar', contexto),
+  recusarSolicitacao: (id, dados, usuarioId, contexto) => decidirSolicitacao(id, dados, usuarioId, 'recusar', contexto),
   _internals: {
     avaliarMotivosVenda,
     montarMensagemMotivos,

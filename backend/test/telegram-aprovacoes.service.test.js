@@ -51,14 +51,18 @@ test('monta mensagem de decisão para refletir o resultado no Telegram', () => {
   assert.match(texto, /Razão social: Empresa Teste/);
 });
 
-test('aceita apenas mapa de aprovadores Telegram para e-mail', () => {
-  const anterior = process.env.TELEGRAM_APROVACOES_APROVADORES;
-  process.env.TELEGRAM_APROVACOES_APROVADORES = '{"123":"gestor@empresa.com"}';
+test('identifica o membro do grupo sem exigir vínculo com usuário do CRM', () => {
+  const identidade = _internals.identidadeTelegram({ id: 123, first_name: 'Ana', last_name: 'Silva', username: 'ana' });
+  const chatAnterior = process.env.TELEGRAM_APROVACOES_CHAT_ID;
 
+  assert.deepEqual(identidade, { nome: 'Ana Silva', username: '@ana', id: '123' });
+  assert.equal(_internals.nomeExibicaoTelegram(identidade), 'Ana Silva @ana');
+  process.env.TELEGRAM_APROVACOES_CHAT_ID = '-100123';
   try {
-    assert.deepEqual(_internals.mapaAprovadores(), { 123: 'gestor@empresa.com' });
+    assert.equal(_internals.grupoAutorizado('-100123'), true);
+    assert.equal(_internals.grupoAutorizado('-100000'), false);
   } finally {
-    if (anterior === undefined) delete process.env.TELEGRAM_APROVACOES_APROVADORES;
-    else process.env.TELEGRAM_APROVACOES_APROVADORES = anterior;
+    if (chatAnterior === undefined) delete process.env.TELEGRAM_APROVACOES_CHAT_ID;
+    else process.env.TELEGRAM_APROVACOES_CHAT_ID = chatAnterior;
   }
 });

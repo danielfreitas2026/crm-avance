@@ -1,10 +1,6 @@
-const Usuario = require('../models/Usuario');
 const VendaAprovacaoSolicitacao = require('../models/VendaAprovacaoSolicitacao');
 const vendaAprovacaoService = require('./venda-aprovacao.service');
-const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
 const { chamarApiComToken } = require('./telegram.service');
-
-const PERMISSAO_DECIDIR = 'vendas_aprovacoes_decidir';
 
 function token() {
   return String(process.env.TELEGRAM_APROVACOES_BOT_TOKEN || '').trim();
@@ -22,11 +18,6 @@ function parseJson(valor, fallback = {}) {
   if (!valor) return fallback;
   if (typeof valor === 'object') return valor;
   try { return JSON.parse(valor); } catch { return fallback; }
-}
-
-function mapaAprovadores() {
-  const mapa = parseJson(process.env.TELEGRAM_APROVACOES_APROVADORES, {});
-  return mapa && typeof mapa === 'object' && !Array.isArray(mapa) ? mapa : {};
 }
 
 function motivosTexto(motivos = []) {
@@ -131,20 +122,24 @@ async function notificarSolicitacaoPendente(solicitacaoId) {
   return { enviado: Boolean(resultado?.message_id), message_id: resultado?.message_id || null };
 }
 
-async function obterAprovador(telegramUserId) {
-  const email = String(mapaAprovadores()[String(telegramUserId)] || '').trim().toLowerCase();
-  if (!email) return null;
-
-  const usuario = await Usuario.query()
-    .whereRaw('LOWER(email) = ?', [email])
-    .withGraphFetched('role')
-    .first();
-
-  return usuario?.ativo && usuarioTemPermissaoLocal(usuario, PERMISSAO_DECIDIR) ? usuario : null;
-}
-
 function grupoAutorizado(id) {
   return String(id || '') === chatId();
+}
+
+function identidadeTelegram(usuario = {}) {
+  const nome = [usuario.first_name, usuario.last_name].filter(Boolean).join(' ').trim()
+    || String(usuario.username || '').trim()
+    || 'Membro do grupo';
+  const username = String(usuario.username || '').trim();
+  return {
+    nome,
+    username: username ? `@${username}` : null,
+    id: usuario.id ? String(usuario.id) : null
+  };
+}
+
+function nomeExibicaoTelegram(identidade = {}) {
+  return [identidade.nome, identidade.username].filter(Boolean).join(' ') || 'Membro do grupo';
 }
 
 async function finalizarMensagem(query, solicitacao, decisao, aprovador) {
@@ -192,21 +187,16 @@ async function processarCallback(query) {
     });
   }
 
-  const aprovador = await obterAprovador(query?.from?.id);
-  if (!aprovador) {
-    return chamarApi('answerCallbackQuery', {
-      callback_query_id: query.id,
-      text: 'Você não possui permissão para decidir esta solicitação.',
-      show_alert: true
-    });
-  }
+  const aprovador = identidadeTelegram(query?.from);
+  const nomeAprovador = nomeExibicaoTelegram(aprovador);
 
   try {
+    const observacao = `${decisao === 'aprovar' ? 'Aprovada' : 'Recusada'} via Telegram por ${nomeAprovador}.`;
     const solicitacao = decisao === 'aprovar'
-      ? await vendaAprovacaoService.aprovarSolicitacao(solicitacaoId, { observacao: 'Aprovada via Telegram.' }, aprovador.id)
-      : await vendaAprovacaoService.recusarSolicitacao(solicitacaoId, { observacao: 'Recusada via Telegram.' }, aprovador.id);
+      ? await vendaAprovacaoService.aprovarSolicitacao(solicitacaoId, { observacao }, null, { telegram: aprovador })
+      : await vendaAprovacaoService.recusarSolicitacao(solicitacaoId, { observacao }, null, { telegram: aprovador });
 
-    await finalizarMensagem(query, solicitacao, decisao, aprovador);
+    await finalizarMensagem(query, solicitacao, decisao, { nome: nomeAprovador });
     return chamarApi('answerCallbackQuery', {
       callback_query_id: query.id,
       text: decisao === 'aprovar' ? 'Venda aprovada.' : 'Venda recusada.'
@@ -241,5 +231,5 @@ module.exports = {
   processarCallback,
   notificarSolicitacaoPendente,
   atualizarMensagemDecisao,
-  _internals: { botoesDecisao, mapaAprovadores, montarMensagemSolicitacao, montarMensagemDecisao, motivosTexto, nomesConsultores }
+  _internals: { botoesDecisao, identidadeTelegram, nomeExibicaoTelegram, grupoAutorizado, montarMensagemSolicitacao, montarMensagemDecisao, motivosTexto, nomesConsultores }
 };
