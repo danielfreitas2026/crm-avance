@@ -1,262 +1,185 @@
 .admin-campanhas-page {
   min-height: 0;
+  padding: 24px;
   overflow-y: auto;
 }
 
-.admin-campanhas-page > .alert-timed,
-.admin-campanhas-panel,
-.admin-campanhas-actions {
-  flex: 0 0 auto;
+.admin-campanhas-alert { margin-bottom: 16px; padding: 12px; }
+
+.admin-campanhas-panel { overflow: visible; }
+
+.admin-campanhas-panel__header {
+  gap: 16px;
+  padding: 18px 20px;
 }
 
-.admin-campanhas-page .panel {
-  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+.admin-campanhas-panel__header h3 {
+  margin: 0 0 4px;
+  font-size: 17px;
+  line-height: 1.3;
 }
 
-.admin-campanhas-page .panel:hover {
+.admin-campanhas-panel__header .muted { font-size: 13px; }
+
+.admin-campanhas-add-button { flex: 0 0 auto; }
+
+.admin-campanhas-panel__body {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.admin-campanhas-campaign {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.admin-campanhas-campaign:hover {
   border-color: var(--border-strong);
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
 }
 
-.admin-campanhas-page .list-table tbody tr td {
-  transition: background 140ms ease;
-}
-
-.admin-campanhas-page .list-table tbody tr:hover td {
+.admin-campanhas-campaign__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
   background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
 }
 
-.admin-campanhas-control {
-  width: 100%;
-  height: 32px;
-  min-width: 0;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 13px;
-  outline: none;
-  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
-}
-
-select.admin-campanhas-control {
-  cursor: pointer;
-}
-
-.admin-campanhas-control:not(:disabled):hover {
-  border-color: var(--border-strong);
-  background: var(--surface-2);
-}
-
-.admin-campanhas-control:focus {
-  border-color: var(--border-strong);
-  background: var(--surface);
-  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.06);
-}
-
-.admin-campanhas-page .btn:not(:disabled) {
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
-}
-
-.admin-campanhas-page .btn:not(.btn-primary):not(:disabled):hover {
-  border-color: var(--border-strong);
-  background: var(--surface-2);
-  color: var(--text);
-}
-
-.admin-campanhas-page .btn-primary:not(:disabled):hover {
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
-}
-
-.admin-campanhas-empty {
-  margin: 0;
+.admin-campanhas-campaign__eyebrow {
+  display: block;
+  margin-bottom: 2px;
   color: var(--text-3);
-  font-size: 13px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
 }
 
-@media (max-width: 760px) {
-  .admin-campanhas-page .panel-header .btn {
-    width: 100%;
-  }
+.admin-campanhas-campaign__header h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+}
 
-  .admin-campanhas-page .list-table td:last-child {
-    text-align: left !important;
-  }
+.admin-campanhas-section {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-campanhas-section--last { border-bottom: 0; }
+
+.admin-campanhas-section h5 {
+  margin: 0 0 12px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-campanhas-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-campanhas-fields--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.admin-campanhas-fields--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.admin-campanhas-fields--audience { grid-template-columns: minmax(180px, .8fr) repeat(2, minmax(0, 1.1fr)); }
+.admin-campanhas-field--wide { grid-column: 1 / -1; }
+
+.admin-campanhas-page label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-campanhas-page label > small {
+  margin-top: -2px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.admin-campanhas-page input,
+.admin-campanhas-page select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.admin-campanhas-page select { cursor: pointer; }
+
+.admin-campanhas-page select[multiple] {
+  height: 106px;
+  padding: 5px;
+}
+
+.admin-campanhas-page select[multiple] option { padding: 4px 6px; }
+
+.admin-campanhas-page input:hover,
+.admin-campanhas-page select:hover { border-color: var(--border-strong); }
+
+.admin-campanhas-page input:focus,
+.admin-campanhas-page select:focus {
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, .07);
+}
+
+.admin-campanhas-page select:disabled {
+  cursor: not-allowed;
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+
+.admin-campanhas-select-all {
+  justify-self: start;
+  margin-top: 2px;
+  color: var(--text-2);
+}
+
+.admin-campanhas-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.admin-campanhas-actions .btn-primary { min-width: 168px; justify-content: center; }
+
+@media (max-width: 900px) {
+  .admin-campanhas-fields--audience { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-campanhas-fields--audience > label:first-child { grid-column: 1 / -1; }
 }
 
 @media (max-width: 640px) {
   .admin-campanhas-page {
-    height: 100%;
-    min-height: 0;
-    padding: 12px !important;
-    overflow-y: auto;
-    overflow-x: hidden;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important;
-  }
-
-  .admin-campanhas-page > .panel {
-    flex: 0 0 auto;
-    min-height: 0;
-    overflow: visible;
-    border-radius: 8px;
-  }
-
-  .admin-campanhas-rewards-panel__body {
-    min-height: 0;
-    overflow: visible;
-  }
-
-  .admin-campanhas-panel__header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
-    padding: 14px 16px;
-  }
-
-  .admin-campanhas-panel__header h3 {
-    font-size: 15px;
-    line-height: 1.35;
-  }
-
-  .admin-campanhas-panel__header .muted {
-    line-height: 1.4;
-  }
-
-  .admin-campanhas-daily-panel__body {
-    display: block;
-    padding: 16px !important;
-  }
-
-  .admin-campanhas-daily-panel__body .form-grid {
-    grid-template-columns: 1fr !important;
-    gap: 0;
-    margin-bottom: 0 !important;
-  }
-
-  .admin-campanhas-daily-panel__body .form-field {
-    margin-bottom: 0;
-  }
-
-  .admin-campanhas-add-button {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .admin-campanhas-rewards-panel__body {
-    padding: 0 !important;
-  }
-
-  .admin-campanhas-table {
-    overflow: visible;
-    background: transparent;
-    max-height: none;
-  }
-
-  .admin-campanhas-table table,
-  .admin-campanhas-table tbody,
-  .admin-campanhas-table tr,
-  .admin-campanhas-table td {
-    display: block;
-    width: 100%;
-    min-width: 0;
-    max-height: none;
-  }
-
-  .admin-campanhas-table table {
-    min-width: 0 !important;
-  }
-
-  .admin-campanhas-table thead {
-    display: none;
-  }
-
-  .admin-campanhas-table tbody {
-    display: grid;
-    gap: 10px;
     padding: 12px;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
   }
 
-  .admin-campanhas-card-row {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 10px;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .admin-campanhas-table .admin-campanhas-card-field {
-    display: grid;
-    gap: 5px;
-    padding: 0 !important;
-    border: 0;
-    background: transparent !important;
-  }
-
-  .admin-campanhas-card-field::before {
-    content: attr(data-label);
-    color: var(--text-3);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    line-height: 1.2;
-    text-transform: uppercase;
-  }
-
-  .admin-campanhas-card-field--descricao,
-  .admin-campanhas-card-field--recompensa,
-  .admin-campanhas-card-field--acoes {
-    grid-column: 1 / -1;
-  }
-
-  .admin-campanhas-table .admin-campanhas-card-field--acoes {
-    display: flex;
-    justify-content: flex-end !important;
-    padding-top: 2px !important;
-  }
-
-  .admin-campanhas-card-field--acoes::before {
-    display: none;
-  }
-
-  .admin-campanhas-card-field--acoes .btn-icon {
-    width: 36px;
-    height: 36px;
-    min-height: 36px;
-  }
-
-  .admin-campanhas-empty-row {
-    display: block !important;
-    padding: 0 !important;
-    border: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-  }
-
-  .admin-campanhas-table .admin-campanhas-empty-cell {
-    display: block;
-    padding: 18px 12px !important;
-    border: 0;
-    background: transparent !important;
-    text-align: center;
-  }
-
-  .admin-campanhas-empty-cell::before {
-    display: none;
-  }
-
-  .admin-campanhas-control {
-    height: 40px;
-    font-size: 14px;
-  }
-
-  .admin-campanhas-actions .btn-primary {
-    width: 100%;
-    justify-content: center;
-  }
+  .admin-campanhas-panel__header { align-items: flex-start; flex-direction: column; }
+  .admin-campanhas-add-button,
+  .admin-campanhas-actions .btn-primary { width: 100%; }
+  .admin-campanhas-panel__body { padding: 12px; }
+  .admin-campanhas-fields--three,
+  .admin-campanhas-fields--two,
+  .admin-campanhas-fields--audience { grid-template-columns: 1fr; }
+  .admin-campanhas-fields--audience > label:first-child { grid-column: auto; }
+  .admin-campanhas-section { padding: 14px; }
 }

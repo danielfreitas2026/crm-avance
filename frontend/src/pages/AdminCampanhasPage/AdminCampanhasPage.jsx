@@ -56,27 +56,37 @@ function AdminCampanhasPage() {
   };
   if (loading) return <LayoutPrivado><div className="empty">Carregando campanhas...</div></LayoutPrivado>;
 
-  return <LayoutPrivado><div className="page admin-campanhas-page" style={{ padding: 24, overflowY: 'auto' }}>
-    {message && <div className={`alert-${message.type}`} style={{ marginBottom: 16, padding: 12 }}>{message.text}</div>}
-    <div className="panel"><div className="panel-header"><div><h3>Gamificação: Presentes e Recompensas</h3><span className="muted">Configure escopo, participantes e metas das campanhas</span></div><button className="btn btn-sm" onClick={add} disabled={saving}><I.Plus size={14} /> Adicionar campanha</button></div>
-      <div className="panel-body" style={{ padding: 16 }}>
-        {campanhas.filter(c => c.is_gift).map((campanha, index) => <section key={campanha.id} className="admin-campanhas-campaign panel" style={{ marginBottom: 16, padding: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}><strong>Campanha {index + 1}</strong><button className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => remove(campanha.id)} disabled={saving} title="Excluir campanha"><I.Trash size={14} /></button></div>
-          <div className="form-grid">
-            <label>Período<select value={campanha.periodo || 'diaria'} onChange={e => change(campanha.id, 'periodo', e.target.value)}>{PERIODOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-            <label>Categoria<select value={campanha.categoria} onChange={e => change(campanha.id, 'categoria', e.target.value)}>{CATEGORIAS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-            {campanha.categoria === 'outros' && <label>Nome da categoria<input value={campanha.categoria_personalizada || ''} onChange={e => change(campanha.id, 'categoria_personalizada', e.target.value)} placeholder="Ex.: Seguro" /></label>}
-            <label>{campanha.categoria === 'valor_monetario' ? 'Meta (R$)' : 'Alvo'}<input type="number" min="0.01" step={campanha.categoria === 'valor_monetario' ? '0.01' : '1'} value={campanha.target} onChange={e => change(campanha.id, 'target', Number(e.target.value) || 0)} /></label>
-            <label>Filtro de base<select disabled={campanha.categoria === 'registro_cliente'} value={campanha.categoria === 'registro_cliente' ? 'ambos' : (campanha.publico_base || 'ambos')} onChange={e => change(campanha.id, 'publico_base', e.target.value)}>{PUBLICOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-            <label>Operadoras <small>(vazio = todas)</small><select multiple value={campanha.operadora_ids.map(String)} onChange={e => change(campanha.id, 'operadora_ids', idsSelecionados(e))}>{operadoras.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}</select></label>
-            <label>Participantes <small>(vazio = todos)</small><select multiple value={campanha.participante_ids.map(String)} onChange={e => change(campanha.id, 'participante_ids', idsSelecionados(e))}>{usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</select><button type="button" className="btn btn-sm" onClick={() => change(campanha.id, 'participante_ids', usuarios.map(u => Number(u.id)))}>Selecionar todos os ativos</button></label>
-            <label>Descrição exibida<input value={campanha.desc || ''} onChange={e => change(campanha.id, 'desc', e.target.value)} /></label>
-            <label>Recompensa<input value={campanha.reward || ''} onChange={e => change(campanha.id, 'reward', e.target.value)} /></label>
+  return <LayoutPrivado><div className="page admin-campanhas-page">
+    {message && <div className={`alert-${message.type} admin-campanhas-alert`}>{message.text}</div>}
+    <div className="panel admin-campanhas-panel"><div className="panel-header admin-campanhas-panel__header"><div><h3>Gamificação: presentes e recompensas</h3><span className="muted">Defina as metas, o público e a recompensa de cada campanha.</span></div><button className="btn admin-campanhas-add-button" onClick={add} disabled={saving}><I.Plus size={16} /> Adicionar campanha</button></div>
+      <div className="panel-body admin-campanhas-panel__body">
+        {campanhas.filter(c => c.is_gift).map((campanha, index) => <section key={campanha.id} className="admin-campanhas-campaign">
+          <header className="admin-campanhas-campaign__header"><div><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}</span><h4>Configuração da recompensa</h4></div><button className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => remove(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button></header>
+          <div className="admin-campanhas-section">
+            <h5>Meta da campanha</h5>
+            <div className="admin-campanhas-fields admin-campanhas-fields--three">
+              <label>Período<select value={campanha.periodo || 'diaria'} onChange={e => change(campanha.id, 'periodo', e.target.value)}>{PERIODOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+              <label>Categoria<select value={campanha.categoria} onChange={e => change(campanha.id, 'categoria', e.target.value)}>{CATEGORIAS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+              <label>{campanha.categoria === 'valor_monetario' ? 'Meta (R$)' : 'Alvo'}<input type="number" min="0.01" step={campanha.categoria === 'valor_monetario' ? '0.01' : '1'} value={campanha.target} onChange={e => change(campanha.id, 'target', Number(e.target.value) || 0)} /></label>
+              {campanha.categoria === 'outros' && <label className="admin-campanhas-field--wide">Nome da categoria<input value={campanha.categoria_personalizada || ''} onChange={e => change(campanha.id, 'categoria_personalizada', e.target.value)} placeholder="Ex.: Seguro" /></label>}
+            </div>
+          </div>
+          <div className="admin-campanhas-section">
+            <h5>Quem participa</h5>
+            <div className="admin-campanhas-fields admin-campanhas-fields--audience">
+              <label>Filtro de base<select disabled={campanha.categoria === 'registro_cliente'} value={campanha.categoria === 'registro_cliente' ? 'ambos' : (campanha.publico_base || 'ambos')} onChange={e => change(campanha.id, 'publico_base', e.target.value)}>{PUBLICOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>{campanha.categoria === 'registro_cliente' && <small>Definido automaticamente para esta categoria.</small>}</label>
+              <label>Operadoras <small>(deixe vazio para todas)</small><select multiple value={campanha.operadora_ids.map(String)} onChange={e => change(campanha.id, 'operadora_ids', idsSelecionados(e))}>{operadoras.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}</select></label>
+              <label>Participantes <small>(deixe vazio para todos)</small><select multiple value={campanha.participante_ids.map(String)} onChange={e => change(campanha.id, 'participante_ids', idsSelecionados(e))}>{usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</select><button type="button" className="btn btn-sm admin-campanhas-select-all" onClick={() => change(campanha.id, 'participante_ids', usuarios.map(u => Number(u.id)))}>Selecionar todos os ativos</button></label>
+            </div>
+          </div>
+          <div className="admin-campanhas-section admin-campanhas-section--last">
+            <h5>Comunicação</h5>
+            <div className="admin-campanhas-fields admin-campanhas-fields--two"><label>Descrição exibida<input value={campanha.desc || ''} onChange={e => change(campanha.id, 'desc', e.target.value)} placeholder="Ex.: Registre 10 clientes" /></label><label>Recompensa<input value={campanha.reward || ''} onChange={e => change(campanha.id, 'reward', e.target.value)} placeholder="Ex.: Folga na sexta-feira" /></label></div>
           </div>
         </section>)}
       </div>
     </div>
-    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}><button className="btn btn-primary" onClick={save} disabled={saving}><I.Check size={16} /> {saving ? 'Salvando...' : 'Salvar alterações'}</button></div>
+    <div className="admin-campanhas-actions"><button className="btn btn-primary" onClick={save} disabled={saving}><I.Check size={16} /> {saving ? 'Salvando...' : 'Salvar alterações'}</button></div>
   </div></LayoutPrivado>;
 }
 export default AdminCampanhasPage;
