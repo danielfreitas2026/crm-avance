@@ -34,6 +34,8 @@ const STATUS_CLASS = {
 
 const MOTIVO_LABEL = {
   venda_compartilhada: 'Venda compartilhada',
+  cliente_venda_em_andamento: 'Cliente com venda em andamento',
+  cliente_venda_concluida_recente: 'Cliente com venda concluída há menos de 24 meses'
 };
 
 /**

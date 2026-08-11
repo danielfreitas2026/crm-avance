@@ -2,6 +2,7 @@ const Notificacao = require('../models/Notificacao');
 const NotificacaoDestinatario = require('../models/NotificacaoDestinatario');
 const Usuario = require('../models/Usuario');
 const Venda = require('../models/Venda');
+const FunilEtapa = require('../models/FunilEtapa');
 /**
  * Servico de solicitacoes de aprovacao de vendas.
  */
@@ -16,7 +17,9 @@ const STATUS_APROVADA = 'aprovada';
 const STATUS_RECUSADA = 'recusada';
 const STATUS_OBSOLETA = 'obsoleta';
 const MOTIVO_VENDA_COMPARTILHADA = 'venda_compartilhada';
-const MESES_LIMITE_REGISTRO = 24;
+const MOTIVO_CLIENTE_VENDA_ANDAMENTO = 'cliente_venda_em_andamento';
+const MOTIVO_CLIENTE_VENDA_CONCLUIDA_RECENTE = 'cliente_venda_concluida_recente';
+const MESES_LIMITE_VENDA_CONCLUIDA = 24;
 const TIPO_NOTIFICACAO_APROVACAO = 'venda_aprovacao_pendente';
 const PERMISSAO_VISUALIZAR = 'vendas_aprovacoes_visualizar';
 const PERMISSAO_DECIDIR = 'vendas_aprovacoes_decidir';
@@ -93,6 +96,8 @@ function nomeVenda(venda) {
  */
 function descreverMotivo(motivo) {
   if (motivo === MOTIVO_VENDA_COMPARTILHADA) return 'venda compartilhada';
+  if (motivo === MOTIVO_CLIENTE_VENDA_ANDAMENTO) return 'cliente com venda em andamento';
+  if (motivo === MOTIVO_CLIENTE_VENDA_CONCLUIDA_RECENTE) return 'cliente com venda concluída há menos de 24 meses';
   return motivo;
 }
 
@@ -103,32 +108,143 @@ function montarMensagemMotivos(motivos) {
   return normalizarMotivos(motivos).map(descreverMotivo).join(' e ');
 }
 /**
- * Verifica se a venda foi registrada ha menos de 24 meses.
+ * Converte data do banco em data UTC valida.
  */
-function vendaTemMenosDe24MesesDeRegistro(venda, agora = new Date()) {
-  const registro = venda?.criado_em || venda?.created_at;
-  const dataRegistro = registro ? new Date(registro) : null;
+function normalizarDataUtc(valor) {
+  if (!valor) return null;
+  if (valor instanceof Date) return Number.isNaN(valor.getTime()) ? null : valor;
 
-  if (!dataRegistro || Number.isNaN(dataRegistro.getTime())) return false;
+  const texto = String(valor).trim();
+  const data = new Date(texto.includes('T') ? texto : `${texto.replace(' ', 'T')}Z`);
+  return Number.isNaN(data.getTime()) ? null : data;
+}
 
-  const limite = new Date(agora);
-  limite.setMonth(limite.getMonth() - MESES_LIMITE_REGISTRO);
-  return dataRegistro > limite;
+/**
+ * Subtrai meses de uma data preservando o ultimo dia valido do mes de destino.
+ */
+function subtrairMeses(data, meses) {
+  const resultado = new Date(data);
+  const diaOriginal = resultado.getUTCDate();
+
+  resultado.setUTCDate(1);
+  resultado.setUTCMonth(resultado.getUTCMonth() - meses);
+  const ultimoDia = new Date(Date.UTC(
+    resultado.getUTCFullYear(),
+    resultado.getUTCMonth() + 1,
+    0
+  )).getUTCDate();
+  resultado.setUTCDate(Math.min(diaOriginal, ultimoDia));
+
+  return resultado;
+}
+
+/**
+ * Verifica se venda concluida entrou na etapa final ha menos de 24 meses.
+ */
+function vendaConcluidaRecentemente(venda, etapaFinal, agora = new Date()) {
+  if (!venda || venda.excluido_em || venda.cancelada_em || venda.status_funil !== etapaFinal) return false;
+
+  const entradaEtapaFinal = normalizarDataUtc(venda.entrada_etapa_final_em);
+  if (!entradaEtapaFinal) return false;
+
+  return entradaEtapaFinal > subtrairMeses(agora, MESES_LIMITE_VENDA_CONCLUIDA);
+}
+
+/**
+ * Verifica se venda ja enviada ainda esta em andamento no funil.
+ */
+function vendaEmAndamento(venda, etapaFinal) {
+  return Boolean(
+    venda
+    && !venda.excluido_em
+    && !venda.cancelada_em
+    && venda.enviada_pos_venda_em
+    && venda.status_funil !== etapaFinal
+  );
+}
+
+/**
+ * Retorna a etapa final atualmente configurada no funil.
+ */
+async function obterCodigoEtapaFinal(trx = null) {
+  try {
+    const etapa = await FunilEtapa.query(trx)
+      .where('etapa_final', true)
+      .orderBy('ativo', 'desc')
+      .orderBy('ordem', 'asc')
+      .first();
+
+    return etapa?.codigo || 'concluido';
+  } catch {
+    return 'concluido';
+  }
+}
+
+/**
+ * Lista vendas anteriores do mesmo cliente com a data mais recente de entrada na etapa final.
+ */
+async function listarVendasAnterioresCliente(venda, etapaFinal, trx = null) {
+  const clienteId = Number(venda?.cliente_id || 0);
+  if (!clienteId) return [];
+
+  const knex = Venda.knex();
+  return Venda.query(trx)
+    .where('cliente_id', clienteId)
+    .whereNot('id', venda.id)
+    .whereNull('excluido_em')
+    .select('id', 'status_funil', 'enviada_pos_venda_em', 'cancelada_em', 'excluido_em')
+    .select(knex.raw(
+      `(SELECT MAX(vh.created_at)
+        FROM venda_historicos vh
+        WHERE vh.venda_id = vendas.id
+          AND vh.status_novo = ?) AS entrada_etapa_final_em`,
+      [etapaFinal]
+    ));
+}
+
+/**
+ * Monta os motivos de liberacao a partir de uma venda e de seu historico de cliente.
+ */
+function avaliarMotivosVenda(venda, vendasAnteriores, etapaFinal, agora = new Date()) {
+  const motivos = [];
+  const vendedoras = Array.isArray(venda?.vendedoras) && venda.vendedoras.length > 0
+    ? venda.vendedoras
+    : (venda?.vendedora_id ? [{ id: venda.vendedora_id }] : []);
+
+  if (vendedoras.length > 1) {
+    motivos.push(MOTIVO_VENDA_COMPARTILHADA);
+  }
+
+  const vendasElegiveis = vendasAnteriores.filter(item => Number(item?.id) !== Number(venda?.id));
+
+  if (vendasElegiveis.some(item => vendaEmAndamento(item, etapaFinal))) {
+    motivos.push(MOTIVO_CLIENTE_VENDA_ANDAMENTO);
+  }
+
+  if (vendasElegiveis.some(item => vendaConcluidaRecentemente(item, etapaFinal, agora))) {
+    motivos.push(MOTIVO_CLIENTE_VENDA_CONCLUIDA_RECENTE);
+  }
+
+  return normalizarMotivos(motivos);
 }
 
 /**
  * Normaliza a descricao escrita pelo solicitante.
  */
-function normalizarMotivoDescricao(valor, venda) {
+function normalizarMotivoDescricao(valor, venda, motivos = []) {
   const descricao = String(valor || '').trim().slice(0, 5000);
   if (descricao) return descricao;
 
   const nomes = (Array.isArray(venda?.vendedoras) ? venda.vendedoras : [])
     .map(item => item.nome)
     .filter(Boolean);
-  return nomes.length > 0
+  if (motivos.length === 1 && motivos[0] === MOTIVO_VENDA_COMPARTILHADA) {
+    return nomes.length > 0
     ? `Venda compartilhada entre ${nomes.join(' e ')}.`
     : 'Venda compartilhada.';
+  }
+
+  return `Venda requer liberação ADM por ${montarMensagemMotivos(motivos)}.`;
 }
 /**
  * Registra historico venda no historico ou log.
@@ -167,17 +283,13 @@ async function avaliarRequisitosVenda(vendaId, trx = null) {
     return { venda: null, motivos: [] };
   }
 
-  const motivos = [];
-  const vendedoras = Array.isArray(venda.vendedoras) && venda.vendedoras.length > 0
-    ? venda.vendedoras
-    : (venda.vendedora_id ? [{ id: venda.vendedora_id }] : []);
+  const etapaFinal = await obterCodigoEtapaFinal(trx);
+  const vendasAnteriores = await listarVendasAnterioresCliente(venda, etapaFinal, trx);
 
-  if (vendedoras.length > 1 && vendaTemMenosDe24MesesDeRegistro(venda)) {
-    motivos.push(MOTIVO_VENDA_COMPARTILHADA);
-  }
-
-
-  return { venda, motivos: normalizarMotivos(motivos) };
+  return {
+    venda,
+    motivos: avaliarMotivosVenda(venda, vendasAnteriores, etapaFinal)
+  };
 }
 
 /**
@@ -350,7 +462,7 @@ async function criarSolicitacaoPendente(venda, motivos, usuarioId, dados = {}, t
     venda_id: venda.id,
     status: STATUS_PENDENTE,
     motivos: JSON.stringify(normalizarMotivos(motivos)),
-    motivo_descricao: normalizarMotivoDescricao(dados?.motivo_descricao, venda),
+    motivo_descricao: normalizarMotivoDescricao(dados?.motivo_descricao, venda, motivos),
     solicitado_por_id: usuarioId,
     solicitado_em: agora
   });
@@ -499,5 +611,13 @@ module.exports = {
   sincronizarAprovacaoAposAlteracao,
   listarSolicitacoes,
   aprovarSolicitacao: (id, dados, usuarioId) => decidirSolicitacao(id, dados, usuarioId, 'aprovar'),
-  recusarSolicitacao: (id, dados, usuarioId) => decidirSolicitacao(id, dados, usuarioId, 'recusar')
+  recusarSolicitacao: (id, dados, usuarioId) => decidirSolicitacao(id, dados, usuarioId, 'recusar'),
+  _internals: {
+    avaliarMotivosVenda,
+    montarMensagemMotivos,
+    normalizarMotivoDescricao,
+    subtrairMeses,
+    vendaConcluidaRecentemente,
+    vendaEmAndamento
+  }
 };

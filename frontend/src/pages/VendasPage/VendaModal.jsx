@@ -3705,14 +3705,7 @@ function VendaModal({
   const vendedorasDaVenda = Array.isArray(venda?.vendedoras) && venda.vendedoras.length > 0
     ? venda.vendedoras
     : (venda?.vendedora ? [venda.vendedora] : []);
-  const registroVenda = venda?.criado_em || venda?.created_at;
-  const dataRegistroVenda = registroVenda ? new Date(registroVenda) : null;
-  const limiteLiberacao = new Date();
-  limiteLiberacao.setMonth(limiteLiberacao.getMonth() - 24);
-  const requerLiberacao = vendedorasDaVenda.length > 1
-    && dataRegistroVenda
-    && !Number.isNaN(dataRegistroVenda.getTime())
-    && dataRegistroVenda > limiteLiberacao;
+  const requerLiberacao = vendedorasDaVenda.length > 1;
   const usuarioPosVenda = temPermissao(usuarioLogado, 'pos_venda');
   const usuarioAdmin = usuarioLogado?.role?.nome === 'admin';
   const usuarioEhResponsavelVenda = Boolean(venda && usuarioLogado?.id && (
