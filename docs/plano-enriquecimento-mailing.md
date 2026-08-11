@@ -215,10 +215,63 @@ FuturosClientesPage / card ← EnriquecimentoAutomatico mostra contatos + badge 
 - **Não bloqueia a divisão**: só enfileira; o worker processa em background.
 - **Resiliente a reinício**: a fila vive no banco.
 
-**Envs configuráveis:** `LEAD_ENRIQUECIMENTO_LOTE` (5),
-`LEAD_ENRIQUECIMENTO_INTERVALO_MS` (250), `LEAD_ENRIQUECIMENTO_TETO_DIARIO`
-(5000), `LEAD_ENRIQUECIMENTO_MAX_TENTATIVAS` (3),
+**Envs configuráveis:** `LEAD_ENRIQUECIMENTO_ATIVO` (true),
+`LEAD_ENRIQUECIMENTO_LOTE` (5), `LEAD_ENRIQUECIMENTO_INTERVALO_MS` (250),
+`LEAD_ENRIQUECIMENTO_TETO_DIARIO` (150), `LEAD_ENRIQUECIMENTO_TETO_MENSAL`
+(3000), `LEAD_ENRIQUECIMENTO_MAX_TENTATIVAS` (3),
 `LEAD_ENRIQUECIMENTO_WORKER_MS` (15000).
+
+### Travas de custo (proteção contra cobrança)
+
+Cada linha gasta ~2 chamadas (Text Search + Place Details) = ~2 SKUs. A
+franquia grátis do Google e ~5.000 chamadas/mês POR SKU. Camadas:
+
+1. **Interruptor geral** `LEAD_ENRIQUECIMENTO_ATIVO=false` → worker não faz
+   nenhuma chamada (verificado).
+2. **Teto mensal** (`TETO_MENSAL`, padrão 3000 linhas) → barra o gasto ao longo
+   do mês, mantendo abaixo da franquia grátis. Verificado: com a cota atingida o
+   worker recusa processar.
+3. **Teto diário** (`TETO_DIARIO`, padrão 150 linhas) → distribui o consumo.
+4. **Idempotência** → nunca re-cobra a mesma linha.
+
+⚠️ IMPORTANTE: nenhuma trava do código impede o Google de cobrar por si só — a
+franquia grátis não bloqueia, ela cobra o excedente. A trava que **fisicamente
+impede a cobrança** é o **limite de cota no Google Cloud Console** (Places API
+(New) → Quotas), que só o dono da conta pode configurar. Os tetos do código são
+defesa em profundidade para o worker nunca ultrapassar o gratuito.
+
+## 10.4. Arquitetura pronta para o Apify (encaixe futuro, NÃO implementado)
+
+O código já deixa o "encaixe" (seam) pronto para plugar o Apify como **2ª fonte**
+de contato, acionada só quando o Google não traz telefone confiável. Hoje está
+**desligado e inerte** — nada é chamado.
+
+**Peças já preparadas:**
+- `services/apify.service.js` — **stub** com o CONTRATO de retorno documentado e
+  o esqueleto da chamada (comentado). Só falta preencher a chamada HTTP.
+- Gancho em `lead-enriquecimento.service.js` (`talvezEnriquecerComApify`) — já
+  chamado no ponto certo (após o Google devolver `sem_resultado` +
+  `recomenda_apify`), guardado por `LEAD_ENRIQUECIMENTO_APIFY_ATIVO` (padrão
+  `false`) e por `apifyService.APIFY_DISPONIVEL` (padrão `false`).
+- **Sem migration nova**: a fila reaproveita as linhas `status='sem_resultado'`
+  e `recomenda_apify=1`. Ao concluir via Apify, grava `fonte='apify'`.
+
+**Para concluir a integração no futuro (resumo — detalhes no apify.service.js):**
+1. Criar conta Apify e escolher um Actor **"contact scraper"** (extrai telefone
+   do site da empresa) — melhor para telefone e menos risco que rede social.
+2. Definir envs: `APIFY_TOKEN`, `APIFY_ATOR_CONTATO`,
+   `LEAD_ENRIQUECIMENTO_APIFY_ATIVO=true`, e trocar `APIFY_DISPONIVEL` para true.
+3. Implementar `buscarContatoEmpresa` seguindo o CONTRATO; medir confiança com o
+   **mesmo** `fuzzy.confiancaEmpresa` (a % fica coerente entre as fontes).
+4. Reaproveitar os tetos de custo (criar um `APIFY_TETO_MENSAL` espelhando o do
+   Google) — o Apify cobra por uso de Actor.
+
+Fluxo alvo (quando ligado):
+```
+Google sem telefone confiável (sem_resultado + recomenda_apify)
+        └─> talvezEnriquecerComApify() → apify.service.buscarContatoEmpresa()
+             → fuzzy #2 mede confiança → grava telefone/site, fonte="apify"
+```
 
 ## 10. APIs necessárias (mapeamento)
 

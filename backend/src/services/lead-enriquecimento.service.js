@@ -10,20 +10,38 @@
  */
 const db = require('../database/connection');
 const googlePlacesService = require('./google-places.service');
+const apifyService = require('./apify.service');
 const fuzzy = require('../utils/fuzzy');
 
 const TABELA = 'lead_enriquecimento';
 
+// Liga/desliga o enriquecimento automatico. Interruptor geral: com "false" o
+// worker nao faz NENHUMA chamada ao Google (as linhas so ficam enfileiradas).
+const ATIVO = String(process.env.LEAD_ENRIQUECIMENTO_ATIVO ?? 'true').trim().toLowerCase() !== 'false';
+
 // Quantas linhas processar por ciclo do worker. Pequeno de proposito: o
-// controle fino de custo/cota vem do rodizio de chaves do Google e do teto
-// diario abaixo.
+// controle fino de custo/cota vem dos tetos abaixo e do limite de cota
+// configurado no Google Cloud Console.
 const LOTE = Number(process.env.LEAD_ENRIQUECIMENTO_LOTE || 5);
 // Pausa entre chamadas para nao pressionar a API dentro de um mesmo ciclo.
 const INTERVALO_MS = Number(process.env.LEAD_ENRIQUECIMENTO_INTERVALO_MS || 250);
-// Teto de linhas processadas por dia (protecao de gasto). 0 = sem teto.
-const TETO_DIARIO = Number(process.env.LEAD_ENRIQUECIMENTO_TETO_DIARIO || 5000);
+
+// TETOS DE PROTECAO DE CUSTO (0 = sem teto).
+//
+// Cada linha enriquecida gasta ~2 chamadas do Google (1 Text Search + 1 Place
+// Details), ou seja ~2 SKUs. A franquia gratuita do Google gira em torno de
+// ~5.000 chamadas/mes POR SKU. Por isso os padroes abaixo sao propositalmente
+// baixos: mesmo que voce esqueca de configurar a cota no Google Console, o
+// worker para sozinho bem antes de sair do gratuito.
+const TETO_DIARIO = Number(process.env.LEAD_ENRIQUECIMENTO_TETO_DIARIO ?? 150);
+const TETO_MENSAL = Number(process.env.LEAD_ENRIQUECIMENTO_TETO_MENSAL ?? 3000);
+
 // Maximo de tentativas antes de marcar uma linha como "erro".
 const MAX_TENTATIVAS = Number(process.env.LEAD_ENRIQUECIMENTO_MAX_TENTATIVAS || 3);
+
+// Fallback Apify (2a fonte). Desligado por padrao. Mesmo ligado, so faz efeito
+// depois que o apify.service deixar de ser stub. Ver docs/plano-*.md.
+const APIFY_ATIVO = String(process.env.LEAD_ENRIQUECIMENTO_APIFY_ATIVO ?? 'false').trim().toLowerCase() === 'true';
 
 // Motivos do Google que indicam falta de cota/credencial: nao "queimam" a
 // linha (ela continua pendente para ser tentada de novo mais tarde).
@@ -237,8 +255,13 @@ async function processarLinha(registro) {
     return 'processado';
   }
 
+  // Seam do Apify: quando o Google nao acha telefone confiavel, esta e a hora
+  // de acionar a 2a fonte. Inerte por padrao (APIFY_ATIVO=false e apify.service
+  // ainda e stub) — deixa a arquitetura pronta sem mudar o comportamento atual.
+  const patch = await talvezEnriquecerComApify(interpretado.patch, empresa);
+
   await db(TABELA).where('id', registro.id).update({
-    ...interpretado.patch,
+    ...patch,
     processado_em: formatarDateTimeSQL(),
     updated_at: formatarDateTimeSQL()
   });
@@ -246,16 +269,70 @@ async function processarLinha(registro) {
 }
 
 /**
- * Quantas linhas ja foram processadas hoje (para respeitar o teto diario).
+ * Ponto de extensao do Apify. Se ligado e configurado, tenta a 2a fonte quando
+ * o Google nao trouxe telefone confiavel e devolve um patch enriquecido; caso
+ * contrario devolve o patch original inalterado.
+ *
+ * @param {object} patch    patch vindo de interpretarResultadoGoogle
+ * @param {object} empresa  dados da empresa ({ razaoSocial, nomeFantasia, ... })
+ * @returns {Promise<object>} patch (possivelmente com dados do Apify)
  */
-async function processadosHoje() {
-  const inicioDia = formatarDateTimeSQL(new Date(new Date().setUTCHours(0, 0, 0, 0)));
+async function talvezEnriquecerComApify(patch, empresa) {
+  const precisaFallback = patch?.status === 'sem_resultado' && patch?.recomenda_apify;
+  if (!precisaFallback || !APIFY_ATIVO || !apifyService.APIFY_DISPONIVEL) {
+    return patch;
+  }
+
+  try {
+    const r = await apifyService.buscarContatoEmpresa(empresa);
+    if (!r?.encontrado || !r.telefone) return patch;
+
+    const contatos = [];
+    if (r.telefone) contatos.push({ tipo: 'telefone', valor: r.telefone, fonte: 'apify', confianca: r.confianca });
+    if (r.contato?.site) contatos.push({ tipo: 'site', valor: r.contato.site, fonte: 'apify', confianca: r.confianca });
+    if (r.contato?.instagram) contatos.push({ tipo: 'instagram', valor: r.contato.instagram, fonte: 'apify', confianca: r.confianca });
+
+    return {
+      ...patch,
+      status: 'concluido',
+      telefone: r.telefone,
+      site: r.contato?.site || patch.site || null,
+      nome_encontrado: r.contato?.nome || patch.nome_encontrado || null,
+      confianca: r.confianca ?? patch.confianca,
+      confianca_pct: r.confianca_pct ?? patch.confianca_pct,
+      confianca_nivel: r.confianca_nivel || patch.confianca_nivel,
+      recomenda_apify: false,
+      apify_motivo: null,
+      contatos_json: JSON.stringify(contatos),
+      fonte: 'apify'
+    };
+  } catch (error) {
+    // Fallback nunca deve derrubar o processamento da fila.
+    console.error('Fallback Apify falhou:', error.message);
+    return patch;
+  }
+}
+
+/**
+ * Quantas linhas foram processadas (chamaram o Google) desde `desde`.
+ * Serve para respeitar os tetos de custo diario e mensal.
+ */
+async function processadosDesde(desde) {
   const row = await db(TABELA)
     .whereIn('status', ['concluido', 'sem_resultado', 'erro'])
-    .where('processado_em', '>=', inicioDia)
+    .where('processado_em', '>=', formatarDateTimeSQL(desde))
     .count({ total: 'id' })
     .first();
   return Number(row?.total || 0);
+}
+
+function inicioDoDiaUTC() {
+  return new Date(new Date().setUTCHours(0, 0, 0, 0));
+}
+
+function inicioDoMesUTC() {
+  const agora = new Date();
+  return new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1, 0, 0, 0));
 }
 
 let processando = false;
@@ -273,14 +350,29 @@ async function processarFila() {
   const resumo = { processados: 0, adiados: 0, ignorados: 0 };
 
   try {
-    if (TETO_DIARIO > 0 && await processadosHoje() >= TETO_DIARIO) {
-      return { ...resumo, teto_atingido: true };
+    // Interruptor geral: nenhuma chamada ao Google enquanto desligado.
+    if (!ATIVO) return { ...resumo, desativado: true };
+
+    // Teto MENSAL: barra o gasto ao longo do mes (a franquia gratuita do Google
+    // e por mes). E a trava mais importante contra surpresa no cartao.
+    if (TETO_MENSAL > 0 && await processadosDesde(inicioDoMesUTC()) >= TETO_MENSAL) {
+      return { ...resumo, teto_mensal_atingido: true };
     }
 
-    const pendentes = await db(TABELA)
-      .where('status', 'pendente')
-      .orderBy('id', 'asc')
-      .limit(LOTE);
+    // Teto DIARIO: distribui o consumo e evita esvaziar a cota de uma vez.
+    let restanteDia = Infinity;
+    if (TETO_DIARIO > 0) {
+      restanteDia = TETO_DIARIO - await processadosDesde(inicioDoDiaUTC());
+      if (restanteDia <= 0) return { ...resumo, teto_atingido: true };
+    }
+
+    const limite = Math.max(0, Math.min(LOTE, restanteDia));
+    const pendentes = limite > 0
+      ? await db(TABELA)
+        .where('status', 'pendente')
+        .orderBy('id', 'asc')
+        .limit(limite)
+      : [];
 
     for (const registro of pendentes) {
       const desfecho = await processarLinha(registro);
