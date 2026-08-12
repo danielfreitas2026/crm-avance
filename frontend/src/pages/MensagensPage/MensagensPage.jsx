@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
+import AutoResizeTextarea from '../../components/AutoResizeTextarea';
 import * as I from '../../components/Icons';
 import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import { formatUtcDateTime } from '../../utils/datetime';
 import {
   enviarMensagem,
+  enviarMensagensEmLote,
   listarContatos,
   listarConversas,
   listarTodasConversas,
@@ -186,6 +188,8 @@ function MensagensPage() {
   const [pendentes, setPendentes] = useState([]);
   // { file, nome, tamanho, status: 'enviando'|'pronto'|'erro', arquivo_id?, erro? }
   const [anexoPendente, setAnexoPendente] = useState(null);
+  const [destinatariosSelecionados, setDestinatariosSelecionados] = useState([]);
+  const [sucessoLote, setSucessoLote] = useState('');
 
   const listaRef = useRef(null);
   const fimRef = useRef(null);
@@ -248,6 +252,8 @@ function MensagensPage() {
     setMensagens([]);
     setPendentes([]);
     setAnexoPendente(null);
+    setDestinatariosSelecionados([]);
+    setSucessoLote('');
     setContatoSelecionado(null);
     setNovaConversaAberta(false);
     mensagensRef.current = [];
@@ -315,6 +321,7 @@ function MensagensPage() {
    */
   function selecionarContato(contato, modoOrigem = 'minhas') {
     setErro('');
+    setTexto('');
     setMensagens([]);
     setPendentes([]);
     setAnexoPendente(null);
@@ -322,10 +329,31 @@ function MensagensPage() {
     ultimoIdRef.current = 0;
     proximaRolagemRef.current = true;
     setNovaConversaAberta(false);
+    setDestinatariosSelecionados([]);
+    setSucessoLote('');
     setBuscaContato('');
     setContatoSelecionado({ ...contato, modoVisualizacao: modoOrigem });
     // Atualiza badges/contadores após abrir (a leitura é marcada no backend).
     carregarConversas();
+  }
+
+  function alternarNovaMensagem() {
+    const abrir = !novaConversaAberta;
+    setNovaConversaAberta(abrir);
+    setContatoSelecionado(null);
+    setDestinatariosSelecionados([]);
+    setBuscaContato('');
+    setTexto('');
+    setAnexoPendente(null);
+    setErro('');
+    setSucessoLote('');
+  }
+
+  function alternarDestinatario(contatoId) {
+    const id = Number(contatoId);
+    setDestinatariosSelecionados(atuais => atuais.includes(id)
+      ? atuais.filter(item => item !== id)
+      : [...atuais, id]);
   }
 
   /**
@@ -468,6 +496,46 @@ function MensagensPage() {
     }
   }
 
+  async function handleEnviarLote(evento) {
+    evento.preventDefault();
+    const conteudo = texto.trim();
+    const anexoPronto = anexoPendente?.status === 'pronto' ? anexoPendente : null;
+    if (destinatariosSelecionados.length === 0 || enviando) return;
+    if ((!conteudo && !anexoPronto) || (anexoPendente && !anexoPronto)) return;
+
+    setEnviando(true);
+    setErro('');
+    setSucessoLote('');
+    try {
+      const resultado = await enviarMensagensEmLote(
+        destinatariosSelecionados,
+        conteudo,
+        anexoPronto ? { arquivo_id: anexoPronto.arquivo_id, nome_original: anexoPronto.nome_original } : null
+      );
+      const falhas = Array.isArray(resultado?.falhas) ? resultado.falhas : [];
+      const idsFalhos = falhas.map(item => Number(item.destinatario_id)).filter(Number.isFinite);
+      const quantidadeEnviada = Number(resultado?.resumo?.enviadas || 0);
+
+      await carregarConversas();
+      window.dispatchEvent(new CustomEvent('pos-venda:mensagens-atualizar'));
+
+      if (falhas.length > 0) {
+        setDestinatariosSelecionados(idsFalhos);
+        setErro(`${quantidadeEnviada} enviada(s). Falharam: ${falhas.map(item => item.motivo).join('; ')}`);
+      } else {
+        setTexto('');
+        setAnexoPendente(null);
+        setDestinatariosSelecionados([]);
+        setNovaConversaAberta(false);
+        setSucessoLote(`Mensagem enviada para ${quantidadeEnviada} pessoa(s).`);
+      }
+    } catch (e) {
+      setErro(e.message || 'Erro ao enviar mensagens.');
+    } finally {
+      setEnviando(false);
+    }
+  }
+
   /**
    * Envia a mensagem ao pressionar Enter sem Shift.
    */
@@ -484,6 +552,16 @@ function MensagensPage() {
     return contatos.filter(contato => contato.nome?.toLowerCase().includes(termo));
   }, [contatos, buscaContato]);
 
+  const todosFiltradosSelecionados = contatosFiltrados.length > 0
+    && contatosFiltrados.every(contato => destinatariosSelecionados.includes(Number(contato.id)));
+
+  function alternarTodosFiltrados() {
+    const idsFiltrados = contatosFiltrados.map(contato => Number(contato.id));
+    setDestinatariosSelecionados(atuais => todosFiltradosSelecionados
+      ? atuais.filter(id => !idsFiltrados.includes(id))
+      : Array.from(new Set([...atuais, ...idsFiltrados])));
+  }
+
   // Mensagens confirmadas + bolhas otimistas ainda não confirmadas.
   const itensThread = [...mensagens, ...pendentes];
   const visualizandoTodas = modoVisualizacao === 'todas';
@@ -497,7 +575,7 @@ function MensagensPage() {
   return (
     <LayoutPrivado>
       <div className="mensagens-page">
-        <div className={`mensagens-layout ${contatoSelecionado ? 'tem-conversa' : ''}`}>
+        <div className={`mensagens-layout ${contatoSelecionado || novaConversaAberta ? 'tem-conversa' : ''}`}>
           <aside className="mensagens-lista">
             <div className="mensagens-lista__topo">
               <div className="mensagens-lista__titulo">
@@ -526,7 +604,7 @@ function MensagensPage() {
                   type="button"
                   className="btn btn-icon btn-ghost"
                   title="Nova conversa"
-                  onClick={() => setNovaConversaAberta(aberto => !aberto)}
+                  onClick={alternarNovaMensagem}
                 >
                   {novaConversaAberta ? <I.Close size={16} /> : <I.Plus size={16} />}
                 </button>
@@ -546,22 +624,30 @@ function MensagensPage() {
                   />
                 </div>
                 <div className="mensagens-contatos">
+                  {contatosFiltrados.length > 0 && (
+                    <button type="button" className="mensagens-selecionar-todos" onClick={alternarTodosFiltrados}>
+                      {todosFiltradosSelecionados ? 'Desmarcar resultados' : 'Selecionar resultados'}
+                    </button>
+                  )}
                   {contatosFiltrados.length === 0 ? (
                     <div className="mensagens-vazio-sm">Nenhum usuário encontrado.</div>
                   ) : (
                     contatosFiltrados.map(contato => (
-                      <button
+                      <label
                         key={contato.id}
-                        type="button"
                         className="mensagens-contato"
-                        onClick={() => selecionarContato(contato)}
                       >
+                        <input
+                          type="checkbox"
+                          checked={destinatariosSelecionados.includes(Number(contato.id))}
+                          onChange={() => alternarDestinatario(contato.id)}
+                        />
                         <Avatar contato={contato} />
                         <span className="mensagens-contato__info">
                           <strong>{contato.nome}</strong>
                           <small>{contato.role?.nome || 'Usuário'}</small>
                         </span>
-                      </button>
+                      </label>
                     ))
                   )}
                 </div>
@@ -643,10 +729,82 @@ function MensagensPage() {
           </aside>
 
           <section className="mensagens-thread">
-            {!contatoSelecionado ? (
+            {novaConversaAberta ? (
+              <div className="mensagens-lote">
+                <header className="thread-topo">
+                  <button type="button" className="btn btn-icon btn-ghost thread-voltar" aria-label="Voltar" onClick={alternarNovaMensagem}>
+                    <I.Return size={16} />
+                  </button>
+                  <div className="thread-topo__info">
+                    <strong>Nova mensagem</strong>
+                    <small>{destinatariosSelecionados.length} destinatário(s) selecionado(s)</small>
+                  </div>
+                </header>
+                <div className="mensagens-lote__corpo">
+                  <div className="mensagens-lote__seletor-mobile">
+                    <div className="mensagens-busca">
+                      <I.Search size={14} />
+                      <input type="text" placeholder="Buscar usuário..." value={buscaContato} onChange={evento => setBuscaContato(evento.target.value)} />
+                    </div>
+                    {contatosFiltrados.length > 0 && (
+                      <button type="button" className="mensagens-selecionar-todos" onClick={alternarTodosFiltrados}>
+                        {todosFiltradosSelecionados ? 'Desmarcar resultados' : 'Selecionar resultados'}
+                      </button>
+                    )}
+                    <div className="mensagens-lote__contatos-mobile">
+                      {contatosFiltrados.map(contato => (
+                        <label key={contato.id} className="mensagens-contato">
+                          <input type="checkbox" checked={destinatariosSelecionados.includes(Number(contato.id))} onChange={() => alternarDestinatario(contato.id)} />
+                          <Avatar contato={contato} />
+                          <span className="mensagens-contato__info"><strong>{contato.nome}</strong><small>{contato.role?.nome || 'Usuário'}</small></span>
+                        </label>
+                      ))}
+                      {!contatosFiltrados.length && <div className="mensagens-vazio-sm">Nenhum usuário encontrado.</div>}
+                    </div>
+                  </div>
+                  <div className="mensagens-lote__chips">
+                    {destinatariosSelecionados.map(id => {
+                      const contato = contatos.find(item => Number(item.id) === id);
+                      return contato ? (
+                        <button key={id} type="button" onClick={() => alternarDestinatario(id)} title="Remover destinatário">
+                          {contato.nome} <I.Close size={11} />
+                        </button>
+                      ) : null;
+                    })}
+                    {destinatariosSelecionados.length === 0 && <span>Selecione os destinatários na lista ao lado.</span>}
+                  </div>
+                </div>
+                {erro && <div className="thread-erro">{erro}</div>}
+                {anexoPendente && (
+                  <div className={`thread-anexo-preview is-${anexoPendente.status}`}>
+                    <I.Document size={20} />
+                    <div className="thread-anexo-preview__info"><strong>{anexoPendente.nome}</strong><small>{anexoPendente.status === 'enviando' ? 'Enviando...' : anexoPendente.status === 'pronto' ? formatarTamanho(anexoPendente.tamanho) : anexoPendente.erro}</small></div>
+                    <button type="button" className="btn btn-icon btn-ghost" onClick={removerAnexoPendente} aria-label="Remover anexo"><I.Close size={14} /></button>
+                  </div>
+                )}
+                <form className="thread-input" onSubmit={handleEnviarLote}>
+                  <input ref={inputAnexoRef} type="file" accept={ANEXO_TIPOS_PERMITIDOS.join(',')} onChange={handleArquivoSelecionado} hidden />
+                  <button type="button" className="btn btn-icon btn-ghost thread-anexar" onClick={abrirSelecaoArquivo} disabled={enviando || Boolean(anexoPendente)} aria-label="Anexar arquivo"><I.Paperclip size={18} /></button>
+                  <AutoResizeTextarea
+                    value={texto}
+                    onChange={evento => setTexto(evento.target.value)}
+                    onKeyDown={evento => {
+                      if (evento.key === 'Enter' && !evento.shiftKey) {
+                        evento.preventDefault();
+                        handleEnviarLote(evento);
+                      }
+                    }}
+                    placeholder="Escreva uma mensagem..."
+                    minRows={1}
+                    maxRows={8}
+                  />
+                  <button type="submit" className="btn btn-primary thread-enviar" disabled={enviando || destinatariosSelecionados.length === 0 || (!texto.trim() && anexoPendente?.status !== 'pronto') || (anexoPendente && anexoPendente.status !== 'pronto')} aria-label="Enviar"><I.Send size={16} /></button>
+                </form>
+              </div>
+            ) : !contatoSelecionado ? (
               <div className="mensagens-vazio">
                 <I.Chat size={40} />
-                <p>{visualizandoTodas ? 'Selecione uma conversa interna para visualizar.' : 'Selecione uma conversa ou inicie uma nova.'}</p>
+                <p>{sucessoLote || (visualizandoTodas ? 'Selecione uma conversa interna para visualizar.' : 'Selecione uma conversa ou inicie uma nova.')}</p>
               </div>
             ) : (
               <>
@@ -783,12 +941,13 @@ function MensagensPage() {
                   >
                     <I.Paperclip size={18} />
                   </button>
-                  <textarea
+                  <AutoResizeTextarea
                     value={texto}
                     onChange={evento => setTexto(evento.target.value)}
                     onKeyDown={handleTeclaInput}
                     placeholder="Escreva uma mensagem..."
-                    rows={1}
+                    minRows={1}
+                    maxRows={8}
                   />
                   <button
                     type="submit"

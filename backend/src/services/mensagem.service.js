@@ -346,25 +346,66 @@ async function listarMensagensConversaInterna(conversaKey, { desde, limit = 50 }
 /**
  * Envia mensagem para processamento.
  */
-async function enviarMensagem(remetenteId, destinatarioId, conteudo, arquivoId = null, nomeArquivo = null) {
+async function prepararMensagem(remetenteId, conteudo, arquivoId = null, nomeArquivo = null) {
   const remetente = Number(remetenteId);
-  const destinatario = Number(destinatarioId);
   const texto = typeof conteudo === 'string' ? conteudo.trim() : '';
+  const arquivoFoiInformado = arquivoId !== null && arquivoId !== undefined && arquivoId !== '';
   const arquivoIdNum = arquivoId ? Number(arquivoId) : null;
   const nomeArquivoSanitizado = nomeArquivo
     ? arquivoService.normalizarNomeArquivo(String(nomeArquivo))
     : null;
 
-  if (!destinatario || Number.isNaN(destinatario)) {
+  if (arquivoFoiInformado && (!Number.isInteger(arquivoIdNum) || arquivoIdNum <= 0)) {
+    throw erroHttp('Anexo inválido.', 400);
+  }
+
+  if (!texto && !arquivoIdNum) {
+    throw erroHttp('A mensagem não pode estar vazia.', 400);
+  }
+
+  let arquivoAnexo = null;
+  if (arquivoIdNum) {
+    arquivoAnexo = await Arquivo.query().findById(arquivoIdNum);
+    // O frontend só conhece arquivos que ele mesmo subiu nesta sessão; ainda assim
+    // exigimos que o arquivo exista e pertença ao remetente para evitar referência cruzada.
+    if (!arquivoAnexo || arquivoAnexo.removido_em || Number(arquivoAnexo.criado_por_id) !== remetente) {
+      throw erroHttp('Anexo inválido.', 400);
+    }
+  }
+
+  return { remetente, texto, arquivoAnexo, nomeArquivoSanitizado };
+}
+
+/**
+ * Remove destinatarios repetidos preservando valores invalidos para relatar falhas.
+ */
+function normalizarDestinatarios(destinatarioIds) {
+  const destinatarios = [];
+  const vistos = new Set();
+  for (const valor of destinatarioIds) {
+    const numero = Number(valor);
+    const valido = Number.isInteger(numero) && numero > 0;
+    const normalizado = valido ? numero : valor;
+    const chave = valido ? `id:${numero}` : `invalido:${String(valor)}`;
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    destinatarios.push(normalizado);
+  }
+  return destinatarios;
+}
+
+/**
+ * Valida um destinatario antes de criar sua copia da mensagem.
+ */
+async function validarDestinatario(remetente, destinatarioId) {
+  const destinatario = Number(destinatarioId);
+
+  if (!destinatario || Number.isNaN(destinatario) || !Number.isInteger(destinatario)) {
     throw erroHttp('Destinatário inválido.', 400);
   }
 
   if (destinatario === remetente) {
     throw erroHttp('Não é possível enviar mensagem para si mesmo.', 400);
-  }
-
-  if (!texto && !arquivoIdNum) {
-    throw erroHttp('A mensagem não pode estar vazia.', 400);
   }
 
   const usuarioDestino = await Usuario.query()
@@ -379,41 +420,88 @@ async function enviarMensagem(remetenteId, destinatarioId, conteudo, arquivoId =
     throw erroHttp('Este usuário não pode usar o chat.', 403);
   }
 
-  let arquivoAnexo = null;
-  if (arquivoIdNum) {
-    arquivoAnexo = await Arquivo.query().findById(arquivoIdNum);
-    // O frontend só conhece arquivos que ele mesmo subiu nesta sessão; ainda assim
-    // exigimos que o arquivo exista e pertença ao remetente para evitar referência cruzada.
-    if (!arquivoAnexo || arquivoAnexo.removido_em || Number(arquivoAnexo.criado_por_id) !== remetente) {
-      throw erroHttp('Anexo inválido.', 400);
+  return destinatario;
+}
+
+/**
+ * Persiste uma mensagem e seu eventual vinculo de anexo atomicamente.
+ */
+async function criarMensagemParaDestinatario(preparada, destinatarioId) {
+  const destinatario = await validarDestinatario(preparada.remetente, destinatarioId);
+  const agora = agoraUtc();
+
+  return db.transaction(async trx => {
+    const mensagem = await Mensagem.query(trx).insertAndFetch({
+      remetente_id: preparada.remetente,
+      destinatario_id: destinatario,
+      conteudo: preparada.texto || null,
+      tinha_anexo: Boolean(preparada.arquivoAnexo),
+      // "Recebido" = mensagem salva no servidor (independe do destinatário estar online).
+      recebida_em: agora,
+      created_at: agora,
+      updated_at: agora
+    });
+
+    if (preparada.arquivoAnexo) {
+      await MensagemArquivo.query(trx).insert({
+        mensagem_id: mensagem.id,
+        arquivo_id: preparada.arquivoAnexo.id,
+        nome_original: preparada.nomeArquivoSanitizado || `arquivo${preparada.arquivoAnexo.extensao || ''}`
+      });
+    }
+
+    const completa = await Mensagem.query(trx)
+      .findById(mensagem.id)
+      .withGraphFetched('anexo.arquivo');
+
+    return formatarMensagem(completa);
+  });
+}
+
+/**
+ * Envia mensagem para processamento.
+ */
+async function enviarMensagem(remetenteId, destinatarioId, conteudo, arquivoId = null, nomeArquivo = null) {
+  const preparada = await prepararMensagem(remetenteId, conteudo, arquivoId, nomeArquivo);
+  return criarMensagemParaDestinatario(preparada, destinatarioId);
+}
+
+/**
+ * Envia copias independentes da mesma mensagem para varios destinatarios.
+ */
+async function enviarMensagensEmLote(remetenteId, destinatarioIds, conteudo, arquivoId = null, nomeArquivo = null) {
+  if (!Array.isArray(destinatarioIds) || destinatarioIds.length === 0) {
+    throw erroHttp('Informe ao menos um destinatário.', 400);
+  }
+
+  const destinatarios = normalizarDestinatarios(destinatarioIds);
+
+  const preparada = await prepararMensagem(remetenteId, conteudo, arquivoId, nomeArquivo);
+  const enviadas = [];
+  const falhas = [];
+
+  for (const destinatarioId of destinatarios) {
+    try {
+      const mensagem = await criarMensagemParaDestinatario(preparada, destinatarioId);
+      enviadas.push({ destinatario_id: Number(destinatarioId), mensagem });
+    } catch (error) {
+      if (!error.statusCode) console.error(error);
+      falhas.push({
+        destinatario_id: destinatarioId,
+        motivo: error.statusCode ? error.message : 'Não foi possível enviar a mensagem.'
+      });
     }
   }
 
-  const agora = agoraUtc();
-  const mensagem = await Mensagem.query().insertAndFetch({
-    remetente_id: remetente,
-    destinatario_id: destinatario,
-    conteudo: texto || null,
-    tinha_anexo: Boolean(arquivoAnexo),
-    // "Recebido" = mensagem salva no servidor (independe do destinatário estar online).
-    recebida_em: agora,
-    created_at: agora,
-    updated_at: agora
-  });
-
-  if (arquivoAnexo) {
-    await MensagemArquivo.query().insert({
-      mensagem_id: mensagem.id,
-      arquivo_id: arquivoAnexo.id,
-      nome_original: nomeArquivoSanitizado || `arquivo${arquivoAnexo.extensao || ''}`
-    });
-  }
-
-  const completa = await Mensagem.query()
-    .findById(mensagem.id)
-    .withGraphFetched('anexo.arquivo');
-
-  return formatarMensagem(completa);
+  return {
+    enviadas,
+    falhas,
+    resumo: {
+      solicitadas: destinatarios.length,
+      enviadas: enviadas.length,
+      falhas: falhas.length
+    }
+  };
 }
 
 // Recebe o multipart, valida tipo/tamanho e materializa no storage de arquivos.
@@ -524,9 +612,11 @@ module.exports = {
   listarMensagens,
   listarMensagensConversaInterna,
   enviarMensagem,
+  enviarMensagensEmLote,
   contarNaoLidas,
   marcarConversaLida,
   uploadAnexo,
   prepararDownloadAnexo,
-  excluirMensagem
+  excluirMensagem,
+  _internals: { normalizarDestinatarios }
 };

@@ -18,6 +18,7 @@ router.get('/conversas/:contatoId', exigirPermissao('chat_usar'), mensagemContro
 router.patch('/conversas/:contatoId/lida', exigirPermissao('chat_usar'), mensagemController.marcarLida);
 router.post('/anexos', exigirPermissao('chat_usar'), mensagemController.uploadAnexo);
 router.get('/anexos/:mensagemArquivoId', exigirUmaPermissao(['chat_usar', 'chat_visualizar_todas']), mensagemController.baixarAnexo);
+router.post('/lote', exigirPermissao('chat_usar'), mensagemController.enviarLote);
 router.post('/', exigirPermissao('chat_usar'), mensagemController.enviar);
 router.delete('/:id', exigirPermissao('chat_usar'), mensagemController.excluir);
 

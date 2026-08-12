@@ -127,6 +127,24 @@
   flex-direction: column;
 }
 
+.mensagens-selecionar-todos {
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.mensagens-contato input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
 .mensagens-conversas {
   flex: 1;
   min-height: 0;
@@ -455,7 +473,7 @@
 .thread-input textarea {
   flex: 1;
   resize: none;
-  max-height: 120px;
+  max-height: 180px;
   min-height: 38px;
   padding: 9px 12px;
   border: 1px solid var(--border);
@@ -466,6 +484,51 @@
   color: var(--text);
   background: var(--surface);
   outline: none;
+}
+
+.mensagens-lote {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.mensagens-lote__corpo {
+  min-height: 0;
+  flex: 1;
+  padding: 18px;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.mensagens-lote__seletor-mobile {
+  display: none;
+}
+
+.mensagens-lote__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+}
+
+.mensagens-lote__chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.mensagens-lote__chips > span {
+  color: var(--text-3);
+  font-size: 13px;
 }
 
 .thread-input textarea:focus {
@@ -555,6 +618,23 @@
 
   .mensagens-layout.tem-conversa .mensagens-thread {
     display: flex;
+  }
+
+  .mensagens-lote__corpo {
+    padding: 10px 12px;
+  }
+
+  .mensagens-lote__seletor-mobile {
+    display: block;
+    margin-bottom: 12px;
+  }
+
+  .mensagens-lote__contatos-mobile {
+    max-height: min(280px, 34dvh);
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
   }
 
   .thread-topo {

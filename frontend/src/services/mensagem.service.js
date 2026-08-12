@@ -67,6 +67,18 @@ export async function enviarMensagem(destinatarioId, conteudo, anexo = null) {
 }
 
 /**
+ * Envia copias independentes da mesma mensagem para varios destinatarios.
+ */
+export async function enviarMensagensEmLote(destinatarioIds, conteudo, anexo = null) {
+  const corpo = { destinatario_ids: destinatarioIds, conteudo };
+  if (anexo?.arquivo_id) {
+    corpo.arquivo_id = anexo.arquivo_id;
+    corpo.nome_arquivo = anexo.nome_original;
+  }
+  return apiPost('/mensagens/lote', corpo);
+}
+
+/**
  * Processa upload anexo mensagem conforme as regras do dominio.
  */
 export async function uploadAnexoMensagem(file) {

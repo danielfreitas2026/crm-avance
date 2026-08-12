@@ -1,16 +1,16 @@
-import { useEffect, useRef } from 'react';
+import { forwardRef, useEffect, useRef } from 'react';
 
 /**
  * Processa auto resize textarea conforme as regras do dominio.
  */
-function AutoResizeTextarea({
+const AutoResizeTextarea = forwardRef(function AutoResizeTextarea({
   value,
   onChange,
   minRows = 1,
   maxRows = 5,
   className = '',
   ...props
-}) {
+}, forwardedRef) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -29,7 +29,11 @@ function AutoResizeTextarea({
   return (
     <textarea
       {...props}
-      ref={ref}
+      ref={elemento => {
+        ref.current = elemento;
+        if (typeof forwardedRef === 'function') forwardedRef(elemento);
+        else if (forwardedRef) forwardedRef.current = elemento;
+      }}
       className={`auto-resize-textarea ${className}`.trim()}
       value={value ?? ''}
       onChange={onChange}
@@ -37,6 +41,6 @@ function AutoResizeTextarea({
       title={String(value || '')}
     />
   );
-}
+});
 
 export default AutoResizeTextarea;

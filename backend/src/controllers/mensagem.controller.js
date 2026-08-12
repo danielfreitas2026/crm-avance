@@ -97,6 +97,25 @@ async function enviar(req, res) {
 }
 
 /**
+ * Envia copias da mesma mensagem para varios destinatarios independentes.
+ */
+async function enviarLote(req, res) {
+  try {
+    const resultado = await mensagemService.enviarMensagensEmLote(
+      req.usuario.id,
+      req.body.destinatario_ids,
+      req.body.conteudo,
+      req.body.arquivo_id,
+      req.body.nome_arquivo
+    );
+    return res.status(resultado.falhas.length > 0 ? 207 : 201).json(resultado);
+  } catch (error) {
+    if (!error.statusCode) console.error(error);
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Erro ao enviar mensagens.' });
+  }
+}
+
+/**
  * Processa upload anexo conforme as regras do dominio.
  */
 async function uploadAnexo(req, res) {
@@ -223,6 +242,7 @@ module.exports = {
   mensagens,
   mensagensConversaInterna,
   enviar,
+  enviarLote,
   naoLidas,
   marcarLida,
   uploadAnexo,

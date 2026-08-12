@@ -99,6 +99,7 @@ describe('servicos administrativos', () => {
     await notificacao.marcarNotificacaoLida(2);
     await mensagem.listarMensagens(7, { page: 3 });
     await mensagem.enviarMensagem(7, 'Oi', { arquivo_id: 1, nome_original: 'a.pdf' });
+    await mensagem.enviarMensagensEmLote([7, 8], 'Olá', { arquivo_id: 1, nome_original: 'a.pdf' });
     await mensagem.marcarConversaLida(7);
     await nota.criarNotaEntidade('vendas', 9, { texto: 'ok' });
 
@@ -108,6 +109,7 @@ describe('servicos administrativos', () => {
     expect(apiRequest).toHaveBeenCalledWith('/notificacoes/2/lida', { method: 'PATCH' });
     expect(apiGet).toHaveBeenCalledWith('/mensagens/conversas/7?page=3');
     expect(apiPost).toHaveBeenCalledWith('/mensagens', { destinatario_id: 7, conteudo: 'Oi', arquivo_id: 1, nome_arquivo: 'a.pdf' });
+    expect(apiPost).toHaveBeenCalledWith('/mensagens/lote', { destinatario_ids: [7, 8], conteudo: 'Olá', arquivo_id: 1, nome_arquivo: 'a.pdf' });
     expect(apiRequest).toHaveBeenCalledWith('/mensagens/conversas/7/lida', { method: 'PATCH' });
     expect(apiPost).toHaveBeenCalledWith('/notas/vendas/9', { texto: 'ok' });
     expect(createObjectURL).toHaveBeenCalled();
