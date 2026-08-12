@@ -1,6 +1,48 @@
 # pos-venda
 Sistema de pós venda da Avance
 
+## Rotina de migrations no deploy
+
+Em produção, a API executa automaticamente todas as migrations pendentes antes de abrir a porta HTTP. O fluxo de cada deploy é:
+
+1. Publicar o código novo, incluindo `backend/src/database/migrations`.
+2. Instalar as dependências quando o lockfile tiver mudado.
+3. Reiniciar a aplicação Node pelo painel da hospedagem.
+4. A inicialização chama `db.migrate.latest()` usando `backend/knexfile.js` e as variáveis de banco do ambiente.
+5. Antes da migration, falhas transitórias de conexão ou lock são verificadas novamente com espera crescente.
+6. A API e os agendamentos só iniciam depois que todas as migrations terminam com sucesso.
+
+Não é necessário executar `npm run migrate` pelo SSH. Isso evita depender de `node` ou `npm` estarem disponíveis no `PATH` da sessão SSH.
+
+Os logs de inicialização informam um dos resultados:
+
+- `Banco de dados sem migrations pendentes.`
+- `Migrations executadas: ...`
+- `Falha ao iniciar o servidor: ...` — neste caso a aplicação não abre a porta e o deploy deve ser investigado.
+
+### Configuração
+
+- `NODE_ENV=production`: ativa migrations automáticas por padrão.
+- `AUTO_MIGRATE=true`: força a execução automática em qualquer ambiente.
+- `AUTO_MIGRATE=false`: desativa explicitamente a rotina, inclusive em produção. Use apenas como contingência temporária.
+- `MIGRATION_MAX_ATTEMPTS=3`: número máximo de verificações de disponibilidade do banco.
+- `MIGRATION_RETRY_DELAY_MS=5000`: espera inicial em milissegundos; as próximas esperas dobram até o limite de 30 segundos.
+
+Depois que uma migration começa, nenhuma falha é repetida automaticamente. Como o MySQL aplica alterações de estrutura sem uma transação global neste projeto, uma repetição poderia executar novamente uma alteração já aplicada parcialmente. Erros de conexão durante a migration, SQL, estrutura ou código interrompem a nova instância, impedindo que código novo seja servido sobre um schema antigo ou parcialmente atualizado.
+
+### Deploy com continuidade
+
+Antes do deploy em produção:
+
+1. Confirme que existe backup recente e restaurável do banco.
+2. Escreva migrations compatíveis com a versão antiga e a nova da API: primeiro adicione tabelas e colunas; remova ou renomeie estruturas somente em um deploy posterior.
+3. Faça o deploy pelo painel da hospedagem e acompanhe os logs até a mensagem de migrations concluídas.
+4. Só direcione o tráfego para a nova instância depois que ela estiver saudável. A instância anterior deve continuar atendendo se a nova falhar.
+
+A aplicação garante a parada segura da nova instância, mas continuidade sem indisponibilidade também depende da hospedagem manter a versão anterior ativa até o health check da nova. Se o provedor encerrar o processo antigo antes disso, não existe garantia de zero downtime somente pelo código deste projeto.
+
+Nunca execute `knex migrate:rollback` automaticamente durante deploy. Uma reversão deve usar uma nova migration corretiva ou ser realizada manualmente após backup e análise.
+
 ## Correção retroativa de botões do Telegram
 
 Para visualizar os encaminhamentos ativos que terão o botão corrigido, execute:

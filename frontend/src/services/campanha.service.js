@@ -53,6 +53,9 @@ export const getProgressoUsuarios = async () => {
   return data;
 };
 
+/** Retorna o progresso coletivo e o ranking de uma campanha. */
+export const getRankingCampanha = async (id) => apiGet(`/campanhas/${id}/ranking`);
+
 /**
  * Processa resgatar campanha conforme as regras do dominio.
  */

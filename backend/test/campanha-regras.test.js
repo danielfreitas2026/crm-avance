@@ -5,13 +5,16 @@ const campanhaController = require('../src/controllers/campanha.controller');
 const Campanha = require('../src/models/Campanha');
 const {
   campanhaVisivelParaUsuario,
+  calcularContribuicoesCampanha,
   calcularValorCampanha,
   dataValidaISO,
   intervaloCampanha,
   itensElegiveisCampanha,
+  montarRanking,
   validarCampanha
 } = campanhaController.__testables;
 const { intervaloCiclo } = require('../src/database/migrations/20260812130000_add_periodo_fixo_campanhas')._internals;
+const { montarVinculos } = require('../src/database/migrations/20260812140000_materialize_campanha_participantes')._internals;
 const { periodoFoiAlterado } = Campanha._internals;
 
 const item = (quantidade, tipo_linha, operadora_id, valor_unitario = 50) => ({
@@ -109,6 +112,15 @@ test('migra ciclos atuais para intervalos inclusivos', () => {
   assert.deepEqual(intervaloCiclo('mensal', '2026-02-15'), { data_inicio: '2026-02-01', data_fim: '2026-02-28' });
 });
 
+test('materializa todos os usuarios ativos nas campanhas sem participantes', () => {
+  assert.deepEqual(montarVinculos([5, 8], [10, 20]), [
+    { campanha_id: 5, usuario_id: 10 },
+    { campanha_id: 5, usuario_id: 20 },
+    { campanha_id: 8, usuario_id: 10 },
+    { campanha_id: 8, usuario_id: 20 }
+  ]);
+});
+
 test('valida datas reais e ordem do periodo fixo', () => {
   const base = {
     periodo: 'personalizado', categoria: 'venda', target: 1, desc: 'Campanha',
@@ -130,12 +142,60 @@ test('resolve estados e transforma fim inclusivo em limite exclusivo', () => {
   assert.equal(intervaloCampanha(campanha, '2026-08-21').estado, 'encerrada');
 });
 
-test('mantem encerrada apenas quando atingida e ainda nao resgatada', () => {
+test('mantem campanhas encerradas e resgatadas visiveis como historico', () => {
   const campanha = { data_inicio: '2026-08-01', data_fim: '2026-08-10', target: 5 };
-  assert.equal(campanhaVisivelParaUsuario(campanha, 4, false, '2026-08-11'), false);
+  assert.equal(campanhaVisivelParaUsuario(campanha, 4, false, '2026-08-11'), true);
   assert.equal(campanhaVisivelParaUsuario(campanha, 5, false, '2026-08-11'), true);
-  assert.equal(campanhaVisivelParaUsuario(campanha, 5, true, '2026-08-11'), false);
+  assert.equal(campanhaVisivelParaUsuario(campanha, 5, true, '2026-08-11'), true);
   assert.equal(campanhaVisivelParaUsuario({ ...campanha, data_inicio: '2026-08-12' }, 0, false, '2026-08-11'), true);
+});
+
+test('distribui itens compartilhados por vendedora e fecha com o total coletivo', () => {
+  const campanha = {
+    categoria: 'valor_monetario',
+    regras: [{ operadora_id: null, publico_base: 'ambos', tipo: 'categoria' }]
+  };
+  const vendas = [{
+    id: 1,
+    vendedora_id: 10,
+    cliente_da_base: false,
+    valores_unitarios_chips: [
+      { ...item(2, 'novo', 1, 50), vendedora_id: 10 },
+      { ...item(1, 'portabilidade', 2, 80), vendedora_id: 20 }
+    ]
+  }];
+  const participantes = [{ id: 10, nome: 'Ana' }, { id: 20, nome: 'Bia' }];
+  const contribuicoes = calcularContribuicoesCampanha(campanha, vendas, [], participantes);
+  const ranking = montarRanking(participantes, contribuicoes);
+
+  assert.deepEqual(contribuicoes, { 10: 100, 20: 80 });
+  assert.equal(ranking.reduce((soma, pessoa) => soma + pessoa.contribuicao, 0), 180);
+  assert.deepEqual(ranking.map(pessoa => pessoa.id), [10, 20]);
+});
+
+test('atribui venda geral somente a vendedora principal', () => {
+  const campanha = { categoria: 'venda', regras: [{ operadora_id: null, publico_base: 'ambos', tipo: 'categoria' }] };
+  const venda = {
+    vendedora_id: 10,
+    valores_unitarios_chips: [{ ...item(1, 'novo', 1), vendedora_id: 20 }]
+  };
+  assert.deepEqual(calcularContribuicoesCampanha(campanha, [venda], [], [{ id: 10 }, { id: 20 }]), {
+    10: 1,
+    20: 0
+  });
+});
+
+test('atribui registros ao criador e compartilha a mesma posicao em empate', () => {
+  const campanha = { categoria: 'registro_cliente', regras: [{ operadora_id: null, publico_base: 'ambos', tipo: 'categoria' }] };
+  const participantes = [{ id: 10, nome: 'Ana' }, { id: 20, nome: 'Bia' }, { id: 30, nome: 'Caio' }];
+  const contribuicoes = calcularContribuicoesCampanha(campanha, [], [
+    { criado_por_id: 10 }, { criado_por_id: 20 }
+  ], participantes);
+  const ranking = montarRanking(participantes, contribuicoes);
+
+  assert.deepEqual(ranking.map(itemRanking => [itemRanking.id, itemRanking.contribuicao, itemRanking.posicao]), [
+    [10, 1, 1], [20, 1, 1], [30, 0, 3]
+  ]);
 });
 
 test('detecta somente alteracoes nas datas bloqueadas por resgate', () => {

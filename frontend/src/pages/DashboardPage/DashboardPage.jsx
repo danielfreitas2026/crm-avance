@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
-import { getCampanhas, getProgresso, getProgressoUsuarios, resgatarCampanha } from '../../services/campanha.service';
+import { getCampanhas, getProgresso, getRankingCampanha, resgatarCampanha } from '../../services/campanha.service';
 import { buscarVendaPorId, enviarVendaParaPosVenda, listarVendedoras, obterResumoVendas } from '../../services/venda.service';
 import { buscarClientePorId } from '../../services/cliente.service';
 import { listarEtapasFunil, listarOperadoras, listarServicos, listarTiposVenda } from '../../services/config.service';
@@ -380,6 +380,63 @@ function RewardModal({ gift, onClose }) {
           <button className="btn btn-primary" onClick={onClose}>Incrível!</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CampaignRankingModal({ dados, loading, error, busca, onBusca, usuarioId, onClose, onClaim, claiming }) {
+  if (!dados) return null;
+  const campanha = dados.campanha || dados;
+  const termo = busca.trim().toLowerCase();
+  const participantes = (dados.participantes || []).filter(item => !termo || [item.nome, item.email]
+    .filter(Boolean).some(valor => String(valor).toLowerCase().includes(termo)));
+
+  return (
+    <div className="modal-backdrop campaign-ranking-backdrop" onClick={onClose}>
+      <section className="campaign-ranking-modal" role="dialog" aria-modal="true" aria-labelledby="campaign-ranking-title" onClick={event => event.stopPropagation()}>
+        <header className="campaign-ranking-modal__header">
+          <div>
+            <span className="campaign-ranking-modal__eyebrow">Ranking da campanha</span>
+            <h2 id="campaign-ranking-title">{campanha.desc}</h2>
+            <p>{formatCampanhaDate(campanha.data_inicio)} a {formatCampanhaDate(campanha.data_fim)}</p>
+          </div>
+          <button type="button" className="btn btn-icon btn-ghost" onClick={onClose} aria-label="Fechar ranking"><I.Close size={18} /></button>
+        </header>
+
+        <div className="campaign-ranking-modal__summary">
+          <div><span>Progresso coletivo</span><strong>{formatGoalValue(campanha, campanha.current || 0)} / {formatGoalValue(campanha, campanha.target || 0)}</strong></div>
+          <div><span>Percentual</span><strong>{campanha.pct || 0}%</strong></div>
+          <div><span>Participantes</span><strong>{(dados.participantes || []).length}</strong></div>
+          <div><span>Estado</span><strong>{campanha.estado_periodo === 'futura' ? 'Em breve' : campanha.estado_periodo === 'encerrada' ? 'Encerrada' : 'Ativa'}</strong></div>
+        </div>
+
+        <div className="progress-track campaign-ranking-modal__progress"><div className="progress-fill" style={{ width: `${campanha.pct || 0}%` }} /></div>
+
+        <div className="campaign-ranking-modal__toolbar">
+          <div><h3>Quem mais contribuiu</h3><p>A soma das contribuições corresponde ao progresso geral.</p></div>
+          <input value={busca} onChange={event => onBusca(event.target.value)} placeholder="Buscar participante" aria-label="Buscar participante no ranking" />
+        </div>
+
+        <div className="campaign-ranking-list">
+          {loading && <div className="campaign-ranking-empty">Carregando ranking...</div>}
+          {!loading && error && <div className="campaign-ranking-empty campaign-ranking-empty--error">{error}</div>}
+          {!loading && !error && participantes.length === 0 && <div className="campaign-ranking-empty">Nenhum participante encontrado.</div>}
+          {!loading && !error && participantes.map(item => (
+            <article key={item.id} className={`campaign-ranking-row ${Number(item.id) === Number(usuarioId) ? 'is-current-user' : ''}`}>
+              <span className="campaign-ranking-row__position">{item.posicao}º</span>
+              <span className="campaign-ranking-row__avatar">{item.foto_perfil ? <img src={item.foto_perfil} alt="" /> : getInitials(item.nome)}</span>
+              <span className="campaign-ranking-row__identity"><strong>{item.nome}{Number(item.id) === Number(usuarioId) ? ' · Você' : ''}</strong><small>{item.email}</small></span>
+              <span className="campaign-ranking-row__share">{item.percentual_total}%</span>
+              <strong className="campaign-ranking-row__value">{formatGoalValue(campanha, item.contribuicao)}</strong>
+            </article>
+          ))}
+        </div>
+
+        <footer className="campaign-ranking-modal__footer">
+          <span>{campanha.claimed ? 'Recompensa já resgatada por você.' : campanha.reward ? `Recompensa: ${campanha.reward}` : 'Campanha sem descrição de recompensa.'}</span>
+          {campanha.pode_resgatar && <button className="btn btn-primary" disabled={claiming} onClick={() => onClaim(campanha)}>{claiming ? 'Resgatando...' : 'Resgatar recompensa'}</button>}
+        </footer>
+      </section>
     </div>
   );
 }
@@ -962,11 +1019,12 @@ function DashboardPage() {
   const [openedGifts, setOpenedGifts] = useState(new Set());
   const [claimingId, setClaimingId] = useState(null);
   const [selectedReward, setSelectedReward] = useState(null);
+  const [rankingCampanha, setRankingCampanha] = useState(null);
+  const [rankingLoading, setRankingLoading] = useState(false);
+  const [rankingError, setRankingError] = useState('');
+  const [rankingBusca, setRankingBusca] = useState('');
   const [feedback, setFeedback] = useState(null);
   const [todayViewMode, setTodayViewMode] = useState('overview');
-  const [progressoUsuarios, setProgressoUsuarios] = useState([]);
-  const [usuarioCampanhaFiltro, setUsuarioCampanhaFiltro] = useState('');
-  const [usuarioCampanhaBusca, setUsuarioCampanhaBusca] = useState('');
   const [notificacoes, setNotificacoes] = useState([]);
   const [contatosMarcadosOpen, setContatosMarcadosOpen] = useState(false);
   const [problemasModalOpen, setProblemasModalOpen] = useState(false);
@@ -979,10 +1037,6 @@ function DashboardPage() {
     typeof window !== 'undefined' && window.innerWidth > 760
       ? new Set(NOTIFICATION_DRAWER_KEYS)
       : new Set()
-  ));
-  const [openTeamGoalDrawers, setOpenTeamGoalDrawers] = useState(new Set());
-  const [teamGoalMobileLayout, setTeamGoalMobileLayout] = useState(() => (
-    typeof window !== 'undefined' ? window.innerWidth <= 760 : false
   ));
   const [vendasRetorno, setVendasRetorno] = useState([]);
   const [clientes, setClientes] = useState([]);
@@ -1006,7 +1060,6 @@ function DashboardPage() {
   const podeVerDocumentosVenda = temPermissao(usuario, 'vendas_documentos');
   const podeAdicionarDocumentosVenda = temPermissao(usuario, 'adicionar_documentos');
   const podeVerCampanhas = temPermissao(usuario, 'campanhas_visualizar');
-  const podeVerCampanhasUsuarios = temPermissao(usuario, 'campanhas_ver_usuarios');
   const podeVerVendasParadas = temPermissao(usuario, 'notificacoes_vendas_paradas');
   const podeVerNotificacoes = Boolean(usuario) || temPermissao(usuario, 'notificacoes_visualizar');
   const todayStatsItems = useMemo(() => ([
@@ -1049,22 +1102,6 @@ function DashboardPage() {
     const timer = setTimeout(() => setFeedback(null), feedback.type === 'success' ? 4000 : 6000);
     return () => clearTimeout(timer);
   }, [feedback]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-      return undefined;
-    }
-
-    const mediaQuery = window.matchMedia('(max-width: 760px)');
-    /**
-     * Trata o evento de change.
-     */
-    const handleChange = event => setTeamGoalMobileLayout(event.matches);
-
-    setTeamGoalMobileLayout(mediaQuery.matches);
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, []);
 
   useEffect(() => {
     if (podeVerCampanhas) {
@@ -1115,14 +1152,6 @@ function DashboardPage() {
       setEtapasFunil(Array.isArray(etapasData) ? etapasData : []);
     }).catch(console.error);
   }, [podeVerNotificacoes]);
-
-  useEffect(() => {
-    if (!podeVerCampanhasUsuarios) return undefined;
-
-    getProgressoUsuarios()
-      .then(data => setProgressoUsuarios(data.usuarios || []))
-      .catch(console.error);
-  }, [podeVerCampanhasUsuarios]);
 
   useEffect(() => {
     if (!podeVerNotificacoes) {
@@ -1296,37 +1325,27 @@ function DashboardPage() {
       : prev.filter(item => String(item.id) !== String(vendaSalva.id)));
   }
 
-  const buscaUsuarioCampanhaNormalizada = usuarioCampanhaBusca.trim().toLowerCase();
-  const progressoUsuariosFiltrados = progressoUsuarios.filter(item => {
-    if (usuarioCampanhaFiltro && String(item.id) !== String(usuarioCampanhaFiltro)) {
-      return false;
-    }
-
-    if (!buscaUsuarioCampanhaNormalizada) {
-      return true;
-    }
-
-    return [item.nome, item.email]
-      .filter(Boolean)
-      .some(valor => String(valor).toLowerCase().includes(buscaUsuarioCampanhaNormalizada));
-  });
-
   const idsVisiveisCampanha = Array.isArray(progresso.campanhas_visiveis)
     ? new Set(progresso.campanhas_visiveis.map(Number))
     : null;
+  const ordemEstadoCampanha = { ativa: 0, futura: 1, encerrada: 2 };
   const giftCampanhas = campanhas.filter(m => {
-    const estado = progresso.estados_campanhas?.[m.id] || m.estado_periodo;
     return m.is_gift
       && (!m.participante_ids?.length || m.participante_ids.map(Number).includes(Number(usuario?.id)))
-      && (!idsVisiveisCampanha || idsVisiveisCampanha.has(Number(m.id)))
-      && !(estado === 'encerrada' && openedGifts.has(Number(m.id)));
+      && (!idsVisiveisCampanha || idsVisiveisCampanha.has(Number(m.id)));
+  }).sort((a, b) => {
+    const estadoA = progresso.estados_campanhas?.[a.id] || a.estado_periodo || 'ativa';
+    const estadoB = progresso.estados_campanhas?.[b.id] || b.estado_periodo || 'ativa';
+    return (ordemEstadoCampanha[estadoA] ?? 3) - (ordemEstadoCampanha[estadoB] ?? 3)
+      || String(b.data_inicio || '').localeCompare(String(a.data_inicio || ''));
   });
   const campanhasComProgresso = giftCampanhas.map(campanha => {
-    const current = progresso.campanhas?.[campanha.id] ?? progresso[getCampanhaKey(campanha)] ?? 0;
-    const target = Number(campanha.target) || 0;
-    const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
-    const estado_periodo = progresso.estados_campanhas?.[campanha.id] || campanha.estado_periodo || 'ativa';
-    return { ...campanha, current, pct, achieved: pct >= 100, estado_periodo };
+    const detalhe = progresso.campanhas?.[campanha.id];
+    const current = typeof detalhe === 'object' ? Number(detalhe.current || 0) : Number(detalhe ?? progresso[getCampanhaKey(campanha)] ?? 0);
+    const target = Number(detalhe?.target ?? campanha.target) || 0;
+    const pct = typeof detalhe === 'object' ? Number(detalhe.pct || 0) : (target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0);
+    const estado_periodo = detalhe?.estado_periodo || progresso.estados_campanhas?.[campanha.id] || campanha.estado_periodo || 'ativa';
+    return { ...campanha, current, target, pct, achieved: detalhe?.achieved ?? pct >= 100, claimed: detalhe?.claimed ?? openedGifts.has(Number(campanha.id)), estado_periodo };
   });
 
   const doneCount = campanhasComProgresso.filter(m => m.achieved).length;
@@ -1487,28 +1506,6 @@ function DashboardPage() {
   /**
    * Verifica se team goal drawer open atende a condicao esperada.
    */
-  function isTeamGoalDrawerOpen(id) {
-    return !teamGoalMobileLayout || openTeamGoalDrawers.has(String(id));
-  }
-
-  /**
-   * Alterna team goal drawer no estado atual.
-   */
-  function toggleTeamGoalDrawer(id) {
-    const key = String(id);
-    setOpenTeamGoalDrawers(prev => {
-      const next = new Set(prev);
-
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-
-      return next;
-    });
-  }
-
   const proximaFidelidade = notificacoesFidelidade[0];
   const proximoRetorno = notificacoesRetorno[0];
   const proximoProblema = notificacoesProblema[0];
@@ -1542,6 +1539,30 @@ function DashboardPage() {
       setFeedback({ type: 'error', text: error.message || 'Erro ao resgatar campanha.' });
     } finally {
       setClaimingId(null);
+    }
+  };
+
+  const handleOpenRanking = async (campanha) => {
+    setRankingCampanha({ campanha, participantes: [] });
+    setRankingBusca('');
+    setRankingError('');
+    setRankingLoading(true);
+    try {
+      setRankingCampanha(await getRankingCampanha(campanha.id));
+    } catch (error) {
+      console.error(error);
+      setRankingError(error.message || 'Não foi possível carregar o ranking.');
+    } finally {
+      setRankingLoading(false);
+    }
+  };
+
+  const handleClaimRanking = async (campanha) => {
+    await handleOpenGift(campanha);
+    try {
+      setRankingCampanha(await getRankingCampanha(campanha.id));
+    } catch (error) {
+      console.error(error);
     }
   };
 
@@ -1597,6 +1618,17 @@ function DashboardPage() {
 
       <div className="dashboard-container">
         <RewardModal gift={selectedReward} onClose={() => setSelectedReward(null)} />
+        <CampaignRankingModal
+          dados={rankingCampanha}
+          loading={rankingLoading}
+          error={rankingError}
+          busca={rankingBusca}
+          onBusca={setRankingBusca}
+          usuarioId={usuario?.id}
+          onClose={() => setRankingCampanha(null)}
+          onClaim={handleClaimRanking}
+          claiming={claimingId === rankingCampanha?.campanha?.id}
+        />
         <ContatosMarcadosModal
           open={contatosMarcadosOpen}
           notificacoes={notificacoesRetorno}
@@ -1897,14 +1929,14 @@ function DashboardPage() {
           </>
         )}
 
-        {/* Sistema de recompensas DIÁRIAS */}
+        {/* Campanhas coletivas */}
         {podeVerCampanhas && campanhasComProgresso.length > 0 && (
           <>
             <div className="rewards-header">
               <div>
                 <h2>Campanhas</h2>
                 <p>
-                  Bata cada campanha para liberar uma recompensa surpresa.
+                  Toda contribuição dos participantes aproxima o grupo da meta.
                 </p>
               </div>
 
@@ -1919,13 +1951,22 @@ function DashboardPage() {
 
             <div className="rewards-grid">
               {campanhasComProgresso.map((campanha, i) => {
-                const isClaimed = openedGifts.has(campanha.id);
+                const isClaimed = campanha.claimed;
                 const isClaiming = claimingId === campanha.id;
                 const remaining = Math.max(0, campanha.target - campanha.current);
                 const futura = campanha.estado_periodo === 'futura';
                 const encerrada = campanha.estado_periodo === 'encerrada';
                 return (
-                  <div key={campanha.id} className={`reward-card ${campanha.achieved ? 'achieved' : ''} ${isClaimed ? 'claimed' : ''}`}>
+                  <article
+                    key={campanha.id}
+                    className={`reward-card reward-card--collective ${campanha.achieved ? 'achieved' : ''} ${isClaimed ? 'claimed' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleOpenRanking(campanha)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter' || event.key === ' ') handleOpenRanking(campanha);
+                    }}
+                  >
                     <div className="reward-top">
                       <div className="reward-icon">{isClaimed ? '✅' : campanha.achieved ? '🎉' : '🎁'}</div>
                       <div className="reward-step">Campanha {i + 1}</div>
@@ -1934,7 +1975,7 @@ function DashboardPage() {
                       </span>
                       {futura && <span className="pill" style={{ marginLeft: 'auto', fontSize: 10 }}>Em breve</span>}
                       {encerrada && <span className="pill" style={{ marginLeft: 'auto', fontSize: 10 }}>Encerrada</span>}
-                      {campanha.achieved && !isClaimed && !futura && !encerrada && (
+                      {campanha.achieved && !isClaimed && !futura && (
                         <span style={{ 
                           marginLeft: 'auto', 
                           display: 'inline-flex', 
@@ -1973,6 +2014,10 @@ function DashboardPage() {
                     </div>
                     
                     <div className="reward-name">{campanha.desc}</div>
+                    <div className="reward-collective-meta">
+                      <span>{getCampanhaScope(campanha)}</span>
+                      <strong>Ver participantes e ranking <I.ArrowRight size={14} /></strong>
+                    </div>
                     {isClaimed && campanha.reward && (
                       <div className="reward-claimed-prize">
                         Prêmio ganho: {campanha.reward}
@@ -2002,7 +2047,7 @@ function DashboardPage() {
                       className={`btn ${campanha.achieved && !isClaimed ? 'btn-primary' : ''}`}
                       style={{ width: '100%', justifyContent: 'center', marginTop: 10 }}
                       disabled={futura || !campanha.achieved || isClaimed || isClaiming}
-                      onClick={() => handleOpenGift(campanha)}
+                      onClick={event => { event.stopPropagation(); handleOpenGift(campanha); }}
                     >
                       {futura
                         ? 'Em breve'
@@ -2014,117 +2059,13 @@ function DashboardPage() {
                           ? 'Resgatar surpresa 🎁'
                           : `Faltam ${formatGoalValue(campanha, remaining)}`}
                     </button>
-                  </div>
+                  </article>
                 );
               })}
             </div>
           </>
         )}
 
-        {podeVerCampanhasUsuarios && progressoUsuarios.length > 0 && (
-          <section className="team-goals">
-            <div className="team-goals__header">
-              <div>
-                <h2>Campanhas por usuário</h2>
-                <p>Acompanhe quem ja bateu as campanhas e quem ainda esta pendente.</p>
-              </div>
-
-              <div className="team-goals__filters">
-                <label className="team-goals__filter">
-                  <span>Buscar</span>
-                  <input
-                    value={usuarioCampanhaBusca}
-                    onChange={event => setUsuarioCampanhaBusca(event.target.value)}
-                    placeholder="Nome ou e-mail"
-                  />
-                </label>
-
-                <label className="team-goals__filter">
-                  <span>Usuário</span>
-                  <select value={usuarioCampanhaFiltro} onChange={event => setUsuarioCampanhaFiltro(event.target.value)}>
-                    <option value="">Todos os usuários</option>
-                    {progressoUsuarios.map(item => (
-                      <option key={item.id} value={item.id}>{item.nome}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div className="team-goals__grid">
-              {progressoUsuariosFiltrados.map(item => {
-                const total = item.resumo?.total || 0;
-                const atingidas = item.resumo?.atingidas || 0;
-                const pct = total > 0 ? Math.round((atingidas / total) * 100) : 0;
-                const drawerOpen = isTeamGoalDrawerOpen(item.id);
-                const drawerId = `team-goal-drawer-${item.id}`;
-                const TeamGoalHeader = teamGoalMobileLayout ? 'button' : 'div';
-                const teamGoalHeaderProps = teamGoalMobileLayout
-                  ? {
-                      type: 'button',
-                      'aria-expanded': drawerOpen,
-                      'aria-controls': drawerId,
-                      onClick: () => toggleTeamGoalDrawer(item.id)
-                    }
-                  : {};
-
-                return (
-                  <article key={item.id} className={`team-goal-card ${drawerOpen ? 'is-open' : ''}`}>
-                    <TeamGoalHeader className="team-goal-card__top" {...teamGoalHeaderProps}>
-                      <div className="mini-avatar">
-                        {item.foto_perfil ? (
-                          <img src={item.foto_perfil} alt={item.nome || 'Usuário'} />
-                        ) : (
-                          getInitials(item.nome)
-                        )}
-                      </div>
-                      <div>
-                        <strong>{item.nome}</strong>
-                        <span>{atingidas}/{total} campanhas atingidas · {item.resumo?.resgatadas || 0} resgatadas</span>
-                      </div>
-                      <b>{pct}%</b>
-                      {teamGoalMobileLayout && (
-                        <span className="team-goal-card__chevron" aria-hidden="true">
-                          <I.ChevronDown size={14} />
-                        </span>
-                      )}
-                    </TeamGoalHeader>
-
-                    <div id={drawerId} className="team-goal-card__drawer">
-                    <div className="progress-track">
-                      <div className="progress-fill" style={{ width: `${pct}%` }} />
-                    </div>
-
-                    <div className="team-goal-list">
-                      {(item.campanhas || []).map(campanha => (
-                        <div key={campanha.id} className={`team-goal-item ${campanha.achieved ? 'is-achieved' : ''}`}>
-                          <span className="team-goal-item__status">
-                            {campanha.estado_periodo === 'futura'
-                              ? <I.Calendar size={12} />
-                              : campanha.claimed ? <I.Check size={12} /> : campanha.achieved ? <I.Check size={12} /> : `${campanha.pct}%`}
-                          </span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <strong>{campanha.desc}</strong>
-                            <span>
-                              {campanha.estado_periodo === 'futura' ? 'Em breve · ' : campanha.estado_periodo === 'encerrada' ? 'Encerrada · ' : ''}
-                              {formatGoalValue(campanha, campanha.current)} / {formatGoalValue(campanha, campanha.target)}
-                              {campanha.operadora_nome ? ` · ${campanha.operadora_nome}` : ''}
-                              {` · ${formatCampanhaDate(campanha.data_inicio)} a ${formatCampanhaDate(campanha.data_fim)}`}
-                            </span>
-                            {campanha.claimed && campanha.reward && (
-                              <em>Premio ganho: {campanha.reward}</em>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        )}
       </div>
     </LayoutPrivado>
   );

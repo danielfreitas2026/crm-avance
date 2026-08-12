@@ -50,9 +50,11 @@ function decorarCampanha(campanha, hoje = dataHojeSaoPaulo()) {
 }
 
 function campanhaVisivelParaUsuario(campanha, current, claimed, hoje = dataHojeSaoPaulo()) {
-  const estado = intervaloCampanha(campanha, hoje).estado;
-  const atingida = Number(current || 0) >= Number(campanha.target || 0);
-  return estado !== 'encerrada' || (atingida && !claimed);
+  void campanha;
+  void current;
+  void claimed;
+  void hoje;
+  return true;
 }
 
 /**
@@ -229,6 +231,7 @@ function parseItensVenda(venda) {
         valor_unitario: Number(item?.valor_unitario || 0),
         tipo: normalizarTipoLinhaChip(item?.tipo_linha || item?.tipo || item?.categoria),
         operadora_id: Number(item?.operadora_id || venda.operadora_id) || null,
+        vendedora_id: Number(item?.vendedora_id || venda.vendedora_id) || null,
         detalhado: true
       })).filter(item => item.quantidade > 0);
       if (normalizados.length) return normalizados;
@@ -244,6 +247,7 @@ function parseItensVenda(venda) {
     valor_unitario: 0,
     tipo: tipoVenda.includes('porta') ? 'portabilidade' : 'novo',
     operadora_id: Number(venda.operadora_id) || null,
+    vendedora_id: Number(venda.vendedora_id) || null,
     detalhado: false
   }];
 }
@@ -320,6 +324,7 @@ async function listarVendasDoCiclo(vendedoraId, ciclo) {
     .leftJoin('servicos as s', 'v.servico_id', 's.id')
     .select(
       'v.id',
+      'v.vendedora_id',
       'v.operadora_id',
       'v.quantidade_linhas',
       'v.valores_unitarios_chips',
@@ -341,6 +346,42 @@ async function listarVendasDoCiclo(vendedoraId, ciclo) {
 function operadoraIdsCampanha(campanha) {
   const ids = Array.isArray(campanha.operadora_ids) ? campanha.operadora_ids : [];
   return ids.length ? ids.map(Number) : (campanha.operadora_id ? [Number(campanha.operadora_id)] : []);
+}
+
+/** Lista de uma vez as vendas dos participantes dentro do intervalo da campanha. */
+async function listarVendasDaCampanha(participanteIds, ciclo) {
+  if (!participanteIds.length) return [];
+  const dataReferencia = "COALESCE(NULLIF(NULLIF(v.data_venda, '0000-00-00'), '1899-11-30'), NULLIF(DATE(v.criado_em), '0000-00-00'), DATE(v.created_at))";
+
+  return knex('vendas as v')
+    .leftJoin('tipos_venda as tv', 'v.tipo_venda_id', 'tv.id')
+    .leftJoin('servicos as s', 'v.servico_id', 's.id')
+    .select(
+      'v.id', 'v.vendedora_id', 'v.operadora_id', 'v.quantidade_linhas',
+      'v.valores_unitarios_chips', 'v.valor_total', 'v.cliente_da_base',
+      'v.categoria_campanha', 'tv.nome as tipo_venda', 's.nome as servico'
+    )
+    .whereNot('v.status_funil', 'retorno')
+    .whereRaw(`${dataReferencia} >= ?`, [ciclo.inicioStr])
+    .whereRaw(`${dataReferencia} < ?`, [ciclo.fimStr])
+    .where(builder => {
+      builder.whereIn('v.vendedora_id', participanteIds).orWhereExists(function vendaCompartilhada() {
+        this.select(knex.raw('1'))
+          .from('venda_vendedoras as vv_campanha')
+          .whereRaw('vv_campanha.venda_id = v.id')
+          .whereIn('vv_campanha.usuario_id', participanteIds);
+      });
+    });
+}
+
+/** Lista clientes registrados pelos participantes no intervalo da campanha. */
+async function listarClientesDaCampanha(participanteIds, ciclo) {
+  if (!participanteIds.length) return [];
+  return knex('clientes')
+    .select('id', 'operadora_atual_id', 'criado_por_id')
+    .whereIn('criado_por_id', participanteIds)
+    .whereRaw('DATE(created_at) >= ?', [ciclo.inicioStr])
+    .whereRaw('DATE(created_at) < ?', [ciclo.fimStr]);
 }
 
 function vendaPertencePublicoBase(venda, campanha) {
@@ -461,6 +502,111 @@ function calcularValorCampanha(campanha, vendas, clientes) {
   }, 0);
 }
 
+function adicionarContribuicao(mapa, participanteIds, usuarioId, valor) {
+  const id = Number(usuarioId);
+  const quantidade = Number(valor || 0);
+  if (!participanteIds.has(id) || !Number.isFinite(quantidade) || quantidade <= 0) return;
+  mapa.set(id, (mapa.get(id) || 0) + quantidade);
+}
+
+/** Distribui o total elegível pelos participantes sem contar a mesma venda ou item duas vezes. */
+function calcularContribuicoesCampanha(campanha, vendas = [], clientes = [], participantes = []) {
+  const participanteIds = new Set(participantes.map(item => Number(item.id ?? item)).filter(Boolean));
+  const contribuicoes = new Map([...participanteIds].map(id => [id, 0]));
+  const categoria = campanha.categoria || 'registro_cliente';
+
+  if (categoria === 'registro_cliente') {
+    const regras = regrasCampanha(campanha);
+    for (const cliente of clientes) {
+      if (!regras.some(regra => !regra.operadora_id || Number(regra.operadora_id) === Number(cliente.operadora_atual_id))) continue;
+      adicionarContribuicao(contribuicoes, participanteIds, cliente.criado_por_id, 1);
+    }
+  } else {
+    for (const venda of vendas) {
+      if (categoria === 'outros'
+        && normalizarTexto(venda.categoria_campanha) !== normalizarTexto(campanha.categoria_personalizada)) continue;
+      const itensElegiveis = itensElegiveisCampanha(campanha, venda);
+      if (!itensElegiveis.length) continue;
+
+      if (categoria === 'venda' || categoria === 'outros') {
+        adicionarContribuicao(contribuicoes, participanteIds, venda.vendedora_id, 1);
+        continue;
+      }
+
+      if (categoria === 'valor_monetario') {
+        const valorDetalhado = itensElegiveis.reduce((total, item) => total + (item.quantidade * item.valor_unitario), 0);
+        if (valorDetalhado > 0) {
+          itensElegiveis.forEach(item => adicionarContribuicao(
+            contribuicoes, participanteIds, item.vendedora_id, item.quantidade * item.valor_unitario
+          ));
+        } else {
+          adicionarContribuicao(contribuicoes, participanteIds, venda.vendedora_id, venda.valor_total);
+        }
+        continue;
+      }
+
+      const servicoInternet = categoria === 'internet' && normalizarTexto(venda.servico) === 'internet';
+      for (const item of itensElegiveis) {
+        const elegivel = categoria === 'chip_novo'
+          ? item.tipo === 'novo'
+          : categoria === 'portabilidade'
+            ? item.tipo === 'portabilidade'
+            : servicoInternet;
+        if (elegivel) adicionarContribuicao(contribuicoes, participanteIds, item.vendedora_id, item.quantidade);
+      }
+    }
+  }
+
+  return Object.fromEntries(contribuicoes);
+}
+
+function montarRanking(participantes, contribuicoes) {
+  const ordenados = participantes.map(participante => ({
+    id: Number(participante.id),
+    nome: participante.nome,
+    email: participante.email,
+    foto_perfil: participante.foto_perfil || null,
+    contribuicao: Number(contribuicoes[participante.id] || 0)
+  })).sort((a, b) => b.contribuicao - a.contribuicao || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  const total = ordenados.reduce((soma, item) => soma + item.contribuicao, 0);
+  let posicao = 0;
+  let valorAnterior = null;
+
+  return ordenados.map((item, index) => {
+    if (valorAnterior === null || item.contribuicao !== valorAnterior) posicao = index + 1;
+    valorAnterior = item.contribuicao;
+    return {
+      ...item,
+      posicao,
+      percentual_total: total > 0 ? Number(((item.contribuicao / total) * 100).toFixed(2)) : 0
+    };
+  });
+}
+
+/** Calcula uma campanha coletiva uma única vez e retorna seu ranking. */
+async function calcularCampanhaColetiva(campanha, hoje = dataHojeSaoPaulo()) {
+  const participantes = Array.isArray(campanha.participantes) ? campanha.participantes : [];
+  const participanteIds = participantes.map(item => Number(item.id)).filter(Boolean);
+  const ciclo = intervaloCampanha(campanha, hoje);
+  let vendas = [];
+  let clientes = [];
+
+  if (ciclo.estado !== 'futura') {
+    [vendas, clientes] = await Promise.all([
+      listarVendasDaCampanha(participanteIds, ciclo),
+      listarClientesDaCampanha(participanteIds, ciclo)
+    ]);
+  }
+
+  const contribuicoes = calcularContribuicoesCampanha(campanha, vendas, clientes, participantes);
+  const ranking = montarRanking(participantes, contribuicoes);
+  const current = ranking.reduce((soma, item) => soma + item.contribuicao, 0);
+  const target = Number(campanha.target || 0);
+  const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+
+  return { current, target, pct, achieved: current >= target, estado_periodo: ciclo.estado, ranking, contribuicoes };
+}
+
 /**
  * Calcula o progresso geral e por campanha de uma vendedora no ciclo.
  */
@@ -483,7 +629,7 @@ async function calcularProgresso(usuarioId, ciclo, campanhas = []) {
   };
 }
 
-/** Calcula campanhas em seus intervalos fixos, agregando participantes de metas em grupo. */
+/** Calcula o progresso coletivo das campanhas visíveis para um participante. */
 async function calcularCampanhasParaUsuario(usuarioId, campanhas, hoje = dataHojeSaoPaulo()) {
   const resultado = {};
   const visiveis = [];
@@ -491,19 +637,8 @@ async function calcularCampanhasParaUsuario(usuarioId, campanhas, hoje = dataHoj
   for (const campanha of campanhas) {
     const participantes = Array.isArray(campanha.participante_ids) ? campanha.participante_ids.map(Number) : [];
     if (participantes.length && !participantes.includes(Number(usuarioId))) continue;
-    const ciclo = intervaloCampanha(campanha, hoje);
-    if (ciclo.estado === 'futura') {
-      resultado[campanha.id] = 0;
-      visiveis.push(campanha);
-      continue;
-    }
-    // Sem participantes explícitos é uma campanha global, de progresso individual.
-    const contribuidores = participantes.length ? participantes : [Number(usuarioId)];
-    const dados = await Promise.all(contribuidores.map(async id => {
-      const [clientes, vendas] = await Promise.all([listarClientesDoCiclo(id, ciclo), listarVendasDoCiclo(id, ciclo)]);
-      return calcularValorCampanha(campanha, vendas, clientes);
-    }));
-    resultado[campanha.id] = dados.reduce((a, v) => a + v, 0);
+    const calculo = await calcularCampanhaColetiva(campanha, hoje);
+    resultado[campanha.id] = calculo;
     visiveis.push(campanha);
   }
   return { campanhas: resultado, visiveis };
@@ -576,6 +711,9 @@ class CampanhaController {
       if (error?.code === 'CAMPANHA_PERIODO_BLOQUEADO') {
         return res.status(409).json({ error: error.message });
       }
+      if (error?.code === 'CAMPANHA_SEM_PARTICIPANTES') {
+        return res.status(400).json({ error: error.message });
+      }
       console.error(error);
       res.status(500).json({ error: 'Erro ao atualizar campanhas.' });
     }
@@ -607,6 +745,9 @@ class CampanhaController {
 
       res.status(201).json(decorarCampanha(campanha));
     } catch (error) {
+      if (error?.code === 'CAMPANHA_SEM_PARTICIPANTES') {
+        return res.status(400).json({ error: error.message });
+      }
       console.error(error);
       res.status(500).json({ error: 'Erro ao criar campanha.' });
     }
@@ -632,13 +773,18 @@ class CampanhaController {
       const mensal = progressoMensal.geral;
       const resgates = await knex('campanha_resgates').where('usuario_id', vendedoraId).pluck('campanha_id');
       const resgatadas = new Set(resgates.map(Number));
-      const campanhasVisiveis = progressoPersonalizado.visiveis.filter(campanha => {
-        const current = progressoPersonalizado.campanhas[campanha.id] || 0;
-        return campanhaVisivelParaUsuario(campanha, current, resgatadas.has(Number(campanha.id)));
-      });
+      const campanhasVisiveis = progressoPersonalizado.visiveis;
       const progressoVisivel = Object.fromEntries(campanhasVisiveis.map(campanha => [
         campanha.id,
-        progressoPersonalizado.campanhas[campanha.id] || 0
+        {
+          ...(progressoPersonalizado.campanhas[campanha.id] || {
+            current: 0, target: Number(campanha.target || 0), pct: 0, achieved: false,
+            estado_periodo: intervaloCampanha(campanha).estado
+          }),
+          ranking: undefined,
+          contribuicoes: undefined,
+          claimed: resgatadas.has(Number(campanha.id))
+        }
       ]));
 
       res.json({
@@ -691,15 +837,17 @@ class CampanhaController {
           .select('usuario_id', 'campanha_id')
         : [];
       const resgatesPorUsuario = agruparResgatesPorUsuario(resgates);
+      const calculos = Object.fromEntries(await Promise.all(campanhasGift.map(async campanha => (
+        [Number(campanha.id), await calcularCampanhaColetiva(campanha)]
+      ))));
 
-      const usuariosComProgresso = await Promise.all(usuarios.map(async (usuario) => {
-        const progressoUsuario = await calcularCampanhasParaUsuario(usuario.id, campanhasGift);
-        const progressoCampanhas = progressoUsuario.campanhas;
+      const usuariosComProgresso = usuarios.map((usuario) => {
         const campanhasUsuario = campanhasGift.filter(campanha => {
           const participantes = campanha.participante_ids || [];
-          return !participantes.length || participantes.map(Number).includes(Number(usuario.id));
+          return participantes.map(Number).includes(Number(usuario.id));
         }).map((campanha) => {
-          const current = progressoCampanhas[campanha.id] || 0;
+          const calculo = calculos[Number(campanha.id)];
+          const current = Number(calculo?.contribuicoes?.[usuario.id] || 0);
           const target = Number(campanha.target || 0);
           const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
           const achieved = pct >= 100;
@@ -724,9 +872,11 @@ class CampanhaController {
             operadora_nome: campanha.operadora_nome,
             operadora_ids: campanha.operadora_ids,
             participantes: campanha.participantes,
-            em_grupo: campanha.em_grupo
+            em_grupo: true,
+            progresso_coletivo: calculo?.current || 0,
+            meta_coletiva_atingida: Boolean(calculo?.achieved)
           };
-        }).filter(campanha => campanhaVisivelParaUsuario(campanha, campanha.current, campanha.claimed));
+        });
         const atingidas = campanhasUsuario.filter(campanha => campanha.achieved).length;
         const resgatadas = campanhasUsuario.filter(campanha => campanha.claimed).length;
 
@@ -744,7 +894,7 @@ class CampanhaController {
             resgatadas
           }
         };
-      }));
+      });
 
       res.json({
         ciclo: {
@@ -766,6 +916,51 @@ class CampanhaController {
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: 'Erro ao calcular progresso por usuário.' });
+    }
+  }
+
+  async ranking(req, res) {
+    try {
+      const campanha = (await Campanha.findAll()).find(item => Number(item.id) === Number(req.params.id));
+      if (!campanha || !campanhaEhGift(campanha)) {
+        return res.status(404).json({ error: 'Campanha não encontrada.' });
+      }
+
+      const usuarioId = Number(req.usuario.id);
+      const participa = campanha.participante_ids.map(Number).includes(usuarioId);
+      const usuario = await Usuario.query().findById(usuarioId).withGraphFetched('role');
+      const permissoes = await listarPermissoesEfetivas(usuario);
+      const podeGerenciar = permissoes.includes('gerenciar_campanhas');
+      if (!participa && !podeGerenciar) {
+        return res.status(403).json({ error: 'Você não participa desta campanha.' });
+      }
+
+      const [calculo, resgate] = await Promise.all([
+        calcularCampanhaColetiva(campanha),
+        participa
+          ? knex('campanha_resgates').where({ usuario_id: usuarioId, campanha_id: campanha.id }).first()
+          : Promise.resolve(null)
+      ]);
+      const claimed = Boolean(resgate);
+
+      res.json({
+        campanha: {
+          ...decorarCampanha(campanha),
+          current: calculo.current,
+          target: calculo.target,
+          pct: calculo.pct,
+          achieved: calculo.achieved,
+          claimed,
+          pode_resgatar: participa && calculo.estado_periodo !== 'futura' && calculo.achieved && !claimed
+        },
+        participantes: calculo.ranking
+      });
+    } catch (error) {
+      if (error?.code === 'CAMPANHA_SEM_PARTICIPANTES') {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error(error);
+      res.status(500).json({ error: 'Erro ao carregar ranking da campanha.' });
     }
   }
 
@@ -808,8 +1003,8 @@ class CampanhaController {
         });
       }
 
-      const progresso = await calcularCampanhasParaUsuario(usuarioId, [campanha]);
-      const current = progresso.campanhas[campanha.id] ?? 0;
+      const progresso = await calcularCampanhaColetiva(campanha);
+      const current = progresso.current;
       const target = Number(campanha.target) || 0;
 
       if (current < target) {
@@ -893,6 +1088,8 @@ module.exports = new CampanhaController();
 module.exports.__testables = {
   adicionarDiasISO,
   campanhaVisivelParaUsuario,
+  calcularContribuicoesCampanha,
+  montarRanking,
   calcularValorCampanha,
   dataHojeSaoPaulo,
   dataValidaISO,

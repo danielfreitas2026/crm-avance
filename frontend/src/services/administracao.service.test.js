@@ -37,6 +37,7 @@ describe('servicos administrativos', () => {
     await campanha.deleteCampanha(3);
     await campanha.getProgresso();
     await campanha.getProgressoUsuarios();
+    await campanha.getRankingCampanha(4);
     await campanha.resgatarCampanha(4);
 
     expect(apiGet).toHaveBeenCalledWith('/campanhas');
@@ -45,6 +46,7 @@ describe('servicos administrativos', () => {
     expect(apiDelete).toHaveBeenCalledWith('/campanhas/3');
     expect(apiGet).toHaveBeenCalledWith('/campanhas/progresso');
     expect(apiGet).toHaveBeenCalledWith('/campanhas/progresso/usuarios');
+    expect(apiGet).toHaveBeenCalledWith('/campanhas/4/ranking');
     expect(apiPost).toHaveBeenCalledWith('/campanhas/4/resgatar', {});
   });
 

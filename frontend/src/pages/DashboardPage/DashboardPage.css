@@ -1198,8 +1198,7 @@
 
 .rewards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 300px));
-  justify-content: start;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 .reward-card {
@@ -1218,15 +1217,32 @@
   background: var(--surface);
 }
 .reward-card.claimed {
-  opacity: 0.75;
+  opacity: 1;
+}
+
+.reward-card--collective {
+  min-height: 220px;
+  padding: 20px 22px;
+  cursor: pointer;
+  box-shadow: 0 8px 26px rgba(15, 23, 42, 0.04);
+}
+
+.reward-card--collective:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.reward-card--collective:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 .reward-top {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.reward-top > span {
-  display: none !important;
+.reward-card--collective .reward-top > span {
+  display: inline-flex;
 }
 .reward-icon {
   width: 36px;
@@ -1255,6 +1271,27 @@
   color: var(--text);
   line-height: 1.3;
   min-height: 18px;
+}
+
+.reward-card--collective .reward-name {
+  font-size: 19px;
+}
+
+.reward-collective-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.reward-collective-meta strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  white-space: nowrap;
 }
 .reward-claimed-prize {
   margin-top: 4px;
@@ -1312,6 +1349,132 @@
   color: var(--accent-fg);
   border-color: var(--accent);
 }
+
+.campaign-ranking-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.campaign-ranking-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(920px, 100%);
+  max-height: min(820px, calc(100vh - 48px));
+  padding: 24px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+}
+
+.campaign-ranking-modal__header,
+.campaign-ranking-modal__toolbar,
+.campaign-ranking-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.campaign-ranking-modal__header h2,
+.campaign-ranking-modal__toolbar h3 {
+  margin: 0;
+  color: var(--text);
+}
+
+.campaign-ranking-modal__header h2 { font-size: 21px; }
+.campaign-ranking-modal__header p,
+.campaign-ranking-modal__toolbar p {
+  margin: 3px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.campaign-ranking-modal__eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.campaign-ranking-modal__summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.campaign-ranking-modal__summary > div {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.campaign-ranking-modal__summary span,
+.campaign-ranking-modal__summary strong { display: block; }
+.campaign-ranking-modal__summary span { color: var(--text-3); font-size: 10px; text-transform: uppercase; }
+.campaign-ranking-modal__summary strong { margin-top: 4px; color: var(--text); font-size: 14px; }
+.campaign-ranking-modal__progress { flex-shrink: 0; height: 8px; margin: 14px 0 20px; }
+
+.campaign-ranking-modal__toolbar input {
+  width: min(280px, 100%);
+  height: 36px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.campaign-ranking-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 120px;
+  margin-top: 12px;
+  overflow-y: auto;
+}
+
+.campaign-ranking-row {
+  display: grid;
+  grid-template-columns: 46px 38px minmax(0, 1fr) 70px minmax(90px, auto);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.campaign-ranking-row.is-current-user { border-color: var(--border-strong); background: var(--surface-2); }
+.campaign-ranking-row__position { color: var(--text-2); font-family: var(--font-mono); font-weight: 700; text-align: center; }
+.campaign-ranking-row__avatar {
+  display: flex; align-items: center; justify-content: center; width: 38px; height: 38px;
+  overflow: hidden; border-radius: 50%; background: var(--surface-3); color: var(--text-2); font-size: 11px; font-weight: 700;
+}
+.campaign-ranking-row__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.campaign-ranking-row__identity { min-width: 0; }
+.campaign-ranking-row__identity strong,
+.campaign-ranking-row__identity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.campaign-ranking-row__identity strong { color: var(--text); font-size: 13px; }
+.campaign-ranking-row__identity small { margin-top: 2px; color: var(--text-3); font-size: 11px; }
+.campaign-ranking-row__share { color: var(--text-3); font-family: var(--font-mono); font-size: 11px; text-align: right; }
+.campaign-ranking-row__value { color: var(--text); font-family: var(--font-mono); font-size: 12px; text-align: right; }
+.campaign-ranking-empty { padding: 30px; color: var(--text-3); text-align: center; }
+.campaign-ranking-empty--error { color: var(--danger); }
+.campaign-ranking-modal__footer { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 12px; }
 
 .team-goals {
   margin-top: 30px;
@@ -1563,9 +1726,7 @@
   .today-overview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .rewards-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  .rewards-grid { grid-template-columns: 1fr; }
 }
 
 @media (min-width: 761px) {
@@ -1717,6 +1878,21 @@
     width: 100%;
     grid-template-columns: 1fr;
   }
+  .reward-card--collective { min-height: 0; padding: 16px; }
+  .reward-card--collective .reward-top { flex-wrap: wrap; }
+  .reward-card--collective .reward-top .pill { margin-left: 0 !important; }
+  .reward-collective-meta { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .campaign-ranking-backdrop { align-items: flex-end; padding: 0; }
+  .campaign-ranking-modal { width: 100%; max-height: 92vh; padding: 18px 14px; border-radius: 18px 18px 0 0; }
+  .campaign-ranking-modal__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .campaign-ranking-modal__toolbar { align-items: stretch; flex-direction: column; }
+  .campaign-ranking-modal__toolbar input { width: 100%; }
+  .campaign-ranking-row { grid-template-columns: 36px 34px minmax(0, 1fr) auto; gap: 7px; padding: 9px 7px; }
+  .campaign-ranking-row__avatar { width: 34px; height: 34px; }
+  .campaign-ranking-row__share { display: none; }
+  .campaign-ranking-row__value { min-width: 72px; }
+  .campaign-ranking-modal__footer { align-items: stretch; flex-direction: column; }
+  .campaign-ranking-modal__footer .btn { justify-content: center; width: 100%; }
 }
 
 @media (max-width: 480px) {

@@ -138,9 +138,10 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
             }).length}/{giftCampanhas.length}</span>
           </div>
           {giftCampanhas.map(campanha => {
-            const current = progresso.campanhas?.[campanha.id] ?? progresso[getCampanhaKey(campanha)] ?? 0;
-            const target = Number(campanha.target) || 0;
-            const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+            const detalhe = progresso.campanhas?.[campanha.id];
+            const current = typeof detalhe === 'object' ? Number(detalhe.current || 0) : Number(detalhe ?? progresso[getCampanhaKey(campanha)] ?? 0);
+            const target = Number(detalhe?.target ?? campanha.target) || 0;
+            const pct = typeof detalhe === 'object' ? Number(detalhe.pct || 0) : (target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0);
             const achieved = pct >= 100;
             const claimed = resgatadas.has(Number(campanha.id));
             const estadoPeriodo = progresso.estados_campanhas?.[campanha.id] || campanha.estado_periodo || 'ativa';

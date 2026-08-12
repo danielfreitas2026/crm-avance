@@ -97,7 +97,7 @@ class Campanha {
       db('campanha_operadoras as co').join('operadoras as o', 'co.operadora_id', 'o.id')
         .whereIn('co.campanha_id', ids).select('co.campanha_id', 'o.id', 'o.nome'),
       db('campanha_participantes as cp').join('usuarios as u', 'cp.usuario_id', 'u.id')
-        .whereIn('cp.campanha_id', ids).select('cp.campanha_id', 'u.id', 'u.nome', 'u.email'),
+        .whereIn('cp.campanha_id', ids).select('cp.campanha_id', 'u.id', 'u.nome', 'u.email', 'u.foto_perfil', 'u.ativo'),
       db('campanha_regras as cr').leftJoin('operadoras as o', 'cr.operadora_id', 'o.id')
         .whereIn('cr.campanha_id', ids)
         .select('cr.id', 'cr.campanha_id', 'cr.operadora_id', 'cr.publico_base', 'cr.tipo', 'o.nome as operadora_nome')
@@ -108,7 +108,9 @@ class Campanha {
       (acc[row.campanha_id] ||= []).push(chave(row)); return acc;
     }, {});
     const ops = porCampanha(operadoras, r => ({ id: r.id, nome: r.nome }));
-    const users = porCampanha(participantes, r => ({ id: r.id, nome: r.nome, email: r.email }));
+    const users = porCampanha(participantes, r => ({
+      id: r.id, nome: r.nome, email: r.email, foto_perfil: r.foto_perfil || null, ativo: Boolean(r.ativo)
+    }));
     const regrasPorCampanha = porCampanha(regras, r => ({
       id: r.id,
       operadora_id: r.operadora_id ? Number(r.operadora_id) : null,
@@ -151,7 +153,15 @@ class Campanha {
 
   static async syncParticipantes(trx, campanhaId, dados) {
     await trx('campanha_participantes').where({ campanha_id: campanhaId }).del();
-    if (dados.participante_ids.length) await trx('campanha_participantes').insert(dados.participante_ids.map(usuario_id => ({ campanha_id: campanhaId, usuario_id })));
+    const participanteIds = dados.participante_ids.length
+      ? dados.participante_ids
+      : (await trx('usuarios').where('ativo', true).pluck('id')).map(Number);
+    if (!participanteIds.length) {
+      const erro = new Error('A campanha precisa ter pelo menos um participante ativo.');
+      erro.code = 'CAMPANHA_SEM_PARTICIPANTES';
+      throw erro;
+    }
+    await trx('campanha_participantes').insert(participanteIds.map(usuario_id => ({ campanha_id: campanhaId, usuario_id })));
   }
 
   static async updateAll(campanhasArray) {
