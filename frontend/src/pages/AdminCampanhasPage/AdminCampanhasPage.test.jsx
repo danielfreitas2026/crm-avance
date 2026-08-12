@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   deleteCampanha: vi.fn(),
   getCampanhas: vi.fn(),
   getParticipantesCampanha: vi.fn(),
+  getVendasExcecaoCampanha: vi.fn(),
   updateCampanhas: vi.fn(),
   listarOperadoras: vi.fn()
 }));
@@ -18,6 +19,7 @@ vi.mock('../../services/campanha.service', () => ({
   deleteCampanha: api.deleteCampanha,
   getCampanhas: api.getCampanhas,
   getParticipantesCampanha: api.getParticipantesCampanha,
+  getVendasExcecaoCampanha: api.getVendasExcecaoCampanha,
   updateCampanhas: api.updateCampanhas
 }));
 vi.mock('../../services/config.service', () => ({ listarOperadoras: api.listarOperadoras }));
@@ -46,6 +48,7 @@ describe('AdminCampanhasPage - regras individuais', () => {
     api.getCampanhas.mockResolvedValue([campanhaBase()]);
     api.listarOperadoras.mockResolvedValue([{ id: 1, nome: 'Claro' }, { id: 2, nome: 'Vivo' }]);
     api.getParticipantesCampanha.mockResolvedValue([]);
+    api.getVendasExcecaoCampanha.mockResolvedValue({ data: [], total: 0 });
     api.updateCampanhas.mockResolvedValue({});
   });
 
@@ -183,5 +186,44 @@ describe('AdminCampanhasPage - regras individuais', () => {
     expect(await screen.findByLabelText(/Data inicial/)).toBeDisabled();
     expect(screen.getByLabelText(/Data final/)).toBeDisabled();
     expect(screen.getAllByText('Bloqueada após o primeiro resgate.')).toHaveLength(2);
+  });
+
+  it('seleciona varias vendas no modal e persiste somente ao salvar', async () => {
+    const user = userEvent.setup();
+    api.getVendasExcecaoCampanha.mockResolvedValue({
+      data: [
+        { id: 101, cliente_nome: 'Empresa A', cnpj: '111', vendedora_nome: 'Ana', data_venda: '2026-07-01', valor_total: 100, quantidade_linhas: 1 },
+        { id: 102, cliente_nome: 'Empresa B', cnpj: '222', vendedora_nome: 'Bia', data_venda: '2026-06-01', valor_total: 200, quantidade_linhas: 2 }
+      ],
+      total: 2
+    });
+    render(<AdminCampanhasPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Adicionar exceção' }));
+    expect(await screen.findByRole('dialog', { name: 'Adicionar exceção' })).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: /#101 · Empresa A/ }));
+    await user.click(screen.getByRole('checkbox', { name: /#102 · Empresa B/ }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar (2)' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Adicionar exceção' })).not.toBeInTheDocument();
+    expect(screen.getByText('#101 · Empresa A')).toBeInTheDocument();
+    expect(api.updateCampanhas).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+    await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalledTimes(1));
+    expect(api.updateCampanhas.mock.calls[0][0][0].venda_excecao_ids).toEqual([101, 102]);
+  });
+
+  it('indica e permite remover uma excecao que se tornou indisponivel', async () => {
+    const user = userEvent.setup();
+    api.getCampanhas.mockResolvedValue([campanhaBase({
+      venda_excecao_ids: [77],
+      vendas_excecao: [{ id: 77, cliente_nome: 'Venda cancelada', valida: false }]
+    })]);
+    render(<AdminCampanhasPage />);
+
+    expect(await screen.findByText(/Indisponível/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Remover exceção da venda 77' }));
+    expect(screen.getByText('Nenhuma venda adicionada como exceção.')).toBeInTheDocument();
   });
 });

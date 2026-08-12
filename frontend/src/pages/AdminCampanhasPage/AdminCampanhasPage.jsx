@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
-import { createCampanha, deleteCampanha, getCampanhas, getParticipantesCampanha, updateCampanhas } from '../../services/campanha.service';
+import { createCampanha, deleteCampanha, getCampanhas, getParticipantesCampanha, getVendasExcecaoCampanha, updateCampanhas } from '../../services/campanha.service';
 import { listarOperadoras } from '../../services/config.service';
+import Paginacao from '../../components/Paginacao/Paginacao';
 import * as I from '../../components/Icons';
 import './AdminCampanhasPage.css';
 
@@ -27,6 +28,78 @@ const normalizarRegrasTela = campanha => {
   }));
 };
 
+const formatarData = valor => valor ? String(valor).slice(0, 10).split('-').reverse().join('/') : 'Sem data';
+const formatarMoeda = valor => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+function VendaExcecaoResumo({ venda, onRemove }) {
+  return <div className={`admin-campanhas-exception-chip${venda.valida === false ? ' is-invalid' : ''}`}>
+    <div><strong>#{venda.id} · {venda.cliente_nome || venda.razao_social || 'Cliente não informado'}</strong><span>{formatarData(venda.data_venda)} · {venda.vendedora_nome || 'Sem vendedor'}{venda.valida === false ? ' · Indisponível' : ''}</span></div>
+    <button type="button" className="btn btn-icon btn-ghost" onClick={onRemove} aria-label={`Remover exceção da venda ${venda.id}`}><I.Close size={14} /></button>
+  </div>;
+}
+
+function VendasExcecaoModal({ campanha, onClose, onConfirm }) {
+  const [busca, setBusca] = useState('');
+  const [pagina, setPagina] = useState(1);
+  const [porPagina, setPorPagina] = useState(20);
+  const [resultado, setResultado] = useState({ data: [], total: 0 });
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [selecionadas, setSelecionadas] = useState(() => new Map(
+    (campanha.vendas_excecao || []).map(venda => [Number(venda.id), venda])
+  ));
+
+  useEffect(() => {
+    let ativo = true;
+    const timer = setTimeout(async () => {
+      setCarregando(true); setErro('');
+      try {
+        const dados = await getVendasExcecaoCampanha({ busca, page: pagina, per_page: porPagina });
+        if (ativo) setResultado({ data: dados.data || [], total: Number(dados.total || 0) });
+      } catch (error) {
+        if (ativo) setErro(error.message || 'Não foi possível carregar as vendas.');
+      } finally {
+        if (ativo) setCarregando(false);
+      }
+    }, busca ? 250 : 0);
+    return () => { ativo = false; clearTimeout(timer); };
+  }, [busca, pagina, porPagina]);
+
+  useEffect(() => {
+    const fechar = event => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', fechar);
+    return () => document.removeEventListener('keydown', fechar);
+  }, [onClose]);
+
+  const alternar = venda => setSelecionadas(atuais => {
+    const proximas = new Map(atuais);
+    if (proximas.has(Number(venda.id))) proximas.delete(Number(venda.id));
+    else proximas.set(Number(venda.id), { ...venda, valida: true });
+    return proximas;
+  });
+  const confirmar = () => onConfirm([...selecionadas.values()]);
+
+  return <div className="modal-overlay admin-campanhas-exception-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
+    <section className="modal admin-campanhas-exception-modal" role="dialog" aria-modal="true" aria-labelledby="vendas-excecao-title">
+      <div className="modal-header"><div className="modal-header-row"><div><div id="vendas-excecao-title" className="modal-client">Adicionar exceção</div><div className="modal-sub">Selecione vendas que contarão independentemente das regras da campanha.</div></div><button type="button" className="btn btn-icon btn-ghost" onClick={onClose} aria-label="Fechar"><I.Close size={16} /></button></div></div>
+      <div className="modal-body admin-campanhas-exception-body">
+        <label className="admin-campanhas-exception-search">Buscar venda<input autoFocus value={busca} onChange={event => { setBusca(event.target.value); setPagina(1); }} placeholder="ID, cliente, razão social, CNPJ ou vendedor" /></label>
+        {selecionadas.size > 0 && <div className="admin-campanhas-exception-selected"><strong>{selecionadas.size} selecionada{selecionadas.size === 1 ? '' : 's'}</strong><div>{[...selecionadas.values()].map(venda => <VendaExcecaoResumo key={venda.id} venda={venda} onRemove={() => alternar(venda)} />)}</div></div>}
+        {erro && <div className="alert-error">{erro}</div>}
+        <div className="admin-campanhas-exception-list" aria-busy={carregando}>
+          {carregando ? <div className="empty">Carregando vendas...</div> : resultado.data.length === 0 ? <div className="empty">Nenhuma venda válida encontrada.</div> : resultado.data.map(venda => <label key={venda.id} className={`admin-campanhas-exception-row${selecionadas.has(Number(venda.id)) ? ' is-selected' : ''}`}>
+            <input type="checkbox" checked={selecionadas.has(Number(venda.id))} onChange={() => alternar(venda)} />
+            <span className="admin-campanhas-exception-main"><strong>#{venda.id} · {venda.cliente_nome || venda.razao_social || 'Cliente não informado'}</strong><small>{venda.cnpj || 'CNPJ não informado'} · {venda.vendedora_nome || 'Sem vendedor'}</small></span>
+            <span className="admin-campanhas-exception-meta"><strong>{formatarMoeda(venda.valor_total)}</strong><small>{formatarData(venda.data_venda)} · {venda.quantidade_linhas || 0} linha(s)</small></span>
+          </label>)}
+        </div>
+        <Paginacao total={resultado.total} paginaAtual={pagina} itensPorPagina={porPagina} onPagina={setPagina} onItensPorPagina={valor => { setPorPagina(valor); setPagina(1); }} />
+      </div>
+      <div className="modal-footer"><button type="button" className="btn" onClick={onClose}>Cancelar</button><button type="button" className="btn btn-primary" onClick={confirmar}><I.Check size={15} /> Confirmar {selecionadas.size ? `(${selecionadas.size})` : ''}</button></div>
+    </section>
+  </div>;
+}
+
 function AdminCampanhasPage() {
   const [campanhas, setCampanhas] = useState([]);
   const [operadoras, setOperadoras] = useState([]);
@@ -36,6 +109,7 @@ function AdminCampanhasPage() {
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState(null);
   const [campanhaConfirmandoExclusao, setCampanhaConfirmandoExclusao] = useState(null);
+  const [campanhaExcecoesAberta, setCampanhaExcecoesAberta] = useState(null);
   const [campanhasRecolhidas, setCampanhasRecolhidas] = useState(() => new Set());
   const campanhaAdicionadaId = useRef(null);
   const elementosCampanhas = useRef(new Map());
@@ -43,7 +117,7 @@ function AdminCampanhasPage() {
   const load = async () => {
     try {
       const [data, ops, users] = await Promise.all([getCampanhas(), listarOperadoras(), getParticipantesCampanha()]);
-      setCampanhas(data.map(c => ({ ...c, operadora_ids: c.operadora_ids || [], participante_ids: c.participante_ids || [], regras: normalizarRegrasTela(c) })));
+      setCampanhas(data.map(c => ({ ...c, operadora_ids: c.operadora_ids || [], participante_ids: c.participante_ids || [], venda_excecao_ids: c.venda_excecao_ids || [], vendas_excecao: c.vendas_excecao || [], regras: normalizarRegrasTela(c) })));
       // A API de participantes já retorna somente usuários ativos (id, nome e e-mail).
       // Não filtre por `ativo` aqui: esse campo não é enviado pela rota.
       setOperadoras(ops); setUsuarios(users);
@@ -91,11 +165,16 @@ function AdminCampanhasPage() {
     else next.add(id);
     return next;
   });
+  const atualizarExcecoes = (campanhaId, vendas) => setCampanhas(items => items.map(campanha => campanha.id === campanhaId ? {
+    ...campanha,
+    vendas_excecao: vendas,
+    venda_excecao_ids: vendas.map(venda => Number(venda.id))
+  } : campanha));
   const add = async () => {
     setSaving(true); setAdding(true); setMessage(null);
     try {
       const hoje = hojeISO();
-      const created = await createCampanha({ periodo: 'personalizado', data_inicio: hoje, data_fim: hoje, categoria: 'registro_cliente', publico_base: 'ambos', target: 1, desc: 'Registrar 1 cliente', reward: '', regras: [regraPadrao()], operadora_ids: [], participante_ids: [] });
+      const created = await createCampanha({ periodo: 'personalizado', data_inicio: hoje, data_fim: hoje, categoria: 'registro_cliente', publico_base: 'ambos', target: 1, desc: 'Registrar 1 cliente', reward: '', regras: [regraPadrao()], operadora_ids: [], participante_ids: [], venda_excecao_ids: [] });
       campanhaAdicionadaId.current = created.id;
       setCampanhasRecolhidas(ids => {
         const next = new Set(ids);
@@ -169,6 +248,10 @@ function AdminCampanhasPage() {
             <div className="admin-campanhas-fields admin-campanhas-fields--participants-only">
               <div className="admin-campanhas-choice-field"><span>Participantes <small>(deixe vazio para todos)</small></span><div className="admin-campanhas-checkboxes admin-campanhas-checkboxes--participants">{usuarios.map(u => <label key={u.id} className="admin-campanhas-checkbox"><input type="checkbox" checked={campanha.participante_ids.map(Number).includes(Number(u.id))} onChange={() => change(campanha.id, 'participante_ids', alternarId(campanha.participante_ids, u.id))} /><span>{u.nome}</span></label>)}</div><button type="button" className="btn btn-sm admin-campanhas-select-all" onClick={() => change(campanha.id, 'participante_ids', usuarios.map(u => Number(u.id)))}>Selecionar todos os ativos</button></div>
             </div>
+            <div className="admin-campanhas-exceptions">
+              <div className="admin-campanhas-exceptions__header"><span>Exceções de vendas <small>Contam mesmo sem atender ao período, participante ou regras.</small></span><button type="button" className="btn btn-sm" onClick={() => setCampanhaExcecoesAberta(campanha.id)}><I.Plus size={14} /> Adicionar exceção</button></div>
+              {(campanha.vendas_excecao || []).length > 0 ? <div className="admin-campanhas-exceptions__list">{campanha.vendas_excecao.map(venda => <VendaExcecaoResumo key={venda.id} venda={venda} onRemove={() => atualizarExcecoes(campanha.id, campanha.vendas_excecao.filter(item => Number(item.id) !== Number(venda.id)))} />)}</div> : <span className="admin-campanhas-exceptions__empty">Nenhuma venda adicionada como exceção.</span>}
+            </div>
           </div>
           <div className="admin-campanhas-section admin-campanhas-section--last">
             <h5>Comunicação</h5>
@@ -179,6 +262,10 @@ function AdminCampanhasPage() {
       </div>
     </div>
     <div className="admin-campanhas-actions"><button className="btn btn-primary" onClick={save} disabled={saving}><I.Check size={16} /> {saving ? 'Salvando...' : 'Salvar alterações'}</button></div>
+    {campanhaExcecoesAberta && (() => {
+      const campanha = campanhas.find(item => item.id === campanhaExcecoesAberta);
+      return campanha ? <VendasExcecaoModal campanha={campanha} onClose={() => setCampanhaExcecoesAberta(null)} onConfirm={vendas => { atualizarExcecoes(campanha.id, vendas); setCampanhaExcecoesAberta(null); }} /> : null;
+    })()}
   </div></LayoutPrivado>;
 }
 export default AdminCampanhasPage;

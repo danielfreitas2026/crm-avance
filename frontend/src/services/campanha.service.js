@@ -14,6 +14,16 @@ export const getCampanhas = async () => {
 /** Lista usuários ativos elegíveis para participar de campanhas. */
 export const getParticipantesCampanha = async () => apiGet('/campanhas/participantes');
 
+/** Lista vendas válidas que podem ser adicionadas como exceção. */
+export const getVendasExcecaoCampanha = async (filtros = {}) => {
+  const params = new URLSearchParams();
+  Object.entries(filtros).forEach(([chave, valor]) => {
+    if (valor !== undefined && valor !== null && valor !== '') params.append(chave, valor);
+  });
+  const query = params.toString();
+  return apiGet(`/campanhas/vendas-excecao${query ? `?${query}` : ''}`);
+};
+
 /**
  * Atualiza campanhas com o estado mais recente.
  */

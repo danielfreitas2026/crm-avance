@@ -49,6 +49,13 @@ function decorarCampanha(campanha, hoje = dataHojeSaoPaulo()) {
   return { ...campanha, estado_periodo: intervaloCampanha(campanha, hoje).estado };
 }
 
+function ocultarDetalhesExcecoes(campanha) {
+  const { vendas_excecao, venda_excecao_ids, ...publica } = campanha;
+  void vendas_excecao;
+  void venda_excecao_ids;
+  return publica;
+}
+
 function campanhaVisivelParaUsuario(campanha, current, claimed, hoje = dataHojeSaoPaulo()) {
   void campanha;
   void current;
@@ -95,6 +102,11 @@ function validarCampanha(campanha) {
 
   if (campanha.regras !== undefined && !Array.isArray(campanha.regras)) {
     return 'Regras da campanha devem ser uma lista.';
+  }
+
+  if (campanha.venda_excecao_ids !== undefined && (!Array.isArray(campanha.venda_excecao_ids)
+    || campanha.venda_excecao_ids.some(id => !Number.isInteger(Number(id)) || Number(id) <= 0))) {
+    return 'Vendas de exceção devem ser uma lista de identificadores válidos.';
   }
 
   const regraInvalida = (campanha.regras || []).find(regra => (
@@ -357,7 +369,7 @@ async function listarVendasDaCampanha(participanteIds, ciclo) {
     .leftJoin('tipos_venda as tv', 'v.tipo_venda_id', 'tv.id')
     .leftJoin('servicos as s', 'v.servico_id', 's.id')
     .select(
-      'v.id', 'v.vendedora_id', 'v.operadora_id', 'v.quantidade_linhas',
+      'v.id', 'v.cliente_id', 'v.vendedora_id', 'v.operadora_id', 'v.quantidade_linhas',
       'v.valores_unitarios_chips', 'v.valor_total', 'v.cliente_da_base',
       'v.categoria_campanha', 'tv.nome as tipo_venda', 's.nome as servico'
     )
@@ -372,6 +384,24 @@ async function listarVendasDaCampanha(participanteIds, ciclo) {
           .whereIn('vv_campanha.usuario_id', participanteIds);
       });
     });
+}
+
+/** Busca exceções válidas sem aplicar período, participante ou regras. */
+async function listarVendasExcecaoCampanha(vendaIds = []) {
+  const ids = [...new Set(vendaIds.map(Number).filter(Boolean))];
+  if (!ids.length) return [];
+  return knex('vendas as v')
+    .leftJoin('tipos_venda as tv', 'v.tipo_venda_id', 'tv.id')
+    .leftJoin('servicos as s', 'v.servico_id', 's.id')
+    .select(
+      'v.id', 'v.cliente_id', 'v.vendedora_id', 'v.operadora_id', 'v.quantidade_linhas',
+      'v.valores_unitarios_chips', 'v.valor_total', 'v.cliente_da_base',
+      'v.categoria_campanha', 'tv.nome as tipo_venda', 's.nome as servico'
+    )
+    .whereIn('v.id', ids)
+    .whereNull('v.excluido_em')
+    .whereNull('v.cancelada_em')
+    .where(builder => builder.whereNull('v.status_funil').orWhereNot('v.status_funil', 'retorno'));
 }
 
 /** Lista clientes registrados pelos participantes no intervalo da campanha. */
@@ -463,10 +493,15 @@ function calcularValorCampanha(campanha, vendas, clientes) {
     const regras = regrasCampanha(campanha);
     return clientes.filter(cliente => regras.some(regra => (
       !regra.operadora_id || Number(regra.operadora_id) === Number(cliente.operadora_atual_id)
-    ))).length;
+    ))).length + vendas.filter(venda => venda.__excecao).length;
   }
 
   return vendas.reduce((acc, venda) => {
+    if (venda.__excecao) {
+      if (categoria === 'venda' || categoria === 'outros') return acc + 1;
+      if (categoria === 'valor_monetario') return acc + Number(venda.valor_total || 0);
+      return acc + parseItensVenda(venda).reduce((total, item) => total + item.quantidade, 0);
+    }
     const servico = normalizarTexto(venda.servico);
     if (categoria === 'outros'
       && normalizarTexto(venda.categoria_campanha) !== normalizarTexto(campanha.categoria_personalizada)) return acc;
@@ -502,10 +537,10 @@ function calcularValorCampanha(campanha, vendas, clientes) {
   }, 0);
 }
 
-function adicionarContribuicao(mapa, participanteIds, usuarioId, valor) {
+function adicionarContribuicao(mapa, participanteIds, usuarioId, valor, permitirExterno = false) {
   const id = Number(usuarioId);
   const quantidade = Number(valor || 0);
-  if (!participanteIds.has(id) || !Number.isFinite(quantidade) || quantidade <= 0) return;
+  if ((!participanteIds.has(id) && !permitirExterno) || !id || !Number.isFinite(quantidade) || quantidade <= 0) return;
   mapa.set(id, (mapa.get(id) || 0) + quantidade);
 }
 
@@ -521,8 +556,35 @@ function calcularContribuicoesCampanha(campanha, vendas = [], clientes = [], par
       if (!regras.some(regra => !regra.operadora_id || Number(regra.operadora_id) === Number(cliente.operadora_atual_id))) continue;
       adicionarContribuicao(contribuicoes, participanteIds, cliente.criado_por_id, 1);
     }
+    vendas.filter(venda => venda.__excecao).forEach(venda => {
+      adicionarContribuicao(contribuicoes, participanteIds, venda.vendedora_id, 1, true);
+    });
   } else {
     for (const venda of vendas) {
+      if (venda.__excecao) {
+        if (categoria === 'venda' || categoria === 'outros') {
+          adicionarContribuicao(contribuicoes, participanteIds, venda.vendedora_id, 1, true);
+          continue;
+        }
+        if (categoria === 'valor_monetario') {
+          const itens = parseItensVenda(venda);
+          const valorDetalhado = itens.reduce((total, item) => total + (item.quantidade * item.valor_unitario), 0);
+          if (valorDetalhado > 0) {
+            const valorVenda = Number(venda.valor_total || valorDetalhado);
+            const fator = valorVenda / valorDetalhado;
+            itens.forEach(item => adicionarContribuicao(
+              contribuicoes, participanteIds, item.vendedora_id, item.quantidade * item.valor_unitario * fator, true
+            ));
+          } else {
+            adicionarContribuicao(contribuicoes, participanteIds, venda.vendedora_id, venda.valor_total, true);
+          }
+          continue;
+        }
+        parseItensVenda(venda).forEach(item => adicionarContribuicao(
+          contribuicoes, participanteIds, item.vendedora_id, item.quantidade, true
+        ));
+        continue;
+      }
       if (categoria === 'outros'
         && normalizarTexto(venda.categoria_campanha) !== normalizarTexto(campanha.categoria_personalizada)) continue;
       const itensElegiveis = itensElegiveisCampanha(campanha, venda);
@@ -583,24 +645,38 @@ function montarRanking(participantes, contribuicoes) {
   });
 }
 
+/** Une vendas regulares e exceções, dando prioridade ao cálculo integral da exceção. */
+function unirVendasCampanha(vendasRegulares = [], vendasExcecao = []) {
+  const vendasPorId = new Map(vendasRegulares.map(venda => [Number(venda.id), venda]));
+  vendasExcecao.forEach(venda => vendasPorId.set(Number(venda.id), { ...venda, __excecao: true }));
+  return [...vendasPorId.values()];
+}
+
 /** Calcula uma campanha coletiva uma única vez e retorna seu ranking. */
 async function calcularCampanhaColetiva(campanha, hoje = dataHojeSaoPaulo()) {
   const participantes = Array.isArray(campanha.participantes) ? campanha.participantes : [];
   const participanteIds = participantes.map(item => Number(item.id)).filter(Boolean);
   const ciclo = intervaloCampanha(campanha, hoje);
-  let vendas = [];
+  let vendasRegulares = [];
   let clientes = [];
 
   if (ciclo.estado !== 'futura') {
-    [vendas, clientes] = await Promise.all([
+    [vendasRegulares, clientes] = await Promise.all([
       listarVendasDaCampanha(participanteIds, ciclo),
       listarClientesDaCampanha(participanteIds, ciclo)
     ]);
   }
 
+  const vendasExcecao = await listarVendasExcecaoCampanha(campanha.venda_excecao_ids || []);
+  const vendas = unirVendasCampanha(vendasRegulares, vendasExcecao);
+
   const contribuicoes = calcularContribuicoesCampanha(campanha, vendas, clientes, participantes);
-  const ranking = montarRanking(participantes, contribuicoes);
-  const current = ranking.reduce((soma, item) => soma + item.contribuicao, 0);
+  const idsExternos = Object.keys(contribuicoes).map(Number).filter(id => !participanteIds.includes(id));
+  const usuariosExternos = idsExternos.length
+    ? await knex('usuarios').whereIn('id', idsExternos).select('id', 'nome', 'email', 'foto_perfil')
+    : [];
+  const ranking = montarRanking([...participantes, ...usuariosExternos], contribuicoes);
+  const current = calcularValorCampanha(campanha, vendas, clientes);
   const target = Number(campanha.target || 0);
   const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
 
@@ -665,6 +741,68 @@ function agruparResgatesPorUsuario(resgates = []) {
  * Controller das rotas de campanhas, progresso de metas e resgates.
  */
 class CampanhaController {
+  async vendasExcecao(req, res) {
+    try {
+      const pagina = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+      const porPagina = Math.min(Math.max(Number.parseInt(req.query.per_page, 10) || 20, 1), 100);
+      const busca = String(req.query.busca || '').trim();
+      const base = knex('vendas as v')
+        .leftJoin('clientes as cli', 'v.cliente_id', 'cli.id')
+        .leftJoin('usuarios as u', 'v.vendedora_id', 'u.id')
+        .leftJoin('operadoras as o', 'v.operadora_id', 'o.id')
+        .whereNull('v.excluido_em')
+        .whereNull('v.cancelada_em')
+        .where(builder => builder.whereNull('v.status_funil').orWhereNot('v.status_funil', 'retorno'));
+
+      if (busca) {
+        const termo = `%${busca}%`;
+        base.where(builder => {
+          if (/^\d+$/.test(busca)) builder.orWhere('v.id', Number(busca));
+          builder
+            .orWhere('v.nome', 'like', termo)
+            .orWhere('v.razao_social', 'like', termo)
+            .orWhere('v.cnpj', 'like', termo)
+            .orWhere('cli.nome', 'like', termo)
+            .orWhere('cli.razao_social', 'like', termo)
+            .orWhere('cli.cnpj', 'like', termo)
+            .orWhere('u.nome', 'like', termo)
+            .orWhereExists(function vendedorCompartilhado() {
+              this.select(knex.raw('1'))
+                .from('venda_vendedoras as vv_busca')
+                .join('usuarios as uv_busca', 'vv_busca.usuario_id', 'uv_busca.id')
+                .whereRaw('vv_busca.venda_id = v.id')
+                .where('uv_busca.nome', 'like', termo);
+            });
+        });
+      }
+
+      const totalRow = await base.clone().clearSelect().clearOrder().countDistinct({ total: 'v.id' }).first();
+      const vendas = await base.clone()
+        .select(
+          'v.id', 'v.data_venda', 'v.razao_social', 'v.cnpj', 'v.valor_total',
+          'v.quantidade_linhas', 'u.nome as vendedora_nome', 'o.nome as operadora_nome',
+          knex.raw("COALESCE(NULLIF(v.razao_social, ''), NULLIF(cli.razao_social, ''), NULLIF(v.nome, ''), NULLIF(cli.nome, ''), CONCAT('Venda #', v.id)) as cliente_nome")
+        )
+        .orderBy('v.data_venda', 'desc')
+        .orderBy('v.id', 'desc')
+        .limit(porPagina)
+        .offset((pagina - 1) * porPagina);
+
+      res.json({
+        data: vendas.map(venda => ({
+          ...venda,
+          id: Number(venda.id),
+          valor_total: Number(venda.valor_total || 0),
+          quantidade_linhas: Number(venda.quantidade_linhas || 0)
+        })),
+        total: Number(totalRow?.total || 0)
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Erro ao buscar vendas disponíveis para exceção.' });
+    }
+  }
+
   async participantes(req, res) {
     try {
       const usuarios = await knex('usuarios').where('ativo', true).select('id', 'nome', 'email').orderBy('nome', 'asc');
@@ -684,7 +822,7 @@ class CampanhaController {
       const permitidas = podeGerenciar ? campanhas : campanhas.filter(campanha => (
         !campanha.participante_ids.length || campanha.participante_ids.map(Number).includes(Number(req.usuario.id))
       ));
-      res.json(permitidas.map(campanha => decorarCampanha(campanha)));
+      res.json(permitidas.map(campanha => decorarCampanha(podeGerenciar ? campanha : ocultarDetalhesExcecoes(campanha))));
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: 'Erro ao buscar campanhas.' });
@@ -714,6 +852,9 @@ class CampanhaController {
       if (error?.code === 'CAMPANHA_SEM_PARTICIPANTES') {
         return res.status(400).json({ error: error.message });
       }
+      if (error?.code === 'CAMPANHA_VENDA_EXCECAO_INVALIDA') {
+        return res.status(400).json({ error: error.message });
+      }
       console.error(error);
       res.status(500).json({ error: 'Erro ao atualizar campanhas.' });
     }
@@ -740,12 +881,16 @@ class CampanhaController {
         regras: req.body.regras,
         categoria_personalizada: req.body.categoria_personalizada,
         participante_ids: req.body.participante_ids,
+        venda_excecao_ids: req.body.venda_excecao_ids,
         is_gift: true
       });
 
       res.status(201).json(decorarCampanha(campanha));
     } catch (error) {
       if (error?.code === 'CAMPANHA_SEM_PARTICIPANTES') {
+        return res.status(400).json({ error: error.message });
+      }
+      if (error?.code === 'CAMPANHA_VENDA_EXCECAO_INVALIDA') {
         return res.status(400).json({ error: error.message });
       }
       console.error(error);
@@ -945,7 +1090,7 @@ class CampanhaController {
 
       res.json({
         campanha: {
-          ...decorarCampanha(campanha),
+          ...decorarCampanha(podeGerenciar ? campanha : ocultarDetalhesExcecoes(campanha)),
           current: calculo.current,
           target: calculo.target,
           pct: calculo.pct,
@@ -1096,5 +1241,6 @@ module.exports.__testables = {
   intervaloCampanha,
   itensElegiveisCampanha,
   parseItensVenda,
+  unirVendasCampanha,
   validarCampanha
 };

@@ -11,6 +11,7 @@ const {
   intervaloCampanha,
   itensElegiveisCampanha,
   montarRanking,
+  unirVendasCampanha,
   validarCampanha
 } = campanhaController.__testables;
 const { intervaloCiclo } = require('../src/database/migrations/20260812130000_add_periodo_fixo_campanhas')._internals;
@@ -196,6 +197,45 @@ test('atribui registros ao criador e compartilha a mesma posicao em empate', () 
   assert.deepEqual(ranking.map(itemRanking => [itemRanking.id, itemRanking.contribuicao, itemRanking.posicao]), [
     [10, 1, 1], [20, 1, 1], [30, 0, 3]
   ]);
+});
+
+test('excecao ignora regras e usa a metrica integral de cada categoria', () => {
+  const venda = {
+    id: 90,
+    __excecao: true,
+    vendedora_id: 30,
+    cliente_da_base: false,
+    valor_total: 250,
+    valores_unitarios_chips: [item(2, 'novo', 1, 50), item(3, 'portabilidade', 2, 50)]
+  };
+  const base = { regras: [{ operadora_id: 99, publico_base: 'base', tipo: 'internet' }] };
+
+  assert.equal(calcularValorCampanha({ ...base, categoria: 'registro_cliente' }, [venda], []), 1);
+  assert.equal(calcularValorCampanha({ ...base, categoria: 'venda' }, [venda], []), 1);
+  assert.equal(calcularValorCampanha({ ...base, categoria: 'outros', categoria_personalizada: 'Seguro' }, [venda], []), 1);
+  assert.equal(calcularValorCampanha({ ...base, categoria: 'chip_novo' }, [venda], []), 5);
+  assert.equal(calcularValorCampanha({ ...base, categoria: 'portabilidade' }, [venda], []), 5);
+  assert.equal(calcularValorCampanha({ ...base, categoria: 'internet' }, [venda], []), 5);
+  assert.equal(calcularValorCampanha({ ...base, categoria: 'valor_monetario' }, [venda], []), 250);
+});
+
+test('excecao substitui a venda regular sem duplicar e credita vendedor externo', () => {
+  const regular = { id: 7, vendedora_id: 10, valores_unitarios_chips: [item(1, 'novo', 1)] };
+  const excecao = {
+    id: 7,
+    vendedora_id: 30,
+    valor_total: 200,
+    valores_unitarios_chips: [{ ...item(2, 'portabilidade', 2, 100), vendedora_id: 30 }]
+  };
+  const vendas = unirVendasCampanha([regular], [excecao]);
+  const campanha = { categoria: 'venda', regras: [{ operadora_id: 1, publico_base: 'ambos', tipo: 'categoria' }] };
+  const contribuicoes = calcularContribuicoesCampanha(campanha, vendas, [], [{ id: 10 }]);
+  const ranking = montarRanking([{ id: 10, nome: 'Ana' }, { id: 30, nome: 'Externo' }], contribuicoes);
+
+  assert.equal(vendas.length, 1);
+  assert.equal(vendas[0].__excecao, true);
+  assert.deepEqual(contribuicoes, { 10: 0, 30: 1 });
+  assert.equal(ranking[0].id, 30);
 });
 
 test('detecta somente alteracoes nas datas bloqueadas por resgate', () => {

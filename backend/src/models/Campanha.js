@@ -59,6 +59,7 @@ function normalizarCampanha(campanha) {
     : (PUBLICOS_BASE_VALIDOS.includes(campanha.publico_base) ? campanha.publico_base : 'ambos');
   const operadoraIds = idsValidos(campanha.operadora_ids);
   const participantes = idsValidos(campanha.participante_ids);
+  const vendasExcecao = idsValidos(campanha.venda_excecao_ids);
   const regras = normalizarRegras(campanha, categoria, operadoraIds, publicoBase);
   const operadorasRegras = [...new Set(regras.map(regra => regra.operadora_id).filter(Boolean))];
   const publicosRegras = [...new Set(regras.map(regra => regra.publico_base))];
@@ -79,6 +80,7 @@ function normalizarCampanha(campanha) {
     categoria_personalizada: categoria === 'outros' ? String(campanha.categoria_personalizada || '').trim() : null,
     operadora_ids: operadorasRegras,
     participante_ids: participantes,
+    venda_excecao_ids: vendasExcecao,
     regras
   };
 }
@@ -93,7 +95,7 @@ class Campanha {
   static async anexarRelacoes(campanhas) {
     if (!campanhas.length) return campanhas;
     const ids = campanhas.map(c => c.id);
-    const [operadoras, participantes, regras, campanhasComResgate] = await Promise.all([
+    const [operadoras, participantes, regras, vendasExcecao, campanhasComResgate] = await Promise.all([
       db('campanha_operadoras as co').join('operadoras as o', 'co.operadora_id', 'o.id')
         .whereIn('co.campanha_id', ids).select('co.campanha_id', 'o.id', 'o.nome'),
       db('campanha_participantes as cp').join('usuarios as u', 'cp.usuario_id', 'u.id')
@@ -102,6 +104,20 @@ class Campanha {
         .whereIn('cr.campanha_id', ids)
         .select('cr.id', 'cr.campanha_id', 'cr.operadora_id', 'cr.publico_base', 'cr.tipo', 'o.nome as operadora_nome')
         .orderBy('cr.id', 'asc'),
+      db('campanha_vendas_excecoes as cve')
+        .join('vendas as v', 'cve.venda_id', 'v.id')
+        .leftJoin('clientes as cli', 'v.cliente_id', 'cli.id')
+        .leftJoin('usuarios as u', 'v.vendedora_id', 'u.id')
+        .leftJoin('operadoras as o', 'v.operadora_id', 'o.id')
+        .whereIn('cve.campanha_id', ids)
+        .select(
+          'cve.campanha_id', 'v.id', 'v.data_venda', 'v.razao_social', 'v.cnpj',
+          'v.valor_total', 'v.quantidade_linhas', 'v.status_funil', 'v.cancelada_em',
+          'v.excluido_em', 'u.nome as vendedora_nome', 'o.nome as operadora_nome',
+          db.raw("COALESCE(NULLIF(v.razao_social, ''), NULLIF(cli.razao_social, ''), NULLIF(v.nome, ''), NULLIF(cli.nome, ''), CONCAT('Venda #', v.id)) as cliente_nome")
+        )
+        .orderBy('v.data_venda', 'desc')
+        .orderBy('v.id', 'desc'),
       db('campanha_resgates').whereIn('campanha_id', ids).distinct('campanha_id')
     ]);
     const porCampanha = (rows, chave) => rows.reduce((acc, row) => {
@@ -118,6 +134,19 @@ class Campanha {
       publico_base: r.publico_base,
       tipo: r.tipo
     }));
+    const excecoesPorCampanha = porCampanha(vendasExcecao, r => ({
+      id: Number(r.id),
+      data_venda: r.data_venda,
+      cliente_nome: r.cliente_nome,
+      razao_social: r.razao_social,
+      cnpj: r.cnpj,
+      valor_total: Number(r.valor_total || 0),
+      quantidade_linhas: Number(r.quantidade_linhas || 0),
+      status_funil: r.status_funil,
+      vendedora_nome: r.vendedora_nome,
+      operadora_nome: r.operadora_nome,
+      valida: !r.excluido_em && !r.cancelada_em && r.status_funil !== 'retorno'
+    }));
     const idsComResgate = new Set(campanhasComResgate.map(item => Number(item.campanha_id)));
     return campanhas.map(c => ({
       ...c,
@@ -131,6 +160,8 @@ class Campanha {
         publico_base: c.categoria === 'registro_cliente' ? 'ambos' : (c.publico_base || 'ambos'),
         tipo: 'categoria'
       }],
+      vendas_excecao: excecoesPorCampanha[c.id] || [],
+      venda_excecao_ids: (excecoesPorCampanha[c.id] || []).map(venda => Number(venda.id)),
       periodo_bloqueado: idsComResgate.has(Number(c.id)),
       em_grupo: (users[c.id] || []).length > 1
     }));
@@ -164,6 +195,31 @@ class Campanha {
     await trx('campanha_participantes').insert(participanteIds.map(usuario_id => ({ campanha_id: campanhaId, usuario_id })));
   }
 
+  static async syncVendasExcecao(trx, campanhaId, dados) {
+    const atuais = new Set((await trx('campanha_vendas_excecoes').where({ campanha_id: campanhaId }).pluck('venda_id')).map(Number));
+    const adicionadas = dados.venda_excecao_ids.filter(id => !atuais.has(Number(id)));
+    if (adicionadas.length) {
+      const validas = await trx('vendas')
+        .whereIn('id', adicionadas)
+        .whereNull('excluido_em')
+        .whereNull('cancelada_em')
+        .where(builder => builder.whereNull('status_funil').orWhereNot('status_funil', 'retorno'))
+        .pluck('id');
+      if (validas.length !== adicionadas.length) {
+        const erro = new Error('Uma ou mais vendas selecionadas não estão mais disponíveis para exceção.');
+        erro.code = 'CAMPANHA_VENDA_EXCECAO_INVALIDA';
+        throw erro;
+      }
+    }
+    await trx('campanha_vendas_excecoes').where({ campanha_id: campanhaId }).del();
+    if (dados.venda_excecao_ids.length) {
+      await trx('campanha_vendas_excecoes').insert(dados.venda_excecao_ids.map(venda_id => ({
+        campanha_id: campanhaId,
+        venda_id
+      })));
+    }
+  }
+
   static async updateAll(campanhasArray) {
     return db.transaction(async trx => {
       for (const campanha of campanhasArray) {
@@ -184,6 +240,7 @@ class Campanha {
         // A ausência de campos de relação preserva campanhas legadas no update.
         if (Array.isArray(campanha.regras) || Array.isArray(campanha.operadora_ids)) await this.syncFiltros(trx, campanha.id, dados);
         if (Array.isArray(campanha.participante_ids)) await this.syncParticipantes(trx, campanha.id, dados);
+        if (Array.isArray(campanha.venda_excecao_ids)) await this.syncVendasExcecao(trx, campanha.id, dados);
       }
     });
   }
@@ -199,7 +256,8 @@ class Campanha {
       });
       await Promise.all([
         this.syncFiltros(trx, campanhaId, dados),
-        this.syncParticipantes(trx, campanhaId, dados)
+        this.syncParticipantes(trx, campanhaId, dados),
+        this.syncVendasExcecao(trx, campanhaId, dados)
       ]);
       return [campanhaId];
     });
@@ -215,6 +273,7 @@ class Campanha {
       await trx('campanha_regras').where({ campanha_id: id }).del();
       await trx('campanha_operadoras').where({ campanha_id: id }).del();
       await trx('campanha_participantes').where({ campanha_id: id }).del();
+      await trx('campanha_vendas_excecoes').where({ campanha_id: id }).del();
       return trx(this.tableName).where({ id }).where('is_gift', true).del();
     });
   }
