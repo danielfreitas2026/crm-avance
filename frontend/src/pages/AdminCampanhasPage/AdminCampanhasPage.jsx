@@ -30,6 +30,20 @@ const normalizarRegrasTela = campanha => {
 
 const formatarData = valor => valor ? String(valor).slice(0, 10).split('-').reverse().join('/') : 'Sem data';
 const formatarMoeda = valor => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const montarRascunhoCampanha = campanha => ({
+  data_inicio: campanha.data_inicio,
+  data_fim: campanha.data_fim,
+  categoria: campanha.categoria,
+  categoria_personalizada: campanha.categoria_personalizada,
+  target: campanha.target,
+  desc: campanha.desc,
+  reward: campanha.reward,
+  publico_base: campanha.publico_base,
+  operadora_id: campanha.operadora_id,
+  operadora_ids: campanha.operadora_ids || [],
+  participante_ids: campanha.participante_ids || [],
+  regras: campanha.regras || []
+});
 
 function VendaExcecaoResumo({ venda, onRemove }) {
   return <div className={`admin-campanhas-exception-chip${venda.valida === false ? ' is-invalid' : ''}`}>
@@ -46,19 +60,18 @@ function VendasExcecaoModal({ campanha, onClose, onConfirm }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [selecionadas, setSelecionadas] = useState(() => new Map());
-  const idsJaIncluidosChave = (campanha.venda_excecao_ids || []).map(Number).join(',');
 
   useEffect(() => {
     let ativo = true;
     const timer = setTimeout(async () => {
       setCarregando(true); setErro('');
       try {
-        const dados = await getVendasExcecaoCampanha({
+        const dados = await getVendasExcecaoCampanha(campanha.id, {
+          campanha: montarRascunhoCampanha(campanha),
           busca,
           page: pagina,
           per_page: porPagina,
-          campanha_id: campanha.id,
-          excluir_ids: idsJaIncluidosChave
+          excluir_ids: campanha.venda_excecao_ids || []
         });
         if (ativo) setResultado({ data: dados.data || [], total: Number(dados.total || 0) });
       } catch (error) {
@@ -68,7 +81,7 @@ function VendasExcecaoModal({ campanha, onClose, onConfirm }) {
       }
     }, busca ? 250 : 0);
     return () => { ativo = false; clearTimeout(timer); };
-  }, [busca, pagina, porPagina, campanha.id, idsJaIncluidosChave]);
+  }, [busca, pagina, porPagina, campanha]);
 
   useEffect(() => {
     const fechar = event => { if (event.key === 'Escape') onClose(); };
@@ -86,14 +99,14 @@ function VendasExcecaoModal({ campanha, onClose, onConfirm }) {
 
   return <div className="modal-overlay admin-campanhas-exception-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
     <section className="modal admin-campanhas-exception-modal" role="dialog" aria-modal="true" aria-labelledby="vendas-excecao-title">
-      <div className="modal-header"><div className="modal-header-row"><div><div id="vendas-excecao-title" className="modal-client">Adicionar exceção</div><div className="modal-sub">Selecione vendas que contarão independentemente das regras da campanha.</div></div><button type="button" className="btn btn-icon btn-ghost" onClick={onClose} aria-label="Fechar"><I.Close size={16} /></button></div></div>
+      <div className="modal-header"><div className="modal-header-row"><div><div id="vendas-excecao-title" className="modal-client">Adicionar exceção</div><div className="modal-sub">Apenas vendas que ainda não contribuem para esta campanha são exibidas.</div></div><button type="button" className="btn btn-icon btn-ghost" onClick={onClose} aria-label="Fechar"><I.Close size={16} /></button></div></div>
       <div className="modal-body admin-campanhas-exception-body">
         <label className="admin-campanhas-exception-search">Buscar venda<input autoFocus value={busca} onChange={event => { setBusca(event.target.value); setPagina(1); }} placeholder="ID, cliente, razão social, CNPJ ou vendedor" /></label>
         {selecionadas.size > 0 && <div className="admin-campanhas-exception-selected"><strong>{selecionadas.size} selecionada{selecionadas.size === 1 ? '' : 's'}</strong><div>{[...selecionadas.values()].map(venda => <VendaExcecaoResumo key={venda.id} venda={venda} onRemove={() => alternar(venda)} />)}</div></div>}
         {erro && <div className="alert-error">{erro}</div>}
         <div className="admin-campanhas-exception-results">
           <div className="admin-campanhas-exception-list" aria-busy={carregando}>
-            {carregando ? <div className="empty">Carregando vendas...</div> : resultado.data.length === 0 ? <div className="empty">Nenhuma venda disponível para adicionar.</div> : resultado.data.map(venda => <label key={venda.id} className={`admin-campanhas-exception-row${selecionadas.has(Number(venda.id)) ? ' is-selected' : ''}`}>
+            {carregando ? <div className="empty">Carregando vendas...</div> : resultado.data.length === 0 ? <div className="empty">Nenhuma venda sem contribuição disponível para adicionar.</div> : resultado.data.map(venda => <label key={venda.id} className={`admin-campanhas-exception-row${selecionadas.has(Number(venda.id)) ? ' is-selected' : ''}`}>
               <input type="checkbox" checked={selecionadas.has(Number(venda.id))} onChange={() => alternar(venda)} />
               <span className="admin-campanhas-exception-main"><strong>#{venda.id} · {venda.cliente_nome || venda.razao_social || 'Cliente não informado'}</strong><small>{venda.cnpj || 'CNPJ não informado'} · {venda.vendedora_nome || 'Sem vendedor'}</small></span>
               <span className="admin-campanhas-exception-meta"><strong>{formatarMoeda(venda.valor_total)}</strong><small>{formatarData(venda.data_venda)} · {venda.quantidade_linhas || 0} linha(s)</small></span>

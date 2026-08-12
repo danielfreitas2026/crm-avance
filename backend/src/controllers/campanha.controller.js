@@ -769,18 +769,73 @@ function agruparResgatesPorUsuario(resgates = []) {
   }, {});
 }
 
+function normalizarIdsEntrada(valor) {
+  const itens = Array.isArray(valor) ? valor : String(valor || '').split(',');
+  return [...new Set(itens.map(Number).filter(id => Number.isInteger(id) && id > 0))];
+}
+
+/** Monta uma campanha calculável a partir do estado ainda não salvo da tela administrativa. */
+async function montarPreviaCampanha(campanhaPersistida, rascunho = {}) {
+  const camposEditaveis = [
+    'data_inicio', 'data_fim', 'categoria', 'categoria_personalizada', 'target', 'desc',
+    'reward', 'publico_base', 'operadora_id', 'operadora_ids', 'participante_ids', 'regras'
+  ];
+  const previa = { ...campanhaPersistida };
+
+  camposEditaveis.forEach(campo => {
+    if (Object.prototype.hasOwnProperty.call(rascunho, campo)) previa[campo] = rascunho[campo];
+  });
+
+  const erroValidacao = validarCampanha(previa);
+  if (erroValidacao) {
+    const erro = new Error(erroValidacao);
+    erro.code = 'CAMPANHA_PREVIA_INVALIDA';
+    throw erro;
+  }
+
+  let participanteIds = normalizarIdsEntrada(previa.participante_ids);
+  if (!participanteIds.length) {
+    participanteIds = (await knex('usuarios').where('ativo', true).pluck('id')).map(Number);
+  }
+  const participantes = participanteIds.length
+    ? await knex('usuarios').whereIn('id', participanteIds).select('id', 'nome', 'email', 'foto_perfil')
+    : [];
+
+  if (!participantes.length) {
+    const erro = new Error('A campanha precisa ter pelo menos um participante ativo.');
+    erro.code = 'CAMPANHA_SEM_PARTICIPANTES';
+    throw erro;
+  }
+
+  return {
+    ...previa,
+    participante_ids: participantes.map(item => Number(item.id)),
+    participantes,
+    // As exceções atuais são excluídas da lista separadamente e não devem alterar
+    // a identificação das vendas que já atendem às regras normais da campanha.
+    venda_excecao_ids: []
+  };
+}
+
 /**
  * Controller das rotas de campanhas, progresso de metas e resgates.
  */
 class CampanhaController {
   async vendasExcecao(req, res) {
     try {
-      const pagina = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
-      const porPagina = Math.min(Math.max(Number.parseInt(req.query.per_page, 10) || 20, 1), 100);
-      const busca = String(req.query.busca || '').trim();
-      const campanhaId = Number(req.query.campanha_id) || null;
-      const idsExcluidos = [...new Set(String(req.query.excluir_ids || '')
-        .split(',').map(Number).filter(id => Number.isInteger(id) && id > 0))];
+      const campanhaId = Number(req.params.id);
+      const campanhaPersistida = (await Campanha.findAll()).find(item => Number(item.id) === campanhaId);
+      if (!campanhaPersistida || !campanhaEhGift(campanhaPersistida)) {
+        return res.status(404).json({ error: 'Campanha não encontrada.' });
+      }
+
+      const pagina = Math.max(Number.parseInt(req.body?.page, 10) || 1, 1);
+      const porPagina = Math.min(Math.max(Number.parseInt(req.body?.per_page, 10) || 20, 1), 100);
+      const busca = String(req.body?.busca || '').trim();
+      const idsExcluidos = normalizarIdsEntrada(req.body?.excluir_ids);
+      const campanhaPrevia = await montarPreviaCampanha(campanhaPersistida, req.body?.campanha || {});
+      const calculo = await calcularCampanhaColetiva(campanhaPrevia);
+      const idsContribuintes = calculo.vendasContabilizadas.map(venda => Number(venda.id));
       const base = knex('vendas as v')
         .leftJoin('clientes as cli', 'v.cliente_id', 'cli.id')
         .leftJoin('usuarios as u', 'v.vendedora_id', 'u.id')
@@ -789,14 +844,13 @@ class CampanhaController {
         .whereNull('v.cancelada_em')
         .where(builder => builder.whereNull('v.status_funil').orWhereNot('v.status_funil', 'retorno'));
 
-      if (campanhaId) {
-        base.whereNotExists(function vendaJaIncluida() {
-          this.select(knex.raw('1'))
-            .from('campanha_vendas_excecoes as cve_lista')
-            .whereRaw('cve_lista.venda_id = v.id')
-            .where('cve_lista.campanha_id', campanhaId);
-        });
-      }
+      base.whereNotExists(function vendaJaIncluida() {
+        this.select(knex.raw('1'))
+          .from('campanha_vendas_excecoes as cve_lista')
+          .whereRaw('cve_lista.venda_id = v.id')
+          .where('cve_lista.campanha_id', campanhaId);
+      });
+      if (idsContribuintes.length) base.whereNotIn('v.id', idsContribuintes);
       if (idsExcluidos.length) base.whereNotIn('v.id', idsExcluidos);
 
       if (busca) {
@@ -843,6 +897,9 @@ class CampanhaController {
         total: Number(totalRow?.total || 0)
       });
     } catch (error) {
+      if (error?.code === 'CAMPANHA_PREVIA_INVALIDA' || error?.code === 'CAMPANHA_SEM_PARTICIPANTES') {
+        return res.status(400).json({ error: error.message });
+      }
       console.error(error);
       res.status(500).json({ error: 'Erro ao buscar vendas disponíveis para exceção.' });
     }
@@ -1287,6 +1344,7 @@ module.exports.__testables = {
   dataValidaISO,
   intervaloCampanha,
   itensElegiveisCampanha,
+  montarPreviaCampanha,
   parseItensVenda,
   unirVendasCampanha,
   validarCampanha

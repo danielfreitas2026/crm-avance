@@ -265,6 +265,18 @@ test('lista somente vendas que efetivamente contabilizam na campanha', () => {
   }]);
 });
 
+test('venda comum nao contribui para campanha de registro de clientes', () => {
+  const campanha = {
+    categoria: 'registro_cliente',
+    regras: [{ operadora_id: null, publico_base: 'ambos', tipo: 'categoria' }]
+  };
+  const vendaRegular = { id: 20, vendedora_id: 10, valores_unitarios_chips: [item(1, 'novo', 1)] };
+  const vendaExcecao = { ...vendaRegular, id: 21, __excecao: true };
+
+  assert.deepEqual(montarVendasContabilizadas(campanha, [vendaRegular]), []);
+  assert.equal(montarVendasContabilizadas(campanha, [vendaExcecao])[0].id, 21);
+});
+
 test('detecta somente alteracoes nas datas bloqueadas por resgate', () => {
   const atual = { data_inicio: '2026-08-01', data_fim: '2026-08-31' };
   assert.equal(periodoFoiAlterado(atual, { ...atual, target: 20 }), false);

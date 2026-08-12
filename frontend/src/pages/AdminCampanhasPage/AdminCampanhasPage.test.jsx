@@ -239,11 +239,15 @@ describe('AdminCampanhasPage - regras individuais', () => {
     });
     render(<AdminCampanhasPage />);
 
+    await user.selectOptions(await screen.findByLabelText('Categoria'), 'valor_monetario');
     await user.click(await screen.findByRole('button', { name: 'Adicionar exceção' }));
-    await waitFor(() => expect(api.getVendasExcecaoCampanha).toHaveBeenCalledWith(expect.objectContaining({
-      campanha_id: 10,
-      excluir_ids: '77'
-    })));
+    await waitFor(() => expect(api.getVendasExcecaoCampanha).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({
+        campanha: expect.objectContaining({ categoria: 'valor_monetario' }),
+        excluir_ids: [77]
+      })
+    ));
     expect(screen.queryByRole('checkbox', { name: /Venda existente/ })).not.toBeInTheDocument();
     await user.click(await screen.findByRole('checkbox', { name: /Venda nova/ }));
     await user.click(screen.getByRole('button', { name: 'Confirmar (1)' }));
