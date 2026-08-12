@@ -1,7 +1,12 @@
 .admin-campanhas-page {
+  flex: 1 1 0;
+  height: 100%;
   min-height: 0;
   padding: 24px;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .admin-campanhas-alert { margin-bottom: 16px; padding: 12px; }
@@ -55,6 +60,24 @@
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
+
+.admin-campanhas-campaign__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-campanhas-toggle { gap: 6px; }
+
+.admin-campanhas-toggle svg {
+  transition: transform 140ms ease;
+}
+
+.admin-campanhas-campaign:not(.is-collapsed) .admin-campanhas-toggle svg {
+  transform: rotate(180deg);
+}
+
+.admin-campanhas-campaign__details[hidden] { display: none; }
 
 .admin-campanhas-campaign__eyebrow {
   display: block;
@@ -277,6 +300,8 @@
   }
 
   .admin-campanhas-panel__header { align-items: flex-start; flex-direction: column; }
+  .admin-campanhas-campaign__header { align-items: flex-start; gap: 10px; }
+  .admin-campanhas-campaign__header-actions { flex: 0 0 auto; }
   .admin-campanhas-add-button,
   .admin-campanhas-actions .btn-primary { width: 100%; }
   .admin-campanhas-panel__body { padding: 12px; }

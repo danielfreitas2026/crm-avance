@@ -35,6 +35,7 @@ function AdminCampanhasPage() {
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState(null);
+  const [campanhasRecolhidas, setCampanhasRecolhidas] = useState(() => new Set());
   const campanhaAdicionadaId = useRef(null);
   const elementosCampanhas = useRef(new Map());
 
@@ -83,12 +84,23 @@ function AdminCampanhasPage() {
   const removeRegra = (campanhaId, index) => setCampanhas(items => items.map(campanha => campanha.id === campanhaId
     ? { ...campanha, regras: campanha.regras.filter((_, regraIndex) => regraIndex !== index) }
     : campanha));
+  const toggleCampanha = id => setCampanhasRecolhidas(ids => {
+    const next = new Set(ids);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
   const add = async () => {
     setSaving(true); setAdding(true); setMessage(null);
     try {
       const hoje = hojeISO();
       const created = await createCampanha({ periodo: 'personalizado', data_inicio: hoje, data_fim: hoje, categoria: 'registro_cliente', publico_base: 'ambos', target: 1, desc: 'Registrar 1 cliente', reward: '', regras: [regraPadrao()], operadora_ids: [], participante_ids: [] });
       campanhaAdicionadaId.current = created.id;
+      setCampanhasRecolhidas(ids => {
+        const next = new Set(ids);
+        next.delete(created.id);
+        return next;
+      });
       setCampanhas(items => [...items, { ...created, regras: normalizarRegrasTela(created) }]);
     } catch (error) { setMessage({ type: 'error', text: error.message || 'Erro ao adicionar campanha.' }); }
     finally { setSaving(false); setAdding(false); }
@@ -122,8 +134,9 @@ function AdminCampanhasPage() {
         {campanhas.filter(c => c.is_gift).map((campanha, index) => <section key={campanha.id} ref={elemento => {
           if (elemento) elementosCampanhas.current.set(campanha.id, elemento);
           else elementosCampanhas.current.delete(campanha.id);
-        }} className="admin-campanhas-campaign" tabIndex="-1">
-          <header className="admin-campanhas-campaign__header"><div><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}</span><h4>Configuração da recompensa</h4></div><button className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => remove(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button></header>
+        }} className={`admin-campanhas-campaign${campanhasRecolhidas.has(campanha.id) ? ' is-collapsed' : ''}`} tabIndex="-1">
+          <header className="admin-campanhas-campaign__header"><div><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}</span><h4>Configuração da recompensa</h4></div><div className="admin-campanhas-campaign__header-actions"><button type="button" className="btn btn-sm btn-ghost admin-campanhas-toggle" onClick={() => toggleCampanha(campanha.id)} aria-expanded={!campanhasRecolhidas.has(campanha.id)} aria-controls={`campanha-detalhes-${campanha.id}`}><I.ChevronDown size={16} /> {campanhasRecolhidas.has(campanha.id) ? 'Expandir' : 'Recolher'}</button><button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => remove(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button></div></header>
+          <div id={`campanha-detalhes-${campanha.id}`} className="admin-campanhas-campaign__details" hidden={campanhasRecolhidas.has(campanha.id)}>
           <div className="admin-campanhas-section">
             <h5>Meta da campanha</h5>
             <div className="admin-campanhas-fields admin-campanhas-fields--four">
@@ -155,6 +168,7 @@ function AdminCampanhasPage() {
           <div className="admin-campanhas-section admin-campanhas-section--last">
             <h5>Comunicação</h5>
             <div className="admin-campanhas-fields admin-campanhas-fields--two"><label>Descrição exibida<input value={campanha.desc || ''} onChange={e => change(campanha.id, 'desc', e.target.value)} placeholder="Ex.: Registre 10 clientes" /></label><label>Recompensa<input value={campanha.reward || ''} onChange={e => change(campanha.id, 'reward', e.target.value)} placeholder="Ex.: Folga na sexta-feira" /></label></div>
+          </div>
           </div>
         </section>)}
       </div>

@@ -63,6 +63,25 @@ describe('AdminCampanhasPage - regras individuais', () => {
     expect(novaCampanha.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
   });
 
+  it('recolhe e expande os detalhes de uma campanha', async () => {
+    const user = userEvent.setup();
+    render(<AdminCampanhasPage />);
+
+    const botaoRecolher = await screen.findByRole('button', { name: 'Recolher' });
+    const detalhes = document.getElementById('campanha-detalhes-10');
+    expect(botaoRecolher).toHaveAttribute('aria-expanded', 'true');
+    expect(detalhes).not.toHaveAttribute('hidden');
+
+    await user.click(botaoRecolher);
+    const botaoExpandir = screen.getByRole('button', { name: 'Expandir' });
+    expect(botaoExpandir).toHaveAttribute('aria-expanded', 'false');
+    expect(detalhes).toHaveAttribute('hidden');
+
+    await user.click(botaoExpandir);
+    expect(screen.getByRole('button', { name: 'Recolher' })).toHaveAttribute('aria-expanded', 'true');
+    expect(detalhes).not.toHaveAttribute('hidden');
+  });
+
   it('adiciona, configura e salva regras', async () => {
     const user = userEvent.setup();
     render(<AdminCampanhasPage />);
