@@ -689,7 +689,9 @@ function LayoutPrivado({ children }) {
         />
       )}
 
-      {podeUsarChat && <ChatFlutuante usuario={usuario} naoLidas={mensagensNaoLidas} />}
+      {podeUsarChat && location.pathname !== '/mensagens' && (
+        <ChatFlutuante usuario={usuario} naoLidas={mensagensNaoLidas} />
+      )}
     </div>
   );
 }
