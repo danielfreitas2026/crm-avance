@@ -8,6 +8,52 @@ const Campanha = require('../models/Campanha');
 const Usuario = require('../models/Usuario');
 const knex = require('../database/connection');
 const { listarPermissoesEfetivas } = require('../utils/permissoes');
+const TIME_ZONE = 'America/Sao_Paulo';
+
+function dataHojeSaoPaulo(base = new Date()) {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(base).reduce((acc, parte) => ({ ...acc, [parte.type]: parte.value }), {});
+  return `${partes.year}-${partes.month}-${partes.day}`;
+}
+
+function dataValidaISO(valor) {
+  const texto = String(valor || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(texto)) return false;
+  const [ano, mes, dia] = texto.split('-').map(Number);
+  const data = new Date(Date.UTC(ano, mes - 1, dia));
+  return data.getUTCFullYear() === ano && data.getUTCMonth() === mes - 1 && data.getUTCDate() === dia;
+}
+
+function adicionarDiasISO(dataISO, dias) {
+  const data = new Date(`${dataISO}T12:00:00Z`);
+  data.setUTCDate(data.getUTCDate() + dias);
+  return data.toISOString().slice(0, 10);
+}
+
+function intervaloCampanha(campanha, hoje = dataHojeSaoPaulo()) {
+  const inicio = String(campanha.data_inicio || '').slice(0, 10);
+  const fimInclusivo = String(campanha.data_fim || '').slice(0, 10);
+  const estado = hoje < inicio ? 'futura' : hoje > fimInclusivo ? 'encerrada' : 'ativa';
+  const fimConsulta = estado === 'ativa' ? (hoje < fimInclusivo ? hoje : fimInclusivo) : fimInclusivo;
+  return {
+    periodo: 'personalizado',
+    inicioStr: inicio,
+    fimInclusivoStr: fimInclusivo,
+    fimStr: adicionarDiasISO(fimConsulta, 1),
+    estado
+  };
+}
+
+function decorarCampanha(campanha, hoje = dataHojeSaoPaulo()) {
+  return { ...campanha, estado_periodo: intervaloCampanha(campanha, hoje).estado };
+}
+
+function campanhaVisivelParaUsuario(campanha, current, claimed, hoje = dataHojeSaoPaulo()) {
+  const estado = intervaloCampanha(campanha, hoje).estado;
+  const atingida = Number(current || 0) >= Number(campanha.target || 0);
+  return estado !== 'encerrada' || (atingida && !claimed);
+}
 
 /**
  * Valida os campos obrigatorios e categorias permitidas de uma campanha.
@@ -29,6 +75,14 @@ function validarCampanha(campanha) {
     return 'Categoria inválida.';
   }
 
+  if (!dataValidaISO(campanha.data_inicio) || !dataValidaISO(campanha.data_fim)) {
+    return 'Informe datas inicial e final válidas.';
+  }
+
+  if (String(campanha.data_inicio).slice(0, 10) > String(campanha.data_fim).slice(0, 10)) {
+    return 'A data inicial deve ser anterior ou igual à data final.';
+  }
+
   if (campanha.categoria === 'outros' && !String(campanha.categoria_personalizada || '').trim()) {
     return 'Informe a categoria personalizada.';
   }
@@ -36,6 +90,18 @@ function validarCampanha(campanha) {
   if (campanha.publico_base && !Campanha.publicosBaseValidos.includes(campanha.publico_base)) {
     return 'Público de base inválido.';
   }
+
+  if (campanha.regras !== undefined && !Array.isArray(campanha.regras)) {
+    return 'Regras da campanha devem ser uma lista.';
+  }
+
+  const regraInvalida = (campanha.regras || []).find(regra => (
+    !Campanha.publicosBaseValidos.includes(regra?.publico_base)
+    || !Campanha.tiposRegraValidos.includes(regra?.tipo)
+    || (regra?.operadora_id !== null && regra?.operadora_id !== ''
+      && (!Number.isInteger(Number(regra.operadora_id)) || Number(regra.operadora_id) <= 0))
+  ));
+  if (regraInvalida) return 'Regra de elegibilidade inválida.';
 
   return null;
 }
@@ -150,6 +216,38 @@ function normalizarTipoLinhaChip(valor) {
   return tipo.includes('porta') ? 'portabilidade' : 'novo';
 }
 
+/** Normaliza os itens detalhados de uma venda e aplica fallback para registros antigos. */
+function parseItensVenda(venda) {
+  try {
+    const itens = typeof venda.valores_unitarios_chips === 'string'
+      ? JSON.parse(venda.valores_unitarios_chips)
+      : venda.valores_unitarios_chips;
+    if (Array.isArray(itens) && itens.length) {
+      const normalizados = itens.map((item, index) => ({
+        chave: `item:${index}`,
+        quantidade: Number(item?.quantidade || 0),
+        valor_unitario: Number(item?.valor_unitario || 0),
+        tipo: normalizarTipoLinhaChip(item?.tipo_linha || item?.tipo || item?.categoria),
+        operadora_id: Number(item?.operadora_id || venda.operadora_id) || null,
+        detalhado: true
+      })).filter(item => item.quantidade > 0);
+      if (normalizados.length) return normalizados;
+    }
+  } catch {
+    // Venda antiga: usa os campos principais abaixo.
+  }
+
+  const tipoVenda = normalizarTexto(venda.tipo_venda);
+  return [{
+    chave: 'venda',
+    quantidade: Number(venda.quantidade_linhas || 0) || 1,
+    valor_unitario: 0,
+    tipo: tipoVenda.includes('porta') ? 'portabilidade' : 'novo',
+    operadora_id: Number(venda.operadora_id) || null,
+    detalhado: false
+  }];
+}
+
 /**
  * Soma chips de um tipo especifico quando os itens possuem classificacao.
  */
@@ -245,25 +343,48 @@ function operadoraIdsCampanha(campanha) {
   return ids.length ? ids.map(Number) : (campanha.operadora_id ? [Number(campanha.operadora_id)] : []);
 }
 
-function vendaPertenceOperadora(venda, campanha) {
-  const ids = operadoraIdsCampanha(campanha);
-  return !ids.length || ids.includes(Number(venda.operadora_id));
-}
-
-/**
- * Indica se o cliente pertence a operadora filtrada.
- */
-function clientePertenceOperadora(cliente, campanha) {
-  const ids = operadoraIdsCampanha(campanha);
-  return !ids.length || ids.includes(Number(cliente.operadora_atual_id));
-}
-
 function vendaPertencePublicoBase(venda, campanha) {
   const publico = campanha.publico_base || 'ambos';
   if (publico === 'ambos') return true;
   if (venda.cliente_da_base === null || venda.cliente_da_base === undefined) return false;
   const eBase = venda.cliente_da_base === true || Number(venda.cliente_da_base) === 1;
   return publico === 'base' ? eBase : !eBase;
+}
+
+function regrasCampanha(campanha) {
+  if (Array.isArray(campanha.regras) && campanha.regras.length) return campanha.regras;
+  const ids = operadoraIdsCampanha(campanha);
+  return (ids.length ? ids : [null]).map(operadora_id => ({
+    operadora_id,
+    publico_base: campanha.categoria === 'registro_cliente' ? 'ambos' : (campanha.publico_base || 'ambos'),
+    tipo: 'categoria'
+  }));
+}
+
+function itemAtendeTipo(item, venda, tipo, categoriaCampanha) {
+  const categoria = tipo === 'categoria' ? categoriaCampanha : tipo;
+  if (categoria === 'chip_novo') return item.tipo === 'novo';
+  if (categoria === 'portabilidade') return item.tipo === 'portabilidade';
+  if (categoria === 'internet') return normalizarTexto(venda.servico) === 'internet';
+  return true;
+}
+
+/** Retorna a união dos itens atendidos pelas regras OU, sem duplicá-los. */
+function itensElegiveisCampanha(campanha, venda) {
+  const itens = parseItensVenda(venda);
+  const chaves = new Set();
+
+  for (const regra of regrasCampanha(campanha)) {
+    if (!vendaPertencePublicoBase(venda, { publico_base: regra.publico_base || 'ambos' })) continue;
+    for (const item of itens) {
+      const operadoraId = Number(regra.operadora_id) || null;
+      if (operadoraId && operadoraId !== Number(item.operadora_id)) continue;
+      if (!itemAtendeTipo(item, venda, regra.tipo || 'categoria', campanha.categoria)) continue;
+      chaves.add(item.chave);
+    }
+  }
+
+  return itens.filter(item => chaves.has(item.chave));
 }
 
 /**
@@ -298,28 +419,43 @@ function classificarVendas(rows, clientes = []) {
 function calcularValorCampanha(campanha, vendas, clientes) {
   const categoria = campanha.categoria || 'registro_cliente';
   if (categoria === 'registro_cliente') {
-    return clientes.filter(cliente => clientePertenceOperadora(cliente, campanha)).length;
+    const regras = regrasCampanha(campanha);
+    return clientes.filter(cliente => regras.some(regra => (
+      !regra.operadora_id || Number(regra.operadora_id) === Number(cliente.operadora_atual_id)
+    ))).length;
   }
 
   return vendas.reduce((acc, venda) => {
     const servico = normalizarTexto(venda.servico);
-    if (!vendaPertenceOperadora(venda, campanha) || !vendaPertencePublicoBase(venda, campanha)) return acc;
+    if (categoria === 'outros'
+      && normalizarTexto(venda.categoria_campanha) !== normalizarTexto(campanha.categoria_personalizada)) return acc;
+    const itensElegiveis = itensElegiveisCampanha(campanha, venda);
+    if (!itensElegiveis.length) return acc;
+
+    if (categoria === 'venda') return acc + 1;
 
     if (categoria === 'chip_novo') {
-      return acc + quantidadeCategoriaVenda(venda, 'chip_novo');
+      return acc + itensElegiveis
+        .filter(item => item.tipo === 'novo')
+        .reduce((total, item) => total + item.quantidade, 0);
     }
 
     if (categoria === 'portabilidade') {
-      return acc + quantidadeCategoriaVenda(venda, 'portabilidade');
+      return acc + itensElegiveis
+        .filter(item => item.tipo === 'portabilidade')
+        .reduce((total, item) => total + item.quantidade, 0);
     }
 
     if (categoria === 'internet' && servico === 'internet') {
-      return acc + somarQuantidadeChips(venda.valores_unitarios_chips, venda.quantidade_linhas, 1);
+      return acc + itensElegiveis.reduce((total, item) => total + item.quantidade, 0);
     }
 
-    if (categoria === 'valor_monetario') return acc + Number(venda.valor_total || 0);
+    if (categoria === 'valor_monetario') {
+      const valorItens = itensElegiveis.reduce((total, item) => total + (item.quantidade * item.valor_unitario), 0);
+      return acc + (valorItens > 0 ? valorItens : Number(venda.valor_total || 0));
+    }
 
-    if (categoria === 'outros' && normalizarTexto(venda.categoria_campanha) === normalizarTexto(campanha.categoria_personalizada)) return acc + 1;
+    if (categoria === 'outros') return acc + 1;
 
     return acc;
   }, 0);
@@ -347,14 +483,20 @@ async function calcularProgresso(usuarioId, ciclo, campanhas = []) {
   };
 }
 
-/** Calcula somente as campanhas visíveis, agregando participantes de metas em grupo. */
-async function calcularCampanhasParaUsuario(usuarioId, ciclo, campanhas) {
+/** Calcula campanhas em seus intervalos fixos, agregando participantes de metas em grupo. */
+async function calcularCampanhasParaUsuario(usuarioId, campanhas, hoje = dataHojeSaoPaulo()) {
   const resultado = {};
   const visiveis = [];
 
   for (const campanha of campanhas) {
     const participantes = Array.isArray(campanha.participante_ids) ? campanha.participante_ids.map(Number) : [];
     if (participantes.length && !participantes.includes(Number(usuarioId))) continue;
+    const ciclo = intervaloCampanha(campanha, hoje);
+    if (ciclo.estado === 'futura') {
+      resultado[campanha.id] = 0;
+      visiveis.push(campanha);
+      continue;
+    }
     // Sem participantes explícitos é uma campanha global, de progresso individual.
     const contribuidores = participantes.length ? participantes : [Number(usuarioId)];
     const dados = await Promise.all(contribuidores.map(async id => {
@@ -404,9 +546,10 @@ class CampanhaController {
       const usuario = await Usuario.query().findById(req.usuario.id).withGraphFetched('role');
       const permissoes = await listarPermissoesEfetivas(usuario);
       const podeGerenciar = permissoes.includes('gerenciar_campanhas');
-      res.json(podeGerenciar ? campanhas : campanhas.filter(campanha => (
+      const permitidas = podeGerenciar ? campanhas : campanhas.filter(campanha => (
         !campanha.participante_ids.length || campanha.participante_ids.map(Number).includes(Number(req.usuario.id))
-      )));
+      ));
+      res.json(permitidas.map(campanha => decorarCampanha(campanha)));
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: 'Erro ao buscar campanhas.' });
@@ -428,8 +571,11 @@ class CampanhaController {
       await Campanha.updateAll(campanhas);
       const updatedCampanhas = await Campanha.findAll();
 
-      res.json({ message: 'Campanhas atualizadas com sucesso.', campanhas: updatedCampanhas });
+      res.json({ message: 'Campanhas atualizadas com sucesso.', campanhas: updatedCampanhas.map(campanha => decorarCampanha(campanha)) });
     } catch (error) {
+      if (error?.code === 'CAMPANHA_PERIODO_BLOQUEADO') {
+        return res.status(409).json({ error: error.message });
+      }
       console.error(error);
       res.status(500).json({ error: 'Erro ao atualizar campanhas.' });
     }
@@ -443,7 +589,9 @@ class CampanhaController {
       }
 
       const campanha = await Campanha.create({
-        periodo: req.body.periodo,
+        periodo: 'personalizado',
+        data_inicio: req.body.data_inicio,
+        data_fim: req.body.data_fim,
         categoria: req.body.categoria,
         target: Number(req.body.target),
         desc: req.body.desc,
@@ -451,12 +599,13 @@ class CampanhaController {
         operadora_id: req.body.operadora_id,
         operadora_ids: req.body.operadora_ids,
         publico_base: req.body.publico_base,
+        regras: req.body.regras,
         categoria_personalizada: req.body.categoria_personalizada,
         participante_ids: req.body.participante_ids,
         is_gift: true
       });
 
-      res.status(201).json(campanha);
+      res.status(201).json(decorarCampanha(campanha));
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: 'Erro ao criar campanha.' });
@@ -469,38 +618,28 @@ class CampanhaController {
       const cicloDiario = getCiclo('diaria');
       const cicloSemanal = getCiclo('semanal');
       const cicloMensal = getCiclo('mensal');
-      const campanhas = await Campanha.findAll();
-      const campanhasDiarias = campanhas.filter(campanha => (campanha.periodo || 'diaria') === 'diaria');
-      const campanhasSemanais = campanhas.filter(campanha => campanha.periodo === 'semanal');
-      const campanhasMensais = campanhas.filter(campanha => campanha.periodo === 'mensal');
+      const campanhas = (await Campanha.findAll()).filter(campanhaEhGift);
 
-      const [progressoDiario, progressoSemanal, progressoMensal, campanhasDiario, campanhasSemanal, campanhasMensal] = await Promise.all([
+      const [progressoDiario, progressoSemanal, progressoMensal, progressoPersonalizado] = await Promise.all([
         calcularProgresso(vendedoraId, cicloDiario),
         calcularProgresso(vendedoraId, cicloSemanal),
         calcularProgresso(vendedoraId, cicloMensal),
-        calcularCampanhasParaUsuario(vendedoraId, cicloDiario, campanhasDiarias),
-        calcularCampanhasParaUsuario(vendedoraId, cicloSemanal, campanhasSemanais),
-        calcularCampanhasParaUsuario(vendedoraId, cicloMensal, campanhasMensais),
+        calcularCampanhasParaUsuario(vendedoraId, campanhas)
       ]);
 
       const diaria = progressoDiario.geral;
       const semanal = progressoSemanal.geral;
       const mensal = progressoMensal.geral;
-      const resgates = await knex('campanha_resgates')
-        .where('usuario_id', vendedoraId)
-        .where(builder => {
-          builder
-            .where(query => {
-              query.where('periodo', 'diaria').where('periodo_inicio', cicloDiario.inicioStr);
-            })
-            .orWhere(query => {
-              query.where('periodo', 'semanal').where('periodo_inicio', cicloSemanal.inicioStr);
-            })
-            .orWhere(query => {
-              query.where('periodo', 'mensal').where('periodo_inicio', cicloMensal.inicioStr);
-            });
-        })
-        .pluck('campanha_id');
+      const resgates = await knex('campanha_resgates').where('usuario_id', vendedoraId).pluck('campanha_id');
+      const resgatadas = new Set(resgates.map(Number));
+      const campanhasVisiveis = progressoPersonalizado.visiveis.filter(campanha => {
+        const current = progressoPersonalizado.campanhas[campanha.id] || 0;
+        return campanhaVisivelParaUsuario(campanha, current, resgatadas.has(Number(campanha.id)));
+      });
+      const progressoVisivel = Object.fromEntries(campanhasVisiveis.map(campanha => [
+        campanha.id,
+        progressoPersonalizado.campanhas[campanha.id] || 0
+      ]));
 
       res.json({
         diaria_registro_cliente: diaria.registro_cliente,
@@ -515,12 +654,10 @@ class CampanhaController {
         mensal_chip_novo: mensal.chip_novo,
         mensal_portabilidade: mensal.portabilidade,
         mensal_internet: mensal.internet,
-        campanhas: {
-          ...campanhasDiario.campanhas,
-          ...campanhasSemanal.campanhas,
-          ...campanhasMensal.campanhas
-        },
-        resgatadas: resgates.map(Number),
+        campanhas: progressoVisivel,
+        campanhas_visiveis: campanhasVisiveis.map(campanha => Number(campanha.id)),
+        estados_campanhas: Object.fromEntries(campanhasVisiveis.map(campanha => [campanha.id, intervaloCampanha(campanha).estado])),
+        resgatadas: [...resgatadas],
       });
     } catch (error) {
       console.error(error);
@@ -535,9 +672,6 @@ class CampanhaController {
       const cicloMensal = getCiclo('mensal');
       const campanhas = await Campanha.findAll();
       const campanhasGift = campanhas.filter(campanhaEhGift);
-      const campanhasDiarias = campanhasGift.filter(campanha => (campanha.periodo || 'diaria') === 'diaria');
-      const campanhasSemanais = campanhasGift.filter(campanha => campanha.periodo === 'semanal');
-      const campanhasMensais = campanhasGift.filter(campanha => campanha.periodo === 'mensal');
       const usuarios = await knex('usuarios as u')
         .leftJoin('roles as r', 'u.role_id', 'r.id')
         .select(
@@ -554,33 +688,13 @@ class CampanhaController {
       const resgates = usuarioIds.length > 0
         ? await knex('campanha_resgates')
           .whereIn('usuario_id', usuarioIds)
-          .where(builder => {
-            builder
-              .where(query => {
-                query.where('periodo', 'diaria').where('periodo_inicio', cicloDiario.inicioStr);
-              })
-              .orWhere(query => {
-                query.where('periodo', 'semanal').where('periodo_inicio', cicloSemanal.inicioStr);
-              })
-              .orWhere(query => {
-                query.where('periodo', 'mensal').where('periodo_inicio', cicloMensal.inicioStr);
-              });
-          })
           .select('usuario_id', 'campanha_id')
         : [];
       const resgatesPorUsuario = agruparResgatesPorUsuario(resgates);
 
       const usuariosComProgresso = await Promise.all(usuarios.map(async (usuario) => {
-        const [progressoDiario, progressoSemanal, progressoMensal] = await Promise.all([
-          calcularCampanhasParaUsuario(usuario.id, cicloDiario, campanhasDiarias),
-          calcularCampanhasParaUsuario(usuario.id, cicloSemanal, campanhasSemanais),
-          calcularCampanhasParaUsuario(usuario.id, cicloMensal, campanhasMensais)
-        ]);
-        const progressoCampanhas = {
-          ...progressoDiario.campanhas,
-          ...progressoSemanal.campanhas,
-          ...progressoMensal.campanhas
-        };
+        const progressoUsuario = await calcularCampanhasParaUsuario(usuario.id, campanhasGift);
+        const progressoCampanhas = progressoUsuario.campanhas;
         const campanhasUsuario = campanhasGift.filter(campanha => {
           const participantes = campanha.participante_ids || [];
           return !participantes.length || participantes.map(Number).includes(Number(usuario.id));
@@ -590,10 +704,14 @@ class CampanhaController {
           const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
           const achieved = pct >= 100;
           const claimed = resgatesPorUsuario[Number(usuario.id)]?.has(Number(campanha.id)) || false;
+          const estadoPeriodo = intervaloCampanha(campanha).estado;
 
           return {
             id: campanha.id,
             periodo: campanha.periodo,
+            data_inicio: campanha.data_inicio,
+            data_fim: campanha.data_fim,
+            estado_periodo: estadoPeriodo,
             categoria: campanha.categoria,
             desc: campanha.desc,
             reward: campanha.reward,
@@ -608,7 +726,7 @@ class CampanhaController {
             participantes: campanha.participantes,
             em_grupo: campanha.em_grupo
           };
-        });
+        }).filter(campanha => campanhaVisivelParaUsuario(campanha, campanha.current, campanha.claimed));
         const atingidas = campanhasUsuario.filter(campanha => campanha.achieved).length;
         const resgatadas = campanhasUsuario.filter(campanha => campanha.claimed).length;
 
@@ -668,12 +786,14 @@ class CampanhaController {
         return res.status(403).json({ error: 'Você não participa desta campanha.' });
       }
 
-      const ciclo = getCiclo(campanha.periodo);
+      const ciclo = intervaloCampanha(campanha);
+      if (ciclo.estado === 'futura') {
+        return res.status(400).json({ error: 'Esta campanha ainda não começou.' });
+      }
       const existente = await knex('campanha_resgates')
         .where({
           usuario_id: usuarioId,
-          campanha_id: campanha.id,
-          periodo_inicio: ciclo.inicioStr
+          campanha_id: campanha.id
         })
         .first();
 
@@ -688,7 +808,7 @@ class CampanhaController {
         });
       }
 
-      const progresso = await calcularCampanhasParaUsuario(usuarioId, ciclo, [campanha]);
+      const progresso = await calcularCampanhasParaUsuario(usuarioId, [campanha]);
       const current = progresso.campanhas[campanha.id] ?? 0;
       const target = Number(campanha.target) || 0;
 
@@ -703,9 +823,9 @@ class CampanhaController {
       const dadosResgate = {
         usuario_id: usuarioId,
         campanha_id: campanha.id,
-        periodo: ciclo.periodo,
+        periodo: 'personalizado',
         periodo_inicio: ciclo.inicioStr,
-        periodo_fim: ciclo.fimStr,
+        periodo_fim: ciclo.fimInclusivoStr,
         reward_snapshot: campanha.reward || null,
         claimed_at: knex.fn.now(),
         created_at: knex.fn.now(),
@@ -720,8 +840,7 @@ class CampanhaController {
           const resgateExistente = await knex('campanha_resgates')
             .where({
               usuario_id: usuarioId,
-              campanha_id: campanha.id,
-              periodo_inicio: ciclo.inicioStr
+              campanha_id: campanha.id
             })
             .first();
 
@@ -771,3 +890,14 @@ class CampanhaController {
 }
 
 module.exports = new CampanhaController();
+module.exports.__testables = {
+  adicionarDiasISO,
+  campanhaVisivelParaUsuario,
+  calcularValorCampanha,
+  dataHojeSaoPaulo,
+  dataValidaISO,
+  intervaloCampanha,
+  itensElegiveisCampanha,
+  parseItensVenda,
+  validarCampanha
+};

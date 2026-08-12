@@ -34,14 +34,9 @@ const formatGoalValue = (campanha, value) => (
   isMoneyGoal(campanha) ? formatBRL(value) : value
 );
 
-const PERIOD_LABELS = {
-  diaria: 'Diária',
-  semanal: 'Semanal',
-  mensal: 'Mensal',
-};
-
 const CATEGORY_LABELS = {
   registro_cliente: 'Registro de cliente',
+  venda: 'Venda',
   chip_novo: 'Chip novo',
   portabilidade: 'Portabilidade',
   internet: 'Internet',
@@ -92,11 +87,16 @@ function getCampanhaKey(campanha) {
   return campanha.tipo || `${campanha.periodo || 'diaria'}_${campanha.categoria || 'registro_cliente'}`;
 }
 
+function formatCampanhaDate(valor) {
+  const [ano, mes, dia] = String(valor || '').slice(0, 10).split('-');
+  return ano && mes && dia ? `${dia}/${mes}/${ano}` : '-';
+}
+
 /**
  * Retorna campanha scope a partir dos dados informados.
  */
 function getCampanhaScope(campanha) {
-  const periodo = PERIOD_LABELS[campanha.periodo] || 'Diária';
+  const periodo = `${formatCampanhaDate(campanha.data_inicio)} a ${formatCampanhaDate(campanha.data_fim)}`;
   const categoria = CATEGORY_LABELS[campanha.categoria] || campanha.categoria || 'Campanha';
   const operadoras = campanha.operadoras?.map(item => item.nome).join(', ') || campanha.operadora_nome || '';
   const grupo = campanha.em_grupo ? ' · Meta em grupo' : '';
@@ -1311,12 +1311,22 @@ function DashboardPage() {
       .some(valor => String(valor).toLowerCase().includes(buscaUsuarioCampanhaNormalizada));
   });
 
-  const giftCampanhas = campanhas.filter(m => m.is_gift && (!m.participante_ids?.length || m.participante_ids.map(Number).includes(Number(usuario?.id))));
+  const idsVisiveisCampanha = Array.isArray(progresso.campanhas_visiveis)
+    ? new Set(progresso.campanhas_visiveis.map(Number))
+    : null;
+  const giftCampanhas = campanhas.filter(m => {
+    const estado = progresso.estados_campanhas?.[m.id] || m.estado_periodo;
+    return m.is_gift
+      && (!m.participante_ids?.length || m.participante_ids.map(Number).includes(Number(usuario?.id)))
+      && (!idsVisiveisCampanha || idsVisiveisCampanha.has(Number(m.id)))
+      && !(estado === 'encerrada' && openedGifts.has(Number(m.id)));
+  });
   const campanhasComProgresso = giftCampanhas.map(campanha => {
     const current = progresso.campanhas?.[campanha.id] ?? progresso[getCampanhaKey(campanha)] ?? 0;
     const target = Number(campanha.target) || 0;
     const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
-    return { ...campanha, current, pct, achieved: pct >= 100 };
+    const estado_periodo = progresso.estados_campanhas?.[campanha.id] || campanha.estado_periodo || 'ativa';
+    return { ...campanha, current, pct, achieved: pct >= 100, estado_periodo };
   });
 
   const doneCount = campanhasComProgresso.filter(m => m.achieved).length;
@@ -1521,6 +1531,7 @@ function DashboardPage() {
     try {
       const result = await resgatarCampanha(campanha.id);
       setOpenedGifts(prev => new Set([...prev, Number(campanha.id)]));
+      window.dispatchEvent(new CustomEvent('pos-venda:campanhas-atualizar'));
       setSelectedReward({
         ...campanha,
         reward: result.reward || campanha.reward
@@ -1911,6 +1922,8 @@ function DashboardPage() {
                 const isClaimed = openedGifts.has(campanha.id);
                 const isClaiming = claimingId === campanha.id;
                 const remaining = Math.max(0, campanha.target - campanha.current);
+                const futura = campanha.estado_periodo === 'futura';
+                const encerrada = campanha.estado_periodo === 'encerrada';
                 return (
                   <div key={campanha.id} className={`reward-card ${campanha.achieved ? 'achieved' : ''} ${isClaimed ? 'claimed' : ''}`}>
                     <div className="reward-top">
@@ -1919,7 +1932,9 @@ function DashboardPage() {
                       <span className="pill" style={{ marginLeft: 6, fontSize: 10 }}>
                         {getCampanhaScope(campanha)}
                       </span>
-                      {campanha.achieved && !isClaimed && (
+                      {futura && <span className="pill" style={{ marginLeft: 'auto', fontSize: 10 }}>Em breve</span>}
+                      {encerrada && <span className="pill" style={{ marginLeft: 'auto', fontSize: 10 }}>Encerrada</span>}
+                      {campanha.achieved && !isClaimed && !futura && !encerrada && (
                         <span style={{ 
                           marginLeft: 'auto', 
                           display: 'inline-flex', 
@@ -1986,10 +2001,12 @@ function DashboardPage() {
                     <button
                       className={`btn ${campanha.achieved && !isClaimed ? 'btn-primary' : ''}`}
                       style={{ width: '100%', justifyContent: 'center', marginTop: 10 }}
-                      disabled={!campanha.achieved || isClaimed || isClaiming}
+                      disabled={futura || !campanha.achieved || isClaimed || isClaiming}
                       onClick={() => handleOpenGift(campanha)}
                     >
-                      {isClaiming
+                      {futura
+                        ? 'Em breve'
+                        : isClaiming
                         ? 'Resgatando...'
                         : isClaimed
                         ? <><I.Check size={13} /> Resgatada</>
@@ -2082,13 +2099,17 @@ function DashboardPage() {
                       {(item.campanhas || []).map(campanha => (
                         <div key={campanha.id} className={`team-goal-item ${campanha.achieved ? 'is-achieved' : ''}`}>
                           <span className="team-goal-item__status">
-                            {campanha.claimed ? <I.Check size={12} /> : campanha.achieved ? <I.Check size={12} /> : `${campanha.pct}%`}
+                            {campanha.estado_periodo === 'futura'
+                              ? <I.Calendar size={12} />
+                              : campanha.claimed ? <I.Check size={12} /> : campanha.achieved ? <I.Check size={12} /> : `${campanha.pct}%`}
                           </span>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <strong>{campanha.desc}</strong>
                             <span>
+                              {campanha.estado_periodo === 'futura' ? 'Em breve · ' : campanha.estado_periodo === 'encerrada' ? 'Encerrada · ' : ''}
                               {formatGoalValue(campanha, campanha.current)} / {formatGoalValue(campanha, campanha.target)}
                               {campanha.operadora_nome ? ` · ${campanha.operadora_nome}` : ''}
+                              {` · ${formatCampanhaDate(campanha.data_inicio)} a ${formatCampanhaDate(campanha.data_fim)}`}
                             </span>
                             {campanha.claimed && campanha.reward && (
                               <em>Premio ganho: {campanha.reward}</em>

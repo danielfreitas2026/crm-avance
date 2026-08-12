@@ -19,8 +19,13 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
       return;
     }
 
-    getCampanhas().then(setCampanhas).catch(console.error);
-    getProgresso().then(setProgresso).catch(console.error);
+    const carregarCampanhas = () => {
+      getCampanhas().then(setCampanhas).catch(console.error);
+      getProgresso().then(setProgresso).catch(console.error);
+    };
+    carregarCampanhas();
+    window.addEventListener('pos-venda:campanhas-atualizar', carregarCampanhas);
+    return () => window.removeEventListener('pos-venda:campanhas-atualizar', carregarCampanhas);
   }, [podeVerCampanhas]);
 
   const items = [
@@ -63,7 +68,14 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
     campanha.tipo || `${campanha.periodo || 'diaria'}_${campanha.categoria || 'registro_cliente'}`
   );
 
-  const giftCampanhas = campanhas.filter(m => m.is_gift && (!m.participante_ids?.length || m.participante_ids.map(Number).includes(Number(usuario?.id))));
+  const idsVisiveis = Array.isArray(progresso.campanhas_visiveis)
+    ? new Set(progresso.campanhas_visiveis.map(Number))
+    : null;
+  const giftCampanhas = campanhas.filter(m => (
+    m.is_gift
+    && (!m.participante_ids?.length || m.participante_ids.map(Number).includes(Number(usuario?.id)))
+    && (!idsVisiveis || idsVisiveis.has(Number(m.id)))
+  ));
   const resgatadas = new Set((progresso.resgatadas || []).map(Number));
 
   return (
@@ -131,16 +143,18 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
             const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
             const achieved = pct >= 100;
             const claimed = resgatadas.has(Number(campanha.id));
+            const estadoPeriodo = progresso.estados_campanhas?.[campanha.id] || campanha.estado_periodo || 'ativa';
+            const futura = estadoPeriodo === 'futura';
             return (
               <div
                 key={campanha.id}
                 className={`sidebar-goal ${achieved ? 'achieved' : ''} ${claimed ? 'claimed' : ''}`}
-                title={`${claimed ? 'Recompensa resgatada' : 'Recompensa ainda não resgatada'}${campanha.em_grupo ? ' · Meta em grupo' : ''}${campanha.operadora_nome ? ` - ${campanha.operadora_nome}` : ''}`}
+                title={`${futura ? 'Campanha em breve' : claimed ? 'Recompensa resgatada' : 'Recompensa ainda não resgatada'}${campanha.em_grupo ? ' · Meta em grupo' : ''}${campanha.operadora_nome ? ` - ${campanha.operadora_nome}` : ''}`}
               >
                 <div className="top">
-                  <span className="g-icon">{claimed ? '✅' : '🎁'}</span>
+                  <span className="g-icon">{futura ? '📅' : claimed ? '✅' : '🎁'}</span>
                   <span className="g-name">{campanha.desc}</span>
-                  <span className="g-pct">{pct}%</span>
+                  <span className="g-pct">{futura ? 'Em breve' : `${pct}%`}</span>
                 </div>
                 <div className="progress-track">
                   <div className="progress-fill" style={{ width: `${pct}%`, background: achieved ? 'var(--success)' : 'var(--text)' }}></div>

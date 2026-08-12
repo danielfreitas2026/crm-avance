@@ -1,8 +1,15 @@
 exports.seed = async function(knex) {
+  const agora = new Date();
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(agora).reduce((acc, parte) => ({ ...acc, [parte.type]: parte.value }), {});
+  const hoje = `${partes.year}-${partes.month}-${partes.day}`;
   const campanhas = [
     {
       tipo: 'diaria',
-      periodo: 'diaria',
+      periodo: 'personalizado',
+      data_inicio: hoje,
+      data_fim: hoje,
       categoria: 'registro_cliente',
       target: 15,
       desc: 'Campanha Diária Global',
@@ -11,7 +18,9 @@ exports.seed = async function(knex) {
     },
     {
       tipo: 'diaria_registro_cliente',
-      periodo: 'diaria',
+      periodo: 'personalizado',
+      data_inicio: hoje,
+      data_fim: hoje,
       categoria: 'registro_cliente',
       target: 5,
       desc: 'Registrar 5 clientes',
@@ -20,7 +29,9 @@ exports.seed = async function(knex) {
     },
     {
       tipo: 'diaria_chip_novo',
-      periodo: 'diaria',
+      periodo: 'personalizado',
+      data_inicio: hoje,
+      data_fim: hoje,
       categoria: 'chip_novo',
       target: 10,
       desc: 'Vender 10 chips novos',
@@ -29,7 +40,9 @@ exports.seed = async function(knex) {
     },
     {
       tipo: 'semanal_portabilidade',
-      periodo: 'semanal',
+      periodo: 'personalizado',
+      data_inicio: hoje,
+      data_fim: hoje,
       categoria: 'portabilidade',
       target: 3,
       desc: 'Fazer 3 portabilidades',
@@ -38,7 +51,9 @@ exports.seed = async function(knex) {
     },
     {
       tipo: 'diaria_internet',
-      periodo: 'diaria',
+      periodo: 'personalizado',
+      data_inicio: hoje,
+      data_fim: hoje,
       categoria: 'internet',
       target: 3,
       desc: 'Vender 3 planos de internet',
@@ -57,6 +72,8 @@ exports.seed = async function(knex) {
         .where('id', existente.id)
         .update({
           periodo: campanha.periodo,
+          data_inicio: campanha.data_inicio,
+          data_fim: campanha.data_fim,
           categoria: campanha.categoria,
           target: campanha.target,
           desc: campanha.desc,

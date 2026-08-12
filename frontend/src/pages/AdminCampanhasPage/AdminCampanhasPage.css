@@ -87,9 +87,37 @@
 }
 
 .admin-campanhas-fields--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.admin-campanhas-fields--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .admin-campanhas-fields--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .admin-campanhas-fields--audience { grid-template-columns: 230px minmax(250px, 1fr) minmax(250px, 1fr); }
+.admin-campanhas-fields--participants-only { grid-template-columns: minmax(250px, 1fr); margin-top: 14px; }
 .admin-campanhas-field--wide { grid-column: 1 / -1; }
+
+.admin-campanhas-rules-field {
+  display: grid;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-campanhas-rules-field > span { display: grid; gap: 2px; }
+.admin-campanhas-rules-field small { color: var(--text-3); font-size: 11px; font-weight: 400; }
+.admin-campanhas-rules { display: grid; gap: 8px; }
+
+.admin-campanhas-rule {
+  display: grid;
+  grid-template-columns: minmax(150px, .8fr) minmax(210px, 1fr) minmax(190px, 1fr) 36px;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.admin-campanhas-rule-remove { width: 36px; height: 36px; }
+.admin-campanhas-add-rule { justify-self: start; gap: 5px; }
 
 .admin-campanhas-page label {
   display: grid;
@@ -209,6 +237,12 @@
   color: var(--text-3);
 }
 
+.admin-campanhas-page input:disabled {
+  cursor: not-allowed;
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+
 .admin-campanhas-select-all {
   justify-self: start;
   margin-top: 2px;
@@ -226,6 +260,9 @@
 @media (max-width: 900px) {
   .admin-campanhas-fields--audience { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-campanhas-fields--audience > label:first-child { grid-column: 1 / -1; }
+  .admin-campanhas-rule { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-campanhas-fields--four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-campanhas-rule-remove { justify-self: end; }
 }
 
 @media (max-width: 640px) {
@@ -239,9 +276,12 @@
   .admin-campanhas-actions .btn-primary { width: 100%; }
   .admin-campanhas-panel__body { padding: 12px; }
   .admin-campanhas-fields--three,
+  .admin-campanhas-fields--four,
   .admin-campanhas-fields--two,
   .admin-campanhas-fields--audience { grid-template-columns: 1fr; }
   .admin-campanhas-fields--audience > label:first-child { grid-column: auto; }
   .admin-campanhas-section { padding: 14px; }
   .admin-campanhas-checkboxes--participants { grid-template-columns: 1fr; }
+  .admin-campanhas-rule { grid-template-columns: 1fr; }
+  .admin-campanhas-rule-remove { justify-self: start; }
 }
