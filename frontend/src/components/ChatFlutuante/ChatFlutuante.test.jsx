@@ -28,6 +28,14 @@ describe('ChatFlutuante', () => {
     api.enviarMensagensEmLote.mockResolvedValue({ enviadas: [{ destinatario_id: 2 }], falhas: [], resumo: { solicitadas: 1, enviadas: 1, falhas: 0 } });
   });
 
+  it('mantem o marcador de não visualizadas na aba e no painel aberto', async () => {
+    render(<ChatFlutuante usuario={{ id: 1 }} naoLidas={3} />);
+
+    expect(screen.getByText('3')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Abrir mensagens'));
+    expect(await screen.findByLabelText('3 mensagem(ns) não visualizada(s)')).toBeInTheDocument();
+  });
+
   it('seleciona todos os contatos filtrados e envia texto com anexo em lote', async () => {
     const { container } = render(<ChatFlutuante usuario={{ id: 1 }} />);
     fireEvent.click(screen.getByLabelText('Abrir mensagens'));

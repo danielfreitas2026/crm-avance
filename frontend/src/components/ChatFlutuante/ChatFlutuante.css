@@ -101,6 +101,22 @@
 
 .chat-flutuante__icone:hover { background: var(--surface-2); }
 
+.chat-flutuante__nao-lidas {
+  min-width: 20px;
+  height: 20px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0 5px;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .chat-flutuante__avatar {
   width: 40px !important;
   height: 40px !important;

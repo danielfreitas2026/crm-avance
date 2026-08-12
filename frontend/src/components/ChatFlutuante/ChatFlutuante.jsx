@@ -351,6 +351,11 @@ function ChatFlutuante({ usuario, naoLidas = 0 }) {
                 <button type="button" className="chat-flutuante__icone" onClick={novaConversa ? () => setNovaConversa(false) : abrirNovaConversa} aria-label={novaConversa ? 'Cancelar nova mensagem' : 'Nova mensagem'} title="Nova mensagem">{novaConversa ? <I.Close size={17} /> : <I.Plus size={18} />}</button>
               </>
             )}
+            {naoLidas > 0 && (
+              <span className="chat-flutuante__nao-lidas" aria-label={`${naoLidas} mensagem(ns) não visualizada(s)`} title="Mensagens não visualizadas">
+                {naoLidas > 99 ? '99+' : naoLidas}
+              </span>
+            )}
             <button type="button" className="chat-flutuante__icone" onClick={fecharPainel} aria-label="Minimizar mensagens" title="Minimizar"><span aria-hidden="true">—</span></button>
           </header>
 
