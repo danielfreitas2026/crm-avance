@@ -42,6 +42,11 @@
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
 }
 
+.admin-campanhas-campaign:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .admin-campanhas-campaign__header {
   display: flex;
   align-items: center;

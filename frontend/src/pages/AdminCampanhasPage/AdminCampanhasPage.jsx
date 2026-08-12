@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import { createCampanha, deleteCampanha, getCampanhas, getParticipantesCampanha, updateCampanhas } from '../../services/campanha.service';
 import { listarOperadoras } from '../../services/config.service';
@@ -33,7 +33,10 @@ function AdminCampanhasPage() {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState(null);
+  const campanhaAdicionadaId = useRef(null);
+  const elementosCampanhas = useRef(new Map());
 
   const load = async () => {
     try {
@@ -48,6 +51,14 @@ function AdminCampanhasPage() {
   // A carga inicial sincroniza o estado local com as três fontes da tela.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, []);
+  useLayoutEffect(() => {
+    if (campanhaAdicionadaId.current === null) return;
+    const elemento = elementosCampanhas.current.get(campanhaAdicionadaId.current);
+    if (!elemento) return;
+    campanhaAdicionadaId.current = null;
+    elemento.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    elemento.focus({ preventScroll: true });
+  }, [campanhas]);
   const change = (id, field, value) => setCampanhas(items => items.map(c => {
     if (c.id !== id) return c;
     const next = { ...c, [field]: value };
@@ -73,13 +84,14 @@ function AdminCampanhasPage() {
     ? { ...campanha, regras: campanha.regras.filter((_, regraIndex) => regraIndex !== index) }
     : campanha));
   const add = async () => {
-    setSaving(true);
+    setSaving(true); setAdding(true); setMessage(null);
     try {
       const hoje = hojeISO();
       const created = await createCampanha({ periodo: 'personalizado', data_inicio: hoje, data_fim: hoje, categoria: 'registro_cliente', publico_base: 'ambos', target: 1, desc: 'Registrar 1 cliente', reward: '', regras: [regraPadrao()], operadora_ids: [], participante_ids: [] });
+      campanhaAdicionadaId.current = created.id;
       setCampanhas(items => [...items, { ...created, regras: normalizarRegrasTela(created) }]);
     } catch (error) { setMessage({ type: 'error', text: error.message || 'Erro ao adicionar campanha.' }); }
-    finally { setSaving(false); }
+    finally { setSaving(false); setAdding(false); }
   };
   const save = async () => {
     const periodoInvalido = campanhas.find(campanha => campanha.is_gift && (
@@ -105,9 +117,12 @@ function AdminCampanhasPage() {
 
   return <LayoutPrivado><div className="page admin-campanhas-page">
     {message && <div className={`alert-${message.type} admin-campanhas-alert`}>{message.text}</div>}
-    <div className="panel admin-campanhas-panel"><div className="panel-header admin-campanhas-panel__header"><div><h3>Gamificação: presentes e recompensas</h3><span className="muted">Defina as metas, o público e a recompensa de cada campanha.</span></div><button className="btn admin-campanhas-add-button" onClick={add} disabled={saving}><I.Plus size={16} /> Adicionar campanha</button></div>
+    <div className="panel admin-campanhas-panel"><div className="panel-header admin-campanhas-panel__header"><div><h3>Gamificação: presentes e recompensas</h3><span className="muted">Defina as metas, o público e a recompensa de cada campanha.</span></div><button type="button" className="btn admin-campanhas-add-button" onClick={add} disabled={saving}><I.Plus size={16} /> {adding ? 'Adicionando...' : 'Adicionar campanha'}</button></div>
       <div className="panel-body admin-campanhas-panel__body">
-        {campanhas.filter(c => c.is_gift).map((campanha, index) => <section key={campanha.id} className="admin-campanhas-campaign">
+        {campanhas.filter(c => c.is_gift).map((campanha, index) => <section key={campanha.id} ref={elemento => {
+          if (elemento) elementosCampanhas.current.set(campanha.id, elemento);
+          else elementosCampanhas.current.delete(campanha.id);
+        }} className="admin-campanhas-campaign" tabIndex="-1">
           <header className="admin-campanhas-campaign__header"><div><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}</span><h4>Configuração da recompensa</h4></div><button className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => remove(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button></header>
           <div className="admin-campanhas-section">
             <h5>Meta da campanha</h5>

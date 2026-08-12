@@ -42,10 +42,25 @@ const campanhaBase = (overrides = {}) => ({
 describe('AdminCampanhasPage - regras individuais', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Element.prototype.scrollIntoView = vi.fn();
     api.getCampanhas.mockResolvedValue([campanhaBase()]);
     api.listarOperadoras.mockResolvedValue([{ id: 1, nome: 'Claro' }, { id: 2, nome: 'Vivo' }]);
     api.getParticipantesCampanha.mockResolvedValue([]);
     api.updateCampanhas.mockResolvedValue({});
+  });
+
+  it('mostra e leva o foco ate a campanha adicionada', async () => {
+    const user = userEvent.setup();
+    api.createCampanha.mockResolvedValue(campanhaBase({ id: 11, desc: 'Registrar 1 cliente' }));
+    render(<AdminCampanhasPage />);
+
+    await screen.findByText('Regras de elegibilidade');
+    await user.click(screen.getByRole('button', { name: /adicionar campanha/i }));
+
+    expect(await screen.findByText('Campanha 2')).toBeInTheDocument();
+    const novaCampanha = screen.getByText('Campanha 2').closest('section');
+    expect(novaCampanha).toHaveFocus();
+    expect(novaCampanha.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
   });
 
   it('adiciona, configura e salva regras', async () => {
