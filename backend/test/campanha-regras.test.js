@@ -11,6 +11,7 @@ const {
   intervaloCampanha,
   itensElegiveisCampanha,
   montarRanking,
+  montarVendasContabilizadas,
   unirVendasCampanha,
   validarCampanha
 } = campanhaController.__testables;
@@ -236,6 +237,32 @@ test('excecao substitui a venda regular sem duplicar e credita vendedor externo'
   assert.equal(vendas[0].__excecao, true);
   assert.deepEqual(contribuicoes, { 10: 0, 30: 1 });
   assert.equal(ranking[0].id, 30);
+});
+
+test('lista somente vendas que efetivamente contabilizam na campanha', () => {
+  const campanha = { categoria: 'valor_monetario', regras: [{ operadora_id: 2, publico_base: 'ambos', tipo: 'categoria' }] };
+  const vendas = [
+    {
+      id: 10, cliente_nome: 'Cliente elegível', vendedora_nome: 'Ana', operadora_nome: 'Vivo',
+      data_contabilizada: '2026-08-12', valor_total: 150, cliente_da_base: false,
+      valores_unitarios_chips: [item(2, 'novo', 2, 50), item(1, 'novo', 1, 50)]
+    },
+    {
+      id: 11, cliente_nome: 'Cliente fora da regra', cliente_da_base: false,
+      valores_unitarios_chips: [item(1, 'novo', 1, 90)]
+    }
+  ];
+
+  assert.deepEqual(montarVendasContabilizadas(campanha, vendas), [{
+    id: 10,
+    cliente_nome: 'Cliente elegível',
+    vendedora_nome: 'Ana',
+    operadora_nome: 'Vivo',
+    data_venda: '2026-08-12',
+    valor_total: 150,
+    contribuicao: 100,
+    excecao: false
+  }]);
 });
 
 test('detecta somente alteracoes nas datas bloqueadas por resgate', () => {

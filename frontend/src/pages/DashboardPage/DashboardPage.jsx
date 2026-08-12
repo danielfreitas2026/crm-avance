@@ -385,11 +385,20 @@ function RewardModal({ gift, onClose }) {
 }
 
 function CampaignRankingModal({ dados, loading, error, busca, onBusca, usuarioId, onClose, onClaim, claiming }) {
+  const [aba, setAba] = useState('ranking');
   if (!dados) return null;
   const campanha = dados.campanha || dados;
   const termo = busca.trim().toLowerCase();
   const participantes = (dados.participantes || []).filter(item => !termo || [item.nome, item.email]
     .filter(Boolean).some(valor => String(valor).toLowerCase().includes(termo)));
+  const vendas = (dados.vendas || []).filter(item => !termo || [item.id, item.cliente_nome, item.vendedora_nome, item.operadora_nome]
+    .filter(valor => valor !== null && valor !== undefined)
+    .some(valor => String(valor).toLowerCase().includes(termo)));
+
+  const trocarAba = (proximaAba) => {
+    setAba(proximaAba);
+    onBusca('');
+  };
 
   return (
     <div className="modal-backdrop campaign-ranking-backdrop" onClick={onClose}>
@@ -412,12 +421,24 @@ function CampaignRankingModal({ dados, loading, error, busca, onBusca, usuarioId
 
         <div className="progress-track campaign-ranking-modal__progress"><div className="progress-fill" style={{ width: `${campanha.pct || 0}%` }} /></div>
 
-        <div className="campaign-ranking-modal__toolbar">
-          <div><h3>Quem mais contribuiu</h3><p>A soma das contribuições corresponde ao progresso geral.</p></div>
-          <input value={busca} onChange={event => onBusca(event.target.value)} placeholder="Buscar participante" aria-label="Buscar participante no ranking" />
+        <div className="campaign-ranking-modal__tabs" role="tablist" aria-label="Detalhes da campanha">
+          <button type="button" role="tab" aria-selected={aba === 'ranking'} className={aba === 'ranking' ? 'is-active' : ''} onClick={() => trocarAba('ranking')}>Ranking</button>
+          <button type="button" role="tab" aria-selected={aba === 'vendas'} className={aba === 'vendas' ? 'is-active' : ''} onClick={() => trocarAba('vendas')}>Vendas <span>{(dados.vendas || []).length}</span></button>
         </div>
 
-        <div className="campaign-ranking-list">
+        <div className="campaign-ranking-modal__toolbar">
+          {aba === 'ranking'
+            ? <div><h3>Quem mais contribuiu</h3><p>A soma das contribuições corresponde ao progresso geral.</p></div>
+            : <div><h3>Vendas contabilizadas</h3><p>Somente vendas que atendem às regras desta campanha.</p></div>}
+          <input
+            value={busca}
+            onChange={event => onBusca(event.target.value)}
+            placeholder={aba === 'ranking' ? 'Buscar participante' : 'Buscar venda, cliente ou vendedor'}
+            aria-label={aba === 'ranking' ? 'Buscar participante no ranking' : 'Buscar venda contabilizada'}
+          />
+        </div>
+
+        {aba === 'ranking' ? <div className="campaign-ranking-list" role="tabpanel">
           {loading && <div className="campaign-ranking-empty">Carregando ranking...</div>}
           {!loading && error && <div className="campaign-ranking-empty campaign-ranking-empty--error">{error}</div>}
           {!loading && !error && participantes.length === 0 && <div className="campaign-ranking-empty">Nenhum participante encontrado.</div>}
@@ -430,7 +451,24 @@ function CampaignRankingModal({ dados, loading, error, busca, onBusca, usuarioId
               <strong className="campaign-ranking-row__value">{formatGoalValue(campanha, item.contribuicao)}</strong>
             </article>
           ))}
-        </div>
+        </div> : <div className="campaign-ranking-list campaign-sales-list" role="tabpanel">
+          {loading && <div className="campaign-ranking-empty">Carregando vendas...</div>}
+          {!loading && error && <div className="campaign-ranking-empty campaign-ranking-empty--error">{error}</div>}
+          {!loading && !error && vendas.length === 0 && <div className="campaign-ranking-empty">Nenhuma venda contabilizada encontrada.</div>}
+          {!loading && !error && vendas.map(venda => (
+            <article key={venda.id} className="campaign-sale-row">
+              <span className="campaign-sale-row__id">#{venda.id}</span>
+              <span className="campaign-sale-row__identity">
+                <strong>{venda.cliente_nome}</strong>
+                <small>{venda.vendedora_nome}{venda.operadora_nome ? ` · ${venda.operadora_nome}` : ''}</small>
+              </span>
+              <span className="campaign-sale-row__date">{formatCampanhaDate(venda.data_venda)}</span>
+              <span className="campaign-sale-row__total"><small>Valor da venda</small><strong>{formatBRL(venda.valor_total || 0)}</strong></span>
+              <span className="campaign-sale-row__contribution"><small>Contribuição</small><strong>{formatGoalValue(campanha, venda.contribuicao)}</strong></span>
+              {venda.excecao && <span className="campaign-sale-row__badge">Exceção</span>}
+            </article>
+          ))}
+        </div>}
 
         <footer className="campaign-ranking-modal__footer">
           <span>{campanha.claimed ? 'Recompensa já resgatada por você.' : campanha.reward ? `Recompensa: ${campanha.reward}` : 'Campanha sem descrição de recompensa.'}</span>

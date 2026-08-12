@@ -52,7 +52,11 @@ describe('DashboardPage - campanhas coletivas', () => {
       participantes: [
         { posicao: 1, id: 8, nome: 'Ana', email: 'ana@teste.com', contribuicao: 4, percentual_total: 66.67 },
         { posicao: 2, id: 7, nome: 'Usuária Atual', email: 'atual@teste.com', contribuicao: 2, percentual_total: 33.33 }
-      ]
+      ],
+      vendas: [{
+        id: 321, cliente_nome: 'Loja Exemplo', vendedora_nome: 'Ana', operadora_nome: 'Vivo',
+        data_venda: '2026-08-10', valor_total: 349.9, contribuicao: 1, excecao: false
+      }]
     });
   });
 
@@ -69,5 +73,18 @@ describe('DashboardPage - campanhas coletivas', () => {
     expect(await screen.findByRole('dialog', { name: 'Meta coletiva' })).toBeInTheDocument();
     expect(screen.getByText('Ana')).toBeInTheDocument();
     expect(screen.getByText('Usuária Atual · Você')).toBeInTheDocument();
+  });
+
+  it('exibe as vendas contabilizadas em uma aba do modal', async () => {
+    const user = userEvent.setup();
+    render(<DashboardPage />);
+
+    await user.click(await screen.findByText('Meta coletiva'));
+    await user.click(await screen.findByRole('tab', { name: /vendas 1/i }));
+
+    expect(screen.getByRole('heading', { name: 'Vendas contabilizadas' })).toBeInTheDocument();
+    expect(screen.getByText('Loja Exemplo')).toBeInTheDocument();
+    expect(screen.getByText('Ana · Vivo')).toBeInTheDocument();
+    expect(screen.getByText('#321')).toBeInTheDocument();
   });
 });

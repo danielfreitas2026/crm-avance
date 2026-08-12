@@ -368,10 +368,16 @@ async function listarVendasDaCampanha(participanteIds, ciclo) {
   return knex('vendas as v')
     .leftJoin('tipos_venda as tv', 'v.tipo_venda_id', 'tv.id')
     .leftJoin('servicos as s', 'v.servico_id', 's.id')
+    .leftJoin('clientes as cli', 'v.cliente_id', 'cli.id')
+    .leftJoin('usuarios as u', 'v.vendedora_id', 'u.id')
+    .leftJoin('operadoras as o', 'v.operadora_id', 'o.id')
     .select(
       'v.id', 'v.cliente_id', 'v.vendedora_id', 'v.operadora_id', 'v.quantidade_linhas',
       'v.valores_unitarios_chips', 'v.valor_total', 'v.cliente_da_base',
-      'v.categoria_campanha', 'tv.nome as tipo_venda', 's.nome as servico'
+      'v.categoria_campanha', 'tv.nome as tipo_venda', 's.nome as servico',
+      'u.nome as vendedora_nome', 'o.nome as operadora_nome',
+      knex.raw(`${dataReferencia} as data_contabilizada`),
+      knex.raw("COALESCE(NULLIF(v.razao_social, ''), NULLIF(cli.razao_social, ''), NULLIF(v.nome, ''), NULLIF(cli.nome, ''), CONCAT('Venda #', v.id)) as cliente_nome")
     )
     .whereNot('v.status_funil', 'retorno')
     .whereRaw(`${dataReferencia} >= ?`, [ciclo.inicioStr])
@@ -393,10 +399,16 @@ async function listarVendasExcecaoCampanha(vendaIds = []) {
   return knex('vendas as v')
     .leftJoin('tipos_venda as tv', 'v.tipo_venda_id', 'tv.id')
     .leftJoin('servicos as s', 'v.servico_id', 's.id')
+    .leftJoin('clientes as cli', 'v.cliente_id', 'cli.id')
+    .leftJoin('usuarios as u', 'v.vendedora_id', 'u.id')
+    .leftJoin('operadoras as o', 'v.operadora_id', 'o.id')
     .select(
       'v.id', 'v.cliente_id', 'v.vendedora_id', 'v.operadora_id', 'v.quantidade_linhas',
       'v.valores_unitarios_chips', 'v.valor_total', 'v.cliente_da_base',
-      'v.categoria_campanha', 'tv.nome as tipo_venda', 's.nome as servico'
+      'v.categoria_campanha', 'tv.nome as tipo_venda', 's.nome as servico',
+      'u.nome as vendedora_nome', 'o.nome as operadora_nome',
+      knex.raw("COALESCE(NULLIF(NULLIF(v.data_venda, '0000-00-00'), '1899-11-30'), NULLIF(DATE(v.criado_em), '0000-00-00'), DATE(v.created_at)) as data_contabilizada"),
+      knex.raw("COALESCE(NULLIF(v.razao_social, ''), NULLIF(cli.razao_social, ''), NULLIF(v.nome, ''), NULLIF(cli.nome, ''), CONCAT('Venda #', v.id)) as cliente_nome")
     )
     .whereIn('v.id', ids)
     .whereNull('v.excluido_em')
@@ -652,6 +664,21 @@ function unirVendasCampanha(vendasRegulares = [], vendasExcecao = []) {
   return [...vendasPorId.values()];
 }
 
+/** Retorna somente as vendas que efetivamente acrescentam progresso à campanha. */
+function montarVendasContabilizadas(campanha, vendas = []) {
+  return vendas.map(venda => ({
+    id: Number(venda.id),
+    cliente_nome: venda.cliente_nome || `Venda #${venda.id}`,
+    vendedora_nome: venda.vendedora_nome || 'Sem vendedor',
+    operadora_nome: venda.operadora_nome || null,
+    data_venda: venda.data_contabilizada || null,
+    valor_total: Number(venda.valor_total || 0),
+    contribuicao: Number(calcularValorCampanha(campanha, [venda], [])),
+    excecao: Boolean(venda.__excecao)
+  })).filter(venda => venda.contribuicao > 0)
+    .sort((a, b) => String(b.data_venda || '').localeCompare(String(a.data_venda || '')) || b.id - a.id);
+}
+
 /** Calcula uma campanha coletiva uma única vez e retorna seu ranking. */
 async function calcularCampanhaColetiva(campanha, hoje = dataHojeSaoPaulo()) {
   const participantes = Array.isArray(campanha.participantes) ? campanha.participantes : [];
@@ -680,7 +707,12 @@ async function calcularCampanhaColetiva(campanha, hoje = dataHojeSaoPaulo()) {
   const target = Number(campanha.target || 0);
   const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
 
-  return { current, target, pct, achieved: current >= target, estado_periodo: ciclo.estado, ranking, contribuicoes };
+  const vendasContabilizadas = montarVendasContabilizadas(campanha, vendas);
+
+  return {
+    current, target, pct, achieved: current >= target, estado_periodo: ciclo.estado,
+    ranking, contribuicoes, vendasContabilizadas
+  };
 }
 
 /**
@@ -1111,7 +1143,8 @@ class CampanhaController {
           claimed,
           pode_resgatar: participa && calculo.estado_periodo !== 'futura' && calculo.achieved && !claimed
         },
-        participantes: calculo.ranking
+        participantes: calculo.ranking,
+        vendas: calculo.vendasContabilizadas
       });
     } catch (error) {
       if (error?.code === 'CAMPANHA_SEM_PARTICIPANTES') {
@@ -1248,6 +1281,7 @@ module.exports.__testables = {
   campanhaVisivelParaUsuario,
   calcularContribuicoesCampanha,
   montarRanking,
+  montarVendasContabilizadas,
   calcularValorCampanha,
   dataHojeSaoPaulo,
   dataValidaISO,
