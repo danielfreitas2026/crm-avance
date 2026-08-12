@@ -1,12 +1,9 @@
 .admin-campanhas-page {
-  flex: 1 1 0;
-  height: 100%;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: 100%;
+  height: auto;
   padding: 24px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  overflow: visible;
 }
 
 .admin-campanhas-alert { margin-bottom: 16px; padding: 12px; }
@@ -68,6 +65,25 @@
 }
 
 .admin-campanhas-toggle { gap: 6px; }
+
+.admin-campanhas-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-campanhas-delete-confirm > span {
+  margin-right: 2px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-campanhas-delete-confirm__button {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
 
 .admin-campanhas-toggle svg {
   transition: transform 140ms ease;
@@ -302,6 +318,7 @@
   .admin-campanhas-panel__header { align-items: flex-start; flex-direction: column; }
   .admin-campanhas-campaign__header { align-items: flex-start; gap: 10px; }
   .admin-campanhas-campaign__header-actions { flex: 0 0 auto; }
+  .admin-campanhas-delete-confirm { flex-wrap: wrap; justify-content: flex-end; }
   .admin-campanhas-add-button,
   .admin-campanhas-actions .btn-primary { width: 100%; }
   .admin-campanhas-panel__body { padding: 12px; }

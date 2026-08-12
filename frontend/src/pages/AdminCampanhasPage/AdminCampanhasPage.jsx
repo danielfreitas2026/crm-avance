@@ -35,6 +35,7 @@ function AdminCampanhasPage() {
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState(null);
+  const [campanhaConfirmandoExclusao, setCampanhaConfirmandoExclusao] = useState(null);
   const [campanhasRecolhidas, setCampanhasRecolhidas] = useState(() => new Set());
   const campanhaAdicionadaId = useRef(null);
   const elementosCampanhas = useRef(new Map());
@@ -119,10 +120,13 @@ function AdminCampanhasPage() {
     finally { setSaving(false); }
   };
   const remove = async id => {
-    if (!window.confirm('Deseja excluir esta campanha?')) return;
-    setSaving(true);
-    try { await deleteCampanha(id); setCampanhas(items => items.filter(c => c.id !== id)); }
-    catch { setMessage({ type: 'error', text: 'Erro ao excluir campanha.' }); }
+    setSaving(true); setMessage(null);
+    try {
+      await deleteCampanha(id);
+      setCampanhas(items => items.filter(c => c.id !== id));
+      setCampanhaConfirmandoExclusao(null);
+      setMessage({ type: 'success', text: 'Campanha excluída com sucesso.' });
+    } catch (error) { setMessage({ type: 'error', text: error.message || 'Erro ao excluir campanha.' }); }
     finally { setSaving(false); }
   };
   if (loading) return <LayoutPrivado><div className="empty">Carregando campanhas...</div></LayoutPrivado>;
@@ -135,7 +139,7 @@ function AdminCampanhasPage() {
           if (elemento) elementosCampanhas.current.set(campanha.id, elemento);
           else elementosCampanhas.current.delete(campanha.id);
         }} className={`admin-campanhas-campaign${campanhasRecolhidas.has(campanha.id) ? ' is-collapsed' : ''}`} tabIndex="-1">
-          <header className="admin-campanhas-campaign__header"><div><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}</span><h4>Configuração da recompensa</h4></div><div className="admin-campanhas-campaign__header-actions"><button type="button" className="btn btn-sm btn-ghost admin-campanhas-toggle" onClick={() => toggleCampanha(campanha.id)} aria-expanded={!campanhasRecolhidas.has(campanha.id)} aria-controls={`campanha-detalhes-${campanha.id}`}><I.ChevronDown size={16} /> {campanhasRecolhidas.has(campanha.id) ? 'Expandir' : 'Recolher'}</button><button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => remove(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button></div></header>
+          <header className="admin-campanhas-campaign__header"><div><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}</span><h4>Configuração da recompensa</h4></div><div className="admin-campanhas-campaign__header-actions">{campanhaConfirmandoExclusao === campanha.id ? <div className="admin-campanhas-delete-confirm" role="group" aria-label={`Confirmar exclusão da campanha ${index + 1}`}><span>Excluir esta campanha?</span><button type="button" className="btn btn-sm btn-ghost" onClick={() => setCampanhaConfirmandoExclusao(null)} disabled={saving}>Cancelar</button><button type="button" className="btn btn-sm admin-campanhas-delete-confirm__button" onClick={() => remove(campanha.id)} disabled={saving}>{saving ? 'Excluindo...' : 'Excluir'}</button></div> : <><button type="button" className="btn btn-sm btn-ghost admin-campanhas-toggle" onClick={() => toggleCampanha(campanha.id)} aria-expanded={!campanhasRecolhidas.has(campanha.id)} aria-controls={`campanha-detalhes-${campanha.id}`}><I.ChevronDown size={16} /> {campanhasRecolhidas.has(campanha.id) ? 'Expandir' : 'Recolher'}</button><button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => setCampanhaConfirmandoExclusao(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button></>}</div></header>
           <div id={`campanha-detalhes-${campanha.id}`} className="admin-campanhas-campaign__details" hidden={campanhasRecolhidas.has(campanha.id)}>
           <div className="admin-campanhas-section">
             <h5>Meta da campanha</h5>

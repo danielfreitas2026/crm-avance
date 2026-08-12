@@ -970,6 +970,7 @@ button.urgent-alert-panel__header {
 /* === Scrollable Content === */
 .content {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   display: flex;
   flex-direction: column;

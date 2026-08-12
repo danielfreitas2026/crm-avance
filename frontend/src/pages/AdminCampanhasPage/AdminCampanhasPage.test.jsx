@@ -82,6 +82,20 @@ describe('AdminCampanhasPage - regras individuais', () => {
     expect(detalhes).not.toHaveAttribute('hidden');
   });
 
+  it('confirma e exclui uma campanha pela propria tela', async () => {
+    const user = userEvent.setup();
+    api.deleteCampanha.mockResolvedValue(null);
+    render(<AdminCampanhasPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Excluir campanha 1' }));
+    expect(screen.getByText('Excluir esta campanha?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Excluir' }));
+
+    await waitFor(() => expect(api.deleteCampanha).toHaveBeenCalledWith(10));
+    expect(screen.queryByText('Campanha 1')).not.toBeInTheDocument();
+    expect(screen.getByText('Campanha excluída com sucesso.')).toBeInTheDocument();
+  });
+
   it('adiciona, configura e salva regras', async () => {
     const user = userEvent.setup();
     render(<AdminCampanhasPage />);

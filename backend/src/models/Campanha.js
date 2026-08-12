@@ -206,7 +206,18 @@ class Campanha {
     return (await this.findAll()).find(c => Number(c.id) === Number(id));
   }
 
-  static async deleteById(id) { return db(this.tableName).where({ id }).where('is_gift', true).del(); }
+  static async deleteById(id) {
+    return db.transaction(async trx => {
+      const campanha = await trx(this.tableName).where({ id }).where('is_gift', true).first('id');
+      if (!campanha) return 0;
+
+      await trx('campanha_resgates').where({ campanha_id: id }).del();
+      await trx('campanha_regras').where({ campanha_id: id }).del();
+      await trx('campanha_operadoras').where({ campanha_id: id }).del();
+      await trx('campanha_participantes').where({ campanha_id: id }).del();
+      return trx(this.tableName).where({ id }).where('is_gift', true).del();
+    });
+  }
 }
 
 Campanha._internals = { normalizarDataISO, periodoFoiAlterado };
