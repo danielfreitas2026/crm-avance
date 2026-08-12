@@ -1,17 +1,18 @@
 .page.admin-campanhas-page {
-  flex: 1 1 0;
-  min-height: 0;
-  height: 100%;
-  padding: 24px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  flex: none;
+  width: 100%;
+  height: auto;
+  min-height: 100%;
+  padding: 24px 24px 96px;
+  overflow: visible;
 }
 
 .admin-campanhas-alert { margin-bottom: 16px; padding: 12px; }
 
-.admin-campanhas-panel { overflow: visible; }
+.admin-campanhas-panel {
+  flex-shrink: 0;
+  overflow: visible;
+}
 
 .admin-campanhas-panel__header {
   gap: 16px;
@@ -214,8 +215,6 @@
 
 .admin-campanhas-checkboxes--participants {
   grid-template-columns: repeat(2, minmax(130px, 1fr));
-  max-height: 160px;
-  overflow-y: auto;
 }
 
 .admin-campanhas-page label.admin-campanhas-checkbox {
@@ -298,6 +297,7 @@
 
 .admin-campanhas-actions {
   display: flex;
+  flex-shrink: 0;
   justify-content: flex-end;
   margin-top: 20px;
 }
