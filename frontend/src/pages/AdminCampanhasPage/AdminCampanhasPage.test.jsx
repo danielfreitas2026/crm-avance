@@ -115,7 +115,7 @@ describe('AdminCampanhasPage - regras individuais', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Excluir campanha 1' }));
     expect(screen.getByText('Excluir esta campanha?')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Excluir' }));
+    await user.click(screen.getByRole('button', { name: 'Sim' }));
 
     await waitFor(() => expect(api.deleteCampanha).toHaveBeenCalledWith(10));
     expect(screen.queryByText('Campanha 1')).not.toBeInTheDocument();
@@ -225,5 +225,31 @@ describe('AdminCampanhasPage - regras individuais', () => {
     expect(await screen.findByText(/Indisponível/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Remover exceção da venda 77' }));
     expect(screen.getByText('Nenhuma venda adicionada como exceção.')).toBeInTheDocument();
+  });
+
+  it('busca somente vendas fora da campanha e preserva as excecoes existentes', async () => {
+    const user = userEvent.setup();
+    api.getCampanhas.mockResolvedValue([campanhaBase({
+      venda_excecao_ids: [77],
+      vendas_excecao: [{ id: 77, cliente_nome: 'Venda existente', valida: true }]
+    })]);
+    api.getVendasExcecaoCampanha.mockResolvedValue({
+      data: [{ id: 101, cliente_nome: 'Venda nova', valor_total: 100 }],
+      total: 1
+    });
+    render(<AdminCampanhasPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Adicionar exceção' }));
+    await waitFor(() => expect(api.getVendasExcecaoCampanha).toHaveBeenCalledWith(expect.objectContaining({
+      campanha_id: 10,
+      excluir_ids: '77'
+    })));
+    expect(screen.queryByRole('checkbox', { name: /Venda existente/ })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('checkbox', { name: /Venda nova/ }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar (1)' }));
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+
+    await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalled());
+    expect(api.updateCampanhas.mock.calls[0][0][0].venda_excecao_ids).toEqual([77, 101]);
   });
 });

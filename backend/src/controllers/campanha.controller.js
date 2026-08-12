@@ -746,6 +746,9 @@ class CampanhaController {
       const pagina = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
       const porPagina = Math.min(Math.max(Number.parseInt(req.query.per_page, 10) || 20, 1), 100);
       const busca = String(req.query.busca || '').trim();
+      const campanhaId = Number(req.query.campanha_id) || null;
+      const idsExcluidos = [...new Set(String(req.query.excluir_ids || '')
+        .split(',').map(Number).filter(id => Number.isInteger(id) && id > 0))];
       const base = knex('vendas as v')
         .leftJoin('clientes as cli', 'v.cliente_id', 'cli.id')
         .leftJoin('usuarios as u', 'v.vendedora_id', 'u.id')
@@ -753,6 +756,16 @@ class CampanhaController {
         .whereNull('v.excluido_em')
         .whereNull('v.cancelada_em')
         .where(builder => builder.whereNull('v.status_funil').orWhereNot('v.status_funil', 'retorno'));
+
+      if (campanhaId) {
+        base.whereNotExists(function vendaJaIncluida() {
+          this.select(knex.raw('1'))
+            .from('campanha_vendas_excecoes as cve_lista')
+            .whereRaw('cve_lista.venda_id = v.id')
+            .where('cve_lista.campanha_id', campanhaId);
+        });
+      }
+      if (idsExcluidos.length) base.whereNotIn('v.id', idsExcluidos);
 
       if (busca) {
         const termo = `%${busca}%`;

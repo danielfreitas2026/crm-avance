@@ -85,9 +85,16 @@
   font-weight: 600;
 }
 
-.admin-campanhas-delete-confirm__button {
-  border-color: var(--danger);
-  background: var(--danger);
+.admin-campanhas-page button.admin-campanhas-delete-confirm__button {
+  min-width: 52px;
+  border-color: var(--danger, #b91c1c);
+  background: var(--danger, #b91c1c);
+  color: #fff;
+}
+
+.admin-campanhas-page button.admin-campanhas-delete-confirm__button:hover {
+  border-color: #991b1b;
+  background: #991b1b;
   color: #fff;
 }
 
@@ -341,13 +348,28 @@
 .admin-campanhas-exception-chip span { color: var(--text-3); font-size: 11px; }
 
 .admin-campanhas-exception-overlay { z-index: 1200; }
-.admin-campanhas-exception-modal { width: min(820px, calc(100vw - 32px)); max-height: min(760px, calc(100vh - 32px)); }
-.admin-campanhas-exception-body { display: grid; gap: 14px; overflow: auto; }
+.admin-campanhas-exception-modal {
+  width: min(820px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
+}
+.admin-campanhas-exception-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 16px;
+  padding-bottom: 12px;
+}
 .admin-campanhas-exception-search { display: grid; gap: 6px; }
 .admin-campanhas-exception-selected { display: grid; gap: 7px; }
 .admin-campanhas-exception-selected > strong { color: var(--text-2); font-size: 12px; }
 .admin-campanhas-exception-selected > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; max-height: 145px; overflow: auto; }
-.admin-campanhas-exception-list { display: grid; gap: 6px; min-height: 180px; }
+.admin-campanhas-exception-results { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.admin-campanhas-exception-list { display: grid; align-content: start; gap: 6px; height: 100%; min-height: 0; overflow-y: auto; padding-right: 4px; scrollbar-gutter: stable; }
+.admin-campanhas-exception-modal .paginacao { flex: 0 0 auto; width: 100%; margin: 0 !important; padding-top: 10px; }
 
 .admin-campanhas-page label.admin-campanhas-exception-row {
   display: grid;

@@ -45,16 +45,21 @@ function VendasExcecaoModal({ campanha, onClose, onConfirm }) {
   const [resultado, setResultado] = useState({ data: [], total: 0 });
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
-  const [selecionadas, setSelecionadas] = useState(() => new Map(
-    (campanha.vendas_excecao || []).map(venda => [Number(venda.id), venda])
-  ));
+  const [selecionadas, setSelecionadas] = useState(() => new Map());
+  const idsJaIncluidosChave = (campanha.venda_excecao_ids || []).map(Number).join(',');
 
   useEffect(() => {
     let ativo = true;
     const timer = setTimeout(async () => {
       setCarregando(true); setErro('');
       try {
-        const dados = await getVendasExcecaoCampanha({ busca, page: pagina, per_page: porPagina });
+        const dados = await getVendasExcecaoCampanha({
+          busca,
+          page: pagina,
+          per_page: porPagina,
+          campanha_id: campanha.id,
+          excluir_ids: idsJaIncluidosChave
+        });
         if (ativo) setResultado({ data: dados.data || [], total: Number(dados.total || 0) });
       } catch (error) {
         if (ativo) setErro(error.message || 'Não foi possível carregar as vendas.');
@@ -63,7 +68,7 @@ function VendasExcecaoModal({ campanha, onClose, onConfirm }) {
       }
     }, busca ? 250 : 0);
     return () => { ativo = false; clearTimeout(timer); };
-  }, [busca, pagina, porPagina]);
+  }, [busca, pagina, porPagina, campanha.id, idsJaIncluidosChave]);
 
   useEffect(() => {
     const fechar = event => { if (event.key === 'Escape') onClose(); };
@@ -86,12 +91,14 @@ function VendasExcecaoModal({ campanha, onClose, onConfirm }) {
         <label className="admin-campanhas-exception-search">Buscar venda<input autoFocus value={busca} onChange={event => { setBusca(event.target.value); setPagina(1); }} placeholder="ID, cliente, razão social, CNPJ ou vendedor" /></label>
         {selecionadas.size > 0 && <div className="admin-campanhas-exception-selected"><strong>{selecionadas.size} selecionada{selecionadas.size === 1 ? '' : 's'}</strong><div>{[...selecionadas.values()].map(venda => <VendaExcecaoResumo key={venda.id} venda={venda} onRemove={() => alternar(venda)} />)}</div></div>}
         {erro && <div className="alert-error">{erro}</div>}
-        <div className="admin-campanhas-exception-list" aria-busy={carregando}>
-          {carregando ? <div className="empty">Carregando vendas...</div> : resultado.data.length === 0 ? <div className="empty">Nenhuma venda válida encontrada.</div> : resultado.data.map(venda => <label key={venda.id} className={`admin-campanhas-exception-row${selecionadas.has(Number(venda.id)) ? ' is-selected' : ''}`}>
-            <input type="checkbox" checked={selecionadas.has(Number(venda.id))} onChange={() => alternar(venda)} />
-            <span className="admin-campanhas-exception-main"><strong>#{venda.id} · {venda.cliente_nome || venda.razao_social || 'Cliente não informado'}</strong><small>{venda.cnpj || 'CNPJ não informado'} · {venda.vendedora_nome || 'Sem vendedor'}</small></span>
-            <span className="admin-campanhas-exception-meta"><strong>{formatarMoeda(venda.valor_total)}</strong><small>{formatarData(venda.data_venda)} · {venda.quantidade_linhas || 0} linha(s)</small></span>
-          </label>)}
+        <div className="admin-campanhas-exception-results">
+          <div className="admin-campanhas-exception-list" aria-busy={carregando}>
+            {carregando ? <div className="empty">Carregando vendas...</div> : resultado.data.length === 0 ? <div className="empty">Nenhuma venda disponível para adicionar.</div> : resultado.data.map(venda => <label key={venda.id} className={`admin-campanhas-exception-row${selecionadas.has(Number(venda.id)) ? ' is-selected' : ''}`}>
+              <input type="checkbox" checked={selecionadas.has(Number(venda.id))} onChange={() => alternar(venda)} />
+              <span className="admin-campanhas-exception-main"><strong>#{venda.id} · {venda.cliente_nome || venda.razao_social || 'Cliente não informado'}</strong><small>{venda.cnpj || 'CNPJ não informado'} · {venda.vendedora_nome || 'Sem vendedor'}</small></span>
+              <span className="admin-campanhas-exception-meta"><strong>{formatarMoeda(venda.valor_total)}</strong><small>{formatarData(venda.data_venda)} · {venda.quantidade_linhas || 0} linha(s)</small></span>
+            </label>)}
+          </div>
         </div>
         <Paginacao total={resultado.total} paginaAtual={pagina} itensPorPagina={porPagina} onPagina={setPagina} onItensPorPagina={valor => { setPorPagina(valor); setPagina(1); }} />
       </div>
@@ -218,7 +225,7 @@ function AdminCampanhasPage() {
           if (elemento) elementosCampanhas.current.set(campanha.id, elemento);
           else elementosCampanhas.current.delete(campanha.id);
         }} className={`admin-campanhas-campaign${campanhasRecolhidas.has(campanha.id) ? ' is-collapsed' : ''}`} tabIndex="-1">
-          <header className="admin-campanhas-campaign__header"><div className="admin-campanhas-campaign__heading"><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}</span><h4>{campanha.desc?.trim() || `Campanha ${index + 1}`}</h4></div><div className="admin-campanhas-campaign__header-actions">{campanhaConfirmandoExclusao === campanha.id ? <div className="admin-campanhas-delete-confirm" role="group" aria-label={`Confirmar exclusão da campanha ${index + 1}`}><span>Excluir esta campanha?</span><button type="button" className="btn btn-sm btn-ghost" onClick={() => setCampanhaConfirmandoExclusao(null)} disabled={saving}>Cancelar</button><button type="button" className="btn btn-sm admin-campanhas-delete-confirm__button" onClick={() => remove(campanha.id)} disabled={saving}>{saving ? 'Excluindo...' : 'Excluir'}</button></div> : <><button type="button" className="btn btn-sm btn-ghost admin-campanhas-toggle" onClick={() => toggleCampanha(campanha.id)} aria-expanded={!campanhasRecolhidas.has(campanha.id)} aria-controls={`campanha-detalhes-${campanha.id}`}><I.ChevronDown size={16} /> {campanhasRecolhidas.has(campanha.id) ? 'Expandir' : 'Recolher'}</button><button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => setCampanhaConfirmandoExclusao(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button></>}</div></header>
+          <header className="admin-campanhas-campaign__header"><div className="admin-campanhas-campaign__heading"><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}</span><h4>{campanha.desc?.trim() || `Campanha ${index + 1}`}</h4></div><div className="admin-campanhas-campaign__header-actions">{campanhaConfirmandoExclusao === campanha.id ? <div className="admin-campanhas-delete-confirm" role="group" aria-label={`Confirmar exclusão da campanha ${index + 1}`}><span>Excluir esta campanha?</span><button type="button" className="btn btn-sm btn-ghost" onClick={() => setCampanhaConfirmandoExclusao(null)} disabled={saving}>Cancelar</button><button type="button" className="btn btn-sm admin-campanhas-delete-confirm__button" onClick={() => remove(campanha.id)} disabled={saving}>{saving ? 'Excluindo...' : 'Sim'}</button></div> : <><button type="button" className="btn btn-sm btn-ghost admin-campanhas-toggle" onClick={() => toggleCampanha(campanha.id)} aria-expanded={!campanhasRecolhidas.has(campanha.id)} aria-controls={`campanha-detalhes-${campanha.id}`}><I.ChevronDown size={16} /> {campanhasRecolhidas.has(campanha.id) ? 'Expandir' : 'Recolher'}</button><button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => setCampanhaConfirmandoExclusao(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button></>}</div></header>
           <div id={`campanha-detalhes-${campanha.id}`} className="admin-campanhas-campaign__details" hidden={campanhasRecolhidas.has(campanha.id)}>
           <div className="admin-campanhas-section">
             <h5>Meta da campanha</h5>
@@ -264,7 +271,7 @@ function AdminCampanhasPage() {
     <div className="admin-campanhas-actions"><button className="btn btn-primary" onClick={save} disabled={saving}><I.Check size={16} /> {saving ? 'Salvando...' : 'Salvar alterações'}</button></div>
     {campanhaExcecoesAberta && (() => {
       const campanha = campanhas.find(item => item.id === campanhaExcecoesAberta);
-      return campanha ? <VendasExcecaoModal campanha={campanha} onClose={() => setCampanhaExcecoesAberta(null)} onConfirm={vendas => { atualizarExcecoes(campanha.id, vendas); setCampanhaExcecoesAberta(null); }} /> : null;
+      return campanha ? <VendasExcecaoModal campanha={campanha} onClose={() => setCampanhaExcecoesAberta(null)} onConfirm={vendas => { atualizarExcecoes(campanha.id, [...(campanha.vendas_excecao || []), ...vendas]); setCampanhaExcecoesAberta(null); }} /> : null;
     })()}
   </div></LayoutPrivado>;
 }
