@@ -68,6 +68,8 @@
   gap: 6px;
 }
 
+.admin-campanhas-campaign__heading { min-width: 0; }
+
 .admin-campanhas-toggle { gap: 6px; }
 
 .admin-campanhas-delete-confirm {
@@ -113,6 +115,7 @@
   margin: 0;
   color: var(--text);
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
 
 .admin-campanhas-section {

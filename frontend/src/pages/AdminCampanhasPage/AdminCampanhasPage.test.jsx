@@ -82,6 +82,29 @@ describe('AdminCampanhasPage - regras individuais', () => {
     expect(detalhes).not.toHaveAttribute('hidden');
   });
 
+  it('edita, salva e mantém o nome da campanha visível no cabeçalho recolhido', async () => {
+    const user = userEvent.setup();
+    render(<AdminCampanhasPage />);
+
+    const nome = await screen.findByLabelText('Nome da campanha');
+    expect(screen.getByRole('heading', { level: 4, name: 'Vendas elegíveis' })).toBeInTheDocument();
+    expect(screen.queryByText('Configuração da recompensa')).not.toBeInTheDocument();
+
+    await user.clear(nome);
+    expect(screen.getByRole('heading', { level: 4, name: 'Campanha 1' })).toBeInTheDocument();
+
+    await user.type(nome, 'Desafio de agosto');
+    expect(screen.getByRole('heading', { level: 4, name: 'Desafio de agosto' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Recolher' }));
+    expect(screen.getByRole('heading', { level: 4, name: 'Desafio de agosto' })).toBeVisible();
+    expect(nome).not.toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+    await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalled());
+    expect(api.updateCampanhas.mock.calls[0][0][0].desc).toBe('Desafio de agosto');
+  });
+
   it('confirma e exclui uma campanha pela propria tela', async () => {
     const user = userEvent.setup();
     api.deleteCampanha.mockResolvedValue(null);
