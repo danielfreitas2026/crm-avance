@@ -238,6 +238,17 @@ router.post(
   leadPlanilhaController.adminMarcarFuturoCliente
 );
 router.post(
+  '/linhas/:id/futuro-cliente/reverter',
+  exigirUmaPermissao(['gerenciar_leads']),
+  auditar({
+    acao: 'lead_linha.futuro_cliente_revertido_admin',
+    entidade: 'lead_linhas',
+    entidade_id: (req, resultado) => resultado?.linha?.id || req.params.id,
+    dados: req => ({ linha_id: req.params.id, usuario_id: req.usuario?.id })
+  }),
+  leadPlanilhaController.adminReverterFuturoCliente
+);
+router.post(
   '/linhas/:id/venda-recusada',
   exigirUmaPermissao(['gerenciar_leads']),
   auditar({

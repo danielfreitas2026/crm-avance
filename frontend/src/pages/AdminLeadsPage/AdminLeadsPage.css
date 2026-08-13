@@ -1534,6 +1534,17 @@
   margin-bottom: 16px;
 }
 
+.lead-detalhe-acao-bloqueada {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 8px;
+}
+
+.lead-detalhe-acao-bloqueada small {
+  color: var(--text-muted);
+}
+
 .lead-detalhe-motivo,
 .lead-detalhe-retorno {
   display: flex;

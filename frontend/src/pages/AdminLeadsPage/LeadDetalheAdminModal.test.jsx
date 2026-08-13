@@ -12,6 +12,7 @@ vi.mock('../../services/lead-planilha.service', () => ({
   adminMarcarVendaRecusadaLead: vi.fn(),
   adminReverterChamadaNaoAtendidaLead: vi.fn(),
   adminReverterClienteRecusouLead: vi.fn(),
+  adminReverterFuturoClienteLead: vi.fn(),
   adminReverterVendaRecusadaLead: vi.fn(),
   atualizarLeadSchema: vi.fn(),
   criarLeadPlanilha: vi.fn(),
@@ -166,6 +167,48 @@ describe('LeadDetalheAdminModal - dados da planilha sao somente leitura', () => 
 });
 
 describe('LeadDetalheAdminModal - estados so gravam no "Salvar alteracoes"', () => {
+  it('reverte futuro cliente apenas ao salvar e atualiza o chip de previa', async () => {
+    renderModal({ futuro_cliente: 1, etapa_atual: 'sondagem', status_operacional: 'qualificado' });
+
+    expect(screen.getByTitle('Futuro cliente')).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'Reverter futuro cliente' }));
+
+    expect(service.adminReverterFuturoClienteLead).not.toHaveBeenCalled();
+    expect(screen.queryByTitle('Futuro cliente')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manter futuro cliente' })).toBeVisible();
+
+    await userEvent.click(botaoSalvar());
+    expect(service.adminReverterFuturoClienteLead).toHaveBeenCalledWith(1);
+    expect(service.adminReverterVendaRecusadaLead).not.toHaveBeenCalled();
+  });
+
+  it('permite desfazer a reversao no rascunho sem chamar a API', async () => {
+    renderModal({ futuro_cliente: 1, etapa_atual: 'sondagem', status_operacional: 'qualificado' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reverter futuro cliente' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Manter futuro cliente' }));
+
+    expect(botaoSalvar()).toBeDisabled();
+    expect(service.adminReverterFuturoClienteLead).not.toHaveBeenCalled();
+  });
+
+  it('nao oferece reversao para um lead comum', () => {
+    renderModal({ futuro_cliente: 0 });
+
+    expect(screen.queryByRole('button', { name: 'Reverter futuro cliente' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [{ futuro_cliente: 1, futuro_cliente_excluido_em: '2026-08-13 10:00:00' }, /lixeira/],
+    [{ futuro_cliente: 1, etapa_atual: 'venda', status_operacional: 'distribuido_venda' }, /fluxo de venda/],
+    [{ futuro_cliente: 1, venda_id: 42, status_operacional: 'vendido' }, /venda registrada/]
+  ])('bloqueia a reversao em estados incompatíveis', (linha, mensagem) => {
+    renderModal(linha);
+
+    expect(screen.getByRole('button', { name: 'Reverter futuro cliente' })).toBeDisabled();
+    expect(within(document.querySelector('.lead-detalhe-acao-bloqueada')).getByText(mensagem)).toBeVisible();
+  });
+
   it('marcar um estado nao chama a API e ja reflete nos chips', async () => {
     renderModal();
 

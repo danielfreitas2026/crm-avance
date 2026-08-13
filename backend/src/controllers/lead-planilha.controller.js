@@ -557,6 +557,15 @@ async function adminMarcarFuturoCliente(req, res) {
   }
 }
 
+async function adminReverterFuturoCliente(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.reverterFuturoClienteLead(req.params.id, req.usuario.id, { comoAdmin: true }));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao reverter o futuro cliente.' });
+  }
+}
+
 async function adminMarcarVendaRecusada(req, res) {
   try {
     return res.json(await leadPlanilhaService.marcarVendaRecusadaLead(req.params.id, req.usuario.id, req.body || {}, { comoAdmin: true }));
@@ -666,6 +675,7 @@ module.exports = {
   excluirFuturoClienteDefinitivo,
   adminAtualizarCampoLead,
   adminMarcarFuturoCliente,
+  adminReverterFuturoCliente,
   adminMarcarVendaRecusada,
   adminReverterVendaRecusada,
   adminMarcarClienteRecusou,

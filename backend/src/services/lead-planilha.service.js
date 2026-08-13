@@ -2606,6 +2606,73 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
 }
 
 /**
+ * Desmarca um futuro cliente pelo fluxo administrativo sem apagar a sondagem.
+ * Leads que ja chegaram a etapa de venda precisam ser tratados nesse fluxo antes.
+ */
+function obterErroReversaoFuturoCliente(linha, possuiVendaPorCnpj = false) {
+  if (!linha?.futuro_cliente) {
+    return { statusCode: 400, message: 'Este lead nao esta marcado como futuro cliente.' };
+  }
+  if (linha.futuro_cliente_excluido_em) {
+    return { statusCode: 409, message: 'Restaure o futuro cliente da lixeira antes de alterar seu estado.' };
+  }
+  if (linha.venda_id || linha.cliente_id || linha.status_operacional === 'vendido' || possuiVendaPorCnpj) {
+    return { statusCode: 409, message: 'Este futuro cliente ja possui venda registrada.' };
+  }
+  if (linha.etapa_atual === 'venda' || linha.status_operacional === 'distribuido_venda') {
+    return { statusCode: 409, message: 'Este futuro cliente ja esta no fluxo de venda e nao pode ser revertido.' };
+  }
+  return null;
+}
+
+function montarPatchReversaoFuturoCliente(linha) {
+  const possuiRecusaAtiva = Boolean(
+    linha?.cliente_recusou
+    || linha?.venda_recusada_em
+    || linha?.venda_recusada_motivo
+  );
+  return {
+    futuro_cliente: false,
+    status_operacional: possuiRecusaAtiva ? 'perdido' : 'pendente'
+  };
+}
+
+async function reverterFuturoClienteLead(linhaId, usuarioId, opcoes = {}) {
+  const linha = await LeadLinha.query().findById(Number(linhaId));
+  if (!linha) throw criarHttpError(404, 'Lead nao encontrado.');
+  if (!opcoes.comoAdmin && Number(linha.atribuido_para_id) !== Number(usuarioId)) {
+    throw criarHttpError(403, 'Lead nao encontrado ou atribuido a outro usuario.');
+  }
+  const bloqueioEstado = obterErroReversaoFuturoCliente(linha, false);
+  if (bloqueioEstado) throw criarHttpError(bloqueioEstado.statusCode, bloqueioEstado.message);
+  const possuiVendaPorCnpj = await linhaPossuiVendaPorCnpj(linha);
+  if (possuiVendaPorCnpj) {
+    throw criarHttpError(409, 'Este futuro cliente ja possui venda registrada.');
+  }
+
+  await LeadLinha.transaction(async trx => {
+    await LeadLinha.query(trx).patchAndFetchById(linha.id, montarPatchReversaoFuturoCliente(linha));
+
+    const atribuicao = await LeadAtribuicao.query(trx)
+      .where({ lead_linha_id: linha.id, etapa: 'sondagem' })
+      .orderBy('id', 'desc')
+      .first();
+    if (atribuicao && atribuicao.status === 'qualificado') {
+      await LeadAtribuicao.query(trx).patchAndFetchById(atribuicao.id, {
+        status: 'atribuido',
+        motivo_resultado: null,
+        finalizado_em: null
+      });
+    }
+  });
+
+  await desativarAlertasObrigatoriosDaLinha(linha.id);
+  await sincronizarNotificacoesRetornoLeads();
+
+  return buscarLinhaFormatada(linha.id);
+}
+
+/**
  * Lista futuros clientes conforme os filtros e parametros informados.
  */
 async function listarFuturosClientes(filtros = {}, usuarioId) {
@@ -2906,6 +2973,20 @@ function extrairCnpjsLinha(linha) {
     if (digitos) acc.add(digitos);
     return acc;
   }, new Set());
+}
+
+/** Verifica se algum CNPJ do mailing ja pertence a um cliente com venda ativa. */
+async function linhaPossuiVendaPorCnpj(linha, trx = db) {
+  const cnpjs = Array.from(extrairCnpjsLinha(linha));
+  if (!cnpjs.length) return false;
+
+  const venda = await trx('clientes as c')
+    .join('vendas as v', 'v.cliente_id', 'c.id')
+    .whereIn('c.cnpj_digitos', cnpjs)
+    .whereNull('v.excluido_em')
+    .first('v.id');
+
+  return Boolean(venda);
 }
 
 async function reconciliarVendasFuturosClientesSemOrigem() {
@@ -3492,6 +3573,7 @@ module.exports = {
   exportarCsv,
   gerarPlanilhaXlsx,
   marcarComoFuturoCliente,
+  reverterFuturoClienteLead,
   listarFuturosClientes,
   obterMetricasFuturosClientes,
   gerarXlsxProdutividadePrimeiraLigacao,
@@ -3515,6 +3597,9 @@ module.exports = {
     montarColecoesExcel,
     montarColecaoCsv,
     extrairCnpjsLinha,
+    linhaPossuiVendaPorCnpj,
+    obterErroReversaoFuturoCliente,
+    montarPatchReversaoFuturoCliente,
     deveNotificarNovoFuturoCliente
   }
 };

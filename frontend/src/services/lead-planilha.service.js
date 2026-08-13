@@ -335,6 +335,10 @@ export function adminMarcarFuturoClienteLead(linhaId, dados) {
   return apiPost(`/lead-planilhas/linhas/${linhaId}/futuro-cliente`, dados);
 }
 
+export function adminReverterFuturoClienteLead(linhaId) {
+  return apiPost(`/lead-planilhas/linhas/${linhaId}/futuro-cliente/reverter`, {});
+}
+
 export function adminMarcarVendaRecusadaLead(linhaId, motivo) {
   return apiPost(`/lead-planilhas/linhas/${linhaId}/venda-recusada`, { motivo });
 }

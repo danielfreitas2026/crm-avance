@@ -10,6 +10,7 @@ vi.mock('../../services/lead-planilha.service', () => ({
   adminMarcarVendaRecusadaLead: vi.fn(),
   adminReverterChamadaNaoAtendidaLead: vi.fn(),
   adminReverterClienteRecusouLead: vi.fn(),
+  adminReverterFuturoClienteLead: vi.fn(),
   adminReverterVendaRecusadaLead: vi.fn(),
   atualizarLeadSchema: vi.fn(),
   criarLeadPlanilha: vi.fn(),

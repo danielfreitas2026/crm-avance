@@ -11,6 +11,7 @@ import {
   adminMarcarVendaRecusadaLead,
   adminReverterChamadaNaoAtendidaLead,
   adminReverterClienteRecusouLead,
+  adminReverterFuturoClienteLead,
   adminReverterVendaRecusadaLead,
   atualizarNomeLeadEnvio,
   cancelarEnviosPlanilha,
@@ -823,6 +824,7 @@ export function LeadDetalheAdminModal({ linha, onClose, onAtualizado }) {
 
   // Estado ja gravado no servidor: base do diff feito pelo "Salvar alteracoes".
   const original = useMemo(() => ({
+    futuroCliente: Boolean(linha.futuro_cliente),
     vendaRecusada: isLeadVendaRecusada(linha),
     clienteRecusou: Boolean(linha.cliente_recusou),
     chamadaNaoAtendida: Boolean(linha.chamada_nao_atendida),
@@ -865,6 +867,7 @@ export function LeadDetalheAdminModal({ linha, onClose, onAtualizado }) {
   // na previa os tres precisam ser limpos juntos.
   const linhaPreview = useMemo(() => ({
     ...linha,
+    futuro_cliente: rascunho.futuroCliente ? 1 : 0,
     status_operacional: !rascunho.vendaRecusada && linha.status_operacional === 'perdido' ? null : linha.status_operacional,
     venda_recusada_em: rascunho.vendaRecusada ? (linha.venda_recusada_em || 'pendente') : null,
     venda_recusada_motivo: rascunho.vendaRecusada ? linha.venda_recusada_motivo : null,
@@ -879,6 +882,9 @@ export function LeadDetalheAdminModal({ linha, onClose, onAtualizado }) {
   const acoes = useMemo(() => {
     const lista = [];
 
+    if (rascunho.futuroCliente !== original.futuroCliente) {
+      lista.push(() => adminReverterFuturoClienteLead(linha.id));
+    }
     if (rascunho.vendaRecusada !== original.vendaRecusada) {
       lista.push(rascunho.vendaRecusada
         ? () => adminMarcarVendaRecusadaLead(linha.id, motivosNovos.vendaRecusada.trim())
@@ -907,6 +913,15 @@ export function LeadDetalheAdminModal({ linha, onClose, onAtualizado }) {
 
   const temAlteracoes = acoes.length > 0;
   const faltaMotivo = rascunho.vendaRecusada && !original.vendaRecusada && !motivosNovos.vendaRecusada.trim();
+  const bloqueioReversaoFuturoCliente = useMemo(() => {
+    if (!original.futuroCliente) return '';
+    if (linha.futuro_cliente_excluido_em) return 'Restaure o futuro cliente da lixeira antes de alterar seu estado.';
+    if (isLeadVendaRegistrada(linha)) return 'Este futuro cliente possui uma venda registrada e não pode ser revertido.';
+    if (linha.etapa_atual === 'venda' || linha.status_operacional === 'distribuido_venda') {
+      return 'Este futuro cliente já está no fluxo de venda e não pode ser revertido.';
+    }
+    return '';
+  }, [linha, original.futuroCliente]);
 
   /**
    * Liga/desliga um estado no rascunho, sem tocar na API.
@@ -977,6 +992,23 @@ export function LeadDetalheAdminModal({ linha, onClose, onAtualizado }) {
           </div>
 
           <div className="lead-detalhe-acoes">
+            {original.futuroCliente && (bloqueioReversaoFuturoCliente ? (
+              <div className="lead-detalhe-acao-bloqueada">
+                <button type="button" className="btn" disabled title={bloqueioReversaoFuturoCliente}>
+                  Reverter futuro cliente
+                </button>
+                <small>{bloqueioReversaoFuturoCliente}</small>
+              </div>
+            ) : rascunho.futuroCliente ? (
+              <button type="button" className="btn" disabled={salvando} onClick={() => alternar('futuroCliente')}>
+                Reverter futuro cliente
+              </button>
+            ) : (
+              <button type="button" className="btn" disabled={salvando} onClick={() => alternar('futuroCliente')}>
+                Manter futuro cliente
+              </button>
+            ))}
+
             {rascunho.vendaRecusada ? (
               <button type="button" className="btn" disabled={salvando} onClick={() => alternar('vendaRecusada')}>
                 Reverter venda recusada
