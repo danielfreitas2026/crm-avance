@@ -12,6 +12,8 @@ const {
   montarAtribuicoesVendedorasVenda,
   montarPayload,
   normalizarData,
+  resolverDataVendaCadastro,
+  validarDataVendaAntiga,
   validarDataVendaNaoFutura,
   normalizarItensChips,
   vendaDeveNotificarTelegram,
@@ -38,6 +40,33 @@ test('impede data de venda futura considerando o fuso de Sao Paulo', () => {
   assert.doesNotThrow(() => validarDataVendaNaoFutura('2026-08-04', agora));
   assert.doesNotThrow(() => validarDataVendaNaoFutura('2026-08-03', agora));
   assert.throws(() => validarDataVendaNaoFutura('2026-08-05', agora), /não pode ser futura/i);
+});
+
+test('define no servidor a data de uma venda comum no fuso de Sao Paulo', () => {
+  const antesDaViradaEmSaoPaulo = new Date('2026-08-05T02:30:00.000Z');
+  const depoisDaViradaEmSaoPaulo = new Date('2026-08-05T03:30:00.000Z');
+
+  assert.deepEqual(
+    resolverDataVendaCadastro({ data_venda: '2020-01-01' }, antesDaViradaEmSaoPaulo),
+    { venda_antiga: false, data_venda: '2026-08-04' }
+  );
+  assert.deepEqual(
+    resolverDataVendaCadastro({ venda_antiga: false, data_venda: '2020-01-01' }, depoisDaViradaEmSaoPaulo),
+    { venda_antiga: false, data_venda: '2026-08-05' }
+  );
+});
+
+test('exige data anterior ao dia atual para venda antiga', () => {
+  const agora = new Date('2026-08-05T15:00:00.000Z');
+
+  assert.equal(validarDataVendaAntiga('2026-08-04', agora), '2026-08-04');
+  assert.deepEqual(
+    resolverDataVendaCadastro({ venda_antiga: true, data_venda: '04/08/2026' }, agora),
+    { venda_antiga: true, data_venda: '2026-08-04' }
+  );
+  assert.throws(() => validarDataVendaAntiga(null, agora), /informe a data/i);
+  assert.throws(() => validarDataVendaAntiga('2026-08-05', agora), /anterior ao dia atual/i);
+  assert.throws(() => validarDataVendaAntiga('2026-08-06', agora), /anterior ao dia atual/i);
 });
 
 test('notifica Telegram apenas para vendas com no maximo dois dias de atraso', () => {

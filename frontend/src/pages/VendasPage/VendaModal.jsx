@@ -34,6 +34,11 @@ import { listarEtapasFunil, listarOperadoras, listarServicos, listarTiposVenda }
 import { listarClientes } from '../../services/cliente.service';
 import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import { agruparOpcoesServicos } from '../../utils/servicos';
+import {
+  aplicarVendaAntigaAoFormulario,
+  criarEstadoDataVenda,
+  normalizarIndicadorVendaAntiga
+} from './venda-data';
 import './VendasPage.css';
 
 const VENDA_VAZIA = {
@@ -64,6 +69,7 @@ const VENDA_VAZIA = {
   setor_funcao: '',
   produto_fechado: '',
   qc_feito_por: '',
+  venda_antiga: false,
   data_venda: '',
   // Produto e valores
   tipo_venda_id: '',
@@ -198,7 +204,7 @@ function obterDataAtualInput() {
 function criarVendaVazia() {
   return {
     ...VENDA_VAZIA,
-    data_venda: obterDataAtualInput(),
+    ...criarEstadoDataVenda(),
     numeros_ativados: [],
     valores_unitarios_chips: [{ ...ITEM_CHIP_VAZIO }],
     tipos_servico: ['novo'],
@@ -206,6 +212,14 @@ function criarVendaVazia() {
     cliente_solicitou_numeros: { bloqueio: [], cancelamento: [] },
     vendedoras: []
   };
+}
+
+/** Retorna o último dia aceito para uma venda antiga. */
+function obterDataAnteriorInput() {
+  const hoje = obterDataAtualInput();
+  const data = new Date(`${hoje}T12:00:00Z`);
+  data.setUTCDate(data.getUTCDate() - 1);
+  return data.toISOString().slice(0, 10);
 }
 
 const TIPOS_LINHA_CHIP = [
@@ -303,7 +317,7 @@ const CAMPOS = [
   { name: 'email_administrador', label: 'E-mail ADM' },
 
   { section: 'Dados da venda' },
-  { name: 'data_venda', label: 'Data da venda', type: 'date' },
+  { name: 'venda_antiga', label: 'Venda antiga', type: 'oldSale', span: true },
   { name: 'data_ativacao', label: 'Data da ativação', type: 'date' },
   { name: 'nome_fechou_venda', label: 'Venda fechada com', type: 'closedWith' },
   { name: 'setor_funcao', label: 'Setor/Função' },
@@ -1225,6 +1239,7 @@ function normalizarVenda(venda) {
   return {
     ...VENDA_VAZIA,
     ...venda,
+    venda_antiga: normalizarIndicadorVendaAntiga(venda.venda_antiga),
     data_venda: toInputDate(venda.data_venda),
     data_ativacao: toInputDate(venda.data_ativacao),
     valor_total: venda.valor_total ?? '',
@@ -3588,9 +3603,8 @@ function VendaModal({
       })();
       
       const baseComDraft = { ...base, ...(savedDraft || initialDraft || {}) };
-      if (!baseComDraft.data_venda) {
-        baseComDraft.data_venda = obterDataAtualInput();
-      }
+      baseComDraft.venda_antiga = normalizarIndicadorVendaAntiga(baseComDraft.venda_antiga);
+      if (!baseComDraft.venda_antiga) baseComDraft.data_venda = '';
       if (!venda && usuarioLogado?.id && vendedoras?.some(v => String(v.id) === String(usuarioLogado.id))) {
         const idStr = String(usuarioLogado.id);
         if (!baseComDraft.vendedoras.includes(idStr)) baseComDraft.vendedoras = [...baseComDraft.vendedoras, idStr];
@@ -3733,6 +3747,7 @@ function VendaModal({
   const podeAdicionarDocumentosVendaEfetivo = Boolean(podeAdicionarDocumentosVenda);
   const podeAcessarDocumentosVenda = Boolean(podeVerDocumentosVenda || podeAdicionarDocumentosVendaEfetivo);
   const vendaBloqueadaParaUsuario = enviadaPosVenda && !usuarioPosVenda;
+  const podeCorrigirDataVenda = !editando || usuarioPosVenda || usuarioAdmin;
   const vendaCancelada = Boolean(venda?.cancelada_em || form.cancelada_em);
   const ultimoCnpjConsultadoRef = useRef(venda ? sanitizarCnpj(form.cnpj) : '');
   const cepPreenchidoPorCnpjRef = useRef('');
@@ -3939,6 +3954,12 @@ function VendaModal({
 
       return proximo;
     });
+  }
+
+  /** Alterna a classificação histórica e descarta a data manual ao desmarcar. */
+  function atualizarVendaAntiga(marcada) {
+    if (somenteVisualizacao || vendaBloqueadaParaUsuario || !podeCorrigirDataVenda) return;
+    setForm(prev => aplicarVendaAntigaAoFormulario(prev, marcada));
   }
 
   /**
@@ -4522,8 +4543,20 @@ function VendaModal({
         return;
       }
 
-      if (normalizarDataVendaInput(form.data_venda) > obterDataAtualInput()) {
-        setErro('A data da venda não pode ser futura.');
+      const dataVendaManual = normalizarDataVendaInput(form.data_venda);
+      const classificacaoDataAlterada = !editando
+        || Boolean(form.venda_antiga) !== normalizarIndicadorVendaAntiga(venda?.venda_antiga)
+        || dataVendaManual !== toInputDate(venda?.data_venda);
+
+      if (form.venda_antiga && classificacaoDataAlterada && !dataVendaManual) {
+        setErro('Informe a data da venda antiga.');
+        setAbaAtiva('venda');
+        setSalvando(false);
+        return;
+      }
+
+      if (form.venda_antiga && classificacaoDataAlterada && dataVendaManual >= obterDataAtualInput()) {
+        setErro('A data da venda antiga deve ser anterior ao dia atual.');
         setAbaAtiva('venda');
         setSalvando(false);
         return;
@@ -4741,7 +4774,8 @@ function VendaModal({
         cliente_id: clienteIdResolvido,
         operadora_id: operadoraDestinoVenda,
         operadora_atual_id: operadoraAtualVenda,
-        data_venda: normalizarDataVendaInput(form.data_venda) || null,
+        venda_antiga: Boolean(form.venda_antiga),
+        data_venda: form.venda_antiga ? dataVendaManual : null,
         data_ativacao: vendaEmEtapaFinal ? dataAtivacaoPayload : undefined,
         numeros_portados: vendaPortabilidade ? numerosPortados : null,
         numeros_ativados: vendaEmEtapaFinal ? (dataAtivacaoPayload ? numerosAtivados : null) : undefined,
@@ -5018,7 +5052,7 @@ function VendaModal({
 
               return (
                 <div key={campo.name} className={`form-field ${campo.span ? 'span-2' : ''} ${erroCpfCampo ? 'is-invalid' : ''}`}>
-                  {labelCampo && campo.type !== 'realAddressToggle' && <label>{labelCampo}{campo.required && <span className="field-required-mark"> *</span>}</label>}
+                  {labelCampo && !['realAddressToggle', 'oldSale'].includes(campo.type) && <label>{labelCampo}{campo.required && <span className="field-required-mark"> *</span>}</label>}
                   {campo.type === 'client' ? (
                       <ClienteVendaSelect
                         key={form[campo.name] || 'sem-cliente'}
@@ -5194,6 +5228,39 @@ function VendaModal({
                       limiteQuantidade={form.quantidade_linhas}
                       tiposServico={form.tipos_servico}
                     />
+                  ) : campo.type === 'oldSale' ? (
+                    <div className="venda-old-sale-control">
+                      <label className="venda-old-sale-toggle">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form.venda_antiga)}
+                          onChange={event => atualizarVendaAntiga(event.target.checked)}
+                          disabled={!podeCorrigirDataVenda}
+                        />
+                        <span>Venda antiga</span>
+                      </label>
+                      {form.venda_antiga ? (
+                        <div className="venda-old-sale-date">
+                          <label htmlFor="venda-data-antiga">Data da venda <span className="field-required-mark">*</span></label>
+                          <input
+                            id="venda-data-antiga"
+                            type="date"
+                            max={obterDataAnteriorInput()}
+                            value={form.data_venda || ''}
+                            onChange={event => atualizarCampo('data_venda', event.target.value)}
+                            disabled={!podeCorrigirDataVenda}
+                            required
+                          />
+                          <span className="field-hint">A data deve ser anterior ao dia atual.</span>
+                        </div>
+                      ) : (
+                        <span className="field-hint">
+                          {editando && form.data_venda
+                            ? `Data registrada automaticamente: ${formatarData(form.data_venda)}`
+                            : 'A data da venda será definida automaticamente ao salvar.'}
+                        </span>
+                      )}
+                    </div>
                   ) : campo.type === 'clientBase' ? (
                     <ClienteDaBaseInput
                       value={form[campo.name]}

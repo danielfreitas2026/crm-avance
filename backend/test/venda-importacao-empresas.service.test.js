@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const ExcelJS = require('exceljs');
 const { _internals } = require('../src/services/venda-importacao-empresas.service');
 
 function chave(nome) {
@@ -25,6 +26,27 @@ function montarReferencias() {
 
 test('preserva dia de datas vindas do Excel em UTC', () => {
   assert.equal(_internals.normalizarData(new Date('2026-01-19T00:00:00.000Z')), '2026-01-19');
+});
+
+test('importacao aceita apenas datas de vendas antigas anteriores ao dia atual', () => {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Vendas');
+  worksheet.addRow(['CNPJ', 'DATA DA VENDA']);
+  worksheet.addRow(['00.821.823/0001-88', '04/08/2026']);
+  worksheet.addRow(['03.198.929/0001-65', '05/08/2026']);
+  worksheet.addRow(['11.111.111/0001-11', '']);
+
+  const resultado = _internals.lerLinhasPlanilha(
+    worksheet,
+    { cnpj: 'CNPJ', data_venda: 'DATA DA VENDA' },
+    new Date('2026-08-05T15:00:00.000Z')
+  );
+
+  assert.equal(resultado.linhas.length, 1);
+  assert.equal(resultado.linhas[0].dataVenda, '2026-08-04');
+  assert.equal(resultado.erros.length, 2);
+  assert.match(resultado.erros[0].message, /anterior ao dia atual/i);
+  assert.match(resultado.erros[1].message, /ausente ou inválida/i);
 });
 
 test('agrupa linhas da mesma venda compartilhada por CNPJ e data', () => {

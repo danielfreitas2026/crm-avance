@@ -16,6 +16,18 @@ const TipoProduto = require('../models/TipoProduto');
 
 const ORIGEM_IMPORTACAO = 'controle_vendas_empresas';
 
+/** Retorna o dia operacional corrente do CRM. */
+function obterDataAtualSaoPaulo(data = new Date()) {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(data);
+  const valores = Object.fromEntries(partes.map(({ type, value }) => [type, value]));
+  return `${valores.year}-${valores.month}-${valores.day}`;
+}
+
 const COLUNAS_PADRAO = {
   razao_social: 'RAZAO SOCIAL',
   cnpj: 'CNPJ',
@@ -657,7 +669,7 @@ function linhaVazia(linha) {
 /**
  * Processa ler linhas planilha conforme as regras do dominio.
  */
-function lerLinhasPlanilha(worksheet, mapeamento = null) {
+function lerLinhasPlanilha(worksheet, mapeamento = null, agora = new Date()) {
   const headerMap = montarHeaderMap(worksheet);
   const mapa = mapeamento || resolverMapeamento(worksheet).mapeamento;
   const linhas = [];
@@ -706,6 +718,16 @@ function lerLinhasPlanilha(worksheet, mapeamento = null) {
 
     if (linha.cnpjDigitos.length !== 14) {
       erros.push({ row_index: rowIndex, message: 'Linha ignorada por CNPJ ausente ou incompleto.' });
+      continue;
+    }
+
+    if (!linha.dataVenda) {
+      erros.push({ row_index: rowIndex, message: 'Linha ignorada por data da venda ausente ou inválida.' });
+      continue;
+    }
+
+    if (linha.dataVenda >= obterDataAtualSaoPaulo(agora)) {
+      erros.push({ row_index: rowIndex, message: 'Linha ignorada: a data da venda antiga deve ser anterior ao dia atual.' });
       continue;
     }
 
@@ -1051,6 +1073,7 @@ function montarPayloadVenda(grupo, referencias, cliente, usuarioId, arquivo) {
     razao_social: grupo.razaoSocial || null,
     cnpj: grupo.cnpj,
     data_venda: grupo.dataVenda,
+    venda_antiga: true,
     data_ativacao: dataAtivacao,
     observacoes: montarObservacoes(grupo),
     municipio: grupo.cidade || null,
@@ -1191,6 +1214,7 @@ module.exports = {
     criarChaveImportacao,
     lerLinhasPlanilha,
     normalizarData,
+    obterDataAtualSaoPaulo,
     resolverMapeamento,
     resolverServicoId,
     resolverStatusFunil,

@@ -155,9 +155,11 @@ router.put(
     acao: 'venda.atualizada',
     entidade: 'vendas',
     entidade_id: req => req.params.id,
-    dados: req => ({
+    dados: (req, venda) => ({
       id: req.params.id,
-      alteracoes: req.body
+      alteracoes: req.body,
+      venda_antiga_resultante: venda?.venda_antiga ?? null,
+      data_venda_resultante: venda?.data_venda ?? null
     })
   }),
   vendaController.update

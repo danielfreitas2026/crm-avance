@@ -58,6 +58,7 @@ const CAMPOS = [
   'razao_social',
   'cnpj',
   'data_venda',
+  'venda_antiga',
   'data_ativacao',
   'qc_feito_por',
   'promessa_cliente',
@@ -471,6 +472,45 @@ function validarDataVendaNaoFutura(dataVenda, agora = new Date()) {
   const error = new Error('A data da venda não pode ser futura.');
   error.statusCode = 400;
   throw error;
+}
+
+/**
+ * Exige uma data manual anterior ao dia atual para vendas antigas.
+ */
+function validarDataVendaAntiga(dataVenda, agora = new Date()) {
+  const dataNormalizada = normalizarData(dataVenda);
+  const hoje = obterDataAtualSaoPaulo(agora);
+
+  if (!dataNormalizada) {
+    const error = new Error('Informe a data da venda antiga.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (dataNormalizada >= hoje) {
+    const error = new Error('A data da venda antiga deve ser anterior ao dia atual.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return dataNormalizada;
+}
+
+/**
+ * Resolve a data autoritativa de um novo cadastro.
+ */
+function resolverDataVendaCadastro(dados, agora = new Date()) {
+  const vendaAntiga = dados?.venda_antiga === true
+    || dados?.venda_antiga === 1
+    || dados?.venda_antiga === '1'
+    || dados?.venda_antiga === 'true';
+
+  return {
+    venda_antiga: vendaAntiga,
+    data_venda: vendaAntiga
+      ? validarDataVendaAntiga(dados?.data_venda, agora)
+      : obterDataAtualSaoPaulo(agora)
+  };
 }
 
 /**
@@ -960,6 +1000,13 @@ function montarPayload(dados) {
 
   if (payload.possui_doc_na_casa !== undefined && payload.possui_doc_na_casa !== null) {
     payload.possui_doc_na_casa = payload.possui_doc_na_casa === true || Number(payload.possui_doc_na_casa) === 1;
+  }
+
+  if (payload.venda_antiga !== undefined) {
+    payload.venda_antiga = payload.venda_antiga === true
+      || payload.venda_antiga === 1
+      || payload.venda_antiga === '1'
+      || payload.venda_antiga === 'true';
   }
 
   if (payload.promessa_cumprida !== undefined && payload.promessa_cumprida !== null) {
@@ -2888,13 +2935,14 @@ async function gerarEmailTemplateVenda(id, usuarioId) {
  * Cria venda com os dados informados.
  */
 async function criarVenda(dados, usuarioId) {
-  const agora = formatarDateTimeSQL();
+  const instanteCadastro = new Date();
+  const agora = formatarDateTimeSQL(instanteCadastro);
   const origemLeadLinhaId = Number(dados.origem_lead_linha_id || 0) || null;
   const vendedorasIds = normalizarIdsVendedoras(dados.vendedoras);
   let payload = montarPayload(dados);
   const deveEnviarAutomaticamente = await usuarioTemPermissao(usuarioId, PERMISSAO_AUTO_POS_VENDA);
 
-  validarDataVendaNaoFutura(payload.data_venda);
+  Object.assign(payload, resolverDataVendaCadastro(dados, instanteCadastro));
 
   delete payload.data_ativacao;
   delete payload.numeros_ativados;
@@ -3117,7 +3165,10 @@ async function atualizarVenda(id, dados, usuarioId) {
 
   const vendaAtual = await Venda.query()
     .findById(id)
-    .select('id', 'cliente_id', 'protocolo', 'status_funil', 'enviada_pos_venda_em', 'excluido_em');
+    .select(
+      'id', 'cliente_id', 'protocolo', 'status_funil', 'enviada_pos_venda_em', 'excluido_em',
+      'data_venda', 'venda_antiga', 'criado_em', 'created_at'
+    );
 
   if (!vendaAtual || vendaAtual.excluido_em) {
     return null;
@@ -3136,8 +3187,42 @@ async function atualizarVenda(id, dados, usuarioId) {
   let payload = montarPayload(dados);
   const etapaFinal = await obterCodigoEtapaFinal();
   const vendaEstaNaEtapaFinal = vendaAtual.status_funil === etapaFinal;
+  const classificacaoFoiEnviada = Object.prototype.hasOwnProperty.call(dados, 'venda_antiga');
 
-  validarDataVendaNaoFutura(payload.data_venda);
+  if (!classificacaoFoiEnviada) {
+    delete payload.venda_antiga;
+    delete payload.data_venda;
+  } else {
+    const vendaAntigaDesejada = payload.venda_antiga === true;
+    const dataCadastro = parseUtcDateTime(vendaAtual.criado_em || vendaAtual.created_at);
+    const dataVendaAtual = normalizarData(vendaAtual.data_venda);
+    const dataVendaDesejada = vendaAntigaDesejada
+      ? normalizarData(payload.data_venda)
+      : obterDataAtualSaoPaulo(dataCadastro || new Date());
+    const vendaAntigaAtual = vendaAtual.venda_antiga === true || Number(vendaAtual.venda_antiga) === 1;
+    const classificacaoMudou = vendaAntigaDesejada !== vendaAntigaAtual;
+    const dataMudou = dataVendaDesejada !== dataVendaAtual;
+
+    if (classificacaoMudou || dataMudou) {
+      const usuarioPodeCorrigirData = usuarioPodeOperarPosVenda
+        || (await buscarPermissoesUsuario(usuarioId)).admin;
+
+      if (!usuarioPodeCorrigirData) {
+        const error = new Error('Apenas pós-venda ou administradores podem alterar a data da venda.');
+        error.statusCode = 403;
+        throw error;
+      }
+
+      if (vendaAntigaDesejada) {
+        payload.data_venda = validarDataVendaAntiga(payload.data_venda);
+      }
+    }
+
+    payload.venda_antiga = vendaAntigaDesejada;
+    if (!vendaAntigaDesejada || !(classificacaoMudou || dataMudou)) {
+      payload.data_venda = dataVendaDesejada;
+    }
+  }
 
   if (!vendaAtual.enviada_pos_venda_em) {
     delete payload.status_funil;
@@ -4025,6 +4110,8 @@ module.exports = {
     normalizarClienteSolicitouServicos,
     normalizarData,
     obterDataAtualSaoPaulo,
+    resolverDataVendaCadastro,
+    validarDataVendaAntiga,
     validarDataVendaNaoFutura,
     vendaDeveNotificarTelegram,
     normalizarGigas,
