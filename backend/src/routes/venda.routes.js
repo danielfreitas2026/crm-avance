@@ -164,6 +164,21 @@ router.put(
   }),
   vendaController.update
 );
+router.post(
+  '/:id/reversoes',
+  exigirUmaPermissao(['vendas_permitir_reversoes']),
+  auditar({
+    acao: 'venda.reversao_registrada',
+    entidade: 'vendas',
+    entidade_id: req => req.params.id,
+    dados: req => ({
+      id: req.params.id,
+      observacao: req.body?.observacao || null,
+      versao: req.body?.versao || null
+    })
+  }),
+  vendaController.registrarReversao
+);
 router.patch(
   '/:id/status',
   exigirUmaPermissao(['vendas_editar', 'pos_venda']),

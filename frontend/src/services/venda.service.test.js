@@ -21,6 +21,7 @@ import {
   listarVendas,
   listarVendasLixeira,
   marcarProblemaVenda,
+  registrarReversaoVenda,
   restaurarVenda,
   urlVisualizarArquivoVenda,
 } from './venda.service';
@@ -64,6 +65,16 @@ describe('venda.service', () => {
     expect(apiRequest).toHaveBeenCalledWith('/vendas/7/status', {
       method: 'PATCH',
       body: JSON.stringify({ status_funil: 'ativacao' }),
+    });
+  });
+
+  it('registra reversao em endpoint separado da edicao comum', async () => {
+    await registrarReversaoVenda(7, { nome: 'Corrigido' }, 'Correção solicitada', '2026-08-13T12:00:00.000Z');
+
+    expect(apiPost).toHaveBeenCalledWith('/vendas/7/reversoes', {
+      venda: { nome: 'Corrigido' },
+      observacao: 'Correção solicitada',
+      versao: '2026-08-13T12:00:00.000Z'
     });
   });
 

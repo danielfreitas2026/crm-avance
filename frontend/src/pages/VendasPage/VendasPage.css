@@ -968,6 +968,19 @@
   cursor: default;
 }
 
+.venda-readonly-fieldset.is-readonly input,
+.venda-readonly-fieldset.is-readonly select,
+.venda-readonly-fieldset.is-readonly textarea,
+.venda-readonly-fieldset.is-readonly button {
+  pointer-events: none;
+  cursor: default;
+}
+
+.venda-readonly-fieldset.is-readonly .venda-field-history-btn {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
 .venda-pos-venda-banner {
   display: inline-flex;
   align-items: center;
@@ -4678,6 +4691,161 @@ input.is-invalid {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+}
+
+.venda-modal .venda-reversao-btn {
+  border-color: #d97706;
+  background: #f59e0b;
+  color: #422006;
+  font-weight: 700;
+  box-shadow: 0 8px 18px rgba(217, 119, 6, 0.18);
+}
+
+.venda-modal .venda-reversao-btn:not(:disabled):hover {
+  border-color: #b45309;
+  background: #d97706;
+  color: #fff;
+}
+
+.venda-modal .form-field.has-reversal-history {
+  padding: 10px;
+  border: 1px solid #fbbf24;
+  border-radius: var(--radius);
+  background: #fffbeb;
+}
+
+.venda-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.venda-field-history-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid #f59e0b;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.venda-reversoes-observacoes {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.venda-reversoes-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.venda-reversoes-empty {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.venda-reversao-observacao,
+.venda-reversao-nova-observacao {
+  display: grid;
+  gap: 5px;
+  padding: 11px;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius);
+  background: #fffbeb;
+}
+
+.venda-reversao-observacao time,
+.venda-reversao-history-head span,
+.venda-reversao-history-author {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+.venda-reversao-observacao p,
+.venda-reversao-history-item p {
+  margin: 0;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+
+.venda-reversao-history-overlay {
+  z-index: 1200;
+}
+
+.venda-reversao-history-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+}
+
+.venda-reversao-history-list {
+  display: grid;
+  gap: 12px;
+}
+
+.venda-reversao-history-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius);
+  background: #fffbeb;
+}
+
+.venda-reversao-history-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.venda-reversao-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.venda-reversao-values > div {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.venda-reversao-values span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.venda-reversao-values pre {
+  overflow: auto;
+  margin: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .venda-reversao-values {
+    grid-template-columns: 1fr;
+  }
 }
 
 .venda-old-sale-toggle {

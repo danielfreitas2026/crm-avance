@@ -358,6 +358,84 @@ const CAMPOS = [
   { name: 'observacoes', label: 'Observações da Venda', type: 'longText', span: true, maxRows: 6 },
 ];
 
+const CAMPOS_AGRUPADOS_REVERSAO = {
+  venda_antiga: ['venda_antiga', 'data_venda'],
+  aceite_range: ['horario_aceite_voz', 'horario_aceite_inicio', 'horario_aceite_fim', 'dia_aceite_inicio', 'dia_aceite_fim', 'dia_aceite_fixo', 'horario_aceite_fixo'],
+  responsaveis_recebimento: ['responsavel_recebimento', 'rg_responsavel_recebimento', 'responsavel_recebimento_2', 'rg_responsavel_recebimento_2', 'responsavel_recebimento_3', 'rg_responsavel_recebimento_3'],
+  cliente_solicitou_servicos: ['cliente_solicitou_servicos', 'cliente_solicitou_bloqueio_qtd', 'cliente_solicitou_cancelamento_qtd', 'cliente_solicitou_numeros']
+};
+
+const LABELS_CAMPOS_REVERSAO = {
+  ...Object.fromEntries(CAMPOS.filter(campo => campo.name).map(campo => [campo.name, campo.label || campo.name])),
+  data_venda: 'Data da venda',
+  horario_aceite_voz: 'Horário do aceite',
+  horario_aceite_inicio: 'Início do aceite',
+  horario_aceite_fim: 'Fim do aceite',
+  dia_aceite_inicio: 'Dia inicial do aceite',
+  dia_aceite_fim: 'Dia final do aceite',
+  dia_aceite_fixo: 'Dia fixo do aceite',
+  horario_aceite_fixo: 'Horário fixo do aceite',
+  responsavel_recebimento: 'Responsável pelo recebimento 1',
+  rg_responsavel_recebimento: 'RG do responsável 1',
+  responsavel_recebimento_2: 'Responsável pelo recebimento 2',
+  rg_responsavel_recebimento_2: 'RG do responsável 2',
+  responsavel_recebimento_3: 'Responsável pelo recebimento 3',
+  rg_responsavel_recebimento_3: 'RG do responsável 3'
+};
+
+function formatarValorHistorico(valor, campo, referencias = {}) {
+  if (valor === null || valor === undefined || valor === '') return 'Não preenchido';
+  if (typeof valor === 'boolean') return valor ? 'Sim' : 'Não';
+
+  const listas = {
+    cliente_id: referencias.clientes,
+    servico_id: referencias.servicos,
+    tipo_venda_id: referencias.tiposVenda
+  };
+  if (listas[campo]) {
+    return listas[campo].find(item => Number(item.id) === Number(valor))?.nome || `#${valor}`;
+  }
+  if (campo === 'vendedoras' && Array.isArray(valor)) {
+    return valor.map(id => referencias.vendedoras?.find(item => Number(item.id) === Number(id))?.nome || `#${id}`).join(', ') || 'Não preenchido';
+  }
+  if (Array.isArray(valor) || (valor && typeof valor === 'object')) {
+    return JSON.stringify(valor, null, 2);
+  }
+  return String(valor);
+}
+
+function HistoricoCampoModal({ titulo, eventos, referencias, onClose }) {
+  return (
+    <div className="modal-overlay venda-reversao-history-overlay" role="dialog" aria-modal="true" onClick={event => event.target === event.currentTarget && onClose()}>
+      <div className="modal venda-reversao-history-modal">
+        <div className="modal-header">
+          <div className="modal-header-row">
+            <div><div className="modal-client">Histórico: {titulo}</div><div className="modal-sub">Alterações registradas por reversões.</div></div>
+            <button type="button" className="btn btn-icon btn-ghost" onClick={onClose} title="Fechar"><I.Close size={14} /></button>
+          </div>
+        </div>
+        <div className="modal-body venda-reversao-history-list">
+          {eventos.map(evento => (
+            <article className="venda-reversao-history-item" key={`${evento.reversao.id}-${evento.alteracao.campo}`}>
+              <div className="venda-reversao-history-head">
+                <strong>Reversão {evento.reversao.numero}</strong>
+                <span>{formatarDataHora(evento.reversao.created_at)}</span>
+              </div>
+              <div className="venda-reversao-history-author">{evento.reversao.usuario?.nome || 'Usuário não disponível'} · {LABELS_CAMPOS_REVERSAO[evento.alteracao.campo] || evento.alteracao.campo}</div>
+              <div className="venda-reversao-values">
+                <div><span>Valor anterior</span><pre>{formatarValorHistorico(evento.alteracao.anterior, evento.alteracao.campo, referencias)}</pre></div>
+                <div><span>Novo valor</span><pre>{formatarValorHistorico(evento.alteracao.novo, evento.alteracao.campo, referencias)}</pre></div>
+              </div>
+              <p>{evento.reversao.observacao}</p>
+            </article>
+          ))}
+        </div>
+        <div className="modal-footer"><button type="button" className="btn" onClick={onClose}>Fechar</button></div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Retorna valor obrigatorio nao preenchido no formato esperado pelo fluxo.
  */
@@ -3553,6 +3631,7 @@ function VendaModal({
   vendasPorCliente,
   vendasEmAndamentoPorCliente = new Map(),
   podeEditarVenda,
+  podeRegistrarReversao = false,
   podeCompartilharVenda,
   podeVerDocumentosVenda,
   podeAdicionarDocumentosVenda,
@@ -3564,6 +3643,7 @@ function VendaModal({
   onStartEdit,
   onClose,
   onSave,
+  onSaveReversal,
   onRetryDashboard,
   onSendToPosVenda,
   sendToPosVendaLabel = 'Enviar para o pós-venda',
@@ -3623,6 +3703,9 @@ function VendaModal({
   // Usar hook para persistência de rascunhos
   const { clearDraft } = useFormDraft(editando ? null : draftKey, form, editando);
   const [salvando, setSalvando] = useState(false);
+  const [modoReversao, setModoReversao] = useState(false);
+  const [observacaoReversao, setObservacaoReversao] = useState('');
+  const [historicoCampoAberto, setHistoricoCampoAberto] = useState(null);
   const [docsAlterados, setDocsAlterados] = useState(false);
   const [liberacaoAberta, setLiberacaoAberta] = useState(false);
   const [motivoLiberacao, setMotivoLiberacao] = useState('');
@@ -3716,7 +3799,7 @@ function VendaModal({
       finalizar();
     };
   }, [abaAtiva]);
-  const somenteVisualizacao = Boolean(venda) && !modoEdicao;
+  const somenteVisualizacao = Boolean(venda) && !modoEdicao && !modoReversao;
   const enviadaPosVenda = Boolean(venda?.enviada_pos_venda_em || form.enviada_pos_venda_em);
   const vendedorasDaVenda = Array.isArray(venda?.vendedoras) && venda.vendedoras.length > 0
     ? venda.vendedoras
@@ -3747,6 +3830,7 @@ function VendaModal({
   const podeAdicionarDocumentosVendaEfetivo = Boolean(podeAdicionarDocumentosVenda);
   const podeAcessarDocumentosVenda = Boolean(podeVerDocumentosVenda || podeAdicionarDocumentosVendaEfetivo);
   const vendaBloqueadaParaUsuario = enviadaPosVenda && !usuarioPosVenda;
+  const podeRegistrarReversaoEfetivo = Boolean(venda?.id && podeRegistrarReversao && usuarioPodeAcessarVendaModal);
   const podeCorrigirDataVenda = !editando || usuarioPosVenda || usuarioAdmin;
   const vendaCancelada = Boolean(venda?.cancelada_em || form.cancelada_em);
   const ultimoCnpjConsultadoRef = useRef(venda ? sanitizarCnpj(form.cnpj) : '');
@@ -3763,6 +3847,49 @@ function VendaModal({
       });
     return Array.from(mapa.values());
   }, [vendedoras, venda]);
+  const reversoesVenda = Array.isArray(venda?.reversoes) ? venda.reversoes : [];
+  const camposComReversao = new Set(Array.isArray(venda?.campos_com_reversao) ? venda.campos_com_reversao : []);
+
+  function chavesDoCampoReversao(campo) {
+    return CAMPOS_AGRUPADOS_REVERSAO[campo] || [campo];
+  }
+
+  function eventosDoCampoReversao(campo) {
+    const chaves = new Set(chavesDoCampoReversao(campo));
+    return reversoesVenda.flatMap(reversao => (
+      (reversao.alteracoes || [])
+        .filter(alteracao => chaves.has(alteracao.campo))
+        .map(alteracao => ({ reversao, alteracao }))
+    ));
+  }
+
+  function campoPossuiReversao(campo) {
+    return chavesDoCampoReversao(campo).some(chave => camposComReversao.has(chave));
+  }
+
+  function abrirHistoricoCampo(campo, titulo) {
+    setHistoricoCampoAberto({ campo, titulo, eventos: eventosDoCampoReversao(campo) });
+  }
+
+  function renderizarLabelCampo(campo, label, obrigatorio = false) {
+    const possuiHistorico = campoPossuiReversao(campo);
+    return (
+      <span className="venda-field-label-row">
+        <span>{label}{obrigatorio && <span className="field-required-mark"> *</span>}</span>
+        {possuiHistorico && (
+          <button
+            type="button"
+            className="venda-field-history-btn"
+            title={`Ver histórico de ${label}`}
+            aria-label={`Ver histórico de ${label}`}
+            onClick={event => { event.preventDefault(); abrirHistoricoCampo(campo, label); }}
+          >
+            <I.History size={13} /> Histórico
+          </button>
+        )}
+      </span>
+    );
+  }
   const usuarioTemOutrasVendedorasDisponiveis = Boolean(usuarioLogado?.id
     && (vendedoras || []).some(vendedora => Number(vendedora.id) !== Number(usuarioLogado.id)));
   const podeCompartilharVendaEfetivo = Boolean(podeCompartilharVenda || usuarioTemOutrasVendedorasDisponiveis);
@@ -3875,6 +4002,14 @@ function VendaModal({
     }
 
     onClose();
+  }
+
+  function iniciarReversao() {
+    if (!podeRegistrarReversaoEfetivo || vendaBloqueadaParaUsuario) return;
+    setErro('');
+    setObservacaoReversao('');
+    setAbaAtiva('venda');
+    setModoReversao(true);
   }
 
   /**
@@ -4530,6 +4665,12 @@ function VendaModal({
       return;
     }
 
+    if (modoReversao && !observacaoReversao.trim()) {
+      setErro('Informe a observação da reversão.');
+      setAbaAtiva('venda');
+      return;
+    }
+
     setErro('');
     setSalvando(true);
 
@@ -4810,7 +4951,11 @@ function VendaModal({
 
       const notasParaCriar = !venda?.id ? pendingNotas : [];
       const arquivosParaCriar = !venda?.id ? pendingArquivos : [];
-      await onSave(payload, notasParaCriar, arquivosParaCriar);
+      if (modoReversao) {
+        await onSaveReversal(payload, observacaoReversao.trim(), venda?.updated_at);
+      } else {
+        await onSave(payload, notasParaCriar, arquivosParaCriar);
+      }
     } catch (error) {
       setErro(error.message || 'Erro ao salvar venda.');
       setSalvando(false);
@@ -5021,7 +5166,10 @@ function VendaModal({
                 <span>Enviada para o pós-venda</span>
               </div>
             )}
-            <fieldset className="venda-readonly-fieldset" disabled={somenteVisualizacao || vendaBloqueadaParaUsuario}>
+            <fieldset
+              className={`venda-readonly-fieldset ${(somenteVisualizacao || vendaBloqueadaParaUsuario) ? 'is-readonly' : ''}`}
+              aria-disabled={somenteVisualizacao || vendaBloqueadaParaUsuario}
+            >
             <div className="vendas-form-grid">
             {CAMPOS.map(campo => {
               if (campo.section) {
@@ -5051,8 +5199,8 @@ function VendaModal({
               const hintCpfId = erroCpfCampo ? `venda-${campo.name}-erro` : undefined;
 
               return (
-                <div key={campo.name} className={`form-field ${campo.span ? 'span-2' : ''} ${erroCpfCampo ? 'is-invalid' : ''}`}>
-                  {labelCampo && !['realAddressToggle', 'oldSale'].includes(campo.type) && <label>{labelCampo}{campo.required && <span className="field-required-mark"> *</span>}</label>}
+                <div key={campo.name} className={`form-field ${campo.span ? 'span-2' : ''} ${erroCpfCampo ? 'is-invalid' : ''} ${campoPossuiReversao(campo.name) ? 'has-reversal-history' : ''}`}>
+                  {labelCampo && !['realAddressToggle', 'oldSale'].includes(campo.type) && <label>{renderizarLabelCampo(campo.name, labelCampo, campo.required)}</label>}
                   {campo.type === 'client' ? (
                       <ClienteVendaSelect
                         key={form[campo.name] || 'sem-cliente'}
@@ -5230,6 +5378,7 @@ function VendaModal({
                     />
                   ) : campo.type === 'oldSale' ? (
                     <div className="venda-old-sale-control">
+                      {campoPossuiReversao(campo.name) && renderizarLabelCampo(campo.name, campo.label)}
                       <label className="venda-old-sale-toggle">
                         <input
                           type="checkbox"
@@ -5282,7 +5431,7 @@ function VendaModal({
                           onChange={e => alternarEnderecoReal(e.target.checked)}
                           disabled={somenteVisualizacao || vendaBloqueadaParaUsuario}
                         />
-                        <span>{campo.label}</span>
+                        {renderizarLabelCampo(campo.name, campo.label)}
                       </label>
                       {form.endereco_real_divergente && (
                         <button
@@ -5362,6 +5511,33 @@ function VendaModal({
                   {campo.name === 'cep' && cepStatus && (
                     <span className="field-hint">{cepStatus}</span>
                   )}
+                  {campo.name === 'observacoes' && (
+                    <section className="venda-reversoes-observacoes">
+                      <div className="venda-reversoes-title">Observações de reversão</div>
+                      {reversoesVenda.length === 0 ? (
+                        <p className="venda-reversoes-empty">Nenhuma reversão registrada.</p>
+                      ) : reversoesVenda.map(reversao => (
+                        <article key={reversao.id} className="venda-reversao-observacao">
+                          <time>{formatarDataHora(reversao.created_at)}</time>
+                          <strong>Reversão {reversao.numero}</strong>
+                          <p>{reversao.observacao}</p>
+                        </article>
+                      ))}
+                      {modoReversao && (
+                        <div className="venda-reversao-nova-observacao">
+                          <label htmlFor="venda-observacao-reversao">Nova observação de reversão <span className="field-required-mark">*</span></label>
+                          <AutoResizeTextarea
+                            id="venda-observacao-reversao"
+                            value={observacaoReversao}
+                            onChange={event => setObservacaoReversao(event.target.value)}
+                            maxLength={5000}
+                            maxRows={6}
+                            placeholder="Explique o motivo e o contexto desta reversão"
+                          />
+                        </div>
+                      )}
+                    </section>
+                  )}
                 </div>
               );
             })}
@@ -5423,8 +5599,8 @@ function VendaModal({
               <div className="modal-body">
                 <div className="vendas-form-grid venda-address-modal__grid">
                   {CAMPOS_ENDERECO_REAL_VENDA.map(campo => (
-                    <div key={campo.name} className={`form-field ${campo.span ? 'span-2' : ''}`}>
-                      <label>{campo.label}</label>
+                    <div key={campo.name} className={`form-field ${campo.span ? 'span-2' : ''} ${campoPossuiReversao(campo.name) ? 'has-reversal-history' : ''}`}>
+                      <label>{renderizarLabelCampo(campo.name, campo.label)}</label>
                       {campo.type === 'longText' ? (
                         <AutoResizeTextarea
                           value={form[campo.name] ?? ''}
@@ -5460,13 +5636,30 @@ function VendaModal({
 
         <div className="modal-footer">
           {abaAtiva === 'problema' || abaAtiva === 'cancelamento' ? (
-            <button type="button" className="btn" onClick={handleClose}>Fechar</button>
+            <>
+              {podeRegistrarReversaoEfetivo && (
+                <button type="button" className="btn venda-reversao-btn" disabled={vendaBloqueadaParaUsuario} onClick={iniciarReversao}>
+                  <I.History size={14} /> Registrar Reversão
+                </button>
+              )}
+              <button type="button" className="btn" onClick={handleClose}>Fechar</button>
+            </>
           ) : (somenteVisualizacao || vendaBloqueadaParaUsuario) ? (
             <>
               <button type="button" className="btn" onClick={handleClose}>Fechar</button>
+              {podeRegistrarReversaoEfetivo && !podeEditarVendaEfetivo && (
+                <button type="button" className="btn venda-reversao-btn" disabled={salvando || vendaBloqueadaParaUsuario || docsAlterados} onClick={iniciarReversao}>
+                  <I.History size={14} /> Registrar Reversão
+                </button>
+              )}
               {podeEditarVendaEfetivo && !enviadaPosVenda && (
                 <button type="button" className="btn venda-pos-venda-send-btn" disabled={salvando} onClick={handleEnviarPosVenda}>
                   <I.ArrowRight size={14} /> {salvando ? 'Aguarde...' : sendToPosVendaLabel}
+                </button>
+              )}
+              {podeRegistrarReversaoEfetivo && podeEditarVendaEfetivo && (
+                <button type="button" className="btn venda-reversao-btn" disabled={salvando || vendaBloqueadaParaUsuario || docsAlterados} onClick={iniciarReversao}>
+                  <I.History size={14} /> Registrar Reversão
                 </button>
               )}
               {podeEditarVendaEfetivo && !vendaBloqueadaParaUsuario && (
@@ -5490,12 +5683,20 @@ function VendaModal({
               )}
               <button type="button" className="btn" onClick={handleClose}>Cancelar</button>
               <button type="submit" className="btn btn-primary" disabled={salvando}>
-                {salvando ? 'Salvando...' : 'Salvar venda'}
+                {salvando ? 'Salvando...' : modoReversao ? 'Salvar reversão' : 'Salvar venda'}
               </button>
             </>
           )}
         </div>
       </form>
+      {historicoCampoAberto && (
+        <HistoricoCampoModal
+          titulo={historicoCampoAberto.titulo}
+          eventos={historicoCampoAberto.eventos}
+          referencias={{ clientes: clientesDisponiveis, servicos, tiposVenda, vendedoras: vendedorasOpcoesModal }}
+          onClose={() => setHistoricoCampoAberto(null)}
+        />
+      )}
       {liberacaoAberta && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 560 }}>

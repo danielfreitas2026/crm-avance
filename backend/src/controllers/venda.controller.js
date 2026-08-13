@@ -236,6 +236,25 @@ async function update(req, res) {
   }
 }
 
+/** Registra uma reversao auditada da venda. */
+async function registrarReversao(req, res) {
+  try {
+    const venda = await vendaService.registrarReversaoVenda(req.params.id, req.body, req.usuario.id);
+
+    if (!venda) {
+      return res.status(404).json({ message: 'Venda não encontrada.' });
+    }
+
+    const vendaCompleta = await vendaService.buscarVendaPorId(req.params.id, req.usuario.id);
+    return res.json(vendaCompleta);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 400).json({
+      message: error.message || 'Erro ao registrar reversão da venda.'
+    });
+  }
+}
+
 /**
  * Atualiza status com o estado mais recente.
  */
@@ -517,6 +536,7 @@ module.exports = {
   store,
   reenviarDashboard,
   update,
+  registrarReversao,
   updateStatus,
   cancelar,
   reverterCancelamento,

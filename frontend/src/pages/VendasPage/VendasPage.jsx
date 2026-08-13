@@ -28,6 +28,7 @@ import {
   listarVendas,
   listarVendedoras,
   marcarProblemaVenda,
+  registrarReversaoVenda,
   reenviarVendaParaDashboard,
   uploadArquivoVenda,
   visualizarArquivoVenda
@@ -2698,6 +2699,7 @@ function VendasPage() {
   const usuarioLogado = getUsuarioLocal();
   const podeCriarVenda = temPermissao(usuarioLogado, 'vendas_criar');
   const podeEditarVenda = temPermissao(usuarioLogado, ['vendas_editar', 'pos_venda']);
+  const podeRegistrarReversao = temPermissao(usuarioLogado, 'vendas_permitir_reversoes');
   const podeCompartilharVenda = temPermissao(usuarioLogado, 'compartilhar_venda');
   const podeExcluirVenda = temPermissao(usuarioLogado, 'vendas_excluir');
   const podeVerDocumentosVenda = temPermissao(usuarioLogado, 'vendas_documentos');
@@ -2992,13 +2994,19 @@ function VendasPage() {
   /**
    * Abre visualizacao e prepara o estado necessario.
    */
-  function abrirVisualizacao(venda) {
-    setModalVenda(venda);
-    setModalAbaInicial('venda');
-    setModalProblemaInicial(null);
-    setModalModoEdicao(false);
-    setVendaInicial(null);
-    setModalAberto(true);
+  async function abrirVisualizacao(venda) {
+    setErro('');
+    try {
+      const vendaCompleta = await buscarVendaPorId(venda.id);
+      setModalVenda(vendaCompleta);
+      setModalAbaInicial('venda');
+      setModalProblemaInicial(null);
+      setModalModoEdicao(false);
+      setVendaInicial(null);
+      setModalAberto(true);
+    } catch (error) {
+      setErro(error.message || 'Erro ao abrir venda.');
+    }
   }
 
   /**
@@ -3055,6 +3063,25 @@ function VendasPage() {
     } else {
       setSucesso(editando ? 'Venda atualizada com sucesso.' : 'Venda cadastrada com sucesso.');
     }
+    return vendaSalva;
+  }
+
+  /** Salva uma reversao sem passar pelo fluxo de edicao comum. */
+  async function salvarReversao(dados, observacao, versao) {
+    if (!modalVenda?.id) return null;
+    setErro('');
+    const vendaSalva = await registrarReversaoVenda(modalVenda.id, dados, observacao, versao);
+
+    limparRotaModalVenda();
+    setModalAberto(false);
+    setModalVenda(null);
+    setModalAbaInicial('venda');
+    setModalProblemaInicial(null);
+    setModalModoEdicao(true);
+    setVendaInicial(null);
+    await carregarVendas(filtros, paginaAtual);
+    obterReferenciasClientesVendas().then(data => setReferenciasClientes(data || [])).catch(() => {});
+    setSucesso('Reversão registrada com sucesso.');
     return vendaSalva;
   }
 
@@ -3313,6 +3340,7 @@ function VendasPage() {
           vendasPorCliente={vendasPorCliente}
           vendasEmAndamentoPorCliente={vendasEmAndamentoPorCliente}
           podeEditarVenda={podeEditarVenda}
+          podeRegistrarReversao={podeRegistrarReversao}
           podeCompartilharVenda={podeCompartilharVenda}
           podeVerDocumentosVenda={podeVerDocumentosVenda}
           podeAdicionarDocumentosVenda={podeAdicionarDocumentosVenda}
@@ -3331,6 +3359,7 @@ function VendasPage() {
             setVendaInicial(null);
           }}
           onSave={salvarVenda}
+          onSaveReversal={salvarReversao}
           onRetryDashboard={reenviarDashboard}
           onDraftChange={setVendaCadastroDraft}
           onSendToPosVenda={enviarPosVenda}

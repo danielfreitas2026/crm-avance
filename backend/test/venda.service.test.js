@@ -10,6 +10,8 @@ const {
   montarDadosSincronizacaoClienteVenda,
   montarDetalhesChipsExportacao,
   montarAtribuicoesVendedorasVenda,
+  montarAlteracoesReversao,
+  anexarReversoesVenda,
   montarPayload,
   normalizarData,
   resolverDataVendaCadastro,
@@ -40,6 +42,49 @@ test('impede data de venda futura considerando o fuso de Sao Paulo', () => {
   assert.doesNotThrow(() => validarDataVendaNaoFutura('2026-08-04', agora));
   assert.doesNotThrow(() => validarDataVendaNaoFutura('2026-08-03', agora));
   assert.throws(() => validarDataVendaNaoFutura('2026-08-05', agora), /não pode ser futura/i);
+});
+
+test('monta alteracoes de reversao normalizando campos simples e compostos', () => {
+  const alteracoes = montarAlteracoesReversao({
+    nome: 'Cliente antigo',
+    cliente_da_base: 0,
+    valores_unitarios_chips: JSON.stringify([{ quantidade: 1, valor_unitario: 30 }])
+  }, {
+    nome: 'Cliente novo',
+    cliente_da_base: true,
+    valores_unitarios_chips: [{ valor_unitario: 30, quantidade: 1 }],
+    valor_total: 30
+  }, [2], [2, 3]);
+
+  assert.deepEqual(alteracoes, [
+    { campo: 'nome', anterior: 'Cliente antigo', novo: 'Cliente novo' },
+    { campo: 'cliente_da_base', anterior: false, novo: true },
+    { campo: 'vendedoras', anterior: [2], novo: [2, 3] }
+  ]);
+});
+
+test('anexa reversoes cronologicas e campos marcados ao retorno da venda', () => {
+  const venda = anexarReversoesVenda({
+    historico: [
+      {
+        id: 12,
+        acao: 'venda.reversao_registrada',
+        observacao: 'Segunda',
+        created_at: '2026-08-13T12:00:00.000Z',
+        dados: JSON.stringify({ numero: 2, alteracoes: [{ campo: 'telefone', anterior: '1', novo: '2' }] })
+      },
+      {
+        id: 11,
+        acao: 'venda.reversao_registrada',
+        observacao: 'Primeira',
+        created_at: '2026-08-13T11:00:00.000Z',
+        dados: { numero: 1, alteracoes: [{ campo: 'nome', anterior: 'A', novo: 'B' }] }
+      }
+    ]
+  });
+
+  assert.deepEqual(venda.reversoes.map(item => item.numero), [1, 2]);
+  assert.deepEqual(venda.campos_com_reversao, ['nome', 'telefone']);
 });
 
 test('define no servidor a data de uma venda comum no fuso de Sao Paulo', () => {

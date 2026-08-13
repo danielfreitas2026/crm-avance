@@ -140,6 +140,27 @@ const DIAS_OCULTAR_CONCLUIDAS_FUNIL = 14;
 const FUNIL_PRIORIDADES = ['alta', 'media', 'baixa'];
 const PROMESSA_CUMPRIDA_OPCOES = ['pendente', 'sim', 'nao'];
 const CLIENTE_SOLICITOU_RESOLVIDO_OPCOES = ['sim', 'nao'];
+const ACAO_REVERSAO = 'venda.reversao_registrada';
+const CAMPOS_JSON_REVERSAO = new Set([
+  'valores_unitarios_chips',
+  'numeros_portados',
+  'numeros_ativados',
+  'cliente_solicitou_servicos',
+  'cliente_solicitou_numeros'
+]);
+const CAMPOS_BOOLEANOS_REVERSAO = new Set([
+  'venda_antiga',
+  'cliente_da_base',
+  'possui_doc_na_casa',
+  'endereco_real_divergente'
+]);
+const CAMPOS_NUMERICOS_REVERSAO = new Set([
+  'cliente_id', 'tipo_venda_id', 'servico_id', 'operadora_id', 'operadora_atual_id',
+  'vendedora_id', 'quantidade_linhas', 'dia_vencimento', 'valor_total'
+]);
+const CAMPOS_DERIVADOS_REVERSAO = new Set([
+  'valor_total', 'gb', 'operadora_id', 'operadora_atual_id', 'vendedora_id'
+]);
 
 /**
  * Limpa valor e restaura o estado inicial.
@@ -554,6 +575,103 @@ function formatarDateTimeSQL(data = new Date()) {
  */
 function montarDadosHistorico(dados = {}) {
   return JSON.stringify(dados);
+}
+
+/** Converte dados JSON de historico independentemente do retorno do driver. */
+function parseDadosHistorico(dados) {
+  if (!dados) return {};
+  if (typeof dados === 'object') return dados;
+  try {
+    const parseado = JSON.parse(dados);
+    return typeof parseado === 'string' ? JSON.parse(parseado) : parseado;
+  } catch {
+    return {};
+  }
+}
+
+/** Normaliza snapshots para comparar valores persistidos sem falsos positivos de formato. */
+function normalizarValorReversao(campo, valor) {
+  if (valor === undefined || valor === null || valor === '') return null;
+
+  if (CAMPOS_JSON_REVERSAO.has(campo)) {
+    let parseado = valor;
+    if (typeof valor === 'string') {
+      try { parseado = JSON.parse(valor); } catch { parseado = valor; }
+    }
+    if (Array.isArray(parseado)) {
+      return parseado.map(item => (
+        item && typeof item === 'object'
+          ? Object.keys(item).sort().reduce((acc, chave) => ({ ...acc, [chave]: item[chave] ?? null }), {})
+          : item
+      ));
+    }
+    return parseado;
+  }
+
+  if (CAMPOS_BOOLEANOS_REVERSAO.has(campo)) {
+    return valor === true || valor === 1 || valor === '1' || valor === 'true';
+  }
+  if (CAMPOS_NUMERICOS_REVERSAO.has(campo)) {
+    const numero = Number(valor);
+    return Number.isFinite(numero) ? numero : null;
+  }
+  return typeof valor === 'string' ? valor.trim() || null : valor;
+}
+
+/** Retorna as mudancas relevantes de uma reversao. */
+function montarAlteracoesReversao(vendaAtual, payload, vendedorasAtuais, vendedorasNovas) {
+  const alteracoes = [];
+
+  Object.keys(payload).forEach(campo => {
+    if (CAMPOS_DERIVADOS_REVERSAO.has(campo)) return;
+    const anterior = normalizarValorReversao(campo, vendaAtual[campo]);
+    const novo = normalizarValorReversao(campo, payload[campo]);
+    if (JSON.stringify(anterior) !== JSON.stringify(novo)) {
+      alteracoes.push({ campo, anterior, novo });
+    }
+  });
+
+  if (vendedorasNovas !== null) {
+    const anterior = [...new Set((vendedorasAtuais || []).map(Number))].sort((a, b) => a - b);
+    const novo = [...new Set((vendedorasNovas || []).map(Number))].sort((a, b) => a - b);
+    if (JSON.stringify(anterior) !== JSON.stringify(novo)) {
+      alteracoes.push({ campo: 'vendedoras', anterior, novo });
+    }
+  }
+
+  return alteracoes;
+}
+
+function normalizarInstanteVersao(valor) {
+  if (!valor) return null;
+  const data = valor instanceof Date ? valor : new Date(valor);
+  return Number.isNaN(data.getTime()) ? String(valor) : data.getTime();
+}
+
+/** Acrescenta a visao de reversoes ao retorno completo da venda. */
+function anexarReversoesVenda(venda) {
+  if (!venda) return venda;
+  const historico = Array.isArray(venda.historico) ? venda.historico : [];
+  const reversoes = historico
+    .filter(item => item.acao === ACAO_REVERSAO)
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at) || Number(a.id) - Number(b.id))
+    .map((item, indice) => {
+      const dados = parseDadosHistorico(item.dados);
+      return {
+        id: item.id,
+        numero: Number(dados.numero) || indice + 1,
+        observacao: item.observacao || '',
+        created_at: item.created_at,
+        usuario: item.usuario || null,
+        alteracoes: Array.isArray(dados.alteracoes) ? dados.alteracoes : []
+      };
+    });
+
+  venda.reversoes = reversoes;
+  venda.campos_com_reversao = Array.from(new Set(
+    reversoes.flatMap(reversao => reversao.alteracoes.map(alteracao => alteracao.campo).filter(Boolean))
+  ));
+  return venda;
 }
 
 /**
@@ -2915,7 +3033,7 @@ async function buscarVendaPorId(id, usuarioId) {
     venda.integracao_dashboard = null;
   }
 
-  return venda;
+  return anexarReversoesVenda(venda);
 }
 
 /**
@@ -3156,8 +3274,12 @@ async function reenviarVendaParaDashboard(id, usuarioId) {
 /**
  * Atualiza venda com os dados informados.
  */
-async function atualizarVenda(id, dados, usuarioId) {
-  const permitido = await usuarioPodeEditarVenda(id, usuarioId);
+async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
+  const reversao = Boolean(opcoes.reversao);
+  const permitido = reversao
+    ? await usuarioTemPermissao(usuarioId, 'vendas_permitir_reversoes')
+      && await usuarioPodeAcessarVenda(id, usuarioId)
+    : await usuarioPodeEditarVenda(id, usuarioId);
 
   if (!permitido) {
     return null;
@@ -3165,13 +3287,28 @@ async function atualizarVenda(id, dados, usuarioId) {
 
   const vendaAtual = await Venda.query()
     .findById(id)
-    .select(
-      'id', 'cliente_id', 'protocolo', 'status_funil', 'enviada_pos_venda_em', 'excluido_em',
-      'data_venda', 'venda_antiga', 'criado_em', 'created_at'
-    );
+    .withGraphFetched('vendedoras')
+    .modifyGraph('vendedoras', builder => builder.select('usuarios.id'));
 
   if (!vendaAtual || vendaAtual.excluido_em) {
     return null;
+  }
+
+  const observacaoReversao = String(opcoes.observacao || '').trim();
+  if (reversao && !observacaoReversao) {
+    const error = new Error('Informe a observação da reversão.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (reversao && observacaoReversao.length > 5000) {
+    const error = new Error('A observação da reversão deve ter no máximo 5000 caracteres.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (reversao && !opcoes.versao) {
+    const error = new Error('A versão da venda é obrigatória para registrar a reversão.');
+    error.statusCode = 400;
+    throw error;
   }
 
   const usuarioPodeOperarPosVenda = await usuarioTemPermissao(usuarioId, 'pos_venda');
@@ -3272,7 +3409,29 @@ async function atualizarVenda(id, dados, usuarioId) {
 
   await validarProtocoloCliente(payload, usuarioId, vendaAtual);
 
+  const vendedorasAtuais = Array.isArray(vendaAtual.vendedoras)
+    ? vendaAtual.vendedoras.map(item => Number(item.id))
+    : [Number(vendaAtual.vendedora_id)].filter(Boolean);
+  const alteracoesReversao = reversao
+    ? montarAlteracoesReversao(vendaAtual, payload, vendedorasAtuais, vendedorasIds)
+    : [];
+
+  if (reversao && alteracoesReversao.length === 0) {
+    const error = new Error('Altere pelo menos um campo antes de salvar a reversão.');
+    error.statusCode = 400;
+    throw error;
+  }
+
   const vendaAtualizada = await Venda.transaction(async trx => {
+    if (reversao) {
+      const vendaBloqueada = await Venda.query(trx).findById(id).select('id', 'updated_at').forUpdate();
+      if (normalizarInstanteVersao(vendaBloqueada?.updated_at) !== normalizarInstanteVersao(opcoes.versao)) {
+        const error = new Error('Esta venda foi alterada por outra pessoa. Reabra a venda antes de registrar a reversão.');
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+
     const venda = await Venda.query(trx).patchAndFetchById(id, {
       ...payload,
       ultima_atividade_em: agora,
@@ -3297,6 +3456,25 @@ async function atualizarVenda(id, dados, usuarioId) {
       await vendaAprovacaoService.validarEnvioPosVenda(id, usuarioId, {}, trx);
     }
 
+    if (reversao) {
+      const totalReversoes = await VendaHistorico.query(trx)
+        .where({ venda_id: Number(id), acao: ACAO_REVERSAO })
+        .resultSize();
+
+      await registrarHistoricoVenda({
+        vendaId: id,
+        usuarioId,
+        acao: ACAO_REVERSAO,
+        observacao: observacaoReversao,
+        dados: {
+          numero: totalReversoes + 1,
+          alteracoes: alteracoesReversao
+        },
+        createdAt: agora,
+        trx
+      });
+    }
+
     return venda;
   });
 
@@ -3304,6 +3482,15 @@ async function atualizarVenda(id, dados, usuarioId) {
   await solicitarPacoteSeVendaFinalizada(vendaAtualizada, usuarioId);
 
   return vendaAtualizada;
+}
+
+/** Registra uma edicao auditada sem alterar o comportamento da edicao comum. */
+async function registrarReversaoVenda(id, dados, usuarioId) {
+  return atualizarVenda(id, dados?.venda || {}, usuarioId, {
+    reversao: true,
+    observacao: dados?.observacao,
+    versao: dados?.versao
+  });
 }
 
 /**
@@ -4088,6 +4275,7 @@ module.exports = {
   criarVenda,
   reenviarVendaParaDashboard,
   atualizarVenda,
+  registrarReversaoVenda,
   atualizarStatusVenda,
   cancelarVenda,
   reverterCancelamentoVenda,
@@ -4106,6 +4294,9 @@ module.exports = {
     montarDadosSincronizacaoClienteVenda,
     montarAtribuicoesVendedorasVenda,
     montarPayload,
+    montarAlteracoesReversao,
+    anexarReversoesVenda,
+    normalizarValorReversao,
     normalizarClienteSolicitouNumeros,
     normalizarClienteSolicitouServicos,
     normalizarData,

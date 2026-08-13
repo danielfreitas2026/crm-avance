@@ -292,6 +292,11 @@ export async function atualizarVenda(id, dados) {
   return apiPut(`/vendas/${id}`, dados);
 }
 
+/** Registra uma reversao auditada na venda. */
+export async function registrarReversaoVenda(id, venda, observacao, versao) {
+  return apiPost(`/vendas/${id}/reversoes`, { venda, observacao, versao });
+}
+
 /**
  * Envia venda para pos venda para processamento.
  */

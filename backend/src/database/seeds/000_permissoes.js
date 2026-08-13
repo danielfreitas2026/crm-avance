@@ -35,6 +35,11 @@ const PERMISSOES = [
     descricao: 'Permite editar vendas que o usuário pode acessar.'
   },
   {
+    chave: 'vendas_permitir_reversoes',
+    nome: 'Vendas: permitir reversões',
+    descricao: 'Permite registrar alterações auditadas em vendas acessíveis.'
+  },
+  {
     chave: 'compartilhar_venda',
     nome: 'Vendas: compartilhar',
     descricao: 'Permite vincular outras vendedoras a uma venda.'

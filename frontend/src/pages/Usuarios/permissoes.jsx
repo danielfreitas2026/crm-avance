@@ -85,6 +85,11 @@ export const GRUPOS_PERMISSOES = [
             descricao: 'Permite editar vendas acessíveis.'
           },
           {
+            chave: 'vendas_permitir_reversoes',
+            nome: 'Permitir reversões',
+            descricao: 'Permite registrar alterações auditadas, com observação e histórico por campo.'
+          },
+          {
             chave: 'compartilhar_venda',
             nome: 'Compartilhar vendas',
             descricao: 'Permite vincular outras vendedoras a uma venda (o usuário deve permanecer na venda).'
