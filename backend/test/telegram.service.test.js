@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { enviarVenda, _internals } = require('../src/services/telegram.service');
+const { enviarVenda, atualizarMensagemFuturoClienteRevertido, _internals } = require('../src/services/telegram.service');
 
 test('monta notificacao de futuro cliente com dados da sondagem e responsavel pelo cadastro', () => {
   const texto = _internals.montarMensagemFuturoCliente({
@@ -24,6 +24,36 @@ test('monta notificacao de futuro cliente com dados da sondagem e responsavel pe
   assert.match(texto, /Valor mensal estimado: R\$\s?99,80/);
   assert.match(texto, /Data do contato: 15\/07\/2026/);
   assert.match(texto, /Cadastro feito por: Consultor Teste/);
+});
+
+test('marca a mensagem do futuro cliente como revertida e remove o botao de encaminhar', async () => {
+  const chamadas = [];
+  const linha = {
+    id: 15,
+    futuro_cliente_marcado_em: '2026-07-15T12:00:00.000Z',
+    sondagem: { razao_social: 'Empresa Teste LTDA' }
+  };
+
+  const resultado = await atualizarMensagemFuturoClienteRevertido({
+    telegram_chat_id: '-1001',
+    telegram_message_id: '321'
+  }, linha, {
+    chamarApi: async (metodo, dados) => { chamadas.push({ metodo, dados }); }
+  });
+
+  assert.deepEqual(resultado, { atualizado: true });
+  assert.equal(chamadas.length, 1);
+  assert.equal(chamadas[0].metodo, 'editMessageText');
+  assert.match(chamadas[0].dados.text, /FUTURO CLIENTE REVERTIDO/);
+  assert.match(chamadas[0].dados.text, /não está mais disponível para encaminhamento/);
+  assert.deepEqual(chamadas[0].dados.reply_markup, { inline_keyboard: [] });
+});
+
+test('ignora atualizacao do Telegram quando a publicacao original nao foi localizada', async () => {
+  assert.deepEqual(await atualizarMensagemFuturoClienteRevertido({}, { id: 15 }), {
+    atualizado: false,
+    motivo: 'mensagem_telegram_nao_encontrada'
+  });
 });
 
 test('monta notificacao de venda destacando origem na sondagem da primeira ligacao', () => {

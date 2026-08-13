@@ -267,6 +267,10 @@ function montarMensagemFuturoCliente(linha = {}) {
   ].join('\n');
 }
 
+function montarMensagemFuturoClienteRevertido(linha = {}) {
+  return `❌ FUTURO CLIENTE REVERTIDO\n\nEste contato foi revertido no CRM e não está mais disponível para encaminhamento.\n\n${montarMensagemFuturoCliente(linha)}`.slice(0, 4096);
+}
+
 async function enviarFuturoCliente(linha) {
   const chatId = obterChatId('TELEGRAM_FUTUROS_CLIENTES_CHAT_ID');
   if (!tokenConfigurado() || !chatId) return { enviado: false, motivo: 'telegram_nao_configurado' };
@@ -278,6 +282,23 @@ async function enviarFuturoCliente(linha) {
     reply_markup: { inline_keyboard: [[{ text: 'Encaminhar', callback_data: `fc:selecionar:${linha.id}` }]] }
   });
   return { enviado: true, message_id: resultado?.message_id || null };
+}
+
+async function atualizarMensagemFuturoClienteRevertido(publicacao, linha, opcoes = {}) {
+  const chatId = String(publicacao?.telegram_chat_id || '').trim();
+  const messageId = String(publicacao?.telegram_message_id || '').trim();
+  if (!chatId || !messageId) return { atualizado: false, motivo: 'mensagem_telegram_nao_encontrada' };
+
+  const chamar = opcoes.chamarApi || chamarApi;
+  await chamar('editMessageText', {
+    chat_id: chatId,
+    message_id: messageId,
+    text: montarMensagemFuturoClienteRevertido(linha),
+    parse_mode: 'Markdown',
+    disable_web_page_preview: true,
+    reply_markup: { inline_keyboard: [] }
+  });
+  return { atualizado: true };
 }
 
 async function enviarResumoVendas(texto) {
@@ -307,6 +328,7 @@ async function enviarVenda(venda) {
 
 module.exports = {
   enviarFuturoCliente,
+  atualizarMensagemFuturoClienteRevertido,
   enviarResumoVendas,
   enviarVenda,
   chamarApi,
@@ -316,6 +338,7 @@ module.exports = {
     formatarMoeda,
     formatarTelefone,
     montarMensagemFuturoCliente,
+    montarMensagemFuturoClienteRevertido,
     montarMensagemVenda,
     montarMensagensVenda,
     dividirTextoTelegram,

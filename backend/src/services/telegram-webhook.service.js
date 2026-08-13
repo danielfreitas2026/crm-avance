@@ -3,6 +3,7 @@ const db = require('../database/connection');
 const notificacaoService = require('./notificacao.service');
 const telegramService = require('./telegram.service');
 const leadDistribuicaoService = require('./lead-distribuicao.service');
+const leadTelegramPublicacaoService = require('./lead-telegram-publicacao.service');
 
 function grupoAutorizado(chatId) {
   return String(chatId || '') === String(process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID || '').trim();
@@ -95,6 +96,10 @@ async function processarCallback(query) {
   if (!grupoAutorizado(query?.message?.chat?.id)) return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: 'Este grupo nao pode encaminhar futuros clientes.', show_alert: true });
   const [, acao, linhaId, vendedoraId] = callbackPartes(query.data);
   if (acao === 'selecionar') {
+    await leadTelegramPublicacaoService.registrar(Number(linhaId), {
+      telegram_chat_id: query.message.chat.id,
+      telegram_message_id: query.message.message_id
+    });
     const vendedoras = await listarVendedoras();
     await telegramService.chamarApi('editMessageReplyMarkup', { chat_id: query.message.chat.id, message_id: query.message.message_id, reply_markup: { inline_keyboard: botoesVendedoras(vendedoras, linhaId) } });
     return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: 'Selecione a vendedora.' });

@@ -20,6 +20,7 @@ const { restaurarZerosCnpj } = require('./cnpj.service');
 const telegramService = require('./telegram.service');
 const leadDistribuicaoService = require('./lead-distribuicao.service');
 const leadEnriquecimentoService = require('./lead-enriquecimento.service');
+const leadTelegramPublicacaoService = require('./lead-telegram-publicacao.service');
 
 const IMPORT_DIR = process.env.LEAD_IMPORT_DIR
   ? path.resolve(process.env.LEAD_IMPORT_DIR)
@@ -2592,7 +2593,10 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
   const linhaFormatada = formatarLinha(atualizada);
   if (deveNotificarTelegram) {
     try {
-      await telegramService.enviarFuturoCliente(linhaFormatada);
+      const publicacao = await telegramService.enviarFuturoCliente(linhaFormatada);
+      if (publicacao.enviado && publicacao.message_id) {
+        await leadTelegramPublicacaoService.registrar(linhaId, publicacao);
+      }
     } catch (error) {
       // A indisponibilidade do Telegram nao pode desfazer o cadastro do lead.
       console.error('Erro ao notificar futuro cliente no Telegram:', {
@@ -2669,7 +2673,14 @@ async function reverterFuturoClienteLead(linhaId, usuarioId, opcoes = {}) {
   await desativarAlertasObrigatoriosDaLinha(linha.id);
   await sincronizarNotificacoesRetornoLeads();
 
-  return buscarLinhaFormatada(linha.id);
+  const resultado = await buscarLinhaFormatada(linha.id);
+  try {
+    await leadTelegramPublicacaoService.marcarRevertido(resultado.linha);
+  } catch (error) {
+    // A reversao no CRM permanece valida mesmo se o Telegram estiver indisponivel.
+    console.error('Erro ao marcar futuro cliente revertido no Telegram:', error.message);
+  }
+  return resultado;
 }
 
 /**
