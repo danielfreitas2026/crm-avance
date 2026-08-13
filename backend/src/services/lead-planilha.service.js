@@ -971,14 +971,16 @@ function aplicarFiltrosQuery(query, filtros = {}, opcoes = {}) {
     query.where('futuro_cliente', true).whereNull('futuro_cliente_excluido_em')
       .where(builder => builder.whereNotNull('venda_id').orWhere('status_operacional', 'vendido'));
   } else if (status === 'venda_recusada') {
-    query.where('futuro_cliente', true).whereNull('futuro_cliente_excluido_em')
-      .where('status_operacional', 'perdido');
+    aplicarFiltroVendaRecusada(query);
   } else if (status === 'lixeira') {
     query.where('futuro_cliente', true).whereNotNull('futuro_cliente_excluido_em');
   } else if (status === 'pendente') {
     query.where('futuro_cliente', false)
       .where(builder => builder.whereNull('cliente_recusou').orWhere('cliente_recusou', false))
       .where(builder => builder.whereNull('chamada_nao_atendida').orWhere('chamada_nao_atendida', false))
+      .whereNull('venda_recusada_em')
+      .whereNull('venda_recusada_motivo')
+      .whereNot('status_operacional', 'perdido')
       .whereNull('retorno_agendado_em');
   }
   if (filtros.busca) {
@@ -1010,6 +1012,16 @@ function aplicarFiltrosQuery(query, filtros = {}, opcoes = {}) {
     else if (filtro.op === 'ends') query.whereRaw(`${expr} LIKE ?`, [`%${valor}`]);
     else query.whereRaw(`${expr} LIKE ?`, [`%${valor}%`]);
   });
+}
+
+/** Venda recusada e um desfecho proprio, independente de futuro_cliente. */
+function aplicarFiltroVendaRecusada(query) {
+  return query.where(builder => builder
+    .whereNotNull('venda_recusada_em')
+    .orWhereNotNull('venda_recusada_motivo')
+    .orWhere(legado => legado
+      .where('status_operacional', 'perdido')
+      .where(cliente => cliente.whereNull('cliente_recusou').orWhere('cliente_recusou', false))));
 }
 
 /**
@@ -3602,6 +3614,8 @@ module.exports = {
   restaurarFuturoCliente,
   excluirFuturoClienteDefinitivo,
   _internals: {
+    aplicarFiltrosQuery,
+    aplicarFiltroVendaRecusada,
     combinarMetricasEnvio,
     deduplicarIndicacoesEnvio,
     filtrosPermitemIndicacaoPendente,

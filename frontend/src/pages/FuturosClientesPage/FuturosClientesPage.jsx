@@ -32,6 +32,12 @@ import { calcularProgresso } from '../../utils/progresso';
 import { listarOperadoras } from '../../services/config.service';
 import { buscarGooglePlacesFuturosClientes, consultarCnpj } from '../../services/cnpj.service';
 import FuturoClienteAceiteModal from './FuturoClienteAceiteModal';
+import {
+  getClasseLinhaLead,
+  isFuturoClienteAtivo,
+  isFuturoClienteVendido,
+  isVendaRecusada
+} from './lead-status';
 import './FuturosClientesPage.css';
 
 // ─── Helpers de colunas de lead ──────────────────────────────────────────────
@@ -530,13 +536,6 @@ function isFuturoClienteNaLixeira(linha) {
   return Boolean(linha?.futuro_cliente && linha?.futuro_cliente_excluido_em);
 }
 
-/**
- * Verifica se futuro cliente ativo atende a condicao esperada.
- */
-function isFuturoClienteAtivo(linha) {
-  return Boolean(linha?.futuro_cliente && !linha?.futuro_cliente_excluido_em);
-}
-
 function normalizarDataAtivacaoInput(valor) {
   const texto = String(valor || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return texto;
@@ -561,12 +560,8 @@ function formatarWhatsappInput(valor) {
 }
 
 
-function isFuturoClienteVendido(linha) {
-  return Boolean(isFuturoClienteAtivo(linha) && (linha?.venda_id || linha?.status_operacional === 'vendido'));
-}
-
 function isFuturoClienteRecusado(linha) {
-  return Boolean(isFuturoClienteAtivo(linha) && linha?.status_operacional === 'perdido');
+  return Boolean(isFuturoClienteAtivo(linha) && isVendaRecusada(linha));
 }
 
 function isRetornoFuturoClienteVencido(valor, agora = Date.now()) {
@@ -641,6 +636,20 @@ function renderLeadStatus(linha, agora = Date.now()) {
     );
   }
 
+  if (isVendaRecusada(linha) && !isFuturoClienteAtivo(linha)) {
+    return (
+      <span className="lead-status-cell">
+        <span className="pill lead-status-pill refused" title={linha.venda_recusada_motivo || ''}>
+          <span className="pill-dot"></span>
+          Venda recusada
+        </span>
+        {linha.venda_recusada_em && (
+          <span className="lead-status-return">Em {formatarDataHora(linha.venda_recusada_em)}</span>
+        )}
+      </span>
+    );
+  }
+
   if (linha.chamada_nao_atendida && !isFuturoClienteVendido(linha) && !isFuturoClienteRecusado(linha)) {
     return (
       <span className="lead-status-cell">
@@ -707,6 +716,10 @@ function renderLeadStatus(linha, agora = Date.now()) {
   }
 
   return <span className="muted">-</span>;
+}
+
+export function LeadStatusMailing({ linha, agora }) {
+  return renderLeadStatus(linha, agora);
 }
 
 /**
@@ -1116,7 +1129,7 @@ function EnriquecimentoAutomatico({ enriquecimento }) {
 
 function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda, onFuturoClienteSalvo, onLinhaAtualizada }) {
   const vendaRegistrada = isFuturoClienteVendido(linha);
-  const vendaRecusada = isFuturoClienteRecusado(linha);
+  const vendaRecusada = isVendaRecusada(linha);
   const clienteRecusou = Boolean(linha.cliente_recusou);
   const [etapa, setEtapa] = useState('opcoes'); // 'opcoes' | 'venda' | 'futuro'
   const [notas, setNotas] = useState('');
@@ -2142,7 +2155,7 @@ function LeadsRecebidosView({ agora }) {
                 <tr><td colSpan={totalColunasTabela} className="muted" style={{ textAlign: 'center', padding: 40 }}>{selecionados.length ? 'Nenhum cliente disponivel neste mailing.' : 'Selecione uma planilha recebida.'}</td></tr>
               ) : (
                 linhas.map(linha => (
-                  <tr key={linha.id} className={isFuturoClienteVendido(linha) ? 'lead-row-vendido' : (isFuturoClienteRecusado(linha) ? 'lead-row-recusado' : (isFuturoClienteAtivo(linha) ? 'lead-row-futuro' : ''))}>
+                  <tr key={linha.id} className={getClasseLinhaLead(linha)}>
                     <td data-label="Envio" className="m-primary">
                       <span className="tag" title={linha.envio?.nome || ''}>{linha.envio?.nome || '-'}</span>
                       <details className="mobile-row-drawer">
@@ -2160,7 +2173,7 @@ function LeadsRecebidosView({ agora }) {
                         </dl>
                       </details>
                     </td>
-                    <td data-label="Status" className="m-meta">{renderLeadStatus(linha, agora)}</td>
+                    <td data-label="Status" className="m-meta"><LeadStatusMailing linha={linha} agora={agora} /></td>
                     {exibirColunaAcoes && (
                       <td data-label="Adicionar" className="m-actions">
                         <button
@@ -2225,7 +2238,7 @@ function LeadsRecebidosView({ agora }) {
  */
 function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVenda }) {
   const vendaRegistrada = isFuturoClienteVendido(linha);
-  const vendaRecusada = isFuturoClienteRecusado(linha);
+  const vendaRecusada = isVendaRecusada(linha);
   const [etapa, setEtapa] = useState('ver'); // 'ver' | 'venda'
   const [notas, setNotas] = useState(linha.futuro_cliente_notas || '');
   const [motivoRecusa, setMotivoRecusa] = useState(linha.venda_recusada_motivo || '');
