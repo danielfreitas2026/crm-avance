@@ -141,6 +141,7 @@ const FUNIL_PRIORIDADES = ['alta', 'media', 'baixa'];
 const PROMESSA_CUMPRIDA_OPCOES = ['pendente', 'sim', 'nao'];
 const CLIENTE_SOLICITOU_RESOLVIDO_OPCOES = ['sim', 'nao'];
 const ACAO_REVERSAO = 'venda.reversao_registrada';
+const FUSO_HORARIO_OPERACIONAL = 'America/Sao_Paulo';
 const CAMPOS_JSON_REVERSAO = new Set([
   'valores_unitarios_chips',
   'numeros_portados',
@@ -473,13 +474,66 @@ function normalizarData(valor) {
  */
 function obterDataAtualSaoPaulo(data = new Date()) {
   const partes = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
+    timeZone: FUSO_HORARIO_OPERACIONAL,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   }).formatToParts(data);
   const valores = Object.fromEntries(partes.map(({ type, value }) => [type, value]));
   return `${valores.year}-${valores.month}-${valores.day}`;
+}
+
+/**
+ * Monta a data usada para filtrar e ordenar vendas.
+ *
+ * As datas de historico sao armazenadas em UTC. CONVERT_TZ com o nome do fuso
+ * preserva a regra operacional; o fallback de menos tres horas cobre bancos
+ * MySQL sem as tabelas de fuso carregadas (os registros do CRM sao posteriores
+ * ao fim do horario de verao brasileiro).
+ */
+function montarExpressaoUltimaReversaoVenda(alias = 'vendas') {
+  return `(SELECT MAX(vh_data_efetiva.created_at)
+    FROM venda_historicos vh_data_efetiva
+    WHERE vh_data_efetiva.venda_id = ${alias}.id
+      AND vh_data_efetiva.acao = '${ACAO_REVERSAO}'
+      AND vh_data_efetiva.deleted_at IS NULL
+  )`;
+}
+
+function montarExpressaoDataEfetivaVenda(alias = 'vendas') {
+  const ultimaReversao = montarExpressaoUltimaReversaoVenda(alias);
+  return `COALESCE(DATE(COALESCE(
+    CONVERT_TZ(${ultimaReversao}, '+00:00', '${FUSO_HORARIO_OPERACIONAL}'),
+    DATE_SUB(${ultimaReversao}, INTERVAL 3 HOUR)
+  )), ${alias}.data_venda)`;
+}
+
+/** Aplica limites inclusivos sobre a data efetiva da venda. */
+function aplicarFiltrosDataEfetivaVenda(query, filtros = {}, dataLimite = null) {
+  const expressao = montarExpressaoDataEfetivaVenda('vendas');
+  const dataInicio = normalizarData(filtros.data_inicio);
+  const dataFim = normalizarData(filtros.data_fim);
+
+  if (dataInicio) {
+    query.whereRaw(`${expressao} >= ?`, [dataInicio]);
+  }
+
+  if (dataFim) {
+    query.whereRaw(`${expressao} <= ?`, [dataFim]);
+  }
+
+  if (dataLimite) {
+    query.whereRaw(`${expressao} >= ?`, [dataLimite]);
+  }
+
+  return expressao;
+}
+
+/** Ordena vendas pela data efetiva mais recente e usa o id como desempate. */
+function aplicarOrdenacaoDataEfetivaVenda(query, expressao = montarExpressaoDataEfetivaVenda('vendas')) {
+  return query
+    .orderByRaw(`${expressao} DESC`)
+    .orderBy('vendas.id', 'desc');
 }
 
 /**
@@ -2119,8 +2173,10 @@ async function usuarioPodeEditarVenda(id, usuarioId, opcoes = {}) {
  */
 async function listarVendas(filtros = {}, usuarioId) {
   const escopo = await buscarEscopoVendas(usuarioId);
+  const expressaoUltimaReversao = montarExpressaoUltimaReversaoVenda('vendas');
   const query = Venda.query()
     .select('vendas.*')
+    .select(Venda.knex().raw(`${expressaoUltimaReversao} as ultima_reversao_em`))
     .select(Venda.knex().raw(
       '(SELECT COUNT(*) FROM venda_arquivos va WHERE va.venda_id = vendas.id AND va.excluido_em IS NULL) as total_arquivos'
     ))
@@ -2131,9 +2187,7 @@ async function listarVendas(filtros = {}, usuarioId) {
     .modifyGraph('origemLead', builder => builder.select('id', 'primeira_ligacao_avaliacao', 'primeira_ligacao_avaliada_em'))
     .modifyGraph('historico', builder => builder.select('id', 'venda_id', 'status_novo', 'created_at').whereNotNull('status_novo').orderBy('created_at', 'asc').orderBy('id', 'asc'))
     .modifyGraph('aprovacaoSolicitacoes', builder => builder.select('id', 'venda_id', 'status', 'motivos', 'observacao_decisao', 'created_at').whereNot('status', 'obsoleta').orderBy('id', 'desc'))
-    .whereNull('excluido_em')
-    .orderBy('data_venda', 'desc')
-    .orderBy('id', 'desc');
+    .whereNull('excluido_em');
 
   aplicarEscopoVendas(query, usuarioId, escopo);
 
@@ -2195,17 +2249,11 @@ async function listarVendas(filtros = {}, usuarioId) {
     }
   }
 
-  if (filtros.data_inicio) {
-    query.where('data_venda', '>=', normalizarData(filtros.data_inicio));
-  }
-
-  if (filtros.data_fim) {
-    query.where('data_venda', '<=', normalizarData(filtros.data_fim));
-  }
-
-  if (escopo.limitarUltimos6Meses) {
-    query.where('data_venda', '>=', obterDataLimiteVendasRecentes());
-  }
+  const expressaoDataEfetiva = aplicarFiltrosDataEfetivaVenda(
+    query,
+    filtros,
+    escopo.limitarUltimos6Meses ? obterDataLimiteVendasRecentes() : null
+  );
 
   if (filtros.valor_min) {
     query.where('valor_total', '>=', parseValorMonetario(filtros.valor_min));
@@ -2243,6 +2291,8 @@ async function listarVendas(filtros = {}, usuarioId) {
         );
     });
   }
+
+  aplicarOrdenacaoDataEfetivaVenda(query, expressaoDataEfetiva);
 
   const paginar = filtros.page !== undefined || filtros.per_page !== undefined;
   const { page, perPage } = normalizarPaginacao(filtros);
@@ -4355,6 +4405,10 @@ module.exports = {
     montarPayload,
     montarAlteracoesReversao,
     anexarReversoesVenda,
+    aplicarFiltrosDataEfetivaVenda,
+    aplicarOrdenacaoDataEfetivaVenda,
+    montarExpressaoDataEfetivaVenda,
+    montarExpressaoUltimaReversaoVenda,
     validarMotivoExclusaoReversao,
     normalizarValorReversao,
     normalizarClienteSolicitouNumeros,

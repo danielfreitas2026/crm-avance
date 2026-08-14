@@ -12,6 +12,10 @@ const {
   montarAtribuicoesVendedorasVenda,
   montarAlteracoesReversao,
   anexarReversoesVenda,
+  aplicarFiltrosDataEfetivaVenda,
+  aplicarOrdenacaoDataEfetivaVenda,
+  montarExpressaoDataEfetivaVenda,
+  montarExpressaoUltimaReversaoVenda,
   validarMotivoExclusaoReversao,
   montarPayload,
   normalizarData,
@@ -28,6 +32,82 @@ const {
   validarVendedorasNosChips,
   vendaDeveAparecerNoFunil
 } = vendaService._internals;
+
+test('monta data efetiva com a ultima reversao ativa no fuso de Sao Paulo', () => {
+  const expressao = montarExpressaoDataEfetivaVenda('vendas');
+  const ultimaReversao = montarExpressaoUltimaReversaoVenda('vendas');
+
+  assert.match(ultimaReversao, /MAX\(vh_data_efetiva\.created_at\)/);
+  assert.match(ultimaReversao, /vh_data_efetiva\.acao = 'venda\.reversao_registrada'/);
+  assert.match(ultimaReversao, /vh_data_efetiva\.deleted_at IS NULL/);
+  assert.match(expressao, /America\/Sao_Paulo/);
+  assert.match(expressao, /vendas\.data_venda/);
+});
+
+test('aplica limites inclusivos e limite de escopo sobre a mesma data efetiva', () => {
+  const chamadas = [];
+  const query = {
+    whereRaw(sql, bindings) {
+      chamadas.push({ sql, bindings });
+      return this;
+    }
+  };
+
+  const expressao = aplicarFiltrosDataEfetivaVenda(query, {
+    data_inicio: '2026-08-01',
+    data_fim: '2026-08-31'
+  }, '2026-02-14');
+
+  assert.equal(chamadas.length, 3);
+  assert.deepEqual(chamadas.map(item => item.bindings), [
+    ['2026-08-01'],
+    ['2026-08-31'],
+    ['2026-02-14']
+  ]);
+  assert.equal(chamadas[0].sql, `${expressao} >= ?`);
+  assert.equal(chamadas[1].sql, `${expressao} <= ?`);
+  assert.equal(chamadas[2].sql, `${expressao} >= ?`);
+});
+
+test('aceita filtros de data efetiva com apenas um dos limites', () => {
+  const chamadasInicio = [];
+  const chamadasFim = [];
+  const criarQuery = chamadas => ({
+    whereRaw(sql, bindings) {
+      chamadas.push({ sql, bindings });
+      return this;
+    }
+  });
+
+  aplicarFiltrosDataEfetivaVenda(criarQuery(chamadasInicio), { data_inicio: '2026-08-01' });
+  aplicarFiltrosDataEfetivaVenda(criarQuery(chamadasFim), { data_fim: '2026-08-31' });
+
+  assert.deepEqual(chamadasInicio.map(item => item.bindings), [['2026-08-01']]);
+  assert.deepEqual(chamadasFim.map(item => item.bindings), [['2026-08-31']]);
+  assert.match(chamadasInicio[0].sql, />= \?$/);
+  assert.match(chamadasFim[0].sql, /<= \?$/);
+});
+
+test('ordena sempre pela data efetiva e usa o id como desempate', () => {
+  const chamadas = [];
+  const query = {
+    orderByRaw(sql) {
+      chamadas.push(['raw', sql]);
+      return this;
+    },
+    orderBy(coluna, direcao) {
+      chamadas.push(['column', coluna, direcao]);
+      return this;
+    }
+  };
+
+  aplicarOrdenacaoDataEfetivaVenda(query, 'data_efetiva_teste');
+
+  assert.deepEqual(chamadas, [
+    ['raw', 'data_efetiva_teste DESC'],
+    ['column', 'vendas.id', 'desc']
+  ]);
+});
 
 test('normaliza datas validas e rejeita datas invalidas', () => {
   assert.equal(normalizarData('2026-05-18'), '2026-05-18');
