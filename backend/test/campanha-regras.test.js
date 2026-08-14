@@ -92,6 +92,10 @@ test('filtra chips novos, portabilidades ou ambos dentro da mesma venda', () => 
   assert.equal(calcularValorCampanha({ categoria: 'valor_monetario', regras: regra('portabilidade') }, [venda], []), 80);
   assert.equal(calcularValorCampanha({ categoria: 'valor_monetario', regras: regra('ambos') }, [venda], []), 180);
   assert.equal(calcularValorCampanha({ categoria: 'venda', regras: regra('portabilidade') }, [venda], []), 1);
+  assert.equal(calcularValorCampanha({
+    categoria: 'valor_monetario',
+    regras: [{ operadora_id: 1, publico_base: 'ambos', tipo: 'novo_portabilidade', tipo_chip: 'ambos' }]
+  }, [venda], []), 180);
 });
 
 test('mantem ambos como padrao e nao duplica itens atendidos por regras diferentes', () => {
@@ -115,11 +119,13 @@ test('normaliza tipo de chip e sincroniza tipos considerados restritivos', () =>
   assert.deepEqual(normalizarRegras({ regras: [
     { operadora_id: null, publico_base: 'ambos', tipo: 'categoria' },
     { operadora_id: 1, publico_base: 'base', tipo: 'chip_novo', tipo_chip: 'portabilidade' },
-    { operadora_id: 2, publico_base: 'nao_base', tipo: 'portabilidade', tipo_chip: 'novo' }
+    { operadora_id: 2, publico_base: 'nao_base', tipo: 'portabilidade', tipo_chip: 'novo' },
+    { operadora_id: 3, publico_base: 'ambos', tipo: 'novo_portabilidade', tipo_chip: 'novo' }
   ] }, 'venda', [], 'ambos'), [
     { operadora_id: null, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'ambos' },
     { operadora_id: 1, publico_base: 'base', tipo: 'chip_novo', tipo_chip: 'novo' },
-    { operadora_id: 2, publico_base: 'nao_base', tipo: 'portabilidade', tipo_chip: 'portabilidade' }
+    { operadora_id: 2, publico_base: 'nao_base', tipo: 'portabilidade', tipo_chip: 'portabilidade' },
+    { operadora_id: 3, publico_base: 'ambos', tipo: 'novo_portabilidade', tipo_chip: 'ambos' }
   ]);
 });
 

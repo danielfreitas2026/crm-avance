@@ -450,6 +450,7 @@ function itemAtendeTipo(item, venda, tipo, categoriaCampanha) {
   const categoria = tipo === 'categoria' ? categoriaCampanha : tipo;
   if (categoria === 'chip_novo') return item.tipo === 'novo';
   if (categoria === 'portabilidade') return item.tipo === 'portabilidade';
+  if (categoria === 'novo_portabilidade') return item.tipo === 'novo' || item.tipo === 'portabilidade';
   if (categoria === 'internet') return normalizarTexto(venda.servico) === 'internet';
   return true;
 }

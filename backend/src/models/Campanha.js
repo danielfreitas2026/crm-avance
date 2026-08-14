@@ -3,7 +3,7 @@ const db = require('../database/connection');
 const PERIODOS_VALIDOS = ['personalizado'];
 const CATEGORIAS_VALIDAS = ['registro_cliente', 'venda', 'chip_novo', 'portabilidade', 'internet', 'valor_monetario', 'outros'];
 const PUBLICOS_BASE_VALIDOS = ['ambos', 'base', 'nao_base'];
-const TIPOS_REGRA_VALIDOS = ['categoria', 'chip_novo', 'portabilidade', 'internet'];
+const TIPOS_REGRA_VALIDOS = ['categoria', 'chip_novo', 'portabilidade', 'novo_portabilidade', 'internet'];
 const TIPOS_CHIP_REGRA_VALIDOS = ['ambos', 'novo', 'portabilidade'];
 
 function isGift(campanha) {
@@ -50,6 +50,8 @@ function normalizarRegras(campanha, categoria, operadoraIds, publicoBase) {
         ? 'novo'
         : tipo === 'portabilidade'
           ? 'portabilidade'
+          : tipo === 'novo_portabilidade'
+            ? 'ambos'
           : (TIPOS_CHIP_REGRA_VALIDOS.includes(regra?.tipo_chip) ? regra.tipo_chip : 'ambos');
     const chave = `${operadoraId || 'todas'}:${publico}:${tipo}:${tipoChip}`;
     if (vistas.has(chave)) return regras;

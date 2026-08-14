@@ -168,11 +168,15 @@ describe('AdminCampanhasPage - regras individuais', () => {
     expect(tipoChip).toHaveValue('portabilidade');
     expect(tipoChip).toBeDisabled();
 
+    await user.selectOptions(tipoConsiderado, 'novo_portabilidade');
+    expect(tipoChip).toHaveValue('ambos');
+    expect(tipoChip).toBeDisabled();
+
     await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
     await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalledTimes(1));
     expect(api.updateCampanhas.mock.calls[0][0][0].regras[0]).toMatchObject({
-      tipo: 'portabilidade',
-      tipo_chip: 'portabilidade'
+      tipo: 'novo_portabilidade',
+      tipo_chip: 'ambos'
     });
   });
 
