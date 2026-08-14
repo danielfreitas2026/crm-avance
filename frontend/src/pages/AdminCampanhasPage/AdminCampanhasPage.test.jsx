@@ -131,12 +131,13 @@ describe('AdminCampanhasPage - regras individuais', () => {
 
     const operadoras = screen.getAllByLabelText('Operadora');
     const publicos = screen.getAllByLabelText('Público');
-    const tipos = screen.getAllByLabelText('Tipo considerado');
+    const tiposChip = screen.getAllByLabelText('Tipo de chip');
     expect(operadoras).toHaveLength(2);
+    expect(tiposChip[1]).toHaveValue('ambos');
 
     await user.selectOptions(operadoras[1], '2');
     await user.selectOptions(publicos[1], 'nao_base');
-    await user.selectOptions(tipos[1], 'portabilidade');
+    await user.selectOptions(tiposChip[1], 'portabilidade');
     await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
 
     await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalledTimes(1));
@@ -144,9 +145,47 @@ describe('AdminCampanhasPage - regras individuais', () => {
     expect(campanhaSalva.regras[1]).toMatchObject({
       operadora_id: 2,
       publico_base: 'nao_base',
-      tipo: 'portabilidade'
+      tipo: 'categoria',
+      tipo_chip: 'portabilidade'
     });
 
+  });
+
+  it('sincroniza e bloqueia o tipo de chip para tipos considerados restritivos', async () => {
+    const user = userEvent.setup();
+    render(<AdminCampanhasPage />);
+
+    const tipoConsiderado = await screen.findByLabelText('Tipo considerado');
+    const tipoChip = screen.getByLabelText('Tipo de chip');
+    expect(tipoChip).toHaveValue('ambos');
+    expect(tipoChip).not.toBeDisabled();
+
+    await user.selectOptions(tipoConsiderado, 'chip_novo');
+    expect(tipoChip).toHaveValue('novo');
+    expect(tipoChip).toBeDisabled();
+
+    await user.selectOptions(tipoConsiderado, 'portabilidade');
+    expect(tipoChip).toHaveValue('portabilidade');
+    expect(tipoChip).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+    await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalledTimes(1));
+    expect(api.updateCampanhas.mock.calls[0][0][0].regras[0]).toMatchObject({
+      tipo: 'portabilidade',
+      tipo_chip: 'portabilidade'
+    });
+  });
+
+  it('desabilita o tipo de chip em campanhas de registro de cliente', async () => {
+    api.getCampanhas.mockResolvedValue([campanhaBase({
+      categoria: 'registro_cliente',
+      regras: [{ operadora_id: null, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'novo' }]
+    })]);
+    render(<AdminCampanhasPage />);
+
+    const tipoChip = await screen.findByLabelText('Tipo de chip');
+    expect(tipoChip).toHaveValue('ambos');
+    expect(tipoChip).toBeDisabled();
   });
 
   it('remove uma regra adicional sem permitir excluir a ultima', async () => {

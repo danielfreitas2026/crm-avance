@@ -4,6 +4,7 @@ const PERIODOS_VALIDOS = ['personalizado'];
 const CATEGORIAS_VALIDAS = ['registro_cliente', 'venda', 'chip_novo', 'portabilidade', 'internet', 'valor_monetario', 'outros'];
 const PUBLICOS_BASE_VALIDOS = ['ambos', 'base', 'nao_base'];
 const TIPOS_REGRA_VALIDOS = ['categoria', 'chip_novo', 'portabilidade', 'internet'];
+const TIPOS_CHIP_REGRA_VALIDOS = ['ambos', 'novo', 'portabilidade'];
 
 function isGift(campanha) {
   return campanha.is_gift === true || campanha.is_gift === 1 || campanha.is_gift === '1';
@@ -43,10 +44,17 @@ function normalizarRegras(campanha, categoria, operadoraIds, publicoBase) {
     const tipo = categoria === 'registro_cliente'
       ? 'categoria'
       : (TIPOS_REGRA_VALIDOS.includes(regra?.tipo) ? regra.tipo : 'categoria');
-    const chave = `${operadoraId || 'todas'}:${publico}:${tipo}`;
+    const tipoChip = categoria === 'registro_cliente'
+      ? 'ambos'
+      : tipo === 'chip_novo'
+        ? 'novo'
+        : tipo === 'portabilidade'
+          ? 'portabilidade'
+          : (TIPOS_CHIP_REGRA_VALIDOS.includes(regra?.tipo_chip) ? regra.tipo_chip : 'ambos');
+    const chave = `${operadoraId || 'todas'}:${publico}:${tipo}:${tipoChip}`;
     if (vistas.has(chave)) return regras;
     vistas.add(chave);
-    regras.push({ operadora_id: operadoraId, publico_base: publico, tipo });
+    regras.push({ operadora_id: operadoraId, publico_base: publico, tipo, tipo_chip: tipoChip });
     return regras;
   }, []);
 }
@@ -91,6 +99,7 @@ class Campanha {
   static get categoriasValidas() { return CATEGORIAS_VALIDAS; }
   static get publicosBaseValidos() { return PUBLICOS_BASE_VALIDOS; }
   static get tiposRegraValidos() { return TIPOS_REGRA_VALIDOS; }
+  static get tiposChipRegraValidos() { return TIPOS_CHIP_REGRA_VALIDOS; }
 
   static async anexarRelacoes(campanhas) {
     if (!campanhas.length) return campanhas;
@@ -102,7 +111,7 @@ class Campanha {
         .whereIn('cp.campanha_id', ids).select('cp.campanha_id', 'u.id', 'u.nome', 'u.email', 'u.foto_perfil', 'u.ativo'),
       db('campanha_regras as cr').leftJoin('operadoras as o', 'cr.operadora_id', 'o.id')
         .whereIn('cr.campanha_id', ids)
-        .select('cr.id', 'cr.campanha_id', 'cr.operadora_id', 'cr.publico_base', 'cr.tipo', 'o.nome as operadora_nome')
+        .select('cr.id', 'cr.campanha_id', 'cr.operadora_id', 'cr.publico_base', 'cr.tipo', 'cr.tipo_chip', 'o.nome as operadora_nome')
         .orderBy('cr.id', 'asc'),
       db('campanha_vendas_excecoes as cve')
         .join('vendas as v', 'cve.venda_id', 'v.id')
@@ -132,7 +141,8 @@ class Campanha {
       operadora_id: r.operadora_id ? Number(r.operadora_id) : null,
       operadora_nome: r.operadora_nome || null,
       publico_base: r.publico_base,
-      tipo: r.tipo
+      tipo: r.tipo,
+      tipo_chip: r.tipo_chip || 'ambos'
     }));
     const excecoesPorCampanha = porCampanha(vendasExcecao, r => ({
       id: Number(r.id),
@@ -158,7 +168,8 @@ class Campanha {
         operadora_id: c.operadora_id ? Number(c.operadora_id) : null,
         operadora_nome: c.operadora_nome || null,
         publico_base: c.categoria === 'registro_cliente' ? 'ambos' : (c.publico_base || 'ambos'),
-        tipo: 'categoria'
+        tipo: 'categoria',
+        tipo_chip: 'ambos'
       }],
       vendas_excecao: excecoesPorCampanha[c.id] || [],
       venda_excecao_ids: (excecoesPorCampanha[c.id] || []).map(venda => Number(venda.id)),
@@ -279,5 +290,5 @@ class Campanha {
   }
 }
 
-Campanha._internals = { normalizarDataISO, periodoFoiAlterado };
+Campanha._internals = { normalizarDataISO, normalizarRegras, periodoFoiAlterado };
 module.exports = Campanha;

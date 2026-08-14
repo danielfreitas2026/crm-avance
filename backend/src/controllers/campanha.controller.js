@@ -112,6 +112,7 @@ function validarCampanha(campanha) {
   const regraInvalida = (campanha.regras || []).find(regra => (
     !Campanha.publicosBaseValidos.includes(regra?.publico_base)
     || !Campanha.tiposRegraValidos.includes(regra?.tipo)
+    || (regra?.tipo_chip !== undefined && !Campanha.tiposChipRegraValidos.includes(regra.tipo_chip))
     || (regra?.operadora_id !== null && regra?.operadora_id !== ''
       && (!Number.isInteger(Number(regra.operadora_id)) || Number(regra.operadora_id) <= 0))
   ));
@@ -440,7 +441,8 @@ function regrasCampanha(campanha) {
   return (ids.length ? ids : [null]).map(operadora_id => ({
     operadora_id,
     publico_base: campanha.categoria === 'registro_cliente' ? 'ambos' : (campanha.publico_base || 'ambos'),
-    tipo: 'categoria'
+    tipo: 'categoria',
+    tipo_chip: 'ambos'
   }));
 }
 
@@ -450,6 +452,10 @@ function itemAtendeTipo(item, venda, tipo, categoriaCampanha) {
   if (categoria === 'portabilidade') return item.tipo === 'portabilidade';
   if (categoria === 'internet') return normalizarTexto(venda.servico) === 'internet';
   return true;
+}
+
+function itemAtendeTipoChip(item, tipoChip) {
+  return !tipoChip || tipoChip === 'ambos' || item.tipo === tipoChip;
 }
 
 /** Retorna a união dos itens atendidos pelas regras OU, sem duplicá-los. */
@@ -463,6 +469,7 @@ function itensElegiveisCampanha(campanha, venda) {
       const operadoraId = Number(regra.operadora_id) || null;
       if (operadoraId && operadoraId !== Number(item.operadora_id)) continue;
       if (!itemAtendeTipo(item, venda, regra.tipo || 'categoria', campanha.categoria)) continue;
+      if (!itemAtendeTipoChip(item, regra.tipo_chip || 'ambos')) continue;
       chaves.add(item.chave);
     }
   }

@@ -17,7 +17,7 @@ const {
 } = campanhaController.__testables;
 const { intervaloCiclo } = require('../src/database/migrations/20260812130000_add_periodo_fixo_campanhas')._internals;
 const { montarVinculos } = require('../src/database/migrations/20260812140000_materialize_campanha_participantes')._internals;
-const { periodoFoiAlterado } = Campanha._internals;
+const { normalizarRegras, periodoFoiAlterado } = Campanha._internals;
 
 const item = (quantidade, tipo_linha, operadora_id, valor_unitario = 50) => ({
   quantidade, tipo_linha, operadora_id, valor_unitario
@@ -80,6 +80,49 @@ test('soma somente linhas e valores dos itens elegiveis', () => {
   assert.equal(calcularValorCampanha({ categoria: 'valor_monetario', regras: regraVivo }, [venda], []), 80);
 });
 
+test('filtra chips novos, portabilidades ou ambos dentro da mesma venda', () => {
+  const venda = {
+    cliente_da_base: false,
+    valor_total: 180,
+    valores_unitarios_chips: [item(2, 'novo', 1, 50), item(1, 'portabilidade', 1, 80)]
+  };
+  const regra = tipo_chip => [{ operadora_id: 1, publico_base: 'ambos', tipo: 'categoria', tipo_chip }];
+
+  assert.equal(calcularValorCampanha({ categoria: 'valor_monetario', regras: regra('novo') }, [venda], []), 100);
+  assert.equal(calcularValorCampanha({ categoria: 'valor_monetario', regras: regra('portabilidade') }, [venda], []), 80);
+  assert.equal(calcularValorCampanha({ categoria: 'valor_monetario', regras: regra('ambos') }, [venda], []), 180);
+  assert.equal(calcularValorCampanha({ categoria: 'venda', regras: regra('portabilidade') }, [venda], []), 1);
+});
+
+test('mantem ambos como padrao e nao duplica itens atendidos por regras diferentes', () => {
+  const venda = {
+    cliente_da_base: false,
+    valores_unitarios_chips: [item(2, 'novo', 1), item(3, 'portabilidade', 1)]
+  };
+  const campanha = {
+    categoria: 'valor_monetario',
+    regras: [
+      { operadora_id: 1, publico_base: 'ambos', tipo: 'categoria' },
+      { operadora_id: 1, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'novo' }
+    ]
+  };
+
+  assert.equal(itensElegiveisCampanha(campanha, venda).length, 2);
+  assert.equal(calcularValorCampanha(campanha, [venda], []), 250);
+});
+
+test('normaliza tipo de chip e sincroniza tipos considerados restritivos', () => {
+  assert.deepEqual(normalizarRegras({ regras: [
+    { operadora_id: null, publico_base: 'ambos', tipo: 'categoria' },
+    { operadora_id: 1, publico_base: 'base', tipo: 'chip_novo', tipo_chip: 'portabilidade' },
+    { operadora_id: 2, publico_base: 'nao_base', tipo: 'portabilidade', tipo_chip: 'novo' }
+  ] }, 'venda', [], 'ambos'), [
+    { operadora_id: null, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'ambos' },
+    { operadora_id: 1, publico_base: 'base', tipo: 'chip_novo', tipo_chip: 'novo' },
+    { operadora_id: 2, publico_base: 'nao_base', tipo: 'portabilidade', tipo_chip: 'portabilidade' }
+  ]);
+});
+
 test('usa campos legados quando a venda nao possui itens detalhados', () => {
   const campanha = {
     categoria: 'portabilidade',
@@ -132,6 +175,8 @@ test('valida datas reais e ordem do periodo fixo', () => {
   assert.equal(dataValidaISO('2026-02-29'), false);
   assert.match(validarCampanha({ ...base, data_fim: '2026-02-29' }), /datas inicial e final válidas/i);
   assert.match(validarCampanha({ ...base, data_inicio: '2026-09-01' }), /anterior ou igual/i);
+  assert.equal(validarCampanha({ ...base, regras: [{ operadora_id: null, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'novo' }] }), null);
+  assert.match(validarCampanha({ ...base, regras: [{ operadora_id: null, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'invalido' }] }), /regra de elegibilidade inválida/i);
 });
 
 test('resolve estados e transforma fim inclusivo em limite exclusivo', () => {

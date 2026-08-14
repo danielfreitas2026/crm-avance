@@ -9,8 +9,9 @@ import './AdminCampanhasPage.css';
 const CATEGORIAS = [['registro_cliente', 'Registro de cliente'], ['venda', 'Venda'], ['chip_novo', 'Chip novo'], ['portabilidade', 'Portabilidade'], ['internet', 'Internet'], ['valor_monetario', 'Valor em vendas'], ['outros', 'Outros']];
 const PUBLICOS = [['ambos', 'Clientes base e não base'], ['base', 'Somente clientes base'], ['nao_base', 'Somente clientes não base']];
 const TIPOS_REGRA = [['categoria', 'Categoria da campanha'], ['chip_novo', 'Chip novo'], ['portabilidade', 'Portabilidade'], ['internet', 'Internet']];
+const TIPOS_CHIP = [['novo', 'Novo'], ['portabilidade', 'Portabilidade'], ['ambos', 'Novo e portabilidade']];
 const alternarId = (ids, id) => ids.map(Number).includes(Number(id)) ? ids.filter(item => Number(item) !== Number(id)) : [...ids, Number(id)];
-const regraPadrao = () => ({ operadora_id: null, publico_base: 'ambos', tipo: 'categoria' });
+const regraPadrao = () => ({ operadora_id: null, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'ambos' });
 const hojeISO = () => {
   const partes = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -19,12 +20,22 @@ const hojeISO = () => {
 };
 
 const normalizarRegrasTela = campanha => {
-  if (Array.isArray(campanha.regras) && campanha.regras.length) return campanha.regras;
+  if (Array.isArray(campanha.regras) && campanha.regras.length) return campanha.regras.map(regra => ({
+    ...regra,
+    tipo_chip: campanha.categoria === 'registro_cliente'
+      ? 'ambos'
+      : regra.tipo === 'chip_novo'
+        ? 'novo'
+        : regra.tipo === 'portabilidade'
+          ? 'portabilidade'
+          : (regra.tipo_chip || 'ambos')
+  }));
   const ids = campanha.operadora_ids || [];
   return (ids.length ? ids : [null]).map(operadora_id => ({
     operadora_id,
     publico_base: campanha.categoria === 'registro_cliente' ? 'ambos' : (campanha.publico_base || 'ambos'),
-    tipo: 'categoria'
+    tipo: 'categoria',
+    tipo_chip: 'ambos'
   }));
 };
 
@@ -160,7 +171,7 @@ function AdminCampanhasPage() {
     const next = { ...c, [field]: value };
     if (field === 'categoria' && value === 'registro_cliente') {
       next.publico_base = 'ambos';
-      next.regras = (next.regras || [regraPadrao()]).map(regra => ({ ...regra, publico_base: 'ambos', tipo: 'categoria' }));
+      next.regras = (next.regras || [regraPadrao()]).map(regra => ({ ...regra, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'ambos' }));
     }
     return next;
   }));
@@ -168,9 +179,13 @@ function AdminCampanhasPage() {
     if (campanha.id !== campanhaId) return campanha;
     return {
       ...campanha,
-      regras: campanha.regras.map((regra, regraIndex) => regraIndex === index
-        ? { ...regra, [field]: field === 'operadora_id' ? (value ? Number(value) : null) : value }
-        : regra)
+      regras: campanha.regras.map((regra, regraIndex) => {
+        if (regraIndex !== index) return regra;
+        const proxima = { ...regra, [field]: field === 'operadora_id' ? (value ? Number(value) : null) : value };
+        if (field === 'tipo' && value === 'chip_novo') proxima.tipo_chip = 'novo';
+        if (field === 'tipo' && value === 'portabilidade') proxima.tipo_chip = 'portabilidade';
+        return proxima;
+      })
     };
   }));
   const addRegra = campanhaId => setCampanhas(items => items.map(campanha => campanha.id === campanhaId
@@ -260,6 +275,7 @@ function AdminCampanhasPage() {
                   <label>Operadora<select value={regra.operadora_id || ''} onChange={e => changeRegra(campanha.id, regraIndex, 'operadora_id', e.target.value)}><option value="">Todas</option>{operadoras.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}</select></label>
                   <label>Público<select disabled={campanha.categoria === 'registro_cliente'} value={campanha.categoria === 'registro_cliente' ? 'ambos' : (regra.publico_base || 'ambos')} onChange={e => changeRegra(campanha.id, regraIndex, 'publico_base', e.target.value)}>{PUBLICOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
                   <label>Tipo considerado<select disabled={campanha.categoria === 'registro_cliente'} value={campanha.categoria === 'registro_cliente' ? 'categoria' : (regra.tipo || 'categoria')} onChange={e => changeRegra(campanha.id, regraIndex, 'tipo', e.target.value)}>{TIPOS_REGRA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+                  <label>Tipo de chip<select disabled={campanha.categoria === 'registro_cliente' || regra.tipo === 'chip_novo' || regra.tipo === 'portabilidade'} value={campanha.categoria === 'registro_cliente' ? 'ambos' : (regra.tipo_chip || 'ambos')} onChange={e => changeRegra(campanha.id, regraIndex, 'tipo_chip', e.target.value)}>{TIPOS_CHIP.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
                   <button type="button" className="btn btn-icon btn-ghost btn-danger-icon admin-campanhas-rule-remove" onClick={() => removeRegra(campanha.id, regraIndex)} disabled={campanha.regras.length === 1} title="Remover regra" aria-label={`Remover regra ${regraIndex + 1}`}><I.Trash size={15} /></button>
                 </div>)}
               </div>
