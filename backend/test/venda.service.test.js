@@ -12,6 +12,7 @@ const {
   montarAtribuicoesVendedorasVenda,
   montarAlteracoesReversao,
   anexarReversoesVenda,
+  validarMotivoExclusaoReversao,
   montarPayload,
   normalizarData,
   resolverDataVendaCadastro,
@@ -85,6 +86,37 @@ test('anexa reversoes cronologicas e campos marcados ao retorno da venda', () =>
 
   assert.deepEqual(venda.reversoes.map(item => item.numero), [1, 2]);
   assert.deepEqual(venda.campos_com_reversao, ['nome', 'telefone']);
+});
+
+test('oculta reversoes excluidas da venda e dos campos marcados', () => {
+  const venda = anexarReversoesVenda({
+    historico: [
+      {
+        id: 11,
+        acao: 'venda.reversao_registrada',
+        observacao: 'Ativa',
+        created_at: '2026-08-13T11:00:00.000Z',
+        dados: { numero: 1, alteracoes: [{ campo: 'nome', anterior: 'A', novo: 'B' }] }
+      },
+      {
+        id: 12,
+        acao: 'venda.reversao_registrada',
+        observacao: 'Ocultada',
+        created_at: '2026-08-13T12:00:00.000Z',
+        deleted_at: '2026-08-14T10:00:00.000Z',
+        dados: { numero: 2, alteracoes: [{ campo: 'telefone', anterior: '1', novo: '2' }] }
+      }
+    ]
+  });
+
+  assert.deepEqual(venda.reversoes.map(item => item.numero), [1]);
+  assert.deepEqual(venda.campos_com_reversao, ['nome']);
+});
+
+test('valida e normaliza o motivo para excluir reversao', () => {
+  assert.equal(validarMotivoExclusaoReversao('  Registro duplicado  '), 'Registro duplicado');
+  assert.throws(() => validarMotivoExclusaoReversao('  '), /informe o motivo/i);
+  assert.throws(() => validarMotivoExclusaoReversao('x'.repeat(1001)), /máximo 1000/i);
 });
 
 test('define no servidor a data de uma venda comum no fuso de Sao Paulo', () => {

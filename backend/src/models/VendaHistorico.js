@@ -25,7 +25,10 @@ class VendaHistorico extends Model {
         status_novo: { type: ['string', 'null'], maxLength: 40 },
         observacao: { type: ['string', 'null'] },
         dados: { type: ['object', 'array', 'string', 'null'] },
-        created_at: { type: ['string', 'object'] }
+        created_at: { type: 'string' },
+        deleted_at: { type: ['string', 'null'] },
+        deleted_by_id: { type: ['integer', 'null'] },
+        deleted_reason: { type: ['string', 'null'], maxLength: 1000 }
       }
     };
   }
@@ -40,6 +43,14 @@ class VendaHistorico extends Model {
         modelClass: Usuario,
         join: {
           from: 'venda_historicos.usuario_id',
+          to: 'usuarios.id'
+        }
+      },
+      excluidoPor: {
+        relation: Model.BelongsToOneRelation,
+        modelClass: Usuario,
+        join: {
+          from: 'venda_historicos.deleted_by_id',
           to: 'usuarios.id'
         }
       },

@@ -179,6 +179,25 @@ router.post(
   }),
   vendaController.registrarReversao
 );
+router.delete(
+  '/:id/reversoes/:reversaoId',
+  exigirUmaPermissao(['vendas_excluir_reversoes']),
+  auditar({
+    acao: 'venda.reversao_excluida',
+    entidade: 'vendas',
+    entidade_id: req => req.params.id,
+    dados: req => ({
+      venda_id: req.params.id,
+      reversao_id: req.params.reversaoId,
+      numero: req.reversaoExcluida?.numero || null,
+      observacao_original: req.reversaoExcluida?.observacao || null,
+      motivo: req.reversaoExcluida?.motivo || req.body?.motivo || null,
+      excluida_por_id: req.usuario?.id || null,
+      excluida_em: req.reversaoExcluida?.deleted_at || null
+    })
+  }),
+  vendaController.excluirReversao
+);
 router.patch(
   '/:id/status',
   exigirUmaPermissao(['vendas_editar', 'pos_venda']),

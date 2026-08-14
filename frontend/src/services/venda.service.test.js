@@ -16,6 +16,7 @@ import {
   buscarVendaPorId,
   criarVenda,
   deletarVenda,
+  excluirReversaoVenda,
   gerarEmailVenda,
   listarAprovacoesVenda,
   listarVendas,
@@ -75,6 +76,14 @@ describe('venda.service', () => {
       venda: { nome: 'Corrigido' },
       observacao: 'Correção solicitada',
       versao: '2026-08-13T12:00:00.000Z'
+    });
+  });
+
+  it('exclui reversao com motivo em endpoint separado', async () => {
+    await excluirReversaoVenda(7, 21, 'Registro duplicado');
+
+    expect(apiDelete).toHaveBeenCalledWith('/vendas/7/reversoes/21', {
+      motivo: 'Registro duplicado'
     });
   });
 

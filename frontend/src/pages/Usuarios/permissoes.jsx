@@ -10,7 +10,8 @@ export const PERMISSAO_POS_VENDA = {
 export const PERMISSAO_GERENCIAR_PERMISSOES = 'gerenciar_permissoes';
 export const PERMISSOES_ADMIN_EXPLICITAS = new Set([
   'clientes_secretos_ver_todos',
-  'clientes_antigos_ver_historico'
+  'clientes_antigos_ver_historico',
+  'vendas_excluir_reversoes'
 ]);
 
 /**
@@ -88,6 +89,11 @@ export const GRUPOS_PERMISSOES = [
             chave: 'vendas_permitir_reversoes',
             nome: 'Permitir reversões',
             descricao: 'Permite registrar alterações auditadas, com observação e histórico por campo.'
+          },
+          {
+            chave: 'vendas_excluir_reversoes',
+            nome: 'Excluir reversões',
+            descricao: 'Permite ocultar reversões mediante uma justificativa auditada.'
           },
           {
             chave: 'compartilhar_venda',

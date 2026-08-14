@@ -255,6 +255,31 @@ async function registrarReversao(req, res) {
   }
 }
 
+/** Oculta uma reversao preservando sua trilha de auditoria. */
+async function excluirReversao(req, res) {
+  try {
+    const reversao = await vendaService.excluirReversaoVenda(
+      req.params.id,
+      req.params.reversaoId,
+      req.body?.motivo,
+      req.usuario.id
+    );
+
+    if (!reversao) {
+      return res.status(404).json({ message: 'Venda não encontrada.' });
+    }
+
+    req.reversaoExcluida = reversao;
+    const vendaCompleta = await vendaService.buscarVendaPorId(req.params.id, req.usuario.id);
+    return res.json(vendaCompleta);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 400).json({
+      message: error.message || 'Erro ao excluir reversão da venda.'
+    });
+  }
+}
+
 /**
  * Atualiza status com o estado mais recente.
  */
@@ -537,6 +562,7 @@ module.exports = {
   reenviarDashboard,
   update,
   registrarReversao,
+  excluirReversao,
   updateStatus,
   cancelar,
   reverterCancelamento,

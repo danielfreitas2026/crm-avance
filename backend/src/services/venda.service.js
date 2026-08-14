@@ -653,7 +653,7 @@ function anexarReversoesVenda(venda) {
   if (!venda) return venda;
   const historico = Array.isArray(venda.historico) ? venda.historico : [];
   const reversoes = historico
-    .filter(item => item.acao === ACAO_REVERSAO)
+    .filter(item => item.acao === ACAO_REVERSAO && !item.deleted_at)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at) || Number(a.id) - Number(b.id))
     .map((item, indice) => {
       const dados = parseDadosHistorico(item.dados);
@@ -3493,6 +3493,64 @@ async function registrarReversaoVenda(id, dados, usuarioId) {
   });
 }
 
+function validarMotivoExclusaoReversao(motivo) {
+  const motivoNormalizado = String(motivo || '').trim();
+  if (!motivoNormalizado) {
+    const error = new Error('Informe o motivo da exclusão da reversão.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (motivoNormalizado.length > 1000) {
+    const error = new Error('O motivo da exclusão deve ter no máximo 1000 caracteres.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return motivoNormalizado;
+}
+
+/** Oculta uma reversao sem desfazer as alteracoes aplicadas na venda. */
+async function excluirReversaoVenda(vendaId, reversaoId, motivo, usuarioId) {
+  const motivoNormalizado = validarMotivoExclusaoReversao(motivo);
+
+  const vendaAcessivel = await buscarVendaPorId(vendaId, usuarioId);
+  if (!vendaAcessivel) return null;
+
+  const agora = formatarDateTimeSQL();
+  return VendaHistorico.transaction(async trx => {
+    const reversao = await VendaHistorico.query(trx)
+      .findById(reversaoId)
+      .where({ venda_id: Number(vendaId), acao: ACAO_REVERSAO })
+      .forUpdate();
+
+    if (!reversao) {
+      const error = new Error('Reversão não encontrada nesta venda.');
+      error.statusCode = 404;
+      throw error;
+    }
+    if (reversao.deleted_at) {
+      const error = new Error('Esta reversão já foi excluída.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await VendaHistorico.query(trx).findById(reversao.id).patch({
+      deleted_at: agora,
+      deleted_by_id: Number(usuarioId),
+      deleted_reason: motivoNormalizado
+    });
+
+    const dados = parseDadosHistorico(reversao.dados);
+    return {
+      id: reversao.id,
+      numero: Number(dados.numero) || null,
+      observacao: reversao.observacao || '',
+      motivo: motivoNormalizado,
+      deleted_at: agora,
+      deleted_by_id: Number(usuarioId)
+    };
+  });
+}
+
 /**
  * Valida status funil e retorna o resultado esperado.
  */
@@ -4276,6 +4334,7 @@ module.exports = {
   reenviarVendaParaDashboard,
   atualizarVenda,
   registrarReversaoVenda,
+  excluirReversaoVenda,
   atualizarStatusVenda,
   cancelarVenda,
   reverterCancelamentoVenda,
@@ -4296,6 +4355,7 @@ module.exports = {
     montarPayload,
     montarAlteracoesReversao,
     anexarReversoesVenda,
+    validarMotivoExclusaoReversao,
     normalizarValorReversao,
     normalizarClienteSolicitouNumeros,
     normalizarClienteSolicitouServicos,

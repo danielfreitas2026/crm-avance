@@ -67,6 +67,17 @@ describe('api service', () => {
     expect(fetch.mock.calls[2][1].method).toBe('DELETE');
   });
 
+  it('permite enviar corpo JSON em requisicoes DELETE', async () => {
+    fetch.mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiDelete('/x/1', { motivo: 'Duplicado' });
+
+    expect(fetch.mock.calls[0][1]).toMatchObject({
+      method: 'DELETE',
+      body: JSON.stringify({ motivo: 'Duplicado' })
+    });
+  });
+
   it('retorna blob em respostas de arquivo', async () => {
     const blob = new Blob(['arquivo']);
     fetch.mockResolvedValueOnce(new Response(blob, { status: 200 }));

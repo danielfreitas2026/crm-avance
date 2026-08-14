@@ -206,9 +206,13 @@ export function apiPut(endpoint, body) {
  * Atalho para requisicoes DELETE JSON.
  *
  * @param {string} endpoint - Caminho relativo da API.
+ * @param {unknown} [body] - Payload opcional serializado como JSON.
  * @returns {Promise<unknown>} Resposta JSON da API.
  */
-export function apiDelete(endpoint) {
-  return apiRequest(endpoint, { method: 'DELETE' });
+export function apiDelete(endpoint, body) {
+  return apiRequest(endpoint, {
+    method: 'DELETE',
+    ...(body === undefined ? {} : { body: JSON.stringify(body) })
+  });
 }
 

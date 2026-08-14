@@ -19,6 +19,7 @@ import {
   deletarVenda,
   enviarVendaParaPosVenda,
   excluirArquivoVenda,
+  excluirReversaoVenda,
   exportarVendasExcel,
   gerarPacoteArquivosVenda,
   gerarEmailVenda,
@@ -2700,6 +2701,7 @@ function VendasPage() {
   const podeCriarVenda = temPermissao(usuarioLogado, 'vendas_criar');
   const podeEditarVenda = temPermissao(usuarioLogado, ['vendas_editar', 'pos_venda']);
   const podeRegistrarReversao = temPermissao(usuarioLogado, 'vendas_permitir_reversoes');
+  const podeExcluirReversao = temPermissao(usuarioLogado, 'vendas_excluir_reversoes');
   const podeCompartilharVenda = temPermissao(usuarioLogado, 'compartilhar_venda');
   const podeExcluirVenda = temPermissao(usuarioLogado, 'vendas_excluir');
   const podeVerDocumentosVenda = temPermissao(usuarioLogado, 'vendas_documentos');
@@ -3085,6 +3087,17 @@ function VendasPage() {
     return vendaSalva;
   }
 
+  /** Oculta uma reversao e mantem o modal aberto com os dados atualizados. */
+  async function ocultarReversao(reversaoId, motivo) {
+    if (!modalVenda?.id) return null;
+    setErro('');
+    const vendaAtualizada = await excluirReversaoVenda(modalVenda.id, reversaoId, motivo);
+    setModalVenda(vendaAtualizada);
+    await carregarVendas(filtros, paginaAtual);
+    setSucesso('Reversão excluída com sucesso.');
+    return vendaAtualizada;
+  }
+
   async function reenviarDashboard(venda) {
     setErro('');
     setSucesso('');
@@ -3341,6 +3354,7 @@ function VendasPage() {
           vendasEmAndamentoPorCliente={vendasEmAndamentoPorCliente}
           podeEditarVenda={podeEditarVenda}
           podeRegistrarReversao={podeRegistrarReversao}
+          podeExcluirReversao={podeExcluirReversao}
           podeCompartilharVenda={podeCompartilharVenda}
           podeVerDocumentosVenda={podeVerDocumentosVenda}
           podeAdicionarDocumentosVenda={podeAdicionarDocumentosVenda}
@@ -3360,6 +3374,7 @@ function VendasPage() {
           }}
           onSave={salvarVenda}
           onSaveReversal={salvarReversao}
+          onDeleteReversal={ocultarReversao}
           onRetryDashboard={reenviarDashboard}
           onDraftChange={setVendaCadastroDraft}
           onSendToPosVenda={enviarPosVenda}

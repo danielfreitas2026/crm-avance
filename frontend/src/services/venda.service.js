@@ -297,6 +297,11 @@ export async function registrarReversaoVenda(id, venda, observacao, versao) {
   return apiPost(`/vendas/${id}/reversoes`, { venda, observacao, versao });
 }
 
+/** Oculta uma reversao mantendo sua auditoria no servidor. */
+export async function excluirReversaoVenda(vendaId, reversaoId, motivo) {
+  return apiDelete(`/vendas/${vendaId}/reversoes/${reversaoId}`, { motivo });
+}
+
 /**
  * Envia venda para pos venda para processamento.
  */

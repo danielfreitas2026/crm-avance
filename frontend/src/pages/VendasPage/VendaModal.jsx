@@ -585,6 +585,63 @@ function HistoricoCampoModal({ titulo, eventos, referencias, onClose }) {
   );
 }
 
+function ExcluirReversaoModal({ reversao, onClose, onConfirm }) {
+  const [motivo, setMotivo] = useState('');
+  const [excluindo, setExcluindo] = useState(false);
+  const [erro, setErro] = useState('');
+
+  async function confirmar() {
+    const motivoNormalizado = motivo.trim();
+    if (!motivoNormalizado || excluindo) return;
+    setExcluindo(true);
+    setErro('');
+    try {
+      await onConfirm(reversao.id, motivoNormalizado);
+      onClose();
+    } catch (error) {
+      setErro(error.message || 'Erro ao excluir reversão.');
+      setExcluindo(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay venda-reversao-delete-overlay" role="dialog" aria-modal="true" aria-labelledby="excluir-reversao-title" onClick={event => event.target === event.currentTarget && !excluindo && onClose()}>
+      <div className="modal venda-reversao-delete-modal">
+        <div className="modal-header">
+          <div className="modal-header-row">
+            <div>
+              <div id="excluir-reversao-title" className="modal-client">Excluir Reversão {reversao.numero}</div>
+              <div className="modal-sub">A reversão será ocultada, mas os dados atuais da venda não serão alterados.</div>
+            </div>
+            <button type="button" className="btn btn-icon btn-ghost" title="Fechar" onClick={onClose} disabled={excluindo}><I.Close size={14} /></button>
+          </div>
+        </div>
+        <div className="modal-body">
+          {erro && <div className="alert alert-error">{erro}</div>}
+          <div className="form-field">
+            <label htmlFor="motivo-exclusao-reversao">Motivo da exclusão <span className="field-required-mark">*</span></label>
+            <textarea
+              id="motivo-exclusao-reversao"
+              value={motivo}
+              onChange={event => setMotivo(event.target.value)}
+              rows={4}
+              maxLength={1000}
+              placeholder="Explique por que esta reversão deve ser ocultada"
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose} disabled={excluindo}>Cancelar</button>
+          <button type="button" className="btn btn-danger" onClick={confirmar} disabled={!motivo.trim() || excluindo}>
+            {excluindo ? 'Excluindo...' : 'Excluir reversão'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Retorna valor obrigatorio nao preenchido no formato esperado pelo fluxo.
  */
@@ -3782,6 +3839,7 @@ function VendaModal({
   vendasEmAndamentoPorCliente = new Map(),
   podeEditarVenda,
   podeRegistrarReversao = false,
+  podeExcluirReversao = false,
   podeCompartilharVenda,
   podeVerDocumentosVenda,
   podeAdicionarDocumentosVenda,
@@ -3794,6 +3852,7 @@ function VendaModal({
   onClose,
   onSave,
   onSaveReversal,
+  onDeleteReversal,
   onRetryDashboard,
   onSendToPosVenda,
   sendToPosVendaLabel = 'Enviar para o pós-venda',
@@ -3856,6 +3915,7 @@ function VendaModal({
   const [modoReversao, setModoReversao] = useState(false);
   const [observacaoReversao, setObservacaoReversao] = useState('');
   const [historicoCampoAberto, setHistoricoCampoAberto] = useState(null);
+  const [reversaoParaExcluir, setReversaoParaExcluir] = useState(null);
   const [docsAlterados, setDocsAlterados] = useState(false);
   const [liberacaoAberta, setLiberacaoAberta] = useState(false);
   const [motivoLiberacao, setMotivoLiberacao] = useState('');
@@ -3981,6 +4041,7 @@ function VendaModal({
   const podeAcessarDocumentosVenda = Boolean(podeVerDocumentosVenda || podeAdicionarDocumentosVendaEfetivo);
   const vendaBloqueadaParaUsuario = enviadaPosVenda && !usuarioPosVenda;
   const podeRegistrarReversaoEfetivo = Boolean(venda?.id && podeRegistrarReversao && usuarioPodeAcessarVendaModal);
+  const podeExcluirReversaoEfetivo = Boolean(venda?.id && podeExcluirReversao && usuarioPodeAcessarVendaModal);
   const podeCorrigirDataVenda = !editando || usuarioPosVenda || usuarioAdmin;
   const vendaCancelada = Boolean(venda?.cancelada_em || form.cancelada_em);
   const ultimoCnpjConsultadoRef = useRef(venda ? sanitizarCnpj(form.cnpj) : '');
@@ -5668,7 +5729,20 @@ function VendaModal({
                         <p className="venda-reversoes-empty">Nenhuma reversão registrada.</p>
                       ) : reversoesVenda.map(reversao => (
                         <article key={reversao.id} className="venda-reversao-observacao">
-                          {reversao.created_at && <time>{formatarDataHora(reversao.created_at)}</time>}
+                          <div className="venda-reversao-observacao-head">
+                            {reversao.created_at && <time>{formatarDataHora(reversao.created_at)}</time>}
+                            {podeExcluirReversaoEfetivo && (
+                              <button
+                                type="button"
+                                className="btn btn-icon btn-ghost venda-reversao-delete-btn"
+                                title={`Excluir Reversão ${reversao.numero}`}
+                                aria-label={`Excluir Reversão ${reversao.numero}`}
+                                onClick={() => setReversaoParaExcluir(reversao)}
+                              >
+                                <I.Trash size={13} />
+                              </button>
+                            )}
+                          </div>
                           <strong>Reversão {reversao.numero}</strong>
                           <p>{reversao.observacao}</p>
                         </article>
@@ -5845,6 +5919,13 @@ function VendaModal({
           eventos={historicoCampoAberto.eventos}
           referencias={{ clientes: clientesDisponiveis, servicos, tiposVenda, vendedoras: vendedorasOpcoesModal, operadoras }}
           onClose={() => setHistoricoCampoAberto(null)}
+        />
+      )}
+      {reversaoParaExcluir && (
+        <ExcluirReversaoModal
+          reversao={reversaoParaExcluir}
+          onClose={() => setReversaoParaExcluir(null)}
+          onConfirm={onDeleteReversal}
         />
       )}
       {liberacaoAberta && (

@@ -40,6 +40,11 @@ const PERMISSOES = [
     descricao: 'Permite registrar alterações auditadas em vendas acessíveis.'
   },
   {
+    chave: 'vendas_excluir_reversoes',
+    nome: 'Vendas: excluir reversões',
+    descricao: 'Permite ocultar reversões de vendas acessíveis, mediante justificativa auditada.'
+  },
+  {
     chave: 'compartilhar_venda',
     nome: 'Vendas: compartilhar',
     descricao: 'Permite vincular outras vendedoras a uma venda.'

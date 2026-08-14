@@ -35,6 +35,16 @@ test('admin precisa de permissao explicita para visualizar recursos sensiveis', 
   }, 'clientes_antigos_ver_historico'), true);
 });
 
+test('admin precisa de permissao explicita para excluir reversoes', () => {
+  const admin = { ativo: true, role: { nome: 'admin', permissoes: { vendas_excluir_reversoes: true } } };
+
+  assert.equal(usuarioTemPermissaoLocal(admin, 'vendas_excluir_reversoes'), false);
+  assert.equal(usuarioTemPermissaoLocal({
+    ...admin,
+    permissoes: { vendas_excluir_reversoes: true }
+  }, 'vendas_excluir_reversoes'), true);
+});
+
 test('admin pode ter qualquer permissao negada explicitamente', () => {
   const usuario = {
     ativo: true,

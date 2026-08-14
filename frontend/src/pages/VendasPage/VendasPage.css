@@ -4773,6 +4773,27 @@ input.is-invalid {
   font-size: 11.5px;
 }
 
+.venda-reversao-observacao-head {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.venda-reversao-delete-btn {
+  margin-left: auto;
+  color: var(--danger, #dc2626);
+}
+
+.venda-reversao-delete-overlay {
+  z-index: 1300;
+}
+
+.venda-reversao-delete-modal {
+  width: min(520px, calc(100vw - 32px));
+}
+
 .venda-reversao-observacao p,
 .venda-reversao-history-item p {
   margin: 0;

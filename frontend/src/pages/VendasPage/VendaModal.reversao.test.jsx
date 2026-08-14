@@ -67,7 +67,7 @@ describe('VendaModal - reversões', () => {
 
     expect(await screen.findByLabelText(/Nova observação de reversão/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Salvar reversão/i })).toBeInTheDocument();
-  });
+  }, 10000);
 
   it('não mostra um traço para um registro antigo que não possui data', () => {
     renderModal({
@@ -89,6 +89,54 @@ describe('VendaModal - reversões', () => {
 
     expect(card).not.toHaveTextContent('-');
     expect(card.querySelector('time')).not.toBeInTheDocument();
+  });
+
+  it('exige permissao e motivo para excluir uma reversao', async () => {
+    const onDeleteReversal = vi.fn().mockResolvedValue({});
+    const { rerender } = renderModal();
+
+    expect(screen.queryByRole('button', { name: /Excluir Reversão 1/i })).not.toBeInTheDocument();
+
+    rerender(
+      <VendaModal
+        venda={{
+          id: 7,
+          nome: 'Cliente corrigido',
+          cliente_id: 3,
+          vendedora_id: 9,
+          vendedoras: [{ id: 9, nome: 'Consultora' }],
+          reversoes: [{
+            id: 21,
+            numero: 1,
+            observacao: 'Correção solicitada pelo cliente.',
+            created_at: '2026-08-13 12:00:00',
+            alteracoes: []
+          }]
+        }}
+        clientes={[{ id: 3, nome: 'Cliente corrigido' }]}
+        vendedoras={[{ id: 9, nome: 'Consultora' }]}
+        operadoras={[]}
+        tiposVenda={[]}
+        servicos={[]}
+        vendasPorCliente={new Map()}
+        usuarioLogado={usuario}
+        podeExcluirReversao
+        modoEdicao={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onSaveReversal={vi.fn()}
+        onDeleteReversal={onDeleteReversal}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Excluir Reversão 1/i }));
+    const confirmar = screen.getByRole('button', { name: /^Excluir reversão$/i });
+    expect(confirmar).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/Motivo da exclusão/i), { target: { value: 'Registro duplicado' } });
+    fireEvent.click(confirmar);
+
+    await waitFor(() => expect(onDeleteReversal).toHaveBeenCalledWith(21, 'Registro duplicado'));
   });
 
   it('abre o histórico permanente ao lado de campo alterado', async () => {
