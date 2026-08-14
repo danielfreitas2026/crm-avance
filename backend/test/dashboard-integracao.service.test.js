@@ -73,6 +73,31 @@ test('gera o mesmo identificador externo para criar e excluir cada lancamento', 
   assert.equal(_internals.idExternoVenda(42, 'chip-2'), 'crm-venda-42-chip-2');
 });
 
+test('edição usa PUT e não reenvia o identificador externo no corpo', async () => {
+  const axios = require('axios');
+  const putOriginal = axios.put;
+  let requisicao;
+  axios.put = async (url, body, options) => {
+    requisicao = { url, body, options };
+    return { data: { data: { id: 42 } } };
+  };
+  try {
+    await _internals.atualizarLancamentoNoDashboard(
+      'https://dashboard.example',
+      'segredo',
+      { external_sale_id: 'crm-venda-42-chip-1', quantity: 2 }
+    );
+    assert.equal(
+      requisicao.url,
+      'https://dashboard.example/api/v1/integration/sales/crm-venda-42-chip-1'
+    );
+    assert.deepEqual(requisicao.body, { quantity: 2 });
+    assert.equal(requisicao.options.headers.Authorization, 'Bearer segredo');
+  } finally {
+    axios.put = putOriginal;
+  }
+});
+
 test('usa o mapa configurado para vendedora mesmo com nomes diferentes', () => {
   process.env.DASHBOARD_INTEGRATION_SELLER_MAP = '{"1":11}';
   try {

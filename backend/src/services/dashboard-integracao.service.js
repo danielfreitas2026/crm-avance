@@ -172,6 +172,15 @@ async function obterReferencias({ atualizar = false } = {}) {
   return resposta.data;
 }
 
+async function atualizarLancamentoNoDashboard(baseUrl, apiKey, payload) {
+  const { external_sale_id: externalSaleId, ...dadosVenda } = payload;
+  return axios.put(
+    `${baseUrl}/api/v1/integration/sales/${encodeURIComponent(externalSaleId)}`,
+    dadosVenda,
+    { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 10000 }
+  );
+}
+
 async function registrarVendaPendente(venda, trx) {
   const vendaId = Number(typeof venda === 'object' ? venda.id : venda);
   const itens = typeof venda === 'object' ? itensSincronizacao(venda) : ['principal'];
@@ -321,8 +330,8 @@ async function restaurarVendaNoDashboard(vendaId) {
 
 /**
  * Reflete uma edição do CRM no dashboard externo.
- * A API externa não disponibiliza PUT/PATCH: removemos os lançamentos anteriores
- * pelo identificador externo estável e os recriamos com os dados atualizados.
+ * Atualiza os lançamentos pelo identificador externo estável. Novos chips criados
+ * durante a edição também usam PUT para que o dashboard não os anuncie como venda nova.
  */
 async function sincronizarVendaAtualizada(vendaId) {
   const venda = await obterVendaParaEnvio(vendaId);
@@ -330,25 +339,60 @@ async function sincronizarVendaAtualizada(vendaId) {
   if (!estaConfigurada()) return obterResumoSincronizacao(vendaId);
 
   try {
-    // Valida todos os lançamentos novos antes de remover a versão vigente.
-    // Assim, um cadastro sem referência válida não deixa a venda ausente no dashboard.
+    const knex = Venda.knex();
     const referencias = await obterReferencias();
-    for (const itemKey of itensSincronizacao(venda)) {
-      montarPayloadVenda(venda, referencias, itemKey);
+    const itemKeysAtuais = itensSincronizacao(venda);
+    const payloads = new Map(itemKeysAtuais.map(itemKey => [
+      itemKey,
+      montarPayloadVenda(venda, referencias, itemKey)
+    ]));
+    const itensAnteriores = await knex(NOME_TABELA)
+      .where({ venda_id: Number(vendaId) })
+      .whereNot('status', 'excluida')
+      .orderBy('id');
+
+    await knex.transaction(trx => registrarVendaPendente(venda, trx));
+    const { baseUrl, apiKey } = configuracao();
+
+    for (const itemKey of itemKeysAtuais) {
+      const pendencia = await knex(NOME_TABELA)
+        .where({ venda_id: Number(vendaId), item_key: itemKey })
+        .first();
+      const payload = payloads.get(itemKey);
+      try {
+        await reservarRequisicao();
+        const resposta = await atualizarLancamentoNoDashboard(baseUrl, apiKey, payload);
+        await knex(NOME_TABELA).where({ id: pendencia.id }).update({
+          status: 'enviada',
+          tentativas: Number(pendencia.tentativas || 0) + 1,
+          ultimo_erro: null,
+          dashboard_sale_id: resposta.data?.data?.id || pendencia.dashboard_sale_id || null,
+          enviada_em: knex.fn.now(),
+          ultima_tentativa_em: knex.fn.now(),
+          updated_at: knex.fn.now()
+        });
+      } catch (error) {
+        await atualizarFalha(knex, pendencia, error);
+        throw error;
+      }
     }
 
-    await excluirVendaNoDashboard(vendaId);
+    const chavesAtuais = new Set(itemKeysAtuais);
+    for (const item of itensAnteriores.filter(item => !chavesAtuais.has(item.item_key))) {
+      try {
+        await reservarRequisicao();
+        await axios.delete(
+          `${baseUrl}/api/v1/integration/sales/${encodeURIComponent(idExternoVenda(vendaId, item.item_key))}`,
+          { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 10000 }
+        );
+        await knex(NOME_TABELA).where({ id: item.id }).delete();
+      } catch (error) {
+        await atualizarFalha(knex, item, error);
+        throw error;
+      }
+    }
 
-    await Venda.knex().transaction(async trx => {
-      // Os itens excluídos podem representar chips que não existem mais após a edição.
-      // Apagamos o controle anterior e registramos exatamente os itens atuais.
-      await trx(NOME_TABELA)
-        .where({ venda_id: Number(vendaId), status: 'excluida' })
-        .delete();
-      await registrarVendaPendente(venda, trx);
-    });
-
-    return enviarVendaCriada(vendaId);
+    return obterResumoSincronizacao(vendaId);
   } catch (error) {
     // A edição local já foi confirmada. Mantemos o erro de sincronização para
     // exibição e uma tentativa posterior, sem desfazer a alteração no CRM.
@@ -434,5 +478,5 @@ module.exports = {
   restaurarVendaNoDashboard,
   resolverIdReferencia,
   sincronizarVendaAtualizada,
-  _internals: { chipDaVenda, formatarDataHoraVenda, idExternoVenda, idsLiberadosExcepcionalmente, itensSincronizacao, mensagemErro, montarResumo, normalizarChips, normalizarTexto, somenteDigitos, resolverTipoVendaDoChip }
+  _internals: { atualizarLancamentoNoDashboard, chipDaVenda, formatarDataHoraVenda, idExternoVenda, idsLiberadosExcepcionalmente, itensSincronizacao, mensagemErro, montarResumo, normalizarChips, normalizarTexto, somenteDigitos, resolverTipoVendaDoChip }
 };
