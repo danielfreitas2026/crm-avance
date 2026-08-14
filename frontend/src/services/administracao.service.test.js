@@ -77,6 +77,8 @@ describe('servicos administrativos', () => {
     await config.excluirRegraComissao(3);
     await config.reordenarEtapasFunil([{ id: 1, ordem: 2 }]);
     await config.atualizarAparenciaNotificacao(1, { cor: '#fff' });
+    await config.buscarHorarioAcesso();
+    await config.atualizarHorarioAcesso({ ativo: true, dias: [], usuario_ids: [2] });
 
     expect(apiGet).toHaveBeenCalledWith('/config/operadoras');
     expect(apiGet).toHaveBeenCalledWith('/config/tipos-produto');
@@ -86,6 +88,8 @@ describe('servicos administrativos', () => {
     expect(apiDelete).toHaveBeenCalledWith('/config/admin/regras-comissao/3');
     expect(apiPut).toHaveBeenCalledWith('/config/admin/funil-etapas/reorder', { ordens: [{ id: 1, ordem: 2 }] });
     expect(apiPut).toHaveBeenCalledWith('/config/admin/notificacao-aparencias/1', { cor: '#fff' });
+    expect(apiGet).toHaveBeenCalledWith('/config/admin/horario-acesso');
+    expect(apiPut).toHaveBeenCalledWith('/config/admin/horario-acesso', { ativo: true, dias: [], usuario_ids: [2] });
   });
 
   it('serializa filtros e acoes de fechamento, notificacoes e mensagens', async () => {

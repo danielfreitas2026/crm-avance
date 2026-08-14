@@ -105,16 +105,21 @@ function LayoutPrivado({ children }) {
   useEffect(() => {
     let ativo = true;
 
-    buscarPerfil()
+    const verificarAcesso = () => buscarPerfil()
       .then(usuarioAtualizado => {
         if (!ativo) return;
         localStorage.setItem('usuario', JSON.stringify(usuarioAtualizado));
         setUsuario(usuarioAtualizado);
+        window.dispatchEvent(new CustomEvent('auth:usuario-atualizado', { detail: usuarioAtualizado }));
       })
       .catch(() => {});
 
+    verificarAcesso();
+    const intervalo = setInterval(verificarAcesso, 30000);
+
     return () => {
       ativo = false;
+      clearInterval(intervalo);
     };
   }, []);
 

@@ -9,6 +9,8 @@ import { apiDelete, apiGet, apiPost, apiPut } from './api';
 export async function listarAparenciasNotificacao() { return apiGet('/config/notificacao-aparencias'); }
 export async function listarAparenciasNotificacaoAdmin() { return apiGet('/config/notificacao-aparencias'); }
 export async function atualizarAparenciaNotificacao(id, dados) { return apiPut('/config/admin/notificacao-aparencias/' + id, dados); }
+export async function buscarHorarioAcesso() { return apiGet('/config/admin/horario-acesso'); }
+export async function atualizarHorarioAcesso(dados) { return apiPut('/config/admin/horario-acesso', dados); }
 
 export async function listarOperadoras() {
   return apiGet('/config/operadoras');

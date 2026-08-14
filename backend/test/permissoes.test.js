@@ -45,6 +45,19 @@ test('admin precisa de permissao explicita para excluir reversoes', () => {
   }, 'vendas_excluir_reversoes'), true);
 });
 
+test('admin precisa de permissao explicita para configurar horario de acesso', () => {
+  const admin = { ativo: true, role: { nome: 'admin' } };
+  assert.equal(usuarioTemPermissaoLocal(admin, 'configurar_horario_acesso'), false);
+  assert.equal(usuarioTemPermissaoLocal({
+    ...admin,
+    permissoes: { configurar_horario_acesso: true }
+  }, 'configurar_horario_acesso'), true);
+  assert.equal(usuarioTemPermissaoLocal({
+    ...admin,
+    permissoes: { configurar_horario_acesso: false }
+  }, 'configurar_horario_acesso'), false);
+});
+
 test('admin pode ter qualquer permissao negada explicitamente', () => {
   const usuario = {
     ativo: true,

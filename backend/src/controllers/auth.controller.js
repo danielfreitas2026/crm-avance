@@ -41,8 +41,9 @@ async function login(req, res) {
       }
     });
 
-    return res.status(401).json({
-      message: error.message || 'Erro ao fazer login.'
+    return res.status(error.status || 401).json({
+      message: error.message || 'Erro ao fazer login.',
+      ...(error.code ? { code: error.code } : {})
     });
   }
 }

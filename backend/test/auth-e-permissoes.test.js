@@ -7,6 +7,7 @@ const auditLogService = require('../src/services/audit-log.service');
 const authMiddleware = require('../src/middlewares/auth.middleware');
 const permissoes = require('../src/middlewares/permissao.middleware');
 const Usuario = require('../src/models/Usuario');
+const horarioAcessoService = require('../src/services/horario-acesso.service');
 
 function response() {
   return {
@@ -53,7 +54,21 @@ test('auth controller trata falha de login e atualizacao de perfil', async () =>
   assert.equal(perfil.body.id, 7);
 });
 
-test('auth middleware aceita token valido e rejeita cabecalhos invalidos', () => {
+test('auth controller preserva status e código de sistema fechado', async () => {
+  auditLogService.registrarSemBloquear = async () => {};
+  authService.login = async () => {
+    const error = new Error('Sistema fechado');
+    error.status = 423;
+    error.code = 'SYSTEM_CLOSED';
+    throw error;
+  };
+  const res = response();
+  await authController.login({ body: { email: 'ana@teste.com', senha: 'segredo' } }, res);
+  assert.equal(res.statusCode, 423);
+  assert.equal(res.body.code, 'SYSTEM_CLOSED');
+});
+
+test('auth middleware aceita token valido e rejeita cabecalhos invalidos', async () => {
   const semToken = response();
   authMiddleware({ headers: {} }, semToken, () => assert.fail('next não deveria ser chamado'));
   assert.equal(semToken.statusCode, 401);
@@ -65,10 +80,13 @@ test('auth middleware aceita token valido e rejeita cabecalhos invalidos', () =>
   let proximo = false;
   const jwt = require('jsonwebtoken');
   const originalVerify = jwt.verify;
+  const originalAvaliarAcesso = horarioAcessoService.avaliarAcesso;
   jwt.verify = () => ({ id: 3 });
+  horarioAcessoService.avaliarAcesso = async () => ({ permitido: true });
   const req = { headers: { authorization: 'Bearer valido' } };
-  authMiddleware(req, response(), () => { proximo = true; });
+  await authMiddleware(req, response(), () => { proximo = true; });
   jwt.verify = originalVerify;
+  horarioAcessoService.avaliarAcesso = originalAvaliarAcesso;
   assert.equal(proximo, true);
   assert.deepEqual(req.usuario, { id: 3 });
 });

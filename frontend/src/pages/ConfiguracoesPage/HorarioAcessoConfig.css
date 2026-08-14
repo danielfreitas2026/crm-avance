@@ -1,0 +1,31 @@
+.access-hours { display: grid; gap: 20px; }
+.access-hours__alert { margin: 0; }
+.access-hours__heading, .access-hours__users-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.access-hours h3 { margin: 0; color: var(--text); font-size: 16px; }
+.access-hours p { margin: 4px 0 0; color: var(--text-3); font-size: 12px; }
+.access-hours__master { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-2); }
+.access-hours__warning { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #f2c66d; border-radius: 8px; background: #fff8e8; color: #805a0b; font-size: 13px; }
+.access-hours__days { display: grid; gap: 8px; }
+.access-hours__day { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(130px, 180px) minmax(130px, 180px); align-items: end; gap: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; }
+.access-hours__day.is-disabled { background: var(--surface-2); }
+.access-hours__day label { display: grid; gap: 5px; color: var(--text-3); font-size: 11px; }
+.access-hours__day-name { display: flex !important; align-items: center; align-self: center; gap: 9px !important; color: var(--text) !important; font-size: 13px !important; font-weight: 600; }
+.access-hours__day input[type="time"], .access-hours__users-title input { min-height: 36px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); }
+.access-hours__users { display: grid; gap: 12px; }
+.access-hours__users-title input { width: min(300px, 100%); }
+.access-hours__user-list { max-height: 300px; overflow: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding-right: 4px; }
+.access-hours__user { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.access-hours__user span { display: grid; min-width: 0; }
+.access-hours__user strong { color: var(--text); font-size: 13px; }
+.access-hours__user small { overflow: hidden; color: var(--text-3); text-overflow: ellipsis; white-space: nowrap; }
+.access-hours__actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 4px; }
+.access-hours__save-status { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
+.access-hours__save-status.is-pending { color: var(--warn); }
+.access-hours__save-status.is-saved { color: var(--success); }
+@media (max-width: 720px) {
+  .access-hours__heading, .access-hours__users-title { align-items: stretch; flex-direction: column; }
+  .access-hours__day { grid-template-columns: 1fr 1fr; }
+  .access-hours__day-name { grid-column: 1 / -1; }
+  .access-hours__user-list { grid-template-columns: 1fr; }
+  .access-hours__actions { align-items: stretch; flex-direction: column; }
+}

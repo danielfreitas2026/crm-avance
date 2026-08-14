@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 
 const Usuario = require('../models/Usuario');
 const { montarMapaPermissoesEfetivas } = require('../utils/permissoes');
+const horarioAcessoService = require('./horario-acesso.service');
 
 /**
  * Valida foto perfil e retorna o resultado esperado.
@@ -109,6 +110,14 @@ async function login(email, senha) {
 
   if (!senhaCorreta) {
     throw new Error('E-mail ou senha inválidos.');
+  }
+
+  const acesso = await horarioAcessoService.avaliarAcesso(usuario.id);
+  if (!acesso.permitido && acesso.motivo === 'SYSTEM_CLOSED') {
+    const error = new Error(horarioAcessoService.SYSTEM_CLOSED_MESSAGE);
+    error.code = 'SYSTEM_CLOSED';
+    error.status = 423;
+    throw error;
   }
 
   const token = jwt.sign(

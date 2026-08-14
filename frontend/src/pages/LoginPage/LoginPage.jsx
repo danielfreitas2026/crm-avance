@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as I from '../../components/Icons';
 import { login } from '../../services/auth.service';
+import { SYSTEM_CLOSED_MESSAGE } from '../../services/api';
 import logo from '../../assets/LogoClaraSemFundo.png';
+
+function mensagemInicial() {
+  const mensagem = sessionStorage.getItem('system_closed_message');
+  sessionStorage.removeItem('system_closed_message');
+  return mensagem || '';
+}
 
 /**
  * Renderiza login page.
@@ -13,7 +20,7 @@ function LoginPage() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
-  const [erro, setErro] = useState('');
+  const [erro, setErro] = useState(mensagemInicial);
   const [carregando, setCarregando] = useState(false);
 
   /**
@@ -28,7 +35,7 @@ function LoginPage() {
       await login(email, senha);
       navigate('/');
     } catch (error) {
-      setErro(error.message || 'E-mail ou senha inválidos.');
+      setErro(error.code === 'SYSTEM_CLOSED' ? SYSTEM_CLOSED_MESSAGE : (error.message || 'E-mail ou senha inválidos.'));
     } finally {
       setCarregando(false);
     }

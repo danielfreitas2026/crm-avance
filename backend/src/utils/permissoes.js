@@ -3,7 +3,8 @@ const Permissao = require('../models/Permissao');
 const PERMISSOES_ADMIN_EXPLICITAS = new Set([
   'clientes_secretos_ver_todos',
   'clientes_antigos_ver_historico',
-  'vendas_excluir_reversoes'
+  'vendas_excluir_reversoes',
+  'configurar_horario_acesso'
 ]);
 
 /**

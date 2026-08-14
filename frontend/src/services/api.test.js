@@ -12,12 +12,14 @@ function jsonResponse(body, init = {}) {
 describe('api service', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     globalThis.fetch = vi.fn();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   it('envia Content-Type e Authorization quando ha token', async () => {
@@ -65,6 +67,17 @@ describe('api service', () => {
     expect(fetch.mock.calls[0][1].headers['Content-Type']).toBe('application/json');
     expect(fetch.mock.calls[1][1].method).toBe('PUT');
     expect(fetch.mock.calls[2][1].method).toBe('DELETE');
+  });
+
+  it('encerra sessão e preserva aviso quando o sistema está fechado', async () => {
+    window.history.replaceState({}, '', '/login');
+    localStorage.setItem('token', 'abc123');
+    localStorage.setItem('usuario', '{}');
+    fetch.mockResolvedValueOnce(jsonResponse({ code: 'SYSTEM_CLOSED', message: 'Sistema fechado' }, { status: 423 }));
+
+    await expect(apiGet('/auth/me')).rejects.toMatchObject({ code: 'SYSTEM_CLOSED', status: 423 });
+    expect(localStorage.getItem('token')).toBeNull();
+    expect(sessionStorage.getItem('system_closed_message')).toBe('Sistema fechado');
   });
 
   it('permite enviar corpo JSON em requisicoes DELETE', async () => {

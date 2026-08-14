@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 
 const configController = require('../controllers/config.controller');
+const horarioAcessoController = require('../controllers/horario-acesso.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const { exigirPermissao } = require('../middlewares/permissao.middleware');
+const { auditar } = require('../middlewares/audit.middleware');
 
 router.use(authMiddleware);
 
@@ -54,5 +56,18 @@ router.delete('/admin/links-externos/:id', exigirPermissao('crud_links'), config
 
 router.get('/admin/notificacao-aparencias', exigirPermissao('configurar_notificacoes'), configController.aparenciasNotificacao);
 router.put('/admin/notificacao-aparencias/:id', exigirPermissao('configurar_notificacoes'), configController.atualizarAparenciaNotificacao);
+
+router.get('/admin/horario-acesso', exigirPermissao('configurar_horario_acesso'), horarioAcessoController.show);
+router.put(
+  '/admin/horario-acesso',
+  exigirPermissao('configurar_horario_acesso'),
+  auditar({
+    acao: 'config.horario_acesso_atualizado',
+    entidade: 'configuracoes_horario_acesso',
+    entidade_id: 1,
+    dados: req => ({ ativo: req.body?.ativo, dias: req.body?.dias, usuario_ids: req.body?.usuario_ids })
+  }),
+  horarioAcessoController.update
+);
 
 module.exports = router;
