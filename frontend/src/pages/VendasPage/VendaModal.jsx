@@ -34,6 +34,7 @@ import { listarEtapasFunil, listarOperadoras, listarServicos, listarTiposVenda }
 import { listarClientes } from '../../services/cliente.service';
 import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import { agruparOpcoesServicos } from '../../utils/servicos';
+import { parseUtcDateTime } from '../../utils/datetime';
 import {
   aplicarVendaAntigaAoFormulario,
   criarEstadoDataVenda,
@@ -404,6 +405,150 @@ function formatarValorHistorico(valor, campo, referencias = {}) {
   return String(valor);
 }
 
+const CAMPOS_HISTORICO_CHIP = [
+  {
+    chave: 'quantidade',
+    label: 'Quantidade',
+    formatar: valor => {
+      const quantidade = Number(valor || 0);
+      if (!quantidade) return 'Não informado';
+      return `${quantidade} ${quantidade === 1 ? 'chip' : 'chips'}`;
+    }
+  },
+  {
+    chave: 'gb',
+    label: 'Internet',
+    formatar: valor => {
+      const texto = String(valor || '').trim();
+      if (!texto) return 'Não informado';
+      return /\b(gb|mb|tb)\b/i.test(texto) ? texto : `${texto} GB`;
+    }
+  },
+  {
+    chave: 'tipo_linha',
+    label: 'Tipo de linha',
+    formatar: valor => formatarTipoLinhaChipLabel(valor)
+  },
+  {
+    chave: 'operadora_atual',
+    label: 'Operadora atual',
+    formatar: valor => valor || 'Não informada'
+  },
+  {
+    chave: 'operadora_destino',
+    label: 'Nova operadora',
+    formatar: valor => valor || 'Não informada'
+  },
+  {
+    chave: 'valor_unitario',
+    label: 'Valor por chip',
+    formatar: valor => formatarMoeda(parseValorInput(valor))
+  }
+];
+
+function normalizarChipsHistorico(valor) {
+  if (Array.isArray(valor)) return valor;
+  if (typeof valor !== 'string') return [];
+
+  try {
+    const itens = JSON.parse(valor);
+    return Array.isArray(itens) ? itens : [];
+  } catch {
+    return [];
+  }
+}
+
+function obterNomeReferencia(lista = [], id, fallback = '') {
+  return fallback
+    || lista.find(item => Number(item.id) === Number(id))?.nome
+    || (id ? `Operadora #${id}` : '');
+}
+
+function prepararChipHistorico(item = {}, referencias = {}) {
+  return {
+    quantidade: item.quantidade,
+    gb: item.gb,
+    tipo_linha: item.tipo_linha || item.tipo || item.categoria,
+    operadora_atual: obterNomeReferencia(referencias.operadoras, item.operadora_atual_id, item.operadora_atual_nome),
+    operadora_destino: obterNomeReferencia(referencias.operadoras, item.operadora_id, item.operadora_nome),
+    valor_unitario: item.valor_unitario
+  };
+}
+
+function camposVisiveisChip(antes = {}, depois = {}) {
+  return CAMPOS_HISTORICO_CHIP.filter(campo => (
+    (antes?.[campo.chave] !== undefined && antes?.[campo.chave] !== null && antes?.[campo.chave] !== '')
+    || (depois?.[campo.chave] !== undefined && depois?.[campo.chave] !== null && depois?.[campo.chave] !== '')
+  ));
+}
+
+function valorCampoChip(campo, item) {
+  return campo.formatar(item?.[campo.chave]);
+}
+
+function HistoricoChips({ anterior, novo, referencias }) {
+  const chipsAnteriores = normalizarChipsHistorico(anterior).map(item => prepararChipHistorico(item, referencias));
+  const chipsNovos = normalizarChipsHistorico(novo).map(item => prepararChipHistorico(item, referencias));
+  const totalItens = Math.max(chipsAnteriores.length, chipsNovos.length);
+
+  return (
+    <div className="venda-chips-history">
+      {Array.from({ length: totalItens }, (_, index) => {
+        const antes = chipsAnteriores[index];
+        const depois = chipsNovos[index];
+        const campos = camposVisiveisChip(antes, depois);
+        const alterados = campos.filter(campo => valorCampoChip(campo, antes) !== valorCampoChip(campo, depois));
+
+        return (
+          <section className="venda-chips-history-item" key={index}>
+            <div className="venda-chips-history-item__title">
+              <strong>Linha {index + 1}</strong>
+              <span>{!antes ? 'Adicionada' : !depois ? 'Removida' : `${alterados.length} ${alterados.length === 1 ? 'dado alterado' : 'dados alterados'}`}</span>
+            </div>
+
+            {alterados.length > 0 && antes && depois && (
+              <div className="venda-chips-history-summary" aria-label="Resumo das alterações">
+                {alterados.map(campo => (
+                  <div key={campo.chave}>
+                    <strong>{campo.label}:</strong>
+                    <span>{valorCampoChip(campo, antes)}</span>
+                    <I.ArrowRight size={13} aria-hidden="true" />
+                    <span>{valorCampoChip(campo, depois)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="venda-reversao-values venda-reversao-values--chips">
+              {[
+                { titulo: 'Antes', item: antes, classe: 'is-before' },
+                { titulo: 'Depois', item: depois, classe: 'is-after' }
+              ].map(coluna => (
+                <div className={coluna.classe} key={coluna.titulo}>
+                  <span className="venda-chips-history-column-title">{coluna.titulo}</span>
+                  {coluna.item ? (
+                    <dl>
+                      {campos.map(campo => {
+                        const mudou = valorCampoChip(campo, antes) !== valorCampoChip(campo, depois);
+                        return (
+                          <div className={mudou ? 'is-changed' : ''} key={campo.chave}>
+                            <dt>{campo.label}</dt>
+                            <dd>{valorCampoChip(campo, coluna.item)}</dd>
+                          </div>
+                        );
+                      })}
+                    </dl>
+                  ) : <p className="venda-chips-history-empty">Esta linha não existia.</p>}
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function HistoricoCampoModal({ titulo, eventos, referencias, onClose }) {
   return (
     <div className="modal-overlay venda-reversao-history-overlay" role="dialog" aria-modal="true" onClick={event => event.target === event.currentTarget && onClose()}>
@@ -422,10 +567,14 @@ function HistoricoCampoModal({ titulo, eventos, referencias, onClose }) {
                 <span>{formatarDataHora(evento.reversao.created_at)}</span>
               </div>
               <div className="venda-reversao-history-author">{evento.reversao.usuario?.nome || 'Usuário não disponível'} · {LABELS_CAMPOS_REVERSAO[evento.alteracao.campo] || evento.alteracao.campo}</div>
-              <div className="venda-reversao-values">
-                <div><span>Valor anterior</span><pre>{formatarValorHistorico(evento.alteracao.anterior, evento.alteracao.campo, referencias)}</pre></div>
-                <div><span>Novo valor</span><pre>{formatarValorHistorico(evento.alteracao.novo, evento.alteracao.campo, referencias)}</pre></div>
-              </div>
+              {evento.alteracao.campo === 'valores_unitarios_chips' ? (
+                <HistoricoChips anterior={evento.alteracao.anterior} novo={evento.alteracao.novo} referencias={referencias} />
+              ) : (
+                <div className="venda-reversao-values">
+                  <div><span>Valor anterior</span><pre>{formatarValorHistorico(evento.alteracao.anterior, evento.alteracao.campo, referencias)}</pre></div>
+                  <div><span>Novo valor</span><pre>{formatarValorHistorico(evento.alteracao.novo, evento.alteracao.campo, referencias)}</pre></div>
+                </div>
+              )}
               <p>{evento.reversao.observacao}</p>
             </article>
           ))}
@@ -562,10 +711,11 @@ function formatarData(value) {
 function formatarDataHora(value) {
   if (!value) return '-';
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return formatarData(value);
+  const date = parseUtcDateTime(value);
+  if (!date) return formatarData(value);
 
   return date.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -5518,7 +5668,7 @@ function VendaModal({
                         <p className="venda-reversoes-empty">Nenhuma reversão registrada.</p>
                       ) : reversoesVenda.map(reversao => (
                         <article key={reversao.id} className="venda-reversao-observacao">
-                          <time>{formatarDataHora(reversao.created_at)}</time>
+                          {reversao.created_at && <time>{formatarDataHora(reversao.created_at)}</time>}
                           <strong>Reversão {reversao.numero}</strong>
                           <p>{reversao.observacao}</p>
                         </article>
@@ -5693,7 +5843,7 @@ function VendaModal({
         <HistoricoCampoModal
           titulo={historicoCampoAberto.titulo}
           eventos={historicoCampoAberto.eventos}
-          referencias={{ clientes: clientesDisponiveis, servicos, tiposVenda, vendedoras: vendedorasOpcoesModal }}
+          referencias={{ clientes: clientesDisponiveis, servicos, tiposVenda, vendedoras: vendedorasOpcoesModal, operadoras }}
           onClose={() => setHistoricoCampoAberto(null)}
         />
       )}

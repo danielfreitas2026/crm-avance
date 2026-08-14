@@ -61,11 +61,34 @@ describe('VendaModal - reversões', () => {
 
     expect(screen.getByText('Reversão 1')).toBeInTheDocument();
     expect(screen.getByText('Correção solicitada pelo cliente.')).toBeInTheDocument();
+    expect(screen.getByText(/13\/08\/2026.*09:00/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Registrar Reversão/i }));
 
     expect(await screen.findByLabelText(/Nova observação de reversão/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Salvar reversão/i })).toBeInTheDocument();
+  });
+
+  it('não mostra um traço para um registro antigo que não possui data', () => {
+    renderModal({
+      venda: {
+        id: 7,
+        nome: 'Cliente corrigido',
+        cliente_id: 3,
+        vendedora_id: 9,
+        vendedoras: [{ id: 9, nome: 'Consultora' }],
+        reversoes: [{
+          id: 21,
+          numero: 1,
+          observacao: 'Correção solicitada pelo cliente.'
+        }]
+      }
+    });
+
+    const card = screen.getByText('Reversão 1').closest('article');
+
+    expect(card).not.toHaveTextContent('-');
+    expect(card.querySelector('time')).not.toBeInTheDocument();
   });
 
   it('abre o histórico permanente ao lado de campo alterado', async () => {
@@ -76,5 +99,42 @@ describe('VendaModal - reversões', () => {
     await waitFor(() => expect(screen.getByText('Valor anterior')).toBeInTheDocument());
     expect(screen.getByText('Cliente antigo')).toBeInTheDocument();
     expect(screen.getAllByText('Cliente corrigido').length).toBeGreaterThan(0);
+  });
+
+  it('mostra alterações de chips com nomes amigáveis em vez de JSON', async () => {
+    renderModal({
+      operadoras: [{ id: 2, nome: 'TIM' }],
+      venda: {
+        id: 7,
+        nome: 'Cliente corrigido',
+        cliente_id: 3,
+        vendedora_id: 9,
+        vendedoras: [{ id: 9, nome: 'Consultora' }],
+        valores_unitarios_chips: [{ quantidade: 2, gb: '1', valor_unitario: 0.01, tipo_linha: 'novo', operadora_atual_id: 2 }],
+        reversoes: [{
+          id: 22,
+          numero: 2,
+          observacao: 'Quantidade corrigida.',
+          created_at: '2026-08-13 13:00:00',
+          usuario: { id: 9, nome: 'Consultora' },
+          alteracoes: [{
+            campo: 'valores_unitarios_chips',
+            anterior: [{ quantidade: 1, gb: '1', valor_unitario: 0.01, tipo_linha: 'novo', operadora_atual_id: 2 }],
+            novo: [{ quantidade: 2, gb: '1', valor_unitario: 0.01, tipo_linha: 'novo', operadora_atual_id: 2 }]
+          }]
+        }],
+        campos_com_reversao: ['valores_unitarios_chips']
+      }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Ver histórico de Chips, gigas e valores unitários/i }));
+
+    expect(await screen.findByText('Linha 1')).toBeInTheDocument();
+    expect(screen.getByText('1 dado alterado')).toBeInTheDocument();
+    expect(screen.getAllByText('Quantidade').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1 chip').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2 chips').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('TIM').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/operadora_atual_id/)).not.toBeInTheDocument();
   });
 });
