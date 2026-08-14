@@ -4782,9 +4782,17 @@ input.is-invalid {
   gap: 8px;
 }
 
-.venda-reversao-delete-btn {
+.venda-modal .venda-reversao-delete-btn {
   margin-left: auto;
   color: var(--danger, #dc2626);
+}
+
+.venda-modal .venda-reversao-delete-btn:not(:disabled):hover {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #fff;
+  box-shadow: none;
+  transform: none;
 }
 
 .venda-reversao-delete-overlay {
