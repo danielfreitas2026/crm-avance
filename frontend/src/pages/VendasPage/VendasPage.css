@@ -976,7 +976,8 @@
   cursor: default;
 }
 
-.venda-readonly-fieldset.is-readonly .venda-field-history-btn {
+.venda-readonly-fieldset.is-readonly .venda-field-history-btn,
+.venda-readonly-fieldset.is-readonly .venda-reversao-delete-btn {
   pointer-events: auto;
   cursor: pointer;
 }
