@@ -92,7 +92,7 @@ function VendasAprovacoesPage() {
   const [recusando, setRecusando] = useState(null);
   const [vendaModal, setVendaModal] = useState(null);
   const [modalModoEdicao, setModalModoEdicao] = useState(false);
-  const [carregandoVendaId, setCarregandoVendaId] = useState(null);
+  const [, setCarregandoVendaId] = useState(null);
   const [solicitacaoModal, setSolicitacaoModal] = useState(null);
   const [observacao, setObservacao] = useState('');
   const [erro, setErro] = useState('');
@@ -119,46 +119,46 @@ function VendasAprovacoesPage() {
     }
   }
 
-  /**
-   * Carrega auxiliares e atualiza o estado relacionado.
-   */
-  async function carregarAuxiliares() {
-    try {
-      const [clientesData, vendedorasData, operadorasData, tiposVendaData, servicosData] = await Promise.all([
-        listarClientes(),
-        listarVendedoras(),
-        listarOperadoras(),
-        listarTiposVenda(),
-        listarServicos()
-      ]);
-
-      setClientes(clientesData);
-      setVendedoras(vendedorasData);
-      setOperadoras(operadorasData);
-      setTiposVenda(tiposVendaData);
-      setServicos(servicosData);
-    } catch (error) {
-      setErro(error.message || 'Erro ao carregar dados do modal de venda.');
-    }
-  }
-
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    carregar();
+    let ativo = true;
+    const atualizar = () => {
+      listarAprovacoesVenda(status ? { status } : {})
+        .then(dados => {
+          if (ativo) setSolicitacoes(Array.isArray(dados) ? dados : []);
+        })
+        .catch(error => {
+          if (ativo) setErro(error.message || 'Erro ao carregar aprovações.');
+        })
+        .finally(() => {
+          if (ativo) setCarregando(false);
+        });
+    };
+    atualizar();
     // Decisões feitas pelo Telegram não passam pelo navegador. Atualizamos a
     // lista em segundo plano para refletir a decisão quase imediatamente.
-    const intervalo = setInterval(() => carregar(true), 3000);
-    return () => clearInterval(intervalo);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const intervalo = setInterval(atualizar, 3000);
+    return () => {
+      ativo = false;
+      clearInterval(intervalo);
+    };
   }, [status]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    carregarAuxiliares();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let ativo = true;
+    Promise.all([listarClientes(), listarVendedoras(), listarOperadoras(), listarTiposVenda(), listarServicos()])
+      .then(([clientesData, vendedorasData, operadorasData, tiposVendaData, servicosData]) => {
+        if (!ativo) return;
+        setClientes(clientesData);
+        setVendedoras(vendedorasData);
+        setOperadoras(operadorasData);
+        setTiposVenda(tiposVendaData);
+        setServicos(servicosData);
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao carregar dados do modal de venda.');
+      });
+    return () => { ativo = false; };
   }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!sucesso) return undefined;
@@ -286,7 +286,7 @@ function VendasAprovacoesPage() {
         <div className="vendas-toolbar vendas-toolbar--approval-status">
           <div className="filter-field vendas-toolbar-status">
             <label>Status</label>
-            <select value={status} onChange={event => setStatus(event.target.value)}>
+            <select value={status} onChange={event => { setCarregando(true); setStatus(event.target.value); }}>
               <option value="">Todos</option>
               <option value="pendente">Pendentes</option>
               <option value="aprovada">Aprovadas</option>

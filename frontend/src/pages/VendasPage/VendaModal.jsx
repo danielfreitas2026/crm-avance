@@ -1,38 +1,14 @@
-import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import AutoResizeTextarea from '../../components/AutoResizeTextarea';
 import SelectFiltro from '../../components/SelectFiltro/SelectFiltro';
-import CnpjSugestoes, { formatarMensagemResumoCnpj } from '../../components/CnpjSugestoes';
 import NotasEntidadeTab from '../../components/NotasEntidadeTab';
 import * as I from '../../components/Icons';
 import VendaProblemaPanel from './VendaProblemaPanel';
 import { useFormDraft } from '../../utils/useFormDraft';
-import {
-  atualizarEtapa0800,
-  baixarArquivoVenda,
-  baixarPacoteArquivosVenda,
-  baixarXlsxClaro,
-  blobArquivoVenda,
-  buscarVendaPorId,
-  criarVenda,
-  deletarVenda,
-  enviarVendaParaPosVenda,
-  excluirArquivoVenda,
-  gerarPacoteArquivosVenda,
-  gerarEmailVenda,
-  listarArquivosVenda,
-  listarDestinatariosProblemaVenda,
-  listarEtapasVenda,
-  listarVendas,
-  listarVendedoras,
-  marcarProblemaVenda,
-  uploadArquivoVenda,
-  visualizarArquivoVenda
-} from '../../services/venda.service';
-import { consultarCnpj, sanitizarCnpj, validarDigitosCnpj, sanitizarCpf } from '../../services/cnpj.service';
-import { listarEtapasFunil, listarOperadoras, listarServicos, listarTiposVenda } from '../../services/config.service';
-import { listarClientes } from '../../services/cliente.service';
-import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
+import { atualizarEtapa0800, baixarArquivoVenda, baixarPacoteArquivosVenda, blobArquivoVenda, excluirArquivoVenda, gerarPacoteArquivosVenda, listarArquivosVenda, listarEtapasVenda, uploadArquivoVenda, visualizarArquivoVenda } from '../../services/venda.service';
+import { sanitizarCnpj, validarDigitosCnpj, sanitizarCpf } from '../../services/cnpj.service';
+import { listarEtapasFunil } from '../../services/config.service';
+import { temPermissao } from '../../services/auth.service';
 import { agruparOpcoesServicos } from '../../utils/servicos';
 import { parseUtcDateTime } from '../../utils/datetime';
 import {
@@ -95,11 +71,7 @@ const VENDA_VAZIA = {
   cliente_solicitou_observacao: '',
   ponto_referencia: '',
   tipo_local_cpf: '',
-  razao_social: '',
-  cnpj: '',
-  data_venda: '',
   data_ativacao: '',
-  qc_feito_por: '',
   observacoes: '',
   dia_vencimento: '',
   // Endereço
@@ -118,8 +90,6 @@ const VENDA_VAZIA = {
   bairro_real: '',
   municipio_real: '',
   uf_real: '',
-  ponto_referencia: '',
-  tipo_local_cpf: '',
   // Aceite
   horario_aceite_voz: '',
   horario_aceite_inicio: '',
@@ -138,31 +108,12 @@ const VENDA_VAZIA = {
   rg_responsavel_recebimento_2: '',
   responsavel_recebimento_3: '',
   rg_responsavel_recebimento_3: '',
-  observacoes: '',
   // Referências
   operadora_id: '',
   operadora_atual_id: '',
   vendedora_id: '',
   vendedoras: []
 };
-
-const CNPJ_SUGESTOES_VENDA = {
-  nomeFantasia: { campo: 'nome', label: 'Nome fantasia' },
-  razaoSocial: { campo: 'razao_social', label: 'Razão social' },
-  email: { campo: 'email', label: 'Email' },
-  telefone: { campo: 'telefone', label: 'Telefone' },
-  cep: { campo: 'cep', label: 'CEP' },
-  endereco: { campo: 'endereco', label: 'Endereço' },
-  numero: { campo: 'numero_endereco', label: 'Número' },
-  complemento: { campo: 'complemento', label: 'Complemento' },
-  bairro: { campo: 'bairro', label: 'Bairro' },
-  municipio: { campo: 'municipio', label: 'Município' },
-  uf: { campo: 'uf', label: 'UF' }
-};
-
-const CNPJ_LABELS_VENDA = Object.fromEntries(
-  Object.entries(CNPJ_SUGESTOES_VENDA).map(([campo, config]) => [campo, config.label])
-);
 
 const CAMPOS_ENDERECO_REAL_VENDA = [
   { name: 'cep_real', label: 'CEP' },
@@ -664,33 +615,9 @@ function obterErroCamposObrigatoriosVenda(form) {
   return `Preencha os campos obrigatórios: ${camposNaoPreenchidos.join(', ')}.`;
 }
 
-const STATUS_FUNIL_FILTROS = [
-  { id: 'aprovacao', label: 'Aprovação' },
-  { id: 'ativacao', label: 'Ativação' },
-  { id: 'envio', label: 'Envio' },
-  { id: 'entrega', label: 'Entrega' },
-  { id: 'confirmacao', label: 'Confirmação' },
-  { id: 'concluido', label: 'Concluído' },
-  { id: 'retorno', label: 'Retorno' }
-];
-
 /**
  * Normaliza status funil filtros para uso interno consistente.
  */
-function normalizarStatusFunilFiltros(etapas = []) {
-  const normalizados = etapas
-    .map(etapa => ({
-      id: etapa.codigo || etapa.id,
-      label: etapa.nome || etapa.name
-    }))
-    .filter(etapa => etapa.id && etapa.label);
-
-  return [
-    ...(normalizados.length > 0 ? normalizados : STATUS_FUNIL_FILTROS.filter(status => status.id !== 'retorno')),
-    { id: 'retorno', label: 'Retorno' }
-  ];
-}
-
 /**
  * Converte input date para o formato esperado.
  */
@@ -1184,24 +1111,9 @@ function inferirTiposServicoDeChips(itens = []) {
 /**
  * Resume tipos linha itens chips para exibicao ou envio.
  */
-function resumirTiposLinhaItensChips(itens = []) {
-  const tipos = normalizarItensChipsInput(itens)
-    .map(item => formatarTipoLinhaChipLabel(item.tipo_linha || item.tipo || item.categoria))
-    .filter(Boolean);
-
-  return Array.from(new Set(tipos)).join(', ');
-}
-
 /**
  * Obtem tipo venda tabela a partir dos dados informados.
  */
-function obterTipoVendaTabela(venda = {}) {
-  return venda.tipoVenda?.nome
-    || resumirTiposLinhaItensChips(venda.valores_unitarios_chips)
-    || venda.produto_fechado
-    || '-';
-}
-
 /**
  * Retorna chaves cliente venda a partir dos dados informados.
  */
@@ -3029,7 +2941,7 @@ function EtapaThumb({ vendaId, arquivo, podeExcluir, onExcluir }) {
  */
 function EtapasVendaTab({ venda, podeEditar, podeAdicionar, etapasArquivos = [], onArquivosAlterados = () => {}, onEtapasAtualizadas = () => {} }) {
   const [etapas, setEtapas] = useState([]);
-  const [carregando, setCarregando] = useState(false);
+  const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState('');
   const [erro, setErro] = useState('');
   const [recolhido, setRecolhido] = useState(true); // começa sempre recolhida para evitar poluição visual
@@ -3054,8 +2966,21 @@ function EtapasVendaTab({ venda, podeEditar, podeAdicionar, etapasArquivos = [],
   }
 
   useEffect(() => {
-    carregarEtapas();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!venda?.id) return undefined;
+    let ativo = true;
+
+    listarEtapasVenda(venda.id)
+      .then(data => {
+        if (ativo) setEtapas(data.etapas || []);
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao carregar etapas.');
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+
+    return () => { ativo = false; };
   }, [venda?.id]);
 
   const visiveis = etapas.filter(etapa => etapa.aplicavel);
@@ -3311,7 +3236,7 @@ export function ArquivosVendaTab({
   const [etapasArquivos, setEtapasArquivos] = useState([]);
   const [pacote, setPacote] = useState(null);
   const [categoria, setCategoria] = useState('documento');
-  const [carregando, setCarregando] = useState(false);
+  const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [progresso, setProgresso] = useState(null);
   const [erro, setErro] = useState('');
@@ -3345,9 +3270,27 @@ export function ArquivosVendaTab({
     }
   }
 
+  const carregarNoIntervalo = useEffectEvent(carregar);
+
   useEffect(() => {
-    carregar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!venda?.id || !podeVisualizar) return undefined;
+    let ativo = true;
+
+    listarArquivosVenda(venda.id)
+      .then(data => {
+        if (!ativo) return;
+        setArquivos(data.arquivos || []);
+        setEtapasArquivos(data.etapas_arquivos || []);
+        setPacote(data.pacote || null);
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao carregar arquivos.');
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+
+    return () => { ativo = false; };
   }, [venda?.id, podeVisualizar]);
 
   useEffect(() => {
@@ -3355,11 +3298,10 @@ export function ArquivosVendaTab({
     if (!['pendente', 'gerando'].includes(pacote?.status)) return undefined;
 
     const timer = setInterval(() => {
-      carregar();
+      carregarNoIntervalo();
     }, 2500);
 
     return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pacote?.status, venda?.id, podeVisualizar]);
 
   /**
@@ -3734,95 +3676,6 @@ export function ArquivosVendaTab({
 /**
  * Renderiza marcar problema modal.
  */
-function MarcarProblemaModal({ venda, usuarios, onClose, onSave }) {
-  const [motivo, setMotivo] = useState('');
-  const [modo, setModo] = useState('responsaveis');
-  const [destinatarios, setDestinatarios] = useState([]);
-  const [erro, setErro] = useState('');
-  const [salvando, setSalvando] = useState(false);
-
-  /**
-   * Salva  com os dados informados.
-   */
-  async function salvar() {
-    setErro('');
-    setSalvando(true);
-
-    try {
-      await onSave(venda, {
-        motivo,
-        modo_destinatario: modo === 'manual' ? 'manual' : 'responsaveis',
-        destinatarios
-      });
-    } catch (error) {
-      setErro(error.message || 'Erro ao marcar problema.');
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  /**
-   * Alterna usuario no estado atual.
-   */
-  function toggleUsuario(id) {
-    setDestinatarios(prev => (
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-    ));
-  }
-
-  return (
-    <div className="modal-overlay venda-problema-modal-overlay" onClick={onClose}>
-      <div className="modal venda-problema-modal" onClick={event => event.stopPropagation()}>
-        <div className="modal-header">
-          <div className="modal-header-row">
-            <div>
-              <div className="modal-client">Marcar venda com problema</div>
-              <div className="modal-sub">{venda?.cliente?.nome || venda?.nome || `Venda #${venda?.id}`}</div>
-            </div>
-            <button type="button" className="btn btn-icon btn-ghost" onClick={onClose}>
-              <I.Close size={14} />
-            </button>
-          </div>
-        </div>
-        <div className="modal-body">
-          {erro && <div className="alert-error">{erro}</div>}
-          <div className="form-field">
-            <label>Motivo do problema</label>
-            <AutoResizeTextarea value={motivo} onChange={event => setMotivo(event.target.value)} placeholder="Explique por que esta venda está com problema" />
-          </div>
-          <div className="venda-problema-recipient-mode">
-            <label>
-              <input type="radio" checked={modo === 'responsaveis'} onChange={() => setModo('responsaveis')} />
-              Enviar aos responsáveis da venda
-            </label>
-            <label>
-              <input type="radio" checked={modo === 'manual'} onChange={() => setModo('manual')} />
-              Escolher manualmente
-            </label>
-          </div>
-          {modo === 'manual' && (
-            <div className="venda-problema-user-list">
-              {usuarios.map(usuario => (
-                <label key={usuario.id}>
-                  <input type="checkbox" checked={destinatarios.includes(usuario.id)} onChange={() => toggleUsuario(usuario.id)} />
-                  <span>{usuario.nome}</span>
-                  <em>{usuario.email}</em>
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>Cancelar</button>
-          <button type="button" className="btn btn-danger" disabled={salvando || !motivo.trim() || (modo === 'manual' && destinatarios.length === 0)} onClick={salvar}>
-            {salvando ? 'Enviando...' : 'Marcar problema'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
  * Renderiza venda modal.
  */
@@ -3837,7 +3690,6 @@ function VendaModal({
   servicos,
   vendasPorCliente,
   vendasEmAndamentoPorCliente = new Map(),
-  podeEditarVenda,
   podeRegistrarReversao = false,
   podeExcluirReversao = false,
   podeCompartilharVenda,
@@ -3923,10 +3775,7 @@ function VendaModal({
   const [reenviandoDashboard, setReenviandoDashboard] = useState(false);
   const [cepStatus, setCepStatus] = useState('');
   const [cepRealStatus, setCepRealStatus] = useState('');
-  const [consultandoCnpj, setConsultandoCnpj] = useState(false);
   const [cnpjStatus, setCnpjStatus] = useState({ tipo: '', mensagem: '' });
-  const [cnpjDados, setCnpjDados] = useState(null);
-  const [cnpjSugestoes, setCnpjSugestoes] = useState({});
   const [tipoBusca, setTipoBusca] = useState(() => sanitizarCnpj(form.cnpj).length === 11 ? 'cpf' : 'cnpj');
   const [documentosPorTipo, setDocumentosPorTipo] = useState(() => {
     const documento = form.cnpj || '';
@@ -3947,7 +3796,7 @@ function VendaModal({
   const [abaAtiva, setAbaAtiva] = useState(abaInicial);
   const [pendingNotas, setPendingNotas] = useState([]);
   const [pendingArquivos, setPendingArquivos] = useState([]);
-  const clienteLeadResolvidoRef = useRef(false);
+  const [clienteLeadProcessado, setClienteLeadProcessado] = useState('');
 
   useEffect(() => {
     let ativo = true;
@@ -4044,8 +3893,6 @@ function VendaModal({
   const podeExcluirReversaoEfetivo = Boolean(venda?.id && podeExcluirReversao && usuarioPodeAcessarVendaModal);
   const podeCorrigirDataVenda = !editando || usuarioPosVenda || usuarioAdmin;
   const vendaCancelada = Boolean(venda?.cancelada_em || form.cancelada_em);
-  const ultimoCnpjConsultadoRef = useRef(venda ? sanitizarCnpj(form.cnpj) : '');
-  const cepPreenchidoPorCnpjRef = useRef('');
   const vendaPortabilidade = temChipPortabilidade(form.valores_unitarios_chips);
   const quantidadePortabilidade = somarQuantidadePortabilidadeItensChips(form.valores_unitarios_chips || []);
   const vendedorasOpcoesModal = useMemo(() => {
@@ -4152,7 +3999,7 @@ function VendaModal({
     return venda?.id
       ? Math.max(totalVendasClienteSelecionado - 1, 0)
       : totalVendasClienteSelecionado;
-  }, [chavesClienteSelecionado, vendas, venda?.id, vendasPorCliente]);
+  }, [chavesClienteSelecionado, vendas, venda, vendasPorCliente]);
   const clienteBaseAnteriorSelecionado = Boolean(clienteSelecionadoModal?.base_anterior_sistema);
   const vendasEmAndamentoPorClienteDerivado = useMemo(() => {
     if (!Array.isArray(vendas) || vendas.length === 0) return new Map();
@@ -4241,8 +4088,6 @@ function VendaModal({
     setCepStatus('');
     setCepRealStatus('');
     setCnpjStatus({ tipo: '', mensagem: '' });
-    setCnpjDados(null);
-    setCnpjSugestoes({});
     setTipoBusca('cnpj');
     setDocumentosPorTipo({ cnpj: '', cpf: '' });
     setAceiteMode('janela');
@@ -4252,8 +4097,6 @@ function VendaModal({
     setClienteSolicitouQuantidadesDraft({ bloqueio: '', cancelamento: '' });
     setClienteSolicitouNumerosDraft({ bloqueio: [], cancelamento: [] });
     setEnderecoRealModalAberto(false);
-    ultimoCnpjConsultadoRef.current = '';
-    cepPreenchidoPorCnpjRef.current = '';
   }
 
   /**
@@ -4266,6 +4109,17 @@ function VendaModal({
 
     if (campo === 'cnpj') {
       setDocumentosPorTipo(prev => ({ ...prev, [tipoBusca]: valorFormatado }));
+      const cnpj = sanitizarCnpj(valorFormatado);
+      const invalido = tipoBusca === 'cnpj' && cnpj.length === 14 && !validarDigitosCnpj(cnpj);
+      setCnpjStatus(invalido ? { tipo: 'erro', mensagem: 'CNPJ inválido.' } : { tipo: '', mensagem: '' });
+    }
+
+    if (campo === 'cep') {
+      setCepStatus(apenasDigitos(valorFormatado, 8).length === 8 ? 'Buscando CEP...' : '');
+    }
+
+    if (campo === 'cep_real') {
+      setCepRealStatus(apenasDigitos(valorFormatado, 8).length === 8 ? 'Buscando CEP...' : '');
     }
 
     setForm(prev => {
@@ -4335,22 +4189,10 @@ function VendaModal({
   /**
    * Formata mensagem cnpj para exibicao ou envio.
    */
-  function formatarMensagemCnpj(dados) {
-    return formatarMensagemResumoCnpj(dados);
-  }
-
-  /**
+    /**
    * Monta sugestoes cnpj a partir dos dados informados.
    */
-  function montarSugestoesCnpj(dados) {
-    return Object.entries(CNPJ_SUGESTOES_VENDA).reduce((acc, [campoApi]) => {
-      const valor = dados[campoApi];
-      if (String(valor || '').trim()) acc[campoApi] = valor;
-      return acc;
-    }, {});
-  }
-
-  /**
+    /**
    * Atualiza cliente venda com os dados informados.
    */
   function atualizarClienteVenda(valor, clienteSelecionado = null) {
@@ -4375,28 +4217,25 @@ function VendaModal({
       ? { cnpj: '', cpf: dadosCliente.cnpj || '' }
       : { cnpj: dadosCliente.cnpj || '', cpf: '' });
     setCnpjStatus({ tipo: '', mensagem: '' });
-    setCnpjDados(null);
-    setCnpjSugestoes({});
     setCepStatus('');
-    ultimoCnpjConsultadoRef.current = documentoDigitos.length === 14 ? documentoDigitos : '';
-    cepPreenchidoPorCnpjRef.current = '';
   }
 
-  useEffect(() => {
-    if (!clientesCarregados || editando || form.cliente_id || clienteLeadResolvidoRef.current || !clientePreenchido?.cnpj) return;
-    const cnpjDigitos = String(clientePreenchido.cnpj).replace(/\D/g, '');
-    if (cnpjDigitos.length !== 14) return;
-
-    const clienteExistente = clientesDisponiveis.find(c => String(c.cnpj || '').replace(/\D/g, '') === cnpjDigitos);
+  const cnpjClienteLead = String(clientePreenchido?.cnpj || '').replace(/\D/g, '');
+  const chaveClienteLead = clientesCarregados && !editando && cnpjClienteLead.length === 14
+    ? `${cnpjClienteLead}:${clientesDisponiveis.length}`
+    : '';
+  if (!form.cliente_id && chaveClienteLead && clienteLeadProcessado !== chaveClienteLead) {
+    setClienteLeadProcessado(chaveClienteLead);
+    const clienteExistente = clientesDisponiveis.find(c => String(c.cnpj || '').replace(/\D/g, '') === cnpjClienteLead);
     if (clienteExistente) {
-      clienteLeadResolvidoRef.current = true;
-      atualizarClienteVenda(String(clienteExistente.id), clienteExistente);
-      return;
+      setForm(prev => ({
+        ...prev,
+        ...montarDadosClienteVenda(clienteExistente, String(clienteExistente.id))
+      }));
     }
-
     // Quando nao existe na lista, a resolucao/criacao ocorre no submit para nao
     // cadastrar um cliente caso o usuario desista da venda.
-  }, [clientesCarregados, clientesDisponiveis, clientePreenchido, editando, form.cliente_id, onCreateClient, onResolveClient]); // eslint-disable-line react-hooks/exhaustive-deps
+  }
 
   /**
    * Atualiza vendedoras venda com os dados informados.
@@ -4542,99 +4381,6 @@ function VendaModal({
   }
 
   /**
-   * Processa aceitar sugestao cnpj conforme as regras do dominio.
-   */
-  function aceitarSugestaoCnpj(campoApi) {
-    const valor = cnpjSugestoes[campoApi];
-    const config = CNPJ_SUGESTOES_VENDA[campoApi];
-    if (!config || !String(valor || '').trim()) return;
-
-    setForm(prev => {
-      let valorFormatado = valor;
-      if (campoApi === 'cep') {
-        valorFormatado = formatarCep(valor);
-        cepPreenchidoPorCnpjRef.current = apenasDigitos(valorFormatado, 8);
-      } else if (campoApi === 'telefone') {
-        valorFormatado = formatarTelefoneComDdd(valor, true);
-      } else if (campoApi === 'uf') {
-        valorFormatado = formatarCampoVenda('uf', valor);
-      }
-
-      return {
-        ...prev,
-        [config.campo]: valorFormatado
-      };
-    });
-
-    setCnpjSugestoes(prev => {
-      const proximo = { ...prev };
-      delete proximo[campoApi];
-      return proximo;
-    });
-  }
-
-  /**
-   * Processa recusar sugestao cnpj conforme as regras do dominio.
-   */
-  function recusarSugestaoCnpj(campoApi) {
-    setCnpjSugestoes(prev => {
-      const proximo = { ...prev };
-      delete proximo[campoApi];
-      return proximo;
-    });
-  }
-
-  /**
-   * Busca dados cnpj conforme os parametros informados.
-   */
-  async function buscarDadosCnpj(manual = false) {
-    // Preenchimento via API de CNPJ desativado: cadastro manual evita dados divergentes.
-    return;
-
-    if (somenteVisualizacao) return;
-
-    const cnpj = sanitizarCnpj(form.cnpj);
-
-    if (cnpj.length !== 14) {
-      if (manual) {
-        setCnpjStatus({ tipo: 'erro', mensagem: 'Informe um CNPJ com 14 dígitos.' });
-      }
-      return;
-    }
-
-    if (!validarDigitosCnpj(cnpj)) {
-      setCnpjStatus({ tipo: 'erro', mensagem: 'CNPJ inválido.' });
-      setCnpjDados(null);
-      setCnpjSugestoes({});
-      return;
-    }
-
-    if (!manual && ultimoCnpjConsultadoRef.current === cnpj) {
-      return;
-    }
-
-    ultimoCnpjConsultadoRef.current = cnpj;
-    setConsultandoCnpj(true);
-    setCnpjStatus({ tipo: 'info', mensagem: 'Buscando CNPJ...' });
-
-    try {
-      const dados = await consultarCnpj(cnpj);
-      setCnpjDados(dados);
-      setCnpjSugestoes(montarSugestoesCnpj(dados));
-      setCnpjStatus({
-        tipo: 'sucesso',
-        mensagem: formatarMensagemCnpj(dados)
-      });
-    } catch (error) {
-      setCnpjDados(null);
-      setCnpjSugestoes({});
-      setCnpjStatus({ tipo: 'erro', mensagem: error.message || 'Não foi possível consultar o CNPJ.' });
-    } finally {
-      setConsultandoCnpj(false);
-    }
-  }
-
-  /**
    * Executa a acao de alterar tipo busca mantendo o estado da tela consistente.
    */
   function alterarTipoBusca(tipo) {
@@ -4647,8 +4393,6 @@ function VendaModal({
     setDocumentosPorTipo(prev => ({ ...prev, [tipoBusca]: documentoAtual }));
     setForm(prev => ({ ...prev, cnpj: documentoDestino }));
     setCnpjStatus({ tipo: '', mensagem: '' });
-    setCnpjDados(null);
-    setCnpjSugestoes({});
   }
 
   /**
@@ -4663,69 +4407,20 @@ function VendaModal({
     }
   }
 
-  useEffect(() => {
-    if (abaAtiva === 'arquivos' && !podeAcessarDocumentosVenda) {
-      setAbaAtiva('venda');
-    }
-    if (abaAtiva === 'solicitacao' && !temClienteSolicitouAba) {
-      setAbaAtiva('venda');
-    }
-    if (abaAtiva === 'cancelamento' && !vendaCancelada) {
-      setAbaAtiva('venda');
-    }
-  }, [abaAtiva, podeAcessarDocumentosVenda, temClienteSolicitouAba, vendaCancelada]);
+  const abaExibida = (abaAtiva === 'arquivos' && !podeAcessarDocumentosVenda)
+    || (abaAtiva === 'solicitacao' && !temClienteSolicitouAba)
+    || (abaAtiva === 'cancelamento' && !vendaCancelada)
+    ? 'venda'
+    : abaAtiva;
 
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
-  useEffect(() => {
-    if (somenteVisualizacao) return;
-    if (tipoBusca !== 'cnpj') return;
-
-    const cnpj = sanitizarCnpj(form.cnpj);
-
-    if (cnpj.length === 0) {
-      setCnpjStatus({ tipo: '', mensagem: '' });
-      setCnpjDados(null);
-      setCnpjSugestoes({});
-      return;
-    }
-
-    if (cnpj.length === 14) {
-      if (!validarDigitosCnpj(cnpj)) {
-        setCnpjStatus({ tipo: 'erro', mensagem: 'CNPJ inválido.' });
-        setCnpjDados(null);
-        setCnpjSugestoes({});
-        return;
-      }
-
-      setCnpjStatus({ tipo: '', mensagem: '' });
-      setCnpjDados(null);
-      setCnpjSugestoes({});
-      // Preenchimento via API de CNPJ desativado: cadastro manual evita dados divergentes.
-    }
-  }, [form.cnpj, somenteVisualizacao]);
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
-
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
     if (somenteVisualizacao) return;
 
     const cep = apenasDigitos(form.cep, 8);
 
-    if (cep.length !== 8) {
-      setCepStatus('');
-      return;
-    }
-
-    if (
-      cepPreenchidoPorCnpjRef.current === cep
-      && (form.endereco || form.bairro || form.municipio || form.uf)
-    ) {
-      setCepStatus('Endereço preenchido pelo CNPJ.');
-      return;
-    }
+    if (cep.length !== 8) return;
 
     let cancelado = false;
-    setCepStatus('Buscando CEP...');
 
     fetch(`https://viacep.com.br/ws/${cep}/json/`)
       .then(response => {
@@ -4760,21 +4455,15 @@ function VendaModal({
       cancelado = true;
     };
   }, [form.cep, somenteVisualizacao]);
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
     if (somenteVisualizacao) return;
 
     const cep = apenasDigitos(form.cep_real, 8);
 
-    if (cep.length !== 8) {
-      setCepRealStatus('');
-      return;
-    }
+    if (cep.length !== 8) return;
 
     let cancelado = false;
-    setCepRealStatus('Buscando CEP...');
 
     fetch(`https://viacep.com.br/ws/${cep}/json/`)
       .then(response => {
@@ -4809,36 +4498,21 @@ function VendaModal({
       cancelado = true;
     };
   }, [form.cep_real, somenteVisualizacao]);
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (somenteVisualizacao) return;
-    if (!vendaPortabilidade) return;
-
+  const chaveNumerosDerivados = `${somenteVisualizacao ? 1 : 0}:${vendaPortabilidade ? 1 : 0}:${quantidadePortabilidade}:${vendaAtivada ? 1 : 0}:${quantidadeNumerosAtivados}:${form.ddd}`;
+  const [chaveNumerosAplicada, setChaveNumerosAplicada] = useState(chaveNumerosDerivados);
+  if (!somenteVisualizacao && chaveNumerosAplicada !== chaveNumerosDerivados) {
+    setChaveNumerosAplicada(chaveNumerosDerivados);
     setForm(prev => ({
       ...prev,
-      numeros_portados: ajustarQuantidadeNumerosPortados(prev.numeros_portados, quantidadePortabilidade, prev.ddd)
+      numeros_portados: vendaPortabilidade
+        ? ajustarQuantidadeNumerosPortados(prev.numeros_portados, quantidadePortabilidade, prev.ddd)
+        : prev.numeros_portados,
+      numeros_ativados: vendaAtivada
+        ? ajustarQuantidadeNumerosPortados(prev.numeros_ativados, quantidadeNumerosAtivados, prev.ddd)
+        : []
     }));
-  }, [vendaPortabilidade, quantidadePortabilidade, form.ddd]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (somenteVisualizacao) return;
-
-    if (!vendaAtivada) {
-      if (Array.isArray(form.numeros_ativados) && form.numeros_ativados.length === 0) return;
-      setForm(prev => ({ ...prev, numeros_ativados: [] }));
-      return;
-    }
-
-    setForm(prev => ({
-      ...prev,
-      numeros_ativados: ajustarQuantidadeNumerosPortados(prev.numeros_ativados, quantidadeNumerosAtivados, prev.ddd)
-    }));
-  }, [somenteVisualizacao, vendaAtivada, quantidadeNumerosAtivados, form.ddd]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }
 
   /**
    * Trata o evento de start edit.
@@ -5258,7 +4932,7 @@ function VendaModal({
         <div className="modal-tabs">
           <button
             type="button"
-            className={`modal-tab ${abaAtiva === 'venda' ? 'active' : ''}`}
+            className={`modal-tab ${abaExibida === 'venda' ? 'active' : ''}`}
             onClick={() => setAbaAtiva('venda')}
           >
             <I.Chart size={14} /> Venda
@@ -5266,7 +4940,7 @@ function VendaModal({
           {temClienteSolicitouAba && (
             <button
               type="button"
-              className={`modal-tab ${abaAtiva === 'solicitacao' ? 'active' : ''}`}
+              className={`modal-tab ${abaExibida === 'solicitacao' ? 'active' : ''}`}
               onClick={() => setAbaAtiva('solicitacao')}
             >
               <I.Check size={14} /> Pós Venda
@@ -5274,7 +4948,7 @@ function VendaModal({
           )}
           <button
             type="button"
-            className={`modal-tab ${abaAtiva === 'notas' ? 'active' : ''}`}
+            className={`modal-tab ${abaExibida === 'notas' ? 'active' : ''}`}
             onClick={() => setAbaAtiva('notas')}
           >
             <I.Note size={14} /> Notas{!venda?.id && pendingNotas.length > 0 && ` (${pendingNotas.length})`}
@@ -5282,7 +4956,7 @@ function VendaModal({
           {podeAcessarDocumentosVenda && (
             <button
               type="button"
-              className={`modal-tab ${abaAtiva === 'arquivos' ? 'active' : ''}`}
+              className={`modal-tab ${abaExibida === 'arquivos' ? 'active' : ''}`}
               onClick={() => setAbaAtiva('arquivos')}
             >
               <I.Folder size={14} /> Documentos{!venda?.id && pendingArquivos.length > 0 && ` (${pendingArquivos.length})`}
@@ -5291,7 +4965,7 @@ function VendaModal({
           {vendaCancelada && (
             <button
               type="button"
-              className={`modal-tab ${abaAtiva === 'cancelamento' ? 'active' : ''}`}
+              className={`modal-tab ${abaExibida === 'cancelamento' ? 'active' : ''}`}
               onClick={() => setAbaAtiva('cancelamento')}
             >
               <I.AlertTriangle size={14} /> Cancelamento
@@ -5299,7 +4973,7 @@ function VendaModal({
           )}
           <button
             type="button"
-            className={`modal-tab ${abaAtiva === 'problema' ? 'active' : ''}`}
+            className={`modal-tab ${abaExibida === 'problema' ? 'active' : ''}`}
             onClick={() => setAbaAtiva('problema')}
           >
             <I.AlertTriangle size={14} /> Problema
@@ -5314,7 +4988,7 @@ function VendaModal({
           </div>
         )}
 
-        {erro && (abaAtiva === 'venda' || abaAtiva === 'solicitacao') && (
+        {erro && (abaExibida === 'venda' || abaExibida === 'solicitacao') && (
           <div className="venda-modal-alert" role="alert" aria-live="assertive">
             <div className="venda-modal-alert__icon">
               <I.AlertTriangle size={16} />
@@ -5335,21 +5009,21 @@ function VendaModal({
         )}
 
         <div className="modal-body" ref={modalBodyRef}>
-          <div className="venda-modal-tabpanel" key={abaAtiva}>
-          {abaAtiva === 'notas' ? (
+          <div className="venda-modal-tabpanel" key={abaExibida}>
+          {abaExibida === 'notas' ? (
             <NotasEntidadeTab
               tipo="venda"
               entidadeId={venda?.id}
               pendingNotas={pendingNotas}
               onPendingNotasChange={setPendingNotas}
             />
-          ) : abaAtiva === 'solicitacao' && temClienteSolicitouAba ? (
+          ) : abaExibida === 'solicitacao' && temClienteSolicitouAba ? (
             <ClienteSolicitouResolucaoTab
               form={form}
               onChange={atualizarResolucaoClienteSolicitou}
               disabled={somenteVisualizacao || vendaBloqueadaParaUsuario}
             />
-          ) : abaAtiva === 'arquivos' && podeAcessarDocumentosVenda ? (
+          ) : abaExibida === 'arquivos' && podeAcessarDocumentosVenda ? (
             <ArquivosVendaTab
               venda={venda}
               podeEditar={podeEditarVendaEfetivo}
@@ -5365,9 +5039,9 @@ function VendaModal({
               }}
               onArquivosAlterados={() => setDocsAlterados(true)}
             />
-          ) : abaAtiva === 'cancelamento' && vendaCancelada ? (
+          ) : abaExibida === 'cancelamento' && vendaCancelada ? (
             <VendaCancelamentoTab venda={venda || form} />
-          ) : abaAtiva === 'problema' ? (
+          ) : abaExibida === 'problema' ? (
             <VendaProblemaPanel venda={venda} usuario={usuarioLogado} initialProblemaId={initialProblemaId} />
           ) : (
           <>
@@ -5445,28 +5119,12 @@ function VendaModal({
                               onChange={e => atualizarCampo(campo.name, e.target.value)}
                               placeholder="00.000.000/0000-00"
                             />
-                            {/* Preenchimento via API de CNPJ desativado: cadastro manual evita dados divergentes.
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-ghost"
-                              onClick={() => buscarDadosCnpj(true)}
-                              disabled={consultandoCnpj || sanitizarCnpj(form.cnpj).length !== 14}
-                            >
-                              {consultandoCnpj ? 'Buscando...' : cnpjStatus.tipo === 'erro' ? 'Tentar novamente' : 'Buscar dados'}
-                            </button> */}
                           </div>
                           {cnpjStatus.mensagem && (
                             <span className={`field-hint cnpj-lookup-status ${cnpjStatus.tipo}`}>
                               {cnpjStatus.mensagem}
                             </span>
                           )}
-                          {/* <CnpjSugestoes
-                            dados={cnpjDados}
-                            sugestoes={cnpjSugestoes}
-                            labels={CNPJ_LABELS_VENDA}
-                            onAceitar={aceitarSugestaoCnpj}
-                            onRecusar={recusarSugestaoCnpj}
-                          /> */}
                         </>
                       ) : (
                         <>
@@ -5859,7 +5517,7 @@ function VendaModal({
         )}
 
         <div className="modal-footer">
-          {abaAtiva === 'problema' || abaAtiva === 'cancelamento' ? (
+          {abaExibida === 'problema' || abaExibida === 'cancelamento' ? (
             <>
               {podeRegistrarReversaoEfetivo && (
                 <button type="button" className="btn venda-reversao-btn" disabled={vendaBloqueadaParaUsuario} onClick={iniciarReversao}>

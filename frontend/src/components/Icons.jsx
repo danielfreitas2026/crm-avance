@@ -1,4 +1,3 @@
-import React from 'react';
 
 /**
  * Processa mk conforme as regras do dominio.

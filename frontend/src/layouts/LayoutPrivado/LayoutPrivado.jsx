@@ -165,10 +165,6 @@ function LayoutPrivado({ children }) {
   };
 
   useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [location.pathname]);
-
-  useEffect(() => {
     if (!sucessoNovaVenda) return undefined;
     const timer = setTimeout(() => setSucessoNovaVenda(''), 4000);
     return () => clearTimeout(timer);
@@ -314,10 +310,7 @@ function LayoutPrivado({ children }) {
   const podeVerFuturosClientes = usuario && temPermissao(usuario, 'futuros_clientes_ver');
 
   useEffect(() => {
-    if (!podeVerAprovacoes) {
-      setAprovacoesPendentes(0);
-      return undefined;
-    }
+    if (!podeVerAprovacoes) return undefined;
 
     let ativo = true;
 
@@ -344,10 +337,7 @@ function LayoutPrivado({ children }) {
   }, [podeVerAprovacoes]);
 
   useEffect(() => {
-    if (!podeUsarChat) {
-      setMensagensNaoLidas(0);
-      return undefined;
-    }
+    if (!podeUsarChat) return undefined;
 
     let ativo = true;
 
@@ -405,57 +395,61 @@ function LayoutPrivado({ children }) {
    * Carrega alertas urgentes e atualiza o estado relacionado.
    */
   async function carregarAparenciasNotificacao() { try { setAparenciasNotificacao(await listarAparenciasNotificacao()); } catch { setAparenciasNotificacao([]); } }
-  useEffect(() => { carregarAparenciasNotificacao(); window.addEventListener('pos-venda:notificacao-aparencias-atualizar', carregarAparenciasNotificacao); return () => window.removeEventListener('pos-venda:notificacao-aparencias-atualizar', carregarAparenciasNotificacao); }, []);
+  useEffect(() => {
+    window.addEventListener('pos-venda:notificacao-aparencias-atualizar', carregarAparenciasNotificacao);
+    window.dispatchEvent(new CustomEvent('pos-venda:notificacao-aparencias-atualizar'));
+    return () => window.removeEventListener('pos-venda:notificacao-aparencias-atualizar', carregarAparenciasNotificacao);
+  }, []);
   function estiloAlerta(n) { const cor = aparenciasNotificacao.find(item => item.tipo === n.tipo)?.cor; return cor ? { '--tone-color': cor } : undefined; }
-
-  async function carregarAlertasUrgentes() {
-    // Em producao a sincronizacao no servidor pode levar mais que o intervalo
-    // de consulta. Evita requisicoes concorrentes, sem perder uma atualizacao
-    // solicitada por uma alteracao feita pelo usuario.
-    if (carregandoAlertasUrgentesRef.current) {
-      atualizacaoAlertasUrgentesPendenteRef.current = true;
-      return;
-    }
-
-    carregandoAlertasUrgentesRef.current = true;
-    try {
-      const dados = await listarNotificacoesUrgentes();
-      const notificacoes = dados.notificacoes || [];
-      const assinatura = notificacoes
-        .map(notificacao => `${notificacao.destinatario_id || notificacao.id}:${notificacao.tipo}:${notificacao.ativa ? 1 : 0}`)
-        .sort()
-        .join('|');
-      if (assinaturaAlertasUrgentesRef.current !== null
-        && assinaturaAlertasUrgentesRef.current !== assinatura) {
-        window.dispatchEvent(new CustomEvent('pos-venda:mailing-atualizar'));
-      }
-      assinaturaAlertasUrgentesRef.current = assinatura;
-      setAlertasUrgentes(notificacoes);
-    } catch (error) {
-      // Conserva o ultimo resultado valido; apagar a pilha em uma falha temporaria
-      // torna o problema invisivel e faz parecer que a notificacao nao chegou.
-      console.error('Erro ao carregar alertas urgentes:', error);
-    } finally {
-      carregandoAlertasUrgentesRef.current = false;
-      if (atualizacaoAlertasUrgentesPendenteRef.current) {
-        atualizacaoAlertasUrgentesPendenteRef.current = false;
-        carregarAlertasUrgentes();
-      }
-    }
-  }
 
   useEffect(() => {
     if (!usuario) return undefined;
 
-    carregarAlertasUrgentes();
+    async function carregarAlertasUrgentes() {
+      // Em producao a sincronizacao no servidor pode levar mais que o intervalo
+      // de consulta. Evita requisicoes concorrentes, sem perder uma atualizacao
+      // solicitada por uma alteracao feita pelo usuario.
+      if (carregandoAlertasUrgentesRef.current) {
+        atualizacaoAlertasUrgentesPendenteRef.current = true;
+        return;
+      }
+
+      carregandoAlertasUrgentesRef.current = true;
+      try {
+        const dados = await listarNotificacoesUrgentes();
+        const notificacoes = dados.notificacoes || [];
+        const assinatura = notificacoes
+          .map(notificacao => `${notificacao.destinatario_id || notificacao.id}:${notificacao.tipo}:${notificacao.ativa ? 1 : 0}`)
+          .sort()
+          .join('|');
+        if (assinaturaAlertasUrgentesRef.current !== null
+          && assinaturaAlertasUrgentesRef.current !== assinatura) {
+          window.dispatchEvent(new CustomEvent('pos-venda:mailing-atualizar'));
+        }
+        assinaturaAlertasUrgentesRef.current = assinatura;
+        setAlertasUrgentes(notificacoes);
+      } catch (error) {
+        // Conserva o ultimo resultado valido; apagar a pilha em uma falha temporaria
+        // torna o problema invisivel e faz parecer que a notificacao nao chegou.
+        console.error('Erro ao carregar alertas urgentes:', error);
+      } finally {
+        carregandoAlertasUrgentesRef.current = false;
+        if (atualizacaoAlertasUrgentesPendenteRef.current) {
+          atualizacaoAlertasUrgentesPendenteRef.current = false;
+          void carregarAlertasUrgentes();
+        }
+      }
+    }
+
     const timer = setInterval(carregarAlertasUrgentes, 5000);
     window.addEventListener('pos-venda:notificacoes-atualizar', carregarAlertasUrgentes);
+    window.dispatchEvent(new CustomEvent('pos-venda:notificacoes-atualizar'));
 
     return () => {
       clearInterval(timer);
       window.removeEventListener('pos-venda:notificacoes-atualizar', carregarAlertasUrgentes);
     };
-  }, [usuario?.id]);
+  }, [usuario]);
 
   /**
    * Executa a acao de ocultar alerta urgente mantendo o estado da tela consistente.
@@ -620,7 +614,13 @@ function LayoutPrivado({ children }) {
       <Sidebar
         page={currentConfig.id}
         setPage={handleSetPage}
-        counts={{ active: 0, returns: 0, aprovacoes: aprovacoesPendentes, futurosClientes: futurosClientesPendentes, mensagens: mensagensNaoLidas }}
+        counts={{
+          active: 0,
+          returns: 0,
+          aprovacoes: podeVerAprovacoes ? aprovacoesPendentes : 0,
+          futurosClientes: podeVerFuturosClientes ? futurosClientesPendentes : 0,
+          mensagens: podeUsarChat ? mensagensNaoLidas : 0
+        }}
         usuario={usuario}
         onLogout={handleLogout}
         isMobileOpen={mobileMenuOpen}
@@ -695,7 +695,7 @@ function LayoutPrivado({ children }) {
       )}
 
       {podeUsarChat && location.pathname !== '/mensagens' && (
-        <ChatFlutuante usuario={usuario} naoLidas={mensagensNaoLidas} />
+        <ChatFlutuante usuario={usuario} naoLidas={podeUsarChat ? mensagensNaoLidas : 0} />
       )}
     </div>
   );

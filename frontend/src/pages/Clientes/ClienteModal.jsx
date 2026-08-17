@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
 import AutoResizeTextarea from '../../components/AutoResizeTextarea';
 import NotasEntidadeTab from '../../components/NotasEntidadeTab';
 import * as I from '../../components/Icons';
-import CnpjSugestoes, { formatarMensagemResumoCnpj } from '../../components/CnpjSugestoes';
+import CnpjSugestoes from '../../components/CnpjSugestoes';
+import { formatarMensagemResumoCnpj } from '../../components/cnpjSugestoes.utils';
 import { consultarCnpj, sanitizarCnpj, validarDigitosCnpj, formatarCpf, sanitizarCpf, validarDigitosCpf } from '../../services/cnpj.service';
 import { criarCliente, atualizarCliente, atualizarConsultorasCliente, verificarDocumentoCliente } from '../../services/cliente.service';
 import { criarNotaEntidade } from '../../services/nota.service';
@@ -455,14 +456,10 @@ function ClienteModal({
     onDraftChange(form);
   }, [editando, form, onDraftChange]);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (abaAtiva !== 'vendas' || !cliente?.id) return undefined;
 
     let ativo = true;
-    setCarregandoVendas(true);
-    setErroVendas('');
-
     listarVendas({ cliente_id: cliente.id })
       .then(data => {
         if (!ativo) return;
@@ -480,7 +477,6 @@ function ClienteModal({
       ativo = false;
     };
   }, [abaAtiva, cliente?.id]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   /**
    * Trata o evento de close.
@@ -522,6 +518,22 @@ function ClienteModal({
    */
   function atualizarCampo(campo, valor) {
     setForm(prev => ({ ...prev, [campo]: valor }));
+  }
+
+  function atualizarDocumento(valor) {
+    atualizarCampo('cnpj', valor);
+    const cnpjInvalido = tipoBusca === 'cnpj'
+      && sanitizarCnpj(valor).length === 14
+      && !validarDigitosCnpj(sanitizarCnpj(valor));
+    setCnpjStatus(cnpjInvalido
+      ? { tipo: 'erro', mensagem: 'CNPJ inválido.' }
+      : { tipo: '', mensagem: '' });
+    setDocumentoDuplicado(null);
+    setDocumentoStatus({ tipo: '', mensagem: '' });
+    setCnpjDados(null);
+    setCnpjSugestoes({});
+    ultimoCnpjConsultadoRef.current = '';
+    ultimoDocumentoVerificadoRef.current = '';
   }
 
   function atualizarCheckbox(campo, valor) {
@@ -715,78 +727,33 @@ function ClienteModal({
     }
   }
 
+  const verificarDocumentoNoEffect = useEffectEvent(verificarDuplicidadeDocumento);
+  const buscarCnpjNoEffect = useEffectEvent(buscarDadosCnpj);
+
   useEffect(() => {
-    if (tipoBusca !== 'cnpj') {
-      setCnpjStatus({ tipo: '', mensagem: '' });
-      setDocumentoDuplicado(null);
-      setDocumentoStatus({ tipo: '', mensagem: '' });
-      setCnpjDados(null);
-      setCnpjSugestoes({});
-      return;
-    }
+    if (tipoBusca !== 'cnpj') return undefined;
 
     const cnpj = sanitizarCnpj(form.cnpj);
+    if (cnpj.length !== 14 || !validarDigitosCnpj(cnpj)) return undefined;
 
-    if (cnpj.length === 0) {
-      setCnpjStatus({ tipo: '', mensagem: '' });
-      setDocumentoDuplicado(null);
-      setDocumentoStatus({ tipo: '', mensagem: '' });
-      setCnpjDados(null);
-      setCnpjSugestoes({});
-      return;
-    }
+    const timeout = setTimeout(() => {
+      verificarDocumentoNoEffect(cnpj).then(duplicado => {
+        if (!duplicado && !isLead) buscarCnpjNoEffect(false);
+      });
+    }, 450);
 
-    if (cnpj.length < 14) {
-      setDocumentoDuplicado(null);
-      setDocumentoStatus({ tipo: '', mensagem: '' });
-      ultimoDocumentoVerificadoRef.current = '';
-      return;
-    }
-
-    if (cnpj.length === 14) {
-      if (!validarDigitosCnpj(cnpj)) {
-        setCnpjStatus({ tipo: 'erro', mensagem: 'CNPJ inválido.' });
-        setDocumentoDuplicado(null);
-        setDocumentoStatus({ tipo: '', mensagem: '' });
-        setCnpjDados(null);
-        setCnpjSugestoes({});
-        return;
-      }
-
-      setCnpjStatus({ tipo: '', mensagem: '' });
-      setCnpjDados(null);
-      setCnpjSugestoes({});
-
-      const timeout = setTimeout(() => {
-        verificarDuplicidadeDocumento(cnpj).then(duplicado => {
-          if (!duplicado && !isLead) buscarDadosCnpj(false);
-        });
-      }, 450);
-
-      return () => clearTimeout(timeout);
-    }
-  }, [form.cnpj, tipoBusca]);
+    return () => clearTimeout(timeout);
+  }, [form.cnpj, tipoBusca, isLead]);
 
   useEffect(() => {
     if (tipoBusca !== 'cpf') return;
 
     const cpf = sanitizarCpf(form.cnpj);
 
-    if (cpf.length < 11) {
-      setDocumentoDuplicado(null);
-      setDocumentoStatus({ tipo: '', mensagem: '' });
-      ultimoDocumentoVerificadoRef.current = '';
-      return;
-    }
-
-    if (!validarDigitosCpf(cpf)) {
-      setDocumentoDuplicado(null);
-      setDocumentoStatus({ tipo: '', mensagem: '' });
-      return;
-    }
+    if (cpf.length !== 11 || !validarDigitosCpf(cpf)) return undefined;
 
     const timeout = setTimeout(() => {
-      verificarDuplicidadeDocumento(cpf);
+      verificarDocumentoNoEffect(cpf);
     }, 450);
 
     return () => clearTimeout(timeout);
@@ -1063,7 +1030,7 @@ function ClienteModal({
                   <>
                     <input
                       value={form.cnpj}
-                      onChange={event => atualizarCampo('cnpj', formatarCpf(event.target.value))}
+                      onChange={event => atualizarDocumento(formatarCpf(event.target.value))}
                       placeholder="000.000.000-00"
                       inputMode="numeric"
                       maxLength={14}
@@ -1091,7 +1058,7 @@ function ClienteModal({
                   <>
                     <input
                       value={form.cnpj}
-                      onChange={event => atualizarCampo('cnpj', formatarCnpj(event.target.value))}
+                      onChange={event => atualizarDocumento(formatarCnpj(event.target.value))}
                       placeholder="00.000.000/0000-00"
                       inputMode="numeric"
                       maxLength={18}

@@ -9,10 +9,12 @@ import {
   montarGruposPermissoes as montarGruposPermissoesCompartilhados,
   montarPermissoesAdminParaSalvar,
   PERMISSOES_ADMIN_EXPLICITAS,
-  PermissaoGrupo as PermissaoGrupoCompartilhado,
-  CopiarPermissoesSelect,
   getPermissoesCopiaveis
 } from '../Usuarios/permissoes';
+import {
+  CopiarPermissoesSelect,
+  PermissaoGrupo as PermissaoGrupoCompartilhado
+} from '../Usuarios/permissoes.components';
 import '../Usuarios/Usuarios.css';
 import './CadastroUsuario.css';
 

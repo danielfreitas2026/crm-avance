@@ -1,4 +1,3 @@
-import React from 'react';
 
 /**
  * Renderiza um painel simples com corpo padronizado.

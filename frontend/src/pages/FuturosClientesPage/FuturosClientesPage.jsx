@@ -1749,7 +1749,8 @@ function LeadsRecebidosView({ agora }) {
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
   const buscaDeferred = useDeferredValue(busca);
-  const [carregando, setCarregando] = useState(true);
+  const [carregandoEnvios, setCarregandoEnvios] = useState(true);
+  const [consultaLinhasConcluida, setConsultaLinhasConcluida] = useState('');
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [modalAtualizacao, setModalAtualizacao] = useState(null);
@@ -1765,6 +1766,16 @@ function LeadsRecebidosView({ agora }) {
     const id = Number(searchParams.get('linha_id'));
     return Number.isInteger(id) && id > 0 ? id : null;
   }, [searchParams]);
+  const consultaLinhasAtiva = selecionados.length > 0 || Boolean(linhaNotificacaoId);
+  const chaveConsultaLinhas = useMemo(() => JSON.stringify({
+    selecionados,
+    pagina,
+    busca: buscaDeferred,
+    status: filtroStatus,
+    linhaId: linhaNotificacaoId
+  }), [selecionados, pagina, buscaDeferred, filtroStatus, linhaNotificacaoId]);
+  const carregando = carregandoEnvios
+    || (consultaLinhasAtiva && consultaLinhasConcluida !== chaveConsultaLinhas);
 
   function aplicarEnviosAtualizados(data) {
     const enviosAtualizados = data || [];
@@ -1778,14 +1789,14 @@ function LeadsRecebidosView({ agora }) {
   useEffect(() => {
     let cancelado = false;
     async function carregarEnvios(exibirCarregando = false) {
-      if (exibirCarregando) setCarregando(true);
+      if (exibirCarregando) setCarregandoEnvios(true);
       try {
         const data = await listarMeusLeadEnvios();
         if (!cancelado) aplicarEnviosAtualizados(data);
       } catch (error) {
         if (!cancelado) setErro(error.message || 'Erro ao carregar leads recebidos.');
       } finally {
-        if (!cancelado && exibirCarregando) setCarregando(false);
+        if (!cancelado && exibirCarregando) setCarregandoEnvios(false);
       }
     }
 
@@ -1800,41 +1811,35 @@ function LeadsRecebidosView({ agora }) {
 
   useEffect(() => {
     if (selecionados.length === 0 && !linhaNotificacaoId) {
-      setLinhas([]);
-      setTotalLinhas(0);
       return;
     }
 
     let cancelado = false;
-    setCarregando(true);
     listarMinhasLeadLinhas({ envio_ids: selecionados, page: pagina, page_size: 200, busca: buscaDeferred, status: filtroStatus || undefined, linha_id: linhaNotificacaoId || undefined })
       .then(data => {
         if (!cancelado) {
-          setLinhas(data.data || []);
-          setTotalLinhas(data.total || 0);
+          const linhasRecebidas = data.data || [];
+          const totalRecebido = data.total || 0;
+          setLinhas(linhasRecebidas);
+          setTotalLinhas(totalRecebido);
+          if (linhaNotificacaoId && notificacaoAbertaRef.current !== linhaNotificacaoId) {
+            const linha = linhasRecebidas.find(item => Number(item.id) === linhaNotificacaoId);
+            if (linha) {
+              notificacaoAbertaRef.current = linhaNotificacaoId;
+              setErro('');
+              setModalAdicionar(linha);
+            } else if (totalRecebido === 0) {
+              setErro('O lead desta notificacao nao esta mais disponivel.');
+            }
+          }
         }
       })
       .catch(error => setErro(error.message || 'Erro ao carregar leads recebidos.'))
-      .finally(() => !cancelado && setCarregando(false));
+      .finally(() => {
+        if (!cancelado) setConsultaLinhasConcluida(chaveConsultaLinhas);
+      });
     return () => { cancelado = true; };
-  }, [selecionados, pagina, buscaDeferred, filtroStatus, linhaNotificacaoId]);
-  useEffect(() => {
-    if (!linhaNotificacaoId) {
-      notificacaoAbertaRef.current = null;
-      return;
-    }
-    if (carregando || notificacaoAbertaRef.current === linhaNotificacaoId) return;
-
-    const linha = linhas.find(item => Number(item.id) === linhaNotificacaoId);
-    if (linha) {
-      notificacaoAbertaRef.current = linhaNotificacaoId;
-      setErro('');
-      setModalAdicionar(linha);
-    } else if (totalLinhas === 0) {
-      setErro('O lead desta notificacao nao esta mais disponivel.');
-    }
-  }, [carregando, linhaNotificacaoId, linhas, totalLinhas]);
-
+  }, [selecionados, pagina, buscaDeferred, filtroStatus, linhaNotificacaoId, chaveConsultaLinhas]);
   useEffect(() => {
     if (!erro) return undefined;
     const timer = setTimeout(() => setErro(''), 6000);
@@ -1888,7 +1893,14 @@ function LeadsRecebidosView({ agora }) {
    * Alterna envio no estado atual.
    */
   function toggleEnvio(id) {
-    setSelecionados(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
+    const proximos = selecionados.includes(id)
+      ? selecionados.filter(item => item !== id)
+      : [...selecionados, id];
+    setSelecionados(proximos);
+    if (proximos.length === 0) {
+      setLinhas([]);
+      setTotalLinhas(0);
+    }
     setPagina(1);
   }
 
@@ -2840,7 +2852,7 @@ function FuturosClientesMainView({ agora }) {
   const [filtroSituacao, setFiltroSituacao] = useState('');
   const [filtroRetorno, setFiltroRetorno] = useState('');
   const buscaDeferred = useDeferredValue(busca);
-  const [carregando, setCarregando] = useState(true);
+  const [consultaConcluida, setConsultaConcluida] = useState('');
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [linhaAtiva, setLinhaAtiva] = useState(null);
@@ -2862,6 +2874,16 @@ function FuturosClientesMainView({ agora }) {
     const id = Number(searchParams.get('linha_id'));
     return Number.isInteger(id) && id > 0 ? id : null;
   }, [searchParams]);
+  const chaveConsulta = useMemo(() => JSON.stringify({
+    pagina,
+    busca: buscaDeferred,
+    filtroSituacao,
+    filtroRetorno,
+    modoLixeira,
+    linhaNotificacaoId,
+    podeVerQuadroGeral
+  }), [pagina, buscaDeferred, filtroSituacao, filtroRetorno, modoLixeira, linhaNotificacaoId, podeVerQuadroGeral]);
+  const carregando = consultaConcluida !== chaveConsulta;
   const periodoMetricasInvalido = tipoPeriodoMetricas === 'periodo'
     && Boolean(dataInicioMetricas && dataFimMetricas && dataInicioMetricas > dataFimMetricas);
   const filtrosMetricas = useMemo(() => {
@@ -2876,10 +2898,8 @@ function FuturosClientesMainView({ agora }) {
     return { data_inicio: dataInicioMetricas, data_fim: dataFimMetricas };
   }, [tipoPeriodoMetricas, hojeMetricas, mesMetricas, dataInicioMetricas, dataFimMetricas]);
 
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
     let cancelado = false;
-    setCarregando(true);
     const listar = modoLixeira
       ? listarFuturosClientesLixeira
       : (podeVerQuadroGeral ? listarQuadroFuturosClientes : listarFuturosClientesLeads);
@@ -2893,15 +2913,27 @@ function FuturosClientesMainView({ agora }) {
     })
       .then(data => {
         if (!cancelado) {
-          setLinhas(data.data || []);
-          setTotal(data.total || 0);
+          const linhasRecebidas = data.data || [];
+          const totalRecebido = data.total || 0;
+          setLinhas(linhasRecebidas);
+          setTotal(totalRecebido);
+          if (linhaNotificacaoId) {
+            const linha = linhasRecebidas.find(item => Number(item.id) === linhaNotificacaoId);
+            if (linha) {
+              setErro('');
+              setLinhaAtiva(linha);
+            } else if (totalRecebido === 0) {
+              setErro('O futuro cliente desta notificacao nao esta mais disponivel.');
+            }
+          }
         }
       })
       .catch(error => setErro(error.message || 'Erro ao carregar futuros clientes.'))
-      .finally(() => !cancelado && setCarregando(false));
+      .finally(() => {
+        if (!cancelado) setConsultaConcluida(chaveConsulta);
+      });
     return () => { cancelado = true; };
-  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, modoLixeira, linhaNotificacaoId]);
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
+  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, modoLixeira, linhaNotificacaoId, podeVerQuadroGeral, chaveConsulta]);
 
   useEffect(() => {
     if (!podeVerQuadroGeral || modoLixeira || periodoMetricasInvalido) return;
@@ -2932,18 +2964,6 @@ function FuturosClientesMainView({ agora }) {
     const timer = setTimeout(() => setSucesso(''), 4000);
     return () => clearTimeout(timer);
   }, [sucesso]);
-
-  useEffect(() => {
-    if (!linhaNotificacaoId || carregando) return;
-
-    const linha = linhas.find(item => Number(item.id) === linhaNotificacaoId);
-    if (linha) {
-      setErro('');
-      setLinhaAtiva(linha);
-    } else if (total === 0) {
-      setErro('O futuro cliente desta notificacao nao esta mais disponivel.');
-    }
-  }, [carregando, linhaNotificacaoId, linhas, total]);
 
   const colunasDados = useMemo(() => {
     const mapa = new Map();
@@ -3446,12 +3466,9 @@ function FuturosClientesMainView({ agora }) {
 function FuturosClientesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const abaDaNotificacao = searchParams.get('aba') === 'leads' ? 'leads' : 'futuros';
-  const [abaAtiva, setAbaAtiva] = useState(abaDaNotificacao);
+  const [abaSelecionada, setAbaSelecionada] = useState('futuros');
+  const abaAtiva = searchParams.has('aba') ? abaDaNotificacao : abaSelecionada;
   const [agora, setAgora] = useState(() => Date.now());
-
-  useEffect(() => {
-    setAbaAtiva(abaDaNotificacao);
-  }, [abaDaNotificacao]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setAgora(Date.now()), 30000);
@@ -3459,7 +3476,7 @@ function FuturosClientesPage() {
   }, []);
 
   function selecionarAba(aba) {
-    setAbaAtiva(aba);
+    setAbaSelecionada(aba);
     if (searchParams.has('aba') || searchParams.has('linha_id')) {
       setSearchParams({}, { replace: true });
     }

@@ -128,8 +128,26 @@ function FechamentoMensalPage() {
   }, []);
 
   useEffect(() => {
-    carregarResumo(periodoConsulta);
-  }, [periodoConsulta, carregarResumo]);
+    let ativo = true;
+
+    getResumo(periodoConsulta)
+      .then(dados => {
+        if (!ativo) return;
+        setResumo(dados?.secoes || { total: [], tratando: [], ativas: [] });
+        setPainel(dados?.painel || []);
+        setErro('');
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao carregar fechamento mensal.');
+      })
+      .finally(() => {
+        if (ativo) setLoading(false);
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [periodoConsulta]);
 
   /**
    * Carrega dados venda e atualiza o estado relacionado.

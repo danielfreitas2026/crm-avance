@@ -1,40 +1,13 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { useDebounce } from '../../utils/useDebounce';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import Paginacao from '../../components/Paginacao/Paginacao';
 import AutoResizeTextarea from '../../components/AutoResizeTextarea';
-import CnpjSugestoes, { formatarMensagemResumoCnpj } from '../../components/CnpjSugestoes';
-import NotasEntidadeTab from '../../components/NotasEntidadeTab';
 import * as I from '../../components/Icons';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import ClienteModal from '../Clientes/ClienteModal';
 import VendaModal from './VendaModal';
-import {
-  atualizarVenda,
-  baixarArquivoVenda,
-  baixarPacoteArquivosVenda,
-  baixarXlsxClaro,
-  buscarVendaPorId,
-  criarVenda,
-  deletarVenda,
-  enviarVendaParaPosVenda,
-  excluirArquivoVenda,
-  excluirReversaoVenda,
-  exportarVendasExcel,
-  gerarPacoteArquivosVenda,
-  gerarEmailVenda,
-  listarArquivosVenda,
-  listarDestinatariosProblemaVenda,
-  obterReferenciasClientesVendas,
-  listarVendas,
-  listarVendedoras,
-  marcarProblemaVenda,
-  registrarReversaoVenda,
-  reenviarVendaParaDashboard,
-  uploadArquivoVenda,
-  visualizarArquivoVenda
-} from '../../services/venda.service';
-import { consultarCnpj, sanitizarCnpj, validarDigitosCnpj } from '../../services/cnpj.service';
+import { atualizarVenda, baixarXlsxClaro, buscarVendaPorId, criarVenda, deletarVenda, enviarVendaParaPosVenda, excluirReversaoVenda, exportarVendasExcel, gerarEmailVenda, listarDestinatariosProblemaVenda, obterReferenciasClientesVendas, listarVendas, listarVendedoras, marcarProblemaVenda, registrarReversaoVenda, reenviarVendaParaDashboard, uploadArquivoVenda } from '../../services/venda.service';
 import { criarNotaEntidade } from '../../services/nota.service';
 import { listarEtapasFunil, listarOperadoras, listarServicos, listarTiposVenda } from '../../services/config.service';
 import { criarCliente as criarClientePrincipal, listarClientesSelect, verificarDocumentoCliente } from '../../services/cliente.service';
@@ -42,97 +15,12 @@ import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import { formatUtcDateTime } from '../../utils/datetime';
 import SelectFiltro from '../../components/SelectFiltro/SelectFiltro';
 import { agruparOpcoesServicos, formatarNomeServico } from '../../utils/servicos';
+import {
+  DOCUMENTOS_FALTANTES_WHATSAPP,
+  montarChecklistWhatsappVenda,
+  obterDocumentosFaltantesPadrao
+} from './vendasWhatsapp';
 import './VendasPage.css';
-
-const VENDA_VAZIA = {
-  cliente_id: '',
-  nome: '',
-  telefone: '',
-  email: '',
-  email_2: '',
-  fixo_ddd: '',
-  razao_social: '',
-  cnpj: '',
-  // Representante Legal
-  nome_representante_legal: '',
-  cpf_representante_legal: '',
-  telefone_representante_legal: '',
-  email_representante_legal: '',
-  // Administrador
-  nome_administrador: '',
-  cpf_administrador: '',
-  telefone_administrador: '',
-  email_administrador: '',
-  // Dados da venda
-  nome_fechou_venda: '',
-  setor_funcao: '',
-  produto_fechado: '',
-  qc_feito_por: '',
-  data_venda: '',
-  // Produto e valores
-  tipo_venda_id: '',
-  servico_id: '',
-  quantidade_linhas: '',
-  ddd: '',
-  numeros_ativados: [],
-  gb: '',
-  valores_unitarios_chips: [{ quantidade: '', gb: '', valor_unitario: '', tipo_linha: 'novo', vendedora_id: '' }],
-  valor_total: '',
-  cliente_solicitou_servicos: [],
-  cliente_solicitou_bloqueio_qtd: '',
-  cliente_solicitou_cancelamento_qtd: '',
-  cliente_solicitou_numeros: { bloqueio: [], cancelamento: [] },
-  ponto_referencia: '',
-  tipo_local_cpf: '',
-  razao_social: '',
-  cnpj: '',
-  data_venda: '',
-  data_ativacao: '',
-  qc_feito_por: '',
-  observacoes: '',
-  dia_vencimento: '',
-  // Endereço
-  cep: '',
-  endereco: '',
-  numero_endereco: '',
-  complemento: '',
-  bairro: '',
-  municipio: '',
-  uf: '',
-  endereco_real_divergente: false,
-  cep_real: '',
-  endereco_real: '',
-  numero_endereco_real: '',
-  complemento_real: '',
-  bairro_real: '',
-  municipio_real: '',
-  uf_real: '',
-  ponto_referencia: '',
-  tipo_local_cpf: '',
-  // Aceite
-  horario_aceite_voz: '',
-  horario_aceite_inicio: '',
-  horario_aceite_fim: '',
-  dia_aceite_inicio: '',
-  dia_aceite_fim: '',
-  protocolo: '',
-  login: '',
-  senha: '',
-  numero_cliente_contrato: '',
-  responsavel_recebimento: '',
-  rg_responsavel_recebimento: '',
-  responsavel_recebimento_2: '',
-  rg_responsavel_recebimento_2: '',
-  responsavel_recebimento_3: '',
-  rg_responsavel_recebimento_3: '',
-  promessa_cliente: '',
-  promessa_cumprida: '',
-  observacoes: '',
-  // Referências
-  operadora_id: '',
-  vendedora_id: '',
-  vendedoras: []
-};
 
 const AVALIACOES_PRIMEIRA_LIGACAO = {
   bom: { label: 'Bom', classe: 'is-bom' },
@@ -143,154 +31,10 @@ const AVALIACOES_PRIMEIRA_LIGACAO = {
 /**
  * Obtem operadoras cliente a partir dos dados informados.
  */
-function obterOperadorasCliente(cliente) {
-  return cliente?.operadoras_atuais || cliente?.operadorasAtuais || [];
-}
-
 /**
  * Formata resumo operadoras cliente para exibicao ou envio.
  */
-function formatarResumoOperadorasCliente(cliente) {
-  const operadorasCliente = obterOperadorasCliente(cliente);
-  if (operadorasCliente.length === 0) {
-    return `${cliente?.operadoraAtual?.nome || 'Sem operadora'} - ${cliente?.quantidade_chips ?? 0} chips`;
-  }
-
-  const nomes = operadorasCliente.map(item => item.operadora?.nome).filter(Boolean);
-  const chips = operadorasCliente.reduce((total, item) => total + Number(item.quantidade_chips || 0), 0);
-  return `${nomes.slice(0, 2).join(', ') || 'Sem operadora'}${nomes.length > 2 ? ` +${nomes.length - 2}` : ''} - ${chips} chips`;
-}
-
-const CNPJ_SUGESTOES_VENDA = {
-  nomeFantasia: { campo: 'nome', label: 'Nome fantasia' },
-  razaoSocial: { campo: 'razao_social', label: 'Razão social' },
-  email: { campo: 'email', label: 'Email' },
-  telefone: { campo: 'telefone', label: 'Telefone' },
-  cep: { campo: 'cep', label: 'CEP' },
-  endereco: { campo: 'endereco', label: 'Endereço' },
-  numero: { campo: 'numero_endereco', label: 'Número' },
-  complemento: { campo: 'complemento', label: 'Complemento' },
-  bairro: { campo: 'bairro', label: 'Bairro' },
-  municipio: { campo: 'municipio', label: 'Município' },
-  uf: { campo: 'uf', label: 'UF' }
-};
-
-const CNPJ_LABELS_VENDA = Object.fromEntries(
-  Object.entries(CNPJ_SUGESTOES_VENDA).map(([campo, config]) => [campo, config.label])
-);
-
-const CAMPOS_ENDERECO_REAL_VENDA = [
-  { name: 'cep_real', label: 'CEP' },
-  { name: 'endereco_real', label: 'Endereço real', type: 'longText', span: true },
-  { name: 'numero_endereco_real', label: 'Número' },
-  { name: 'complemento_real', label: 'Complemento', type: 'longText', span: true },
-  { name: 'bairro_real', label: 'Bairro' },
-  { name: 'municipio_real', label: 'Município' },
-  { name: 'uf_real', label: 'UF', maxLength: 2 }
-];
-
 const ITEM_CHIP_VAZIO = { quantidade: '', gb: '', valor_unitario: '', tipo_linha: 'novo', vendedora_id: '' };
-const NUMERO_PORTADO_VAZIO = '';
-const TIPOS_LINHA_CHIP = [
-  { value: 'novo', label: 'Novo' },
-  { value: 'portabilidade', label: 'Port.' }
-];
-
-const CLIENTE_SOLICITOU_OPCOES = [
-  { value: 'bloqueio', label: 'Bloqueio' },
-  { value: 'cancelamento', label: 'Cancelamento' },
-  { value: 'nenhum_servico', label: 'Nenhum serviço' }
-];
-
-const CLIENTE_SOLICITOU_ACOES = ['bloqueio', 'cancelamento'];
-
-const DIAS_SEMANA = [
-  { value: 'segunda', label: 'Segunda-feira' },
-  { value: 'terca', label: 'Terça-feira' },
-  { value: 'quarta', label: 'Quarta-feira' },
-  { value: 'quinta', label: 'Quinta-feira' },
-  { value: 'sexta', label: 'Sexta-feira' },
-  { value: 'sabado', label: 'Sábado' },
-  { value: 'domingo', label: 'Domingo' },
-];
-
-const FECHOU_VENDA_OPCOES = [
-  { value: 'RL', label: 'RL' },
-  { value: 'ADM', label: 'ADM' }
-];
-
-const PROMESSA_CUMPRIDA_OPCOES = [
-  { value: 'pendente', label: 'Pendente' },
-  { value: 'sim', label: 'Sim' },
-  { value: 'nao', label: 'Não' }
-];
-
-const CAMPOS = [
-  { section: 'Cliente' },
-  { name: 'cliente_id', label: 'Cliente', type: 'client', required: true, span: true },
-  { name: 'cnpj', label: 'CNPJ para preencher dados', type: 'cnpj' },
-  { name: 'vendedoras', label: 'Vendedoras', type: 'sellers', span: true },
-
-  { section: 'Dados do cliente' },
-  { name: 'nome', label: 'Nome / Fantasia' },
-  { name: 'razao_social', label: 'Razão Social' },
-  { name: 'telefone', label: 'Telefone Celular' },
-  { name: 'fixo_ddd', label: 'Telefone fixo' },
-  { section: 'Representante Legal (RL)' },
-  { name: 'nome_representante_legal', label: 'Nome RL' },
-  { name: 'cpf_representante_legal', label: 'CPF RL' },
-  { name: 'telefone_representante_legal', label: 'Telefone RL' },
-  { name: 'email_representante_legal', label: 'Email RL' },
-
-  { section: 'Administrador (ADM)' },
-  { name: 'nome_administrador', label: 'Nome ADM' },
-  { name: 'cpf_administrador', label: 'CPF ADM' },
-  { name: 'telefone_administrador', label: 'Telefone ADM' },
-  { name: 'email_administrador', label: 'E-mail ADM' },
-
-  { section: 'Dados da venda' },
-  { name: 'data_venda', label: 'Data da venda', type: 'date' },
-  { name: 'data_ativacao', label: 'Data da ativação', type: 'date' },
-  { name: 'nome_fechou_venda', label: 'Venda fechada com', type: 'closedWith' },
-  { name: 'setor_funcao', label: 'Setor/Função' },
-  { name: 'qc_feito_por', label: 'QC feito por' },
-
-  { section: 'Produto e valores' },
-  { name: 'operadora_id', label: 'Operadora adquirida', type: 'operator', required: true },
-  { name: 'servico_id', label: 'Produto', type: 'service', required: true },
-  { name: 'quantidade_linhas', label: 'Quantidade de linhas fechadas', type: 'number' },
-  { name: 'ddd', label: 'Qual DDD' },
-  { name: 'dia_vencimento', label: 'Dia de vencimento', type: 'number', min: 1, max: 31 },
-  { name: 'cliente_solicitou_servicos', label: 'Cliente solicitou', type: 'clientRequested', span: true },
-  { name: 'valores_unitarios_chips', label: 'Chips, gigas e valores unitários', type: 'chips', span: true },
-  { name: 'numeros_ativados', label: 'Números ativados', type: 'activatedNumbers', span: true },
-  { name: 'numeros_portados', label: 'Números a serem portados', type: 'portedNumbers', span: true },
-
-  { section: 'Local de instalação/entrega' },
-  { name: 'cep', label: 'CEP' },
-  { name: 'endereco', label: 'Endereço', type: 'longText' },
-  { name: 'numero_endereco', label: 'Número' },
-  { name: 'complemento', label: 'Complemento', type: 'longText' },
-  { name: 'bairro', label: 'Bairro' },
-  { name: 'municipio', label: 'Município' },
-  { name: 'uf', label: 'UF', maxLength: 2 },
-  { name: 'endereco_real_divergente', label: 'Endereço da Receita não é o endereço real', type: 'realAddressToggle', span: true },
-  { name: 'ponto_referencia', label: 'Ponto de referência', type: 'longText', span: true },
-  { name: 'tipo_local_cpf', label: 'Venda CPF: casa, hotel, condomínio, shopping...', type: 'longText', span: true },
-
-  { section: 'Aceite' },
-  { name: 'horario_aceite_range', label: 'Janela do aceite', type: 'timeRange', nameDe: 'horario_aceite_inicio', nameAte: 'horario_aceite_fim', labelDe: 'De', labelAte: 'Até', span: true },
-  { name: 'dia_aceite_range', label: 'Dias para aceite', type: 'dayRange', nameDe: 'dia_aceite_inicio', nameAte: 'dia_aceite_fim', labelDe: 'De', labelAte: 'Até', span: true },
-  { name: 'protocolo', label: 'Protocolo do Cliente', span: true },
-  { name: 'login', label: 'Login (portal do cliente)' },
-  { name: 'senha', label: 'Senha (portal do cliente)' },
-  { name: 'numero_cliente_contrato', label: 'Número do cliente no contrato', placeholder: 'Caso não tenha Login e Senha', span: true },
-  { name: 'responsaveis_recebimento', type: 'responsaveis', span: true },
-  { name: 'promessa_cliente', label: 'O que foi prometido ao cliente', type: 'longText', span: true, maxRows: 5 },
-  { name: 'promessa_cumprida', label: 'Cumprimos o prometido?', type: 'promiseStatus', span: true },
-  { name: 'observacoes', label: 'Observações da Venda', type: 'longText', span: true, maxRows: 6 },
-];
-
 const STATUS_FUNIL_FILTROS = [
   { id: 'aprovacao', label: 'Aprovação' },
   { id: 'ativacao', label: 'Ativação' },
@@ -391,44 +135,9 @@ function toInputDate(value) {
 /**
  * Renderiza normalizar data venda input.
  */
-function normalizarDataVendaInput(value) {
-  if (!value) return '';
-
-  const texto = String(value).trim();
-  const iso = toInputDate(texto);
-
-  if (iso) return iso;
-
-  const match = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
-
-  if (!match) return '';
-
-  const [, dia, mes, ano] = match;
-  const anoCompleto = ano.length === 2 ? `20${ano}` : ano;
-  const data = `${anoCompleto}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
-
-  return isDataVendaValida(data) ? data : '';
-}
-
 /**
  * Gera protocolo data hora a partir dos dados informados.
  */
-function gerarProtocoloDataHora(data = new Date()) {
-  /**
-   * Preenche valores numericos com zero a esquerda.
-   */
-  const pad = value => String(value).padStart(2, '0');
-
-  return [
-    data.getFullYear(),
-    pad(data.getMonth() + 1),
-    pad(data.getDate()),
-    pad(data.getHours()),
-    pad(data.getMinutes()),
-    pad(data.getSeconds())
-  ].join('');
-}
-
 /**
  * Formata data para exibicao ou envio.
  */
@@ -490,29 +199,9 @@ function formatarMoeda(value) {
 /**
  * Renderiza parse valor input.
  */
-function parseValorInput(valor) {
-  if (valor === undefined || valor === null || valor === '') return 0;
-  if (typeof valor === 'number') return Number.isFinite(valor) ? valor : 0;
-
-  return Number(String(valor).replace(/\./g, '').replace(',', '.')) || 0;
-}
-
 /**
  * Formata input moeda br para exibicao ou envio.
  */
-function formatarInputMoedaBR(valor) {
-  const digitos = String(valor || '').replace(/\D/g, '');
-
-  if (!digitos) return '';
-
-  const numero = Number(digitos) / 100;
-
-  return numero.toLocaleString('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-}
-
 /**
  * Processa apenas digitos conforme as regras do dominio.
  */
@@ -559,45 +248,9 @@ function formatarCpf(valor) {
 /**
  * Valida cpf e retorna o resultado esperado.
  */
-function validarCpf(valor) {
-  const cpf = apenasDigitos(valor, 11);
-
-  if (!cpf) return true;
-  if (cpf.length !== 11) return false;
-  if (/^(\d)\1{10}$/.test(cpf)) return false;
-
-  /**
-   * Calcula digito com base nos valores informados.
-   */
-  const calcularDigito = tamanho => {
-    let soma = 0;
-
-    for (let i = 0; i < tamanho; i += 1) {
-      soma += Number(cpf[i]) * (tamanho + 1 - i);
-    }
-
-    const resto = (soma * 10) % 11;
-    return resto === 10 ? 0 : resto;
-  };
-
-  return calcularDigito(9) === Number(cpf[9]) && calcularDigito(10) === Number(cpf[10]);
-}
-
 /**
  * Obtem erro cpf venda a partir dos dados informados.
  */
-function obterErroCpfVenda(form) {
-  if (!validarCpf(form.cpf_representante_legal)) {
-    return 'CPF RL inválido. Confira os 11 dígitos antes de salvar.';
-  }
-
-  if (!validarCpf(form.cpf_administrador)) {
-    return 'CPF ADM inválido. Confira os 11 dígitos antes de salvar.';
-  }
-
-  return '';
-}
-
 /**
  * Formata cnpj para exibicao ou envio.
  */
@@ -696,42 +349,9 @@ function getPlaceholderBusca(campo) {
 /**
  * Retorna input mode campo a partir dos dados informados.
  */
-function getInputModeCampo(campo) {
-  if ([
-    'telefone', 'fixo_ddd', 'telefone_representante_legal', 'telefone_administrador',
-    'cpf_representante_legal', 'cpf_administrador', 'cnpj', 'cep', 'cep_real', 'ddd', 'gb', 'quantidade_linhas', 'dia_vencimento'
-  ].includes(campo)) {
-    return 'numeric';
-  }
-
-  return undefined;
-}
-
 /**
  * Retorna max length campo a partir dos dados informados.
  */
-function getMaxLengthCampo(campo, maxLength) {
-  const limites = {
-    telefone: 15,
-    fixo_ddd: 14,
-    telefone_representante_legal: 15,
-    telefone_administrador: 15,
-    cpf_representante_legal: 14,
-    cpf_administrador: 14,
-    cnpj: 18,
-    cep: 9,
-    cep_real: 9,
-    ddd: 2,
-    gb: 4,
-    uf: 2,
-    uf_real: 2,
-    dia_vencimento: 2,
-    quantidade_linhas: 4
-  };
-
-  return limites[campo] || maxLength;
-}
-
 /**
  * Renderiza normalizar itens chips input.
  */
@@ -742,23 +362,6 @@ function normalizarItensChipsInput(itens) {
 /**
  * Renderiza normalizar ids vendedoras input.
  */
-function normalizarIdsVendedorasInput(vendedoras) {
-  if (!Array.isArray(vendedoras)) return [];
-
-  return Array.from(new Set(
-    vendedoras
-      .map(item => {
-        if (item && typeof item === 'object') {
-          return Number(item.id || item.usuario_id || item.vendedora_id);
-        }
-
-        return Number(item);
-      })
-      .filter(Number.isInteger)
-      .filter(id => id > 0)
-  ));
-}
-
 /**
  * Obtem solicitacao aprovacao atual a partir dos dados informados.
  */
@@ -771,23 +374,9 @@ function obterSolicitacaoAprovacaoAtual(venda) {
 /**
  * Calcula total itens chips com base nos valores informados.
  */
-function calcularTotalItensChips(itens = []) {
-  return normalizarItensChipsInput(itens).reduce((acc, item) => (
-    acc + (Number(item.quantidade || 0) * parseValorInput(item.valor_unitario))
-  ), 0);
-}
-
 /**
  * Resume gigas itens chips para exibicao ou envio.
  */
-function resumirGigasItensChips(itens = []) {
-  const valores = normalizarItensChipsInput(itens)
-    .map(item => String(item.gb || '').trim())
-    .filter(Boolean);
-
-  return Array.from(new Set(valores)).join(', ');
-}
-
 /**
  * Normaliza tipo linha chip para uso interno consistente.
  */
@@ -801,51 +390,15 @@ function normalizarTipoLinhaChip(valor, fallback = 'novo') {
 /**
  * Soma quantidade itens chips considerando os dados informados.
  */
-function somarQuantidadeItensChips(itens = []) {
-  return normalizarItensChipsInput(itens).reduce((acc, item) => acc + Number(item.quantidade || 0), 0);
-}
-
 /**
  * Processa limitar itens chips por quantidade linhas conforme as regras do dominio.
  */
-function limitarItensChipsPorQuantidadeLinhas(itens = [], limiteQuantidade = 0) {
-  const lista = normalizarItensChipsInput(itens);
-  const limite = Number(limiteQuantidade || 0);
-
-  if (limite <= 0) return lista;
-
-  let restante = limite;
-
-  return lista.map(item => {
-    const quantidadeAtual = Number(item.quantidade || 0);
-    const quantidade = Math.min(quantidadeAtual, restante);
-    restante = Math.max(restante - quantidade, 0);
-
-    return {
-      ...item,
-      quantidade: quantidade > 0 ? String(quantidade) : ''
-    };
-  });
-}
-
 /**
  * Soma quantidade portabilidade itens chips considerando os dados informados.
  */
-function somarQuantidadePortabilidadeItensChips(itens = []) {
-  return normalizarItensChipsInput(itens).reduce((acc, item) => (
-    normalizarTipoLinhaChip(item.tipo_linha) === 'portabilidade'
-      ? acc + Number(item.quantidade || 0)
-      : acc
-  ), 0);
-}
-
 /**
  * Verifica se chip portabilidade esta presente nos dados informados.
  */
-function temChipPortabilidade(itens = []) {
-  return somarQuantidadePortabilidadeItensChips(itens) > 0;
-}
-
 /**
  * Formata tipo linha chip label para exibicao ou envio.
  */
@@ -877,20 +430,6 @@ function obterTipoVendaTabela(venda = {}) {
 /**
  * Renderiza obter categoria produto whatsapp.
  */
-function obterCategoriaProdutoWhatsapp(venda = {}) {
-  const texto = normalizarTextoBusca([
-    venda.servico?.nome,
-    venda.produto_fechado,
-    venda.tipoVenda?.nome
-  ].filter(Boolean).join(' '));
-
-  if (texto.includes('internet') || texto.includes('banda larga') || texto.includes('fibra')) return 'Internet';
-  if (texto.includes('fixo') || texto.includes('telefone fixo')) return 'Fixo';
-  if (texto.includes('movel') || texto.includes('chip') || texto.includes('celular') || texto.includes('linha')) return 'Móvel';
-
-  return formatarNomeServico(venda.servico?.nome) || venda.produto_fechado || '-';
-}
-
 /**
  * Obtem vendedoras mensagem a partir dos dados informados.
  */
@@ -905,147 +444,9 @@ function obterVendedorasMensagem(venda = {}) {
 /**
  * Obtem resumo chips mensagem a partir dos dados informados.
  */
-function obterResumoChipsMensagem(venda = {}) {
-  const itens = normalizarItensChipsInput(venda.valores_unitarios_chips)
-    .filter(item => Number(item.quantidade || 0) > 0 || item.gb || item.valor_unitario || item.tipo_linha);
-
-  if (itens.length === 0) {
-    return [
-      `Valor: ${formatarMoeda(venda.valor_total)}`,
-      `Quantidade: ${venda.quantidade_linhas || '-'}`,
-      `Giga: ${venda.gb || '-'}`,
-      `Tipo: ${obterTipoVendaTabela(venda)}`
-    ].join(' | ');
-  }
-
-  return itens.map(item => {
-    const partes = [
-      `${item.quantidade || 0} linha(s)`,
-      item.gb ? `${item.gb}GB` : '',
-      item.valor_unitario ? formatarMoeda(parseValorInput(item.valor_unitario)) : '',
-      formatarTipoLinhaChipLabel(item.tipo_linha)
-    ].filter(Boolean);
-
-    return partes.join(' - ');
-  }).join('; ');
-}
-
 /**
  * Obtem documentos faltantes mensagem a partir dos dados informados.
  */
-function obterDocumentosFaltantesMensagem(venda = {}) {
-  const faltantes = [];
-
-  if (venda.nome_representante_legal && !venda.rg_representante_legal) {
-    faltantes.push('RG do representante legal');
-  }
-
-  if (venda.nome_administrador && !venda.rg_administrador) {
-    faltantes.push('RG do administrador');
-  }
-
-  [
-    { nome: venda.responsavel_recebimento, rg: venda.rg_responsavel_recebimento },
-    { nome: venda.responsavel_recebimento_2, rg: venda.rg_responsavel_recebimento_2 },
-    { nome: venda.responsavel_recebimento_3, rg: venda.rg_responsavel_recebimento_3 }
-  ].forEach((responsavel, index) => {
-    if (responsavel.nome && !responsavel.rg) {
-      faltantes.push(`RG do responsável pelo recebimento ${index + 1}`);
-    }
-  });
-
-  if (venda.cnpj && !venda.razao_social && !venda.cliente?.razao_social) {
-    faltantes.push('documento da empresa');
-  }
-
-  return faltantes.length > 0 ? faltantes.join(', ') : '[preencher se faltar RG, doc da empresa, fatura...]';
-}
-
-/**
- * Monta mensagem whatsapp venda a partir dos dados informados.
- */
-function montarMensagemWhatsappVenda(venda = {}) {
-  return [
-    'Olá! Seguem os dados da venda:',
-    '',
-    `Operadora: ${venda.operadora?.nome || '-'}`,
-    `Razão social: ${venda.cliente?.razao_social || venda.razao_social || '-'}`,
-    `CNPJ: ${formatarCnpj(venda.cliente?.cnpj || venda.cnpj || '') || '-'}`,
-    `Produto: ${obterCategoriaProdutoWhatsapp(venda)}`,
-    `Detalhes da venda: ${obterResumoChipsMensagem(venda)}`,
-    `Valor total: ${formatarMoeda(venda.valor_total)}`,
-    `Vendedora(s): ${obterVendedorasMensagem(venda)}`,
-    `Protocolo: ${venda.protocolo || '-'}`,
-    `Data da venda: ${formatarData(venda.data_venda)}`,
-    `Falta doc: ${obterDocumentosFaltantesMensagem(venda)}`
-  ].join('\n');
-}
-
-const DOCUMENTOS_FALTANTES_WHATSAPP = [
-  'RG do representante legal',
-  'RG do administrador',
-  'RG do responsável pelo recebimento',
-  'Documento da empresa',
-  'Fatura',
-  'Contrato social',
-  'Comprovante de endereco'
-];
-
-/**
- * Obtem documentos faltantes padrao a partir dos dados informados.
- */
-export function obterDocumentosFaltantesPadrao(venda = {}) {
-  const texto = obterDocumentosFaltantesMensagem(venda);
-  if (!texto || texto.startsWith('[')) return [];
-  return texto.split(',').map(item => item.trim()).filter(Boolean);
-}
-
-/**
- * Renderiza formatar resumo venda whatsapp.
- */
-function formatarResumoVendaWhatsapp(venda = {}) {
-  const itens = normalizarItensChipsInput(venda.valores_unitarios_chips)
-    .filter(item => Number(item.quantidade || 0) > 0 || item.valor_unitario || item.gb || item.tipo_linha);
-  const tipo = resumirTiposLinhaItensChips(itens) || obterTipoVendaTabela(venda);
-  const quantidade = venda.quantidade_linhas || somarQuantidadeItensChips(itens) || '-';
-
-  if (itens.length === 0) {
-    const giga = venda.gb ? ` x ${venda.gb}GB` : '';
-    return `${tipo} - ${quantidade} linha(s) - 1 x ${formatarMoeda(venda.valor_total)}${giga}`;
-  }
-
-  const detalhes = itens.map(item => {
-    const quantidadeItem = Number(item.quantidade || 0) || 1;
-    const valor = item.valor_unitario ? formatarMoeda(parseValorInput(item.valor_unitario)) : formatarMoeda(venda.valor_total);
-    const giga = item.gb || venda.gb;
-
-    return `${quantidadeItem} x ${valor}${giga ? ` x ${giga}GB` : ''}`;
-  });
-
-  return `${tipo} - ${quantidade} linha(s) - ${detalhes.join(' - ')}`;
-}
-
-/**
- * Monta checklist whatsapp venda a partir dos dados informados.
- */
-export function montarChecklistWhatsappVenda(venda = {}, documentosFaltantes = obterDocumentosFaltantesPadrao(venda)) {
-  const produto = obterCategoriaProdutoWhatsapp(venda);
-  const razaoSocial = venda.cliente?.razao_social || venda.razao_social || '-';
-  const documentos = documentosFaltantes.length > 0 ? documentosFaltantes.join(', ') : 'NAO';
-
-  return [
-    `OPERADORA : ${venda.operadora?.nome || '-'}`,
-    `RAZAO SOCIAL : ${razaoSocial}`,
-    `CNPJ : ${formatarCnpj(venda.cliente?.cnpj || venda.cnpj || '') || '-'}`,
-    `PRODUTO : ${produto}`,
-    `VENDA : ${formatarResumoVendaWhatsapp(venda)}`,
-    `VENDEDORA(S) : ${obterVendedorasMensagem(venda)}`,
-    `PROTOCOLO : ${venda.protocolo || '-'}`,
-    `DATA DA VENDA : ${formatarData(venda.data_venda)}`,
-    `FALTA DOC : ${documentos}`
-  ].join('\n');
-}
-
 /**
  * Monta mapa referencias a partir dos dados informados.
  */
@@ -1117,288 +518,30 @@ function normalizarTextoBusca(valor) {
 /**
  * Verifica se tipo portabilidade atende a condicao esperada.
  */
-function isTipoPortabilidade(tipoVenda) {
-  return normalizarTextoBusca(tipoVenda?.nome).includes('portabilidade');
-}
-
 /**
  * Converte numeros portados para o formato interno esperado.
  */
-function parseNumerosPortados(valor) {
-  if (!valor) return [NUMERO_PORTADO_VAZIO];
-
-  if (Array.isArray(valor)) {
-    const numeros = valor
-      .map(item => String(item || '').trim())
-      .filter(Boolean);
-
-    return numeros.length > 0 ? numeros : [NUMERO_PORTADO_VAZIO];
-  }
-
-  if (typeof valor === 'string') {
-    try {
-      return parseNumerosPortados(JSON.parse(valor));
-    } catch {
-      const numeros = valor
-        .split(/\r?\n|[,;]/)
-        .map(item => item.trim())
-        .filter(Boolean);
-
-      return numeros.length > 0 ? numeros : [NUMERO_PORTADO_VAZIO];
-    }
-  }
-
-  return [NUMERO_PORTADO_VAZIO];
-}
-
 /**
  * Monta numeros portados a partir dos dados informados.
  */
-function montarNumerosPortados(valor) {
-  return (Array.isArray(valor) ? valor : parseNumerosPortados(valor))
-    .map(item => String(item || '').trim())
-    .filter(item => apenasDigitos(item).length > 2)
-    .join('\n');
-}
-
-const parseNumerosAtivados = parseNumerosPortados;
-const montarNumerosAtivados = montarNumerosPortados;
-
 /**
  * Converte cliente solicitou servicos para o formato interno esperado.
  */
-function parseClienteSolicitouServicos(valor) {
-  if (!valor) return [];
-
-  if (Array.isArray(valor)) {
-    const servicos = valor
-      .map(item => String(item || '').trim())
-      .filter(item => CLIENTE_SOLICITOU_OPCOES.some(opcao => opcao.value === item));
-
-    return servicos.includes('nenhum_servico')
-      ? ['nenhum_servico']
-      : CLIENTE_SOLICITOU_ACOES.filter(item => servicos.includes(item));
-  }
-
-  if (typeof valor === 'string') {
-    try {
-      return parseClienteSolicitouServicos(JSON.parse(valor));
-    } catch {
-      return parseClienteSolicitouServicos(valor.split(/\r?\n|[,;]/));
-    }
-  }
-
-  return [];
-}
-
 /**
  * Converte cliente solicitou numeros para o formato interno esperado.
  */
-function parseClienteSolicitouNumeros(valor) {
-  const vazio = { bloqueio: [], cancelamento: [] };
-  if (!valor) return vazio;
-
-  if (typeof valor === 'string') {
-    try {
-      return parseClienteSolicitouNumeros(JSON.parse(valor));
-    } catch {
-      return vazio;
-    }
-  }
-
-  if (typeof valor !== 'object') return vazio;
-
-  return {
-    bloqueio: parseNumerosPortados(valor.bloqueio).filter(numero => apenasDigitos(numero).length > 2),
-    cancelamento: parseNumerosPortados(valor.cancelamento).filter(numero => apenasDigitos(numero).length > 2)
-  };
-}
-
 /**
  * Monta cliente solicitou numeros a partir dos dados informados.
  */
-function montarClienteSolicitouNumeros(numeros = {}) {
-  return {
-    bloqueio: (Array.isArray(numeros.bloqueio) ? numeros.bloqueio : parseNumerosPortados(numeros.bloqueio))
-      .map(numero => String(numero || '').trim())
-      .filter(numero => apenasDigitos(numero).length > 2),
-    cancelamento: (Array.isArray(numeros.cancelamento) ? numeros.cancelamento : parseNumerosPortados(numeros.cancelamento))
-      .map(numero => String(numero || '').trim())
-      .filter(numero => apenasDigitos(numero).length > 2)
-  };
-}
-
 /**
  * Processa ajustar quantidade numeros solicitados conforme as regras do dominio.
  */
-function ajustarQuantidadeNumerosSolicitados(value, quantidade) {
-  const total = Math.max(Number(quantidade || 0), 0);
-  const atuais = Array.isArray(value) ? value : parseNumerosPortados(value);
-
-  return Array.from({ length: total }, (_, index) => atuais[index] || NUMERO_PORTADO_VAZIO);
-}
-
 /**
  * Normaliza venda para uso interno consistente.
  */
-function normalizarVenda(venda) {
-  // Montar array de vendedoras a partir da relação (junction) ou do campo legado
-  const vendedorasIds = Array.isArray(venda.vendedoras) && venda.vendedoras.length > 0
-    ? venda.vendedoras.map(v => String(v.id || v))
-    : venda.vendedora_id ? [String(venda.vendedora_id)] : [];
-  const tipoLinhaPadrao = isTipoPortabilidade(venda.tipoVenda) ? 'portabilidade' : 'novo';
-
-  return {
-    ...VENDA_VAZIA,
-    ...venda,
-    data_venda: toInputDate(venda.data_venda),
-    data_ativacao: toInputDate(venda.data_ativacao),
-    valor_total: venda.valor_total ?? '',
-    valores_unitarios_chips: parseItensChips(venda.valores_unitarios_chips, venda.gb, tipoLinhaPadrao),
-    numeros_portados: parseNumerosPortados(venda.numeros_portados),
-    numeros_ativados: parseNumerosAtivados(venda.numeros_ativados),
-    cliente_solicitou_servicos: parseClienteSolicitouServicos(venda.cliente_solicitou_servicos),
-    cliente_solicitou_bloqueio_qtd: venda.cliente_solicitou_bloqueio_qtd ?? '',
-    cliente_solicitou_cancelamento_qtd: venda.cliente_solicitou_cancelamento_qtd ?? '',
-    cliente_solicitou_numeros: parseClienteSolicitouNumeros(venda.cliente_solicitou_numeros),
-    quantidade_linhas: venda.quantidade_linhas ?? '',
-    dia_vencimento: venda.dia_vencimento ?? '',
-    operadora_id: venda.operadora_id ? String(venda.operadora_id) : '',
-    tipo_venda_id: venda.tipo_venda_id ? String(venda.tipo_venda_id) : '',
-    servico_id: venda.servico_id ? String(venda.servico_id) : '',
-    vendedora_id: venda.vendedora_id ? String(venda.vendedora_id) : '',
-    vendedoras: vendedorasIds,
-    cliente_id: venda.cliente_id ? String(venda.cliente_id) : ''
-  };
-}
-
 /**
  * Renderiza itens chips input.
  */
-function ItensChipsInput({ value, onChange, vendedoras = [], limiteQuantidade = 0 }) {
-  const itens = Array.isArray(value) && value.length > 0 ? value : [{ ...ITEM_CHIP_VAZIO }];
-  const total = calcularTotalItensChips(itens);
-  const mostrarVendedora = vendedoras.length > 1;
-  const limite = Number(limiteQuantidade || 0);
-  const quantidadeTotal = somarQuantidadeItensChips(itens);
-  const limiteAtingido = limite > 0 && quantidadeTotal >= limite;
-
-  /**
-   * Atualiza item com os dados informados.
-   */
-  function atualizarItem(index, campo, novoValor) {
-    let valor = novoValor;
-
-    if (campo === 'quantidade') {
-      const outros = itens.reduce((acc, item, itemIndex) => (
-        itemIndex === index ? acc : acc + Number(item.quantidade || 0)
-      ), 0);
-      const maximo = limite > 0 ? Math.max(limite - outros, 0) : 9999;
-      const quantidade = Math.min(Number(apenasDigitos(valor, 4) || 0), maximo);
-      valor = quantidade > 0 ? String(quantidade) : '';
-    }
-
-    onChange(itens.map((item, itemIndex) => {
-      if (itemIndex !== index) return item;
-      return { ...item, [campo]: valor };
-    }));
-  }
-
-  /**
-   * Adiciona item ao conjunto atual.
-   */
-  function adicionarItem() {
-    if (limiteAtingido) return;
-    onChange([...itens, { ...ITEM_CHIP_VAZIO }]);
-  }
-
-  /**
-   * Remove item da colecao ou estado atual.
-   */
-  function removerItem(index) {
-    const proximos = itens.filter((_, itemIndex) => itemIndex !== index);
-    onChange(proximos.length > 0 ? proximos : [{ ...ITEM_CHIP_VAZIO }]);
-  }
-
-  return (
-    <div className={`chip-items${mostrarVendedora ? ' chip-items--com-vendedora' : ''}`}>
-      <div className="chip-items__head">
-        <span>Qtd.</span>
-        <span>GB</span>
-        <span>Tipo</span>
-        <span>Valor unit.</span>
-        <span>Subtotal</span>
-        {mostrarVendedora && <span>Vendedora</span>}
-        <span></span>
-      </div>
-
-      {itens.map((item, index) => {
-        const subtotal = Number(item.quantidade || 0) * parseValorInput(item.valor_unitario);
-        const outros = itens.reduce((acc, chip, itemIndex) => (
-          itemIndex === index ? acc : acc + Number(chip.quantidade || 0)
-        ), 0);
-        const maximoQuantidadeLinha = limite > 0 ? Math.max(limite - outros, 0) : undefined;
-
-        return (
-          <div key={index} className="chip-item-row">
-            <input
-              type="number"
-              min="1"
-              max={maximoQuantidadeLinha}
-              value={item.quantidade}
-              onChange={e => atualizarItem(index, 'quantidade', e.target.value)}
-              placeholder="3"
-            />
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={getMaxLengthCampo('gb')}
-              value={item.gb}
-              onChange={e => atualizarItem(index, 'gb', formatarCampoVenda('gb', e.target.value))}
-              placeholder="20"
-            />
-            <SelectFiltro
-              value={item.tipo_linha || 'novo'}
-              onChange={val => atualizarItem(index, 'tipo_linha', val)}
-              options={TIPOS_LINHA_CHIP}
-              placeholder="Novo"
-            />
-            <input
-              type="text"
-              inputMode="decimal"
-              value={item.valor_unitario}
-              onChange={e => atualizarItem(index, 'valor_unitario', formatarInputMoedaBR(e.target.value))}
-              placeholder="29,99"
-            />
-            <div className="chip-item-subtotal">{formatarMoeda(subtotal)}</div>
-            {mostrarVendedora && (
-              <SelectFiltro
-                value={item.vendedora_id || ''}
-                onChange={val => atualizarItem(index, 'vendedora_id', val)}
-                options={vendedoras.map(v => ({ value: String(v.id), label: v.nome }))}
-                placeholder="—"
-              />
-            )}
-            <button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => removerItem(index)} title="Remover item">
-              <I.Trash size={13} />
-            </button>
-          </div>
-        );
-      })}
-
-      <div className="chip-items__footer">
-        <button type="button" className="btn btn-sm" onClick={adicionarItem} disabled={limiteAtingido}>
-          <I.Plus size={13} /> Adicionar chip
-        </button>
-        <div className="chip-items__summary">
-          {limite > 0 && <span>{quantidadeTotal}/{limite} chips</span>}
-          <strong>{formatarMoeda(total)}</strong>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
  * Renderiza vendedoras select.
  */
@@ -1512,879 +655,48 @@ export function VendedorasSelect({ value = [], options = [], onChange }) {
 /**
  * Monta prefixo ddd a partir dos dados informados.
  */
-function montarPrefixoDdd(ddd) {
-  const digitos = apenasDigitos(ddd, 2);
-  return digitos.length === 2 ? `(${digitos}) ` : '';
-}
-
 /**
  * Verifica se numero linha tem apenas ddd ou vazio atende a condicao esperada.
  */
-function numeroLinhaTemApenasDddOuVazio(valor) {
-  return apenasDigitos(valor).length <= 2;
-}
-
 /**
  * Processa ajustar quantidade numeros portados conforme as regras do dominio.
  */
-function ajustarQuantidadeNumerosPortados(value, quantidade, dddPadrao = '') {
-  const total = Math.max(Number(quantidade || 0), 0);
-  const prefixoDdd = montarPrefixoDdd(dddPadrao);
-  if (total === 0) return [prefixoDdd || NUMERO_PORTADO_VAZIO];
-
-  const atuais = Array.isArray(value) ? value : parseNumerosPortados(value);
-  const preenchidos = atuais.length > 0 ? atuais : [NUMERO_PORTADO_VAZIO];
-
-  return Array.from({ length: total }, (_, index) => {
-    const atual = preenchidos[index] || NUMERO_PORTADO_VAZIO;
-    return numeroLinhaTemApenasDddOuVazio(atual) ? (prefixoDdd || NUMERO_PORTADO_VAZIO) : atual;
-  });
-}
-
 /**
  * Renderiza numeros linha input.
  */
-function NumerosLinhaInput({ value, onChange, quantidadeEsperada = 0, dddPadrao = '', labelAdicionar = 'Adicionar número' }) {
-  const numeros = Array.isArray(value) && value.length > 0 ? value : [NUMERO_PORTADO_VAZIO];
-  const limite = Math.max(Number(quantidadeEsperada || 0), 0);
-  const limiteAtingido = limite > 0 && numeros.length >= limite;
-  const numeroVazio = montarPrefixoDdd(dddPadrao) || NUMERO_PORTADO_VAZIO;
-
-  /**
-   * Atualiza numero com os dados informados.
-   */
-  function atualizarNumero(index, novoValor) {
-    onChange(numeros.map((numero, numeroIndex) => (
-      numeroIndex === index ? novoValor : numero
-    )));
-  }
-
-  /**
-   * Adiciona numero ao conjunto atual.
-   */
-  function adicionarNumero() {
-    if (limiteAtingido) return;
-    onChange([...numeros, numeroVazio]);
-  }
-
-  /**
-   * Remove numero da colecao ou estado atual.
-   */
-  function removerNumero(index) {
-    const proximos = numeros.filter((_, numeroIndex) => numeroIndex !== index);
-    onChange(proximos.length > 0 ? proximos : [NUMERO_PORTADO_VAZIO]);
-  }
-
-  return (
-    <div className="ported-numbers">
-      {numeros.map((numero, index) => (
-        <div key={index} className="ported-number-row">
-          <input
-            type="text"
-            inputMode="numeric"
-            value={numero}
-            onChange={event => atualizarNumero(index, formatarTelefoneComDdd(event.target.value, true))}
-            placeholder="(11) 99999-9999"
-            maxLength={15}
-          />
-          <button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => removerNumero(index)} title="Remover número">
-            <I.Trash size={13} />
-          </button>
-        </div>
-      ))}
-
-      <div className="ported-numbers__footer">
-        <button type="button" className="btn btn-sm" onClick={adicionarNumero} disabled={limiteAtingido}>
-          <I.Plus size={13} /> {labelAdicionar}
-        </button>
-        {limite > 0 && <span>{numeros.length}/{limite} números</span>}
-      </div>
-    </div>
-  );
-}
-
 /**
  * Renderiza numeros portados input.
  */
-function NumerosPortadosInput(props) {
-  return <NumerosLinhaInput {...props} labelAdicionar="Adicionar número" />;
-}
-
 /**
  * Renderiza numeros ativados input.
  */
-function NumerosAtivadosInput(props) {
-  return <NumerosLinhaInput {...props} labelAdicionar="Adicionar número ativado" />;
-}
-
 /**
  * Renderiza cliente solicitou input.
  */
-function ClienteSolicitouInput({ form, onToggle, onOpenQuantidades }) {
-  const servicos = parseClienteSolicitouServicos(form.cliente_solicitou_servicos);
-  const nenhumSelecionado = servicos.includes('nenhum_servico');
-  const selecionouAcao = CLIENTE_SOLICITOU_ACOES.some(acao => servicos.includes(acao));
-  const numeros = parseClienteSolicitouNumeros(form.cliente_solicitou_numeros);
-  const totalNumeros = numeros.bloqueio.length + numeros.cancelamento.length;
-
-  return (
-    <div className="cliente-solicitou">
-      <div className="cliente-solicitou__options">
-        {CLIENTE_SOLICITOU_OPCOES.map(opcao => {
-          const marcado = servicos.includes(opcao.value);
-          const disabled = nenhumSelecionado && opcao.value !== 'nenhum_servico';
-
-          return (
-            <label key={opcao.value} className={`cliente-solicitou-option ${marcado ? 'is-active' : ''} ${disabled ? 'is-disabled' : ''}`}>
-              <input
-                type="checkbox"
-                checked={marcado}
-                disabled={disabled}
-                onChange={() => onToggle(opcao.value)}
-              />
-              <span>{opcao.label}</span>
-            </label>
-          );
-        })}
-      </div>
-
-      {selecionouAcao && (
-        <div className="cliente-solicitou__summary">
-          <span>Bloqueio: <strong>{Number(form.cliente_solicitou_bloqueio_qtd || 0)}</strong></span>
-          <span>Cancelamento: <strong>{Number(form.cliente_solicitou_cancelamento_qtd || 0)}</strong></span>
-          <span>Números: <strong>{totalNumeros}</strong></span>
-          <button type="button" className="btn btn-sm" onClick={onOpenQuantidades}>
-            <I.Edit size={13} /> Quantificar
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /**
  * Renderiza cliente solicitou quantidade modal.
  */
-function ClienteSolicitouQuantidadeModal({ servicos, quantidades, onChange, onClose, onConfirm }) {
-  const bloqueioSelecionado = servicos.includes('bloqueio');
-  const cancelamentoSelecionado = servicos.includes('cancelamento');
-
-  return (
-    <div className="modal-overlay cliente-solicitou-quantidade-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
-      <div className="modal cliente-solicitou-quantidade-modal" role="dialog" aria-modal="true" aria-labelledby="cliente-solicitou-quantidade-title">
-        <div className="modal-header">
-          <div className="modal-header-row">
-            <div>
-              <div id="cliente-solicitou-quantidade-title" className="modal-client">Quantificar chips</div>
-              <div className="modal-sub">Informe quantos chips entram em cada operação.</div>
-            </div>
-            <button type="button" className="btn btn-icon btn-ghost" onClick={onClose} title="Fechar">
-              <I.Close size={14} />
-            </button>
-          </div>
-        </div>
-
-        <div className="modal-body">
-          <div className="cliente-solicitou-quantidade-fields">
-          {bloqueioSelecionado && (
-            <label className="form-field">
-              <span>Chips para bloqueio</span>
-              <input type="number" min="1" inputMode="numeric" value={quantidades.bloqueio} onChange={event => onChange('bloqueio', apenasDigitos(event.target.value, 4))} placeholder="0" />
-            </label>
-          )}
-
-          {cancelamentoSelecionado && (
-            <label className="form-field">
-              <span>Chips para cancelamento</span>
-              <input type="number" min="1" inputMode="numeric" value={quantidades.cancelamento} onChange={event => onChange('cancelamento', apenasDigitos(event.target.value, 4))} placeholder="0" />
-            </label>
-          )}
-          </div>
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>Cancelar</button>
-          <button type="button" className="btn btn-primary" onClick={onConfirm}>Informar números</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
  * Renderiza cliente solicitou numeros modal.
  */
-function ClienteSolicitouNumerosModal({ servicos, quantidades, numeros, onChange, onClose, onConfirm }) {
-  const selecionados = CLIENTE_SOLICITOU_ACOES.filter(acao => servicos.includes(acao));
-
-  /**
-   * Atualiza numero com os dados informados.
-   */
-  function atualizarNumero(tipo, index, valor) {
-    onChange({
-      ...numeros,
-      [tipo]: (numeros[tipo] || []).map((numero, numeroIndex) => (
-        numeroIndex === index ? formatarTelefoneComDdd(valor, true) : numero
-      ))
-    });
-  }
-
-  const faltando = selecionados.some(tipo => (
-    (numeros[tipo] || []).filter(numero => apenasDigitos(numero).length > 2).length !== Number(quantidades[tipo] || 0)
-  ));
-
-  return (
-    <div className="modal-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
-      <div className="modal cliente-solicitou-numeros-modal">
-        <div className="modal-header">
-          <div className="modal-header-row">
-            <div>
-              <div className="modal-client">Números envolvidos</div>
-              <div className="modal-sub">Preencha exatamente os números dos chips informados.</div>
-            </div>
-            <button type="button" className="btn btn-icon btn-ghost" onClick={onClose} title="Fechar">
-              <I.Close size={14} />
-            </button>
-          </div>
-        </div>
-
-        <div className="modal-body">
-          <div className="cliente-solicitou-numeros">
-            {selecionados.map(tipo => (
-              <section key={tipo} className="cliente-solicitou-numeros__group">
-                <div className="cliente-solicitou-numeros__title">
-                  {tipo === 'bloqueio' ? 'Bloqueio' : 'Cancelamento'} ({Number(quantidades[tipo] || 0)})
-                </div>
-                {(numeros[tipo] || []).map((numero, index) => (
-                  <label key={`${tipo}-${index}`} className="cliente-solicitou-numero-row">
-                    <span>{index + 1}</span>
-                    <input type="text" inputMode="numeric" value={numero} onChange={event => atualizarNumero(tipo, index, event.target.value)} maxLength={15} placeholder="(11) 99999-9999" />
-                  </label>
-                ))}
-              </section>
-            ))}
-          </div>
-        </div>
-
-        <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>Voltar</button>
-          <button type="button" className="btn btn-primary" onClick={onConfirm} disabled={faltando}>
-            Confirmar números
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
  * Renderiza responsaveis recebimento input.
  */
-function ResponsaveisRecebimentoInput({ form, onChange }) {
-  const slots = [
-    { nomeKey: 'responsavel_recebimento', rgKey: 'rg_responsavel_recebimento' },
-    { nomeKey: 'responsavel_recebimento_2', rgKey: 'rg_responsavel_recebimento_2' },
-    { nomeKey: 'responsavel_recebimento_3', rgKey: 'rg_responsavel_recebimento_3' },
-  ];
-  const preenchidos = slots.reduce((total, slot, index) => (
-    form[slot.nomeKey] || form[slot.rgKey] ? index + 1 : total
-  ), 1);
-  const [linhasVisiveis, setLinhasVisiveis] = useState(Math.max(1, preenchidos));
-  const visiveis = slots.slice(0, linhasVisiveis);
-
-  /**
-   * Remove linha da colecao ou estado atual.
-   */
-  function removerLinha(index) {
-    const slot = slots[index];
-    onChange(slot.nomeKey, '');
-    onChange(slot.rgKey, '');
-    setLinhasVisiveis(prev => Math.max(1, prev - 1));
-  }
-
-  return (
-    <div className="responsaveis-list">
-      {visiveis.map((slot, index) => (
-        <div key={slot.nomeKey} className="responsavel-row">
-          <span className="responsavel-row__num">{index + 1}</span>
-          <div className="responsavel-row__campos">
-            <input
-              type="text"
-              placeholder="Nome do responsável"
-              value={form[slot.nomeKey] || ''}
-              onChange={event => onChange(slot.nomeKey, event.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="RG"
-              value={form[slot.rgKey] || ''}
-              onChange={event => onChange(slot.rgKey, event.target.value)}
-            />
-          </div>
-          {linhasVisiveis > 1 && (
-            <button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => removerLinha(index)} title="Remover responsável">
-              <I.Trash size={13} />
-            </button>
-          )}
-        </div>
-      ))}
-
-      {linhasVisiveis < slots.length && (
-        <button type="button" className="btn btn-sm responsaveis-add-btn" onClick={() => setLinhasVisiveis(prev => Math.min(prev + 1, slots.length))}>
-          <I.Plus size={13} /> Adicionar responsável
-        </button>
-      )}
-    </div>
-  );
-}
-
 /**
  * Renderiza cliente venda select.
  */
-function ClienteVendaSelect({ value, clientes, vendasRegistradas = 0, onChange, onCreateClient }) {
-  const wrapperRef = useRef(null);
-  const inputRef = useRef(null);
-  const [busca, setBusca] = useState('');
-  const buscaDeferred = useDeferredValue(busca);
-  const [aberto, setAberto] = useState(false);
-  const [indiceAtivo, setIndiceAtivo] = useState(0);
-  const clienteSelecionado = clientes.find(cliente => String(cliente.id) === String(value));
-  const textoClienteSelecionado = clienteSelecionado?.nome || clienteSelecionado?.razao_social || '';
-  const textoBusca = buscaDeferred || textoClienteSelecionado;
-  const buscaNormalizada = textoBusca.trim().toLowerCase();
-  const clientesFiltrados = clientes.filter(cliente => {
-    if (!buscaNormalizada) return true;
-
-    return [
-      cliente.nome,
-      cliente.razao_social,
-      cliente.cnpj,
-      cliente.email,
-      cliente.responsavel_nome
-    ].filter(Boolean).some(valor => String(valor).toLowerCase().includes(buscaNormalizada));
-  }).slice(0, 8);
-
-  useEffect(() => {
-    /**
-     * Trata o evento de click fora.
-     */
-    function handleClickFora(event) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-        setAberto(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickFora);
-    return () => document.removeEventListener('mousedown', handleClickFora);
-  }, []);
-
-  /**
-   * Seleciona cliente e atualiza o estado relacionado.
-   */
-  function selecionarCliente(cliente) {
-    onChange(String(cliente.id));
-    setBusca('');
-    setAberto(false);
-  }
-
-  /**
-   * Limpa cliente e restaura o estado inicial.
-   */
-  function limparCliente() {
-    onChange('');
-    setBusca('');
-    setAberto(true);
-    window.requestAnimationFrame(() => inputRef.current?.focus());
-  }
-
-  /**
-   * Trata o evento de key down.
-   */
-  function handleKeyDown(event) {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setAberto(true);
-      setIndiceAtivo(prev => Math.min(prev + 1, Math.max(clientesFiltrados.length - 1, 0)));
-      return;
-    }
-
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setAberto(true);
-      setIndiceAtivo(prev => Math.max(prev - 1, 0));
-      return;
-    }
-
-    if (event.key === 'Enter' && aberto && clientesFiltrados[indiceAtivo]) {
-      event.preventDefault();
-      selecionarCliente(clientesFiltrados[indiceAtivo]);
-      return;
-    }
-
-    if (event.key === 'Escape') {
-      setAberto(false);
-    }
-  }
-
-  const mostrarLista = aberto && clientes.length > 0;
-  const activeDescendant = mostrarLista && clientesFiltrados[indiceAtivo]
-    ? `cliente-option-${clientesFiltrados[indiceAtivo].id}`
-    : undefined;
-
-  return (
-    <div className="venda-cliente-select" ref={wrapperRef}>
-      <div className={`venda-cliente-combobox ${mostrarLista ? 'is-open' : ''}`}>
-        <I.Search size={14} />
-        <input
-          ref={inputRef}
-          value={textoBusca}
-          onChange={event => {
-            setBusca(event.target.value);
-            setIndiceAtivo(0);
-            setAberto(true);
-
-            if (value) {
-              onChange('');
-            }
-          }}
-          onFocus={() => setAberto(true)}
-          onKeyDown={handleKeyDown}
-          placeholder="Buscar cliente por nome, razão social, CNPJ ou e-mail"
-          role="combobox"
-          aria-expanded={mostrarLista}
-          aria-controls="cliente-options"
-          aria-activedescendant={activeDescendant}
-          aria-autocomplete="list"
-        />
-        <button
-          type="button"
-          className="venda-cliente-combobox__toggle"
-          onClick={() => setAberto(prev => !prev)}
-          title={aberto ? 'Fechar resultados' : 'Abrir resultados'}
-        >
-          <I.ChevronDown size={14} />
-        </button>
-
-        {mostrarLista && (
-          <div className="venda-cliente-options" id="cliente-options" role="listbox">
-            <div className="venda-cliente-options__list">
-              {clientesFiltrados.length > 0 ? (
-                clientesFiltrados.map((cliente, index) => {
-                  const selecionado = String(cliente.id) === String(value);
-                  const ativo = index === indiceAtivo;
-
-                  return (
-                    <button
-                      key={cliente.id}
-                      id={`cliente-option-${cliente.id}`}
-                      type="button"
-                      className={`venda-cliente-option ${ativo ? 'is-active' : ''} ${selecionado ? 'is-selected' : ''}`}
-                      onMouseEnter={() => setIndiceAtivo(index)}
-                      onMouseDown={event => event.preventDefault()}
-                      onClick={() => selecionarCliente(cliente)}
-                      role="option"
-                      aria-selected={selecionado}
-                    >
-                      <span className="venda-cliente-option__main">
-                        <strong>{cliente.nome || 'Cliente sem nome'}</strong>
-                        <span>{cliente.razao_social || 'Sem razão social'} - {cliente.cnpj || 'Sem CNPJ'}</span>
-                      </span>
-                      <span className="venda-cliente-option__meta">
-                        <span>{cliente.email || cliente.responsavel_nome || 'Sem contato principal'}</span>
-                        <span>{formatarResumoOperadorasCliente(cliente)}</span>
-                      </span>
-                      {selecionado && <I.Check size={14} />}
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="venda-cliente-no-results">
-                  <span>Nenhum cliente encontrado.</span>
-                </div>
-              )}
-            </div>
-            <div className="venda-cliente-options__footer">
-              <button type="button" className="btn btn-sm" onMouseDown={event => event.preventDefault()} onClick={onCreateClient}>
-                <I.Plus size={13} /> Cadastrar cliente
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {clientes.length === 0 && (
-        <div className="venda-cliente-empty">
-          <span>Nenhum cliente disponível. Cadastre um cliente ou solicite permissão para visualizar clientes.</span>
-          <button type="button" className="btn btn-sm" onClick={onCreateClient}>
-            <I.Plus size={13} /> Cadastrar cliente
-          </button>
-        </div>
-      )}
-
-      {clienteSelecionado && (
-        <>
-        <div className="venda-cliente-card">
-          <div>
-            <strong>{clienteSelecionado.nome}</strong>
-            <span>{clienteSelecionado.razao_social || 'Sem razão social'} - {clienteSelecionado.cnpj || 'Sem CNPJ'}</span>
-          </div>
-          <div>
-            <span>{clienteSelecionado.email || 'Sem e-mail'}</span>
-            <span>{formatarResumoOperadorasCliente(clienteSelecionado)}</span>
-          </div>
-          <button type="button" className="btn btn-icon btn-ghost" onClick={limparCliente} title="Trocar cliente">
-            <I.Close size={13} />
-          </button>
-        </div>
-        {vendasRegistradas > 0 && (
-          <div className="venda-cliente-repeat-alert">
-            <I.AlertTriangle size={13} />
-            <span>
-              Este cliente já possui {vendasRegistradas} {vendasRegistradas === 1 ? 'venda registrada' : 'vendas registradas'}.
-            </span>
-          </div>
-        )}
-        </>
-      )}
-    </div>
-  );
-}
-
 /**
  * Formata tamanho arquivo para exibicao ou envio.
  */
-function formatarTamanhoArquivo(bytes) {
-  const tamanho = Number(bytes || 0);
-
-  if (tamanho >= 1024 * 1024) {
-    return `${(tamanho / 1024 / 1024).toFixed(1)} MB`;
-  }
-
-  if (tamanho >= 1024) {
-    return `${(tamanho / 1024).toFixed(1)} KB`;
-  }
-
-  return `${tamanho} B`;
-}
-
 /**
  * Retorna label status pacote no formato esperado pelo fluxo.
  */
-function labelStatusPacote(status) {
-  const labels = {
-    pendente: 'Pacote pendente',
-    gerando: 'Gerando pacote',
-    pronto: 'Pacote pronto',
-    erro: 'Erro ao gerar pacote',
-    desatualizado: 'Pacote desatualizado',
-    inexistente: 'Sem pacote'
-  };
-
-  return labels[status] || 'Sem pacote';
-}
-
 /**
  * Retorna icon status pacote a partir dos dados informados.
  */
-function getIconStatusPacote(status) {
-  if (status === 'pronto') return <I.Check size={12} />;
-  if (status === 'erro' || status === 'desatualizado') return <I.AlertTriangle size={12} />;
-  return <I.Note size={12} />;
-}
-
 /**
  * Renderiza arquivos venda tab.
  */
-function ArquivosVendaTab({ venda, podeEditar, podeVisualizar, podeAdicionar }) {
-  const inputRef = useRef(null);
-  const [arquivos, setArquivos] = useState([]);
-  const [pacote, setPacote] = useState(null);
-  const [categoria, setCategoria] = useState('documento');
-  const [carregando, setCarregando] = useState(false);
-  const [enviando, setEnviando] = useState(false);
-  const [progresso, setProgresso] = useState(null);
-  const [erro, setErro] = useState('');
-  const [mensagem, setMensagem] = useState('');
-
-  /**
-   * Carrega  e atualiza o estado relacionado.
-   */
-  async function carregar() {
-    if (!venda?.id) return;
-
-    if (!podeVisualizar) {
-      setArquivos([]);
-      setPacote(null);
-      return;
-    }
-
-    setCarregando(true);
-    setErro('');
-
-    try {
-      const data = await listarArquivosVenda(venda.id);
-      setArquivos(data.arquivos || []);
-      setPacote(data.pacote || null);
-    } catch (error) {
-      setErro(error.message || 'Erro ao carregar arquivos.');
-    } finally {
-      setCarregando(false);
-    }
-  }
-
-  useEffect(() => {
-    carregar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [venda?.id, podeVisualizar]);
-
-  useEffect(() => {
-    if (!podeVisualizar) return undefined;
-    if (!['pendente', 'gerando'].includes(pacote?.status)) return undefined;
-
-    const timer = setInterval(() => {
-      carregar();
-    }, 2500);
-
-    return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pacote?.status, venda?.id, podeVisualizar]);
-
-  /**
-   * Trata o evento de upload.
-   */
-  async function handleUpload(event) {
-    const files = Array.from(event.target.files || []);
-    event.target.value = '';
-
-    if (!podeAdicionar) return;
-    if (files.length === 0) return;
-
-    setEnviando(true);
-    setErro('');
-    setMensagem('');
-
-    try {
-      for (const file of files) {
-        setProgresso({ nome: file.name, valor: 0 });
-        await uploadArquivoVenda(venda.id, file, { categoria }, valor => {
-          setProgresso({ nome: file.name, valor });
-        });
-      }
-
-      setProgresso(null);
-      if (podeVisualizar) {
-        await carregar();
-      } else {
-        setArquivos([]);
-        setPacote(null);
-        setMensagem(files.length === 1
-          ? 'Arquivo enviado. Os documentos existentes continuam ocultos para seu perfil.'
-          : 'Arquivos enviados. Os documentos existentes continuam ocultos para seu perfil.');
-      }
-    } catch (error) {
-      setErro(error.message || 'Erro ao enviar arquivo.');
-    } finally {
-      setEnviando(false);
-      setProgresso(null);
-    }
-  }
-
-  /**
-   * Trata o evento de excluir.
-   */
-  async function handleExcluir(arquivo) {
-    if (!window.confirm(`Excluir o arquivo "${arquivo.nome_original}" desta venda?`)) return;
-
-    setErro('');
-
-    try {
-      await excluirArquivoVenda(venda.id, arquivo.id);
-      await carregar();
-    } catch (error) {
-      setErro(error.message || 'Erro ao excluir arquivo.');
-    }
-  }
-
-  /**
-   * Trata o evento de gerar pacote.
-   */
-  async function handleGerarPacote() {
-    setErro('');
-
-    try {
-      const novoPacote = await gerarPacoteArquivosVenda(venda.id);
-      setPacote(novoPacote);
-    } catch (error) {
-      setErro(error.message || 'Erro ao gerar pacote.');
-    }
-  }
-
-  if (!venda?.id) {
-    return (
-      <div className="venda-arquivos-empty venda-arquivos-empty--blocked">
-        <span className="venda-arquivos-empty__icon">
-          <I.Note size={20} />
-        </span>
-        <strong>Venda ainda não salva</strong>
-        <span>Salve a venda antes de anexar arquivos.</span>
-      </div>
-    );
-  }
-
-  const statusPacote = pacote?.status || 'inexistente';
-  const totalArquivos = arquivos.length;
-  const podeGerenciarPacote = Boolean(podeVisualizar);
-
-  return (
-    <div className="venda-arquivos">
-      <div className="venda-arquivos-toolbar">
-        <div className="venda-arquivos-heading">
-          <div className="venda-arquivos-title-row">
-            <div className="venda-arquivos-title">Arquivos da venda</div>
-            {podeVisualizar && (
-              <span className="venda-arquivos-count">
-                {totalArquivos} {totalArquivos === 1 ? 'arquivo' : 'arquivos'}
-              </span>
-            )}
-          </div>
-          {podeVisualizar ? (
-            <div className={`venda-arquivos-package status-${statusPacote}`}>
-              {getIconStatusPacote(statusPacote)}
-              <span className="venda-arquivos-package__text">
-                <span>{labelStatusPacote(statusPacote)}</span>
-                {pacote?.total_arquivos ? <span>{pacote.total_arquivos} no ZIP</span> : null}
-              </span>
-            </div>
-          ) : (
-            <div className="venda-arquivos-package status-inexistente">
-              <I.Eye size={12} />
-              <span className="venda-arquivos-package__text">
-                <span>Documentos existentes ocultos</span>
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="venda-arquivos-actions">
-          <SelectFiltro
-            value={categoria}
-            onChange={setCategoria}
-            disabled={!podeAdicionar || enviando}
-            placeholder="Documento"
-            options={[
-              { value: 'documento', label: 'Documento' },
-              { value: 'contrato', label: 'Contrato' },
-              { value: 'comprovante', label: 'Comprovante' },
-              { value: 'outro', label: 'Outro' },
-            ]}
-          />
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".pdf,image/jpeg,image/png,image/webp"
-            multiple
-            hidden
-            onChange={handleUpload}
-          />
-          <button type="button" className="btn btn-primary" onClick={() => inputRef.current?.click()} disabled={!podeAdicionar || enviando}>
-            <I.Plus size={13} />
-            {enviando ? 'Enviando...' : 'Enviar arquivos'}
-          </button>
-          {podeGerenciarPacote && (
-            <>
-              <button type="button" className="btn" onClick={handleGerarPacote} disabled={!podeEditar || arquivos.length === 0 || pacote?.status === 'gerando'}>
-                <I.Note size={13} />
-                Gerar ZIP
-              </button>
-              <button type="button" className="btn" onClick={() => baixarPacoteArquivosVenda(venda.id)} disabled={pacote?.status !== 'pronto'}>
-                <I.Download size={13} />
-                Baixar ZIP
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {progresso && (
-        <div className="venda-arquivos-progress">
-          <span>{progresso.nome}</span>
-          <strong>{progresso.valor}%</strong>
-        </div>
-      )}
-
-      {erro && <div className="alert-error">{erro}</div>}
-      {mensagem && <div className="alert-success">{mensagem}</div>}
-
-      {carregando ? (
-        <div className="venda-arquivos-empty">
-          <span className="venda-arquivos-empty__icon">
-            <I.Note size={20} />
-          </span>
-          <strong>Carregando arquivos...</strong>
-        </div>
-      ) : arquivos.length === 0 ? (
-        <div className="venda-arquivos-empty venda-arquivos-empty--upload" role={podeAdicionar ? 'button' : undefined} tabIndex={podeAdicionar ? 0 : undefined} onClick={() => podeAdicionar && inputRef.current?.click()} onKeyDown={event => {
-          if (!podeAdicionar) return;
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            inputRef.current?.click();
-          }
-        }}>
-          <span className="venda-arquivos-empty__icon">
-            <I.Plus size={20} />
-          </span>
-          <strong>{podeVisualizar ? 'Nenhum arquivo anexado' : 'Envie novos documentos'}</strong>
-          <span>{podeAdicionar
-            ? (podeVisualizar
-              ? 'Clique para selecionar documentos, contratos ou comprovantes.'
-              : 'Documentos antigos ficam ocultos para seu perfil. Clique para anexar novos arquivos.')
-            : 'Sem arquivos para exibir.'}</span>
-          <em>PDF, JPG, PNG ou WEBP</em>
-        </div>
-      ) : (
-        <div className="venda-arquivos-list">
-          {arquivos.map(arquivo => (
-            <div key={arquivo.id} className="venda-arquivo-item">
-              <div className="venda-arquivo-icon">
-                <I.Note size={16} />
-              </div>
-              <div className="venda-arquivo-main">
-                <strong>{arquivo.nome_original}</strong>
-                <div className="venda-arquivo-meta">
-                  {arquivo.categoria} · {formatarTamanhoArquivo(arquivo.arquivo?.tamanho_bytes)} · {arquivo.criado_por?.nome || 'Usuário'}
-                  {arquivo.arquivo?.removido_em ? ' · arquivado no ZIP' : ''}
-                </div>
-              </div>
-              <div className="venda-arquivo-actions">
-                <button type="button" className="btn btn-sm" onClick={() => visualizarArquivoVenda(venda.id, arquivo.id)} disabled={Boolean(arquivo.arquivo?.removido_em)}>
-                  <I.Eye size={12} />
-                  Visualizar
-                </button>
-                <button type="button" className="btn btn-sm" onClick={() => baixarArquivoVenda(venda.id, arquivo.id, arquivo.nome_original)} disabled={Boolean(arquivo.arquivo?.removido_em)}>
-                  <I.Download size={12} />
-                  Baixar
-                </button>
-                {podeEditar && (
-                  <button type="button" className="btn btn-sm btn-ghost vendas-trash-delete" onClick={() => handleExcluir(arquivo)}>
-                    <I.Trash size={12} />
-                    Excluir
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {podeVisualizar && pacote?.status === 'erro' && (
-        <div className="alert-error">
-          {pacote.erro || 'Não foi possível gerar o pacote.'}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /**
  * Renderiza marcar problema modal.
  */
@@ -2775,38 +1087,6 @@ function VendasPage() {
   }, [erro]);
 
   /**
-   * Carrega dados estaticos e atualiza o estado relacionado.
-   */
-  async function carregarDadosEstaticos() {
-    try {
-      const [referenciasClientesData, clientesData, vendedorasData, operadorasData, tiposVendaData, servicosData, etapasFunilData, usuariosProblemaData] = await Promise.all([
-        obterReferenciasClientesVendas(),
-        podeListarClientes ? listarClientesSelect() : Promise.resolve([]),
-        listarVendedoras(),
-        listarOperadoras(),
-        listarTiposVenda(),
-        listarServicos(),
-        listarEtapasFunil(),
-        podeOperarPosVenda ? listarDestinatariosProblemaVenda() : Promise.resolve([])
-      ]);
-
-      setReferenciasClientes(referenciasClientesData || []);
-      setClientes(clientesData);
-      setClientesCarregados(true);
-      setVendedoras(vendedorasData);
-      setOperadoras(operadorasData);
-      setTiposVenda(tiposVendaData);
-      setServicos(servicosData);
-      setStatusFunilFiltros(normalizarStatusFunilFiltros(etapasFunilData));
-      setEtapasFunil(etapasFunilData || []);
-      setUsuariosProblema(usuariosProblemaData || []);
-    } catch (error) {
-      setClientesCarregados(true);
-      setErro(error.message || 'Erro ao carregar dados.');
-    }
-  }
-
-  /**
    * Carrega vendas e atualiza o estado relacionado.
    */
   async function carregarVendas(proximosFiltros = filtros, pagina = paginaAtual, porPagina = itensPorPagina) {
@@ -2824,23 +1104,71 @@ function VendasPage() {
     }
   }
 
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
-    carregarDadosEstaticos();
-  }, []);
+    let ativo = true;
+    Promise.all([
+      obterReferenciasClientesVendas(),
+      podeListarClientes ? listarClientesSelect() : Promise.resolve([]),
+      listarVendedoras(),
+      listarOperadoras(),
+      listarTiposVenda(),
+      listarServicos(),
+      listarEtapasFunil(),
+      podeOperarPosVenda ? listarDestinatariosProblemaVenda() : Promise.resolve([])
+    ])
+      .then(([referenciasClientesData, clientesData, vendedorasData, operadorasData, tiposVendaData, servicosData, etapasFunilData, usuariosProblemaData]) => {
+        if (!ativo) return;
+        setReferenciasClientes(referenciasClientesData || []);
+        setClientes(clientesData);
+        setClientesCarregados(true);
+        setVendedoras(vendedorasData);
+        setOperadoras(operadorasData);
+        setTiposVenda(tiposVendaData);
+        setServicos(servicosData);
+        setStatusFunilFiltros(normalizarStatusFunilFiltros(etapasFunilData));
+        setEtapasFunil(etapasFunilData || []);
+        setUsuariosProblema(usuariosProblemaData || []);
+      })
+      .catch(error => {
+        if (!ativo) return;
+        setClientesCarregados(true);
+        setErro(error.message || 'Erro ao carregar dados.');
+      });
+    return () => { ativo = false; };
+  }, [podeListarClientes, podeOperarPosVenda]);
+
+  const [filtrosAplicados, setFiltrosAplicados] = useState(filtros);
+  if (filtrosAplicados !== filtros) {
+    setFiltrosAplicados(filtros);
+    setPaginaAtual(1);
+    setCarregando(true);
+  }
 
   useEffect(() => {
-    setPaginaAtual(1);
-    carregarVendas(filtros, 1);
-  }, [filtros]);
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
+    let ativo = true;
+    listarVendas({ ...filtros, page: 1, per_page: itensPorPagina })
+      .then(vendasData => {
+        if (!ativo) return;
+        setVendas(vendasData.data);
+        setTotalVendas(vendasData.total);
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao carregar vendas.');
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+    return () => { ativo = false; };
+  }, [filtros, itensPorPagina]);
+
+  const recarregarVendas = useEffectEvent(() => carregarVendas());
 
   useEffect(() => {
     /**
      * Trata o evento de vendas atualizadas.
      */
     function handleVendasAtualizadas() {
-      carregarVendas();
+      recarregarVendas();
     }
 
     window.addEventListener('pos-venda:vendas-atualizadas', handleVendasAtualizadas);
@@ -2952,16 +1280,19 @@ function VendasPage() {
     return () => window.removeEventListener('pos-venda:nova-venda', handleNovaVenda);
   }, [podeCriarVenda]);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (searchParams.get('nova') === '1' && podeCriarVenda) {
-      abrirNovaVenda(location.state?.vendaPreenchida || null);
-      navigate('/vendas', { replace: true, state: null });
-    }
-  }, [searchParams, podeCriarVenda, location.state, navigate]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  const [novaVendaProcessada, setNovaVendaProcessada] = useState(false);
+  const deveAbrirNovaVenda = searchParams.get('nova') === '1' && podeCriarVenda;
+  if (deveAbrirNovaVenda && !novaVendaProcessada) {
+    setNovaVendaProcessada(true);
+    abrirNovaVenda(location.state?.vendaPreenchida || null);
+  } else if (!deveAbrirNovaVenda && novaVendaProcessada) {
+    setNovaVendaProcessada(false);
+  }
 
-  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (deveAbrirNovaVenda) navigate('/vendas', { replace: true, state: null });
+  }, [deveAbrirNovaVenda, navigate]);
+
   useEffect(() => {
     const vendaId = searchParams.get('venda_id');
     const abaParam = searchParams.get('aba');
@@ -2982,8 +1313,6 @@ function VendasPage() {
       })
       .catch(error => setErro(error.message || 'Erro ao abrir venda.'));
   }, [searchParams, navigate, podeAcessarDocumentosVenda]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
   /**
    * Limpa rota modal venda e restaura o estado inicial.
    */
@@ -3948,7 +2277,7 @@ function VendasPage() {
             paginaAtual={paginaAtual}
             itensPorPagina={itensPorPagina}
             onPagina={pagina => { setPaginaAtual(pagina); carregarVendas(filtros, pagina); }}
-            onItensPorPagina={n => { setItensPorPagina(n); setPaginaAtual(1); carregarVendas(filtros, 1, n); }}
+            onItensPorPagina={n => { setCarregando(true); setItensPorPagina(n); setPaginaAtual(1); }}
           />
         </div>
       </div>

@@ -13,11 +13,7 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
   const podeVerCampanhas = temPermissao(usuario, 'campanhas_visualizar');
 
   useEffect(() => {
-    if (!podeVerCampanhas) {
-      setCampanhas([]);
-      setProgresso({});
-      return;
-    }
+    if (!podeVerCampanhas) return undefined;
 
     const carregarCampanhas = () => {
       getCampanhas().then(setCampanhas).catch(console.error);
@@ -27,6 +23,9 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
     window.addEventListener('pos-venda:campanhas-atualizar', carregarCampanhas);
     return () => window.removeEventListener('pos-venda:campanhas-atualizar', carregarCampanhas);
   }, [podeVerCampanhas]);
+
+  const campanhasPermitidas = podeVerCampanhas ? campanhas : [];
+  const progressoPermitido = podeVerCampanhas ? progresso : {};
 
   const items = [
     { id: 'dashboard', label: 'Início', icon: <I.Home /> },
@@ -68,15 +67,15 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
     campanha.tipo || `${campanha.periodo || 'diaria'}_${campanha.categoria || 'registro_cliente'}`
   );
 
-  const idsVisiveis = Array.isArray(progresso.campanhas_visiveis)
-    ? new Set(progresso.campanhas_visiveis.map(Number))
+  const idsVisiveis = Array.isArray(progressoPermitido.campanhas_visiveis)
+    ? new Set(progressoPermitido.campanhas_visiveis.map(Number))
     : null;
-  const giftCampanhas = campanhas.filter(m => (
+  const giftCampanhas = campanhasPermitidas.filter(m => (
     m.is_gift
     && (!m.participante_ids?.length || m.participante_ids.map(Number).includes(Number(usuario?.id)))
     && (!idsVisiveis || idsVisiveis.has(Number(m.id)))
   ));
-  const resgatadas = new Set((progresso.resgatadas || []).map(Number));
+  const resgatadas = new Set((progressoPermitido.resgatadas || []).map(Number));
 
   return (
     <aside

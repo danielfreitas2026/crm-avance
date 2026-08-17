@@ -68,12 +68,6 @@ export default function SelectFiltro({
     if (aberto && searchable) buscaRef.current?.focus();
   }, [aberto, searchable]);
 
-  // Ao abrir ou refiltrar: destaca a 1ª opção real quando há busca, senão o placeholder.
-  useEffect(() => {
-    if (!aberto) return;
-    setDestaque(termoBusca && opcoesFiltradas.length > 0 ? 1 : 0);
-  }, [aberto, busca]);
-
   // Mantém a opção destacada visível durante a navegação.
   useEffect(() => {
     if (aberto) destaqueRef.current?.scrollIntoView?.({ block: 'nearest' });
@@ -115,6 +109,13 @@ export default function SelectFiltro({
     setBusca('');
   }
 
+  function alterarBusca(novaBusca) {
+    const termo = normalizarBusca(novaBusca);
+    const possuiResultado = termo && options.some(op => normalizarBusca(op.label).includes(termo));
+    setBusca(novaBusca);
+    setDestaque(possuiResultado ? 1 : 0);
+  }
+
   /**
    * Trata o evento de key down.
    */
@@ -148,6 +149,7 @@ export default function SelectFiltro({
    */
   function alternarMenu() {
     if (aberto) setBusca('');
+    setDestaque(0);
     setAberto(v => !v);
   }
 
@@ -183,7 +185,7 @@ export default function SelectFiltro({
                 ref={buscaRef}
                 type="search"
                 value={busca}
-                onChange={e => setBusca(e.target.value)}
+                onChange={e => alterarBusca(e.target.value)}
                 placeholder="Buscar"
                 aria-label="Buscar filtro"
               />

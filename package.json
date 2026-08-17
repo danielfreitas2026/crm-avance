@@ -7,11 +7,16 @@
   "private": true,
   "scripts": {
     "build": "cd frontend && npm install && npm run build",
+    "build:frontend": "npm --prefix frontend run build",
     "docs:jsdoc": "jsdoc -c jsdoc.config.json --lenient",
+    "lint:frontend": "npm --prefix frontend run lint",
     "start": "cd backend && npm start",
     "postinstall": "cd backend && npm install",
     "migrate": "cd backend && npm run migrate",
-    "seed": "cd backend && npm run seed"
+    "seed": "cd backend && npm run seed",
+    "test:backend": "npm --prefix backend test",
+    "test:frontend": "npm --prefix frontend run test:run",
+    "verify": "npm run test:backend && npm run test:frontend && npm run lint:frontend && npm run build:frontend"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.1",

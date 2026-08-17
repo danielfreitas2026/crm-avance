@@ -84,7 +84,7 @@ export function useFormDraft(draftKey, formData, isEditing = false, debounceMs =
 
     try {
       return localStorage.getItem(`form_draft_${draftKey}`) !== null;
-    } catch (error) {
+    } catch {
       return false;
     }
   }, [draftKey]);

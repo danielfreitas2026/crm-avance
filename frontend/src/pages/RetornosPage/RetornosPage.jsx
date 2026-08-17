@@ -240,56 +240,49 @@ function RetornosPage() {
   const [selectedReturn, setSelectedReturn] = useState(null);
   const [stageLabels, setStageLabels] = useState(FALLBACK_STAGE_LABELS);
 
-  /**
-   * Carrega retornos e atualiza o estado relacionado.
-   */
-  async function carregarRetornos() {
-    setLoading(true);
-    setError('');
-
-    try {
-      const [returnsData, salesData, etapasData] = await Promise.all([
-        listarVendas({ status_funil: 'retorno' }),
-        listarVendas({}),
-        listarEtapasFunil()
-      ]);
-
-      setAllReturns(returnsData);
-      setAllSales(salesData);
-      setStageLabels({
-        ...FALLBACK_STAGE_LABELS,
-        ...Object.fromEntries((etapasData || []).map(etapa => [etapa.codigo || etapa.id, etapa.nome || etapa.name]))
+  useEffect(() => {
+    let ativo = true;
+    Promise.all([
+      listarVendas({ status_funil: 'retorno' }),
+      listarVendas({}),
+      listarEtapasFunil()
+    ])
+      .then(([returnsData, salesData, etapasData]) => {
+        if (!ativo) return;
+        setAllReturns(returnsData);
+        setAllSales(salesData);
+        setStageLabels({
+          ...FALLBACK_STAGE_LABELS,
+          ...Object.fromEntries((etapasData || []).map(etapa => [etapa.codigo || etapa.id, etapa.nome || etapa.name]))
+        });
+      })
+      .catch(err => {
+        if (ativo) setError(err.message || 'Erro ao carregar retornos.');
+      })
+      .finally(() => {
+        if (ativo) setLoading(false);
       });
-    } catch (err) {
-      setError(err.message || 'Erro ao carregar retornos.');
-    } finally {
-      setLoading(false);
-    }
+    return () => { ativo = false; };
+  }, []);
+
+  const vendaIdParam = searchParams.get('venda_id');
+  const [vendaIdProcessado, setVendaIdProcessado] = useState(null);
+  if (!loading && vendaIdParam && vendaIdProcessado !== vendaIdParam) {
+    setVendaIdProcessado(vendaIdParam);
+    const retorno = allReturns.find(item => String(item.id) === String(vendaIdParam));
+    if (retorno) setSelectedReturn(retorno);
+  } else if (!vendaIdParam && vendaIdProcessado) {
+    setVendaIdProcessado(null);
   }
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    carregarRetornos();
-  }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (loading) return;
-
-    const vendaId = searchParams.get('venda_id');
-    if (!vendaId) return;
-
-    const retorno = allReturns.find(item => String(item.id) === String(vendaId));
-    if (retorno) {
-      setSelectedReturn(retorno);
-    }
+    if (!vendaIdParam) return;
 
     const proximosParams = new URLSearchParams(searchParams);
     proximosParams.delete('venda_id');
     setSearchParams(proximosParams, { replace: true });
-  }, [allReturns, loading, searchParams, setSearchParams]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }, [loading, vendaIdParam, searchParams, setSearchParams]);
 
   const groupCounts = useMemo(() => (
     RETURN_REASON_GROUPS.map(group => {

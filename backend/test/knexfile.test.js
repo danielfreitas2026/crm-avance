@@ -5,7 +5,7 @@ const test = require('node:test');
 
 const config = require('../knexfile');
 
-for (const environment of ['development', 'production']) {
+for (const environment of ['development', 'production', 'test']) {
   test(`${environment} usa caminhos absolutos para migrations e seeds`, () => {
     const migrationsDirectory = config[environment].migrations.directory;
     const seedsDirectory = config[environment].seeds.directory;

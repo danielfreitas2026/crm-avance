@@ -127,6 +127,32 @@ function montarSugestoesClientesAntigos(colunas) {
     quantidade_chips: sugerirColunaImportacao(colunas, ['quantidade de chips', 'qtd chips', 'chips', 'quantidade', 'qtd', 'ctns'])
   };
 }
+
+function obterColunasClientesAntigos(preview, abasSelecionadas) {
+  const abasComColunas = preview?.abas?.filter(item => Array.isArray(item.colunas)) || [];
+  const selecionadas = new Set(abasSelecionadas);
+  const origem = abasComColunas.length > 0
+    ? abasComColunas.filter(item => selecionadas.has(item.nome)).flatMap(item => item.colunas || [])
+    : preview?.colunas || [];
+  const vistas = new Set();
+  return origem.filter(coluna => {
+    if (!coluna?.nome || vistas.has(coluna.nome)) return false;
+    vistas.add(coluna.nome);
+    return true;
+  });
+}
+
+function ajustarMapeamentoClientesAntigos(mapeamento, colunas) {
+  const sugestoes = montarSugestoesClientesAntigos(colunas);
+  const proximo = { ...mapeamento };
+  Object.keys(proximo).forEach(campo => {
+    if (proximo[campo] && !encontrarColunaImportacao(colunas, proximo[campo])) {
+      proximo[campo] = sugestoes[campo] || '';
+    }
+  });
+  if (!proximo.cnpj && sugestoes.cnpj) proximo.cnpj = sugestoes.cnpj;
+  return proximo;
+}
 function getValorColuna(linha, coluna) {
   if (!coluna) return '';
   if (coluna.planilhaId && Number(linha.planilha_id) !== Number(coluna.planilhaId)) return '';
@@ -311,7 +337,6 @@ function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDi
   useEffect(() => {
     if (etapa !== 'venda') return;
     let cancelado = false;
-    setCarregandoDisponiveis(true);
     listarLeadLinhas({
       ...filtrosDivisao,
       filters: JSON.stringify(filtrosDivisao?.filters || []),
@@ -334,19 +359,18 @@ function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDi
   }, [etapa, filtrosDivisao]);
 
   useEffect(() => {
-    if (!incluirEnviados || etapa !== 'sondagem' || statusReenvio.length === 0) { setDisponiveisReenvio(null); return; }
+    if (!incluirEnviados || etapa !== 'sondagem' || statusReenvio.length === 0) return undefined;
     let cancelado = false;
     listarLeadLinhas({ ...filtrosDivisao, filters: JSON.stringify(filtrosDivisao?.filters || []), somente_enviados: true, status_reenvio: statusReenvio, status_reenvio_modo: modoStatusReenvio, page: 1, page_size: 1 })
-      .then(resultado => { if (!cancelado) setDisponiveisReenvio(Number(resultado?.total || 0)); })
+      .then(resultado => {
+        if (cancelado) return;
+        const total = Number(resultado?.total || 0);
+        setDisponiveisReenvio(total);
+        setQuantidade(String(total));
+      })
       .catch(error => { if (!cancelado) setErro(error.message || 'Erro ao contar mailing para reenvio.'); });
     return () => { cancelado = true; };
   }, [incluirEnviados, etapa, filtrosDivisao, statusReenvio, modoStatusReenvio]);
-
-  useEffect(() => {
-    if (incluirEnviados && etapa === 'sondagem' && statusReenvio.length > 0 && disponiveisReenvio !== null) {
-      setQuantidade(String(disponiveisReenvio));
-    }
-  }, [incluirEnviados, etapa, statusReenvio, disponiveisReenvio]);
 
   /**
    * Alterna usuario no estado atual.
@@ -464,8 +488,12 @@ function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDi
             <div className="form-field">
               <label>Etapa do envio</label>
               <select value={etapa} onChange={event => {
-                setEtapa(event.target.value);
-                if (event.target.value === 'venda') setIncluirEnviados(true);
+                const proximaEtapa = event.target.value;
+                setEtapa(proximaEtapa);
+                if (proximaEtapa === 'venda') {
+                  setIncluirEnviados(true);
+                  setCarregandoDisponiveis(true);
+                }
               }}>
                 <option value="sondagem">Primeira ligacao / sondagem</option>
                 <option value="venda">Futuros clientes / venda</option>
@@ -1227,12 +1255,23 @@ function AdminLeadsPage() {
     }
   }
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    carregarBase();
+    let ativo = true;
+    Promise.all([listarLeadPlanilhas(), listarVendedoras()])
+      .then(([planilhasData, vendedorasData]) => {
+        if (!ativo) return;
+        setPlanilhas(planilhasData);
+        setVendedoras(vendedorasData);
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao carregar planilhas.');
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+    return () => { ativo = false; };
   }, []);
 
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     function limparSelecao() {
@@ -1348,17 +1387,12 @@ function AdminLeadsPage() {
     montarFiltrosBackend(filtros, colunas, planilhasSelecionadas, schema)
   ), [filtros, colunas, planilhasSelecionadas, schema]);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (selecionadas.length === 0) {
-      setLinhas([]);
-      setTotalLinhas(0);
-      setResumoLeads({ total: 0, enviados: 0, qualificados: 0, nao_enviados: 0 });
       return;
     }
 
     let cancelado = false;
-    setCarregando(true);
     listarLeadLinhas({
       planilha_ids: selecionadas,
       page: pagina,
@@ -1385,7 +1419,6 @@ function AdminLeadsPage() {
       cancelado = true;
     };
   }, [selecionadas, pagina, buscaDeferred, filtrosBackend]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const linhasFiltradas = useMemo(() => {
     return linhas;
@@ -1400,20 +1433,10 @@ function AdminLeadsPage() {
     ? Math.round((Number(resumoLeads.enviados || 0) / Number(resumoLeads.total || 1)) * 100)
     : 0;
 
-  const caColunasSelecionadas = useMemo(() => {
-    const abasComColunas = caPreview?.abas?.filter(item => Array.isArray(item.colunas)) || [];
-    const selecionadasSet = new Set(caAbasSelecionadas);
-    const origem = abasComColunas.length > 0
-      ? abasComColunas.filter(item => selecionadasSet.has(item.nome)).flatMap(item => item.colunas || [])
-      : caPreview?.colunas || [];
-    const vistas = new Set();
-
-    return origem.filter(coluna => {
-      if (!coluna?.nome || vistas.has(coluna.nome)) return false;
-      vistas.add(coluna.nome);
-      return true;
-    });
-  }, [caPreview, caAbasSelecionadas]);
+  const caColunasSelecionadas = useMemo(
+    () => obterColunasClientesAntigos(caPreview, caAbasSelecionadas),
+    [caPreview, caAbasSelecionadas]
+  );
 
   const caCnpjSelecionadoValido = useMemo(() => (
     Boolean(caMapeamento.cnpj && encontrarColunaImportacao(caColunasSelecionadas, caMapeamento.cnpj))
@@ -1452,32 +1475,18 @@ function AdminLeadsPage() {
   }
 
   function caToggleTodasAbas(marcar) {
-    setCaAbasSelecionadas(marcar ? (caPreview?.abas || []).map(item => item.nome) : []);
+    const proximas = marcar ? (caPreview?.abas || []).map(item => item.nome) : [];
+    setCaAbasSelecionadas(proximas);
+    setCaMapeamento(prev => ajustarMapeamentoClientesAntigos(prev, obterColunasClientesAntigos(caPreview, proximas)));
   }
 
   function caToggleAba(nome) {
-    setCaAbasSelecionadas(prev => (
-      prev.includes(nome)
-        ? prev.filter(item => item !== nome)
-        : [...prev, nome]
-    ));
+    const proximas = caAbasSelecionadas.includes(nome)
+      ? caAbasSelecionadas.filter(item => item !== nome)
+      : [...caAbasSelecionadas, nome];
+    setCaAbasSelecionadas(proximas);
+    setCaMapeamento(prev => ajustarMapeamentoClientesAntigos(prev, obterColunasClientesAntigos(caPreview, proximas)));
   }
-
-  useEffect(() => {
-    if (!caPreview) return;
-
-    const sugestoes = montarSugestoesClientesAntigos(caColunasSelecionadas);
-    setCaMapeamento(prev => {
-      const proximo = { ...prev };
-      Object.keys(proximo).forEach(campo => {
-        if (proximo[campo] && !encontrarColunaImportacao(caColunasSelecionadas, proximo[campo])) {
-          proximo[campo] = sugestoes[campo] || '';
-        }
-      });
-      if (!proximo.cnpj && sugestoes.cnpj) proximo.cnpj = sugestoes.cnpj;
-      return proximo;
-    });
-  }, [caPreview, caColunasSelecionadas]);
 
   async function caImportar() {
     if (!caArquivo || caImportando) return;
@@ -1718,6 +1727,11 @@ function AdminLeadsPage() {
     setNovoFiltro({ coluna: '', op: 'contains', valor: '', valor2: '' });
     setColunasMescladas(prev => prev.filter(chave => conflitos.some(grupo => grupo.chave === chave)));
     setSelecionadas(proximas);
+    if (proximas.length === 0) {
+      setLinhas([]);
+      setTotalLinhas(0);
+      setResumoLeads({ total: 0, enviados: 0, qualificados: 0, nao_enviados: 0 });
+    }
   }
 
   /**

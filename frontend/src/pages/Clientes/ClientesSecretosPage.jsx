@@ -326,7 +326,25 @@ function ClientesSecretosPage() {
   }
 
   useEffect(() => {
-    carregar();
+    let ativo = true;
+
+    Promise.all([listarClientesSecretos(), listarOperadoras()])
+      .then(([clientesData, operadorasData]) => {
+        if (!ativo) return;
+        setClientes(Array.isArray(clientesData) ? clientesData : []);
+        setOperadoras(Array.isArray(operadorasData) ? operadorasData : []);
+        setErro('');
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao carregar leads.');
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+
+    return () => {
+      ativo = false;
+    };
   }, []);
 
   function alterarBuscaCampo(campo) {

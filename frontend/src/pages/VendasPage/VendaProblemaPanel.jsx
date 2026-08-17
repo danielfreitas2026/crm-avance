@@ -291,34 +291,19 @@ function NovoProblemaForm({ venda, onSalvo }) {
  */
 function VendaProblemaPanel({ venda, usuario, initialProblemaId }) {
   const [problemas, setProblemas] = useState([]);
-  const [carregando, setCarregando] = useState(false);
+  const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const podeAdicionarProblema = temPermissao(usuario, 'pos_venda');
 
-  /**
-   * Carrega  e atualiza o estado relacionado.
-   */
-  async function carregar() {
-    if (!venda?.id) return;
-
-    setCarregando(true);
-    setErro('');
-
-    try {
-      setProblemas(await listarProblemasVenda(venda.id));
-    } catch (error) {
-      setErro(error.message || 'Erro ao carregar problemas da venda.');
-    } finally {
-      setCarregando(false);
-    }
-  }
-
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    carregar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!venda?.id) return undefined;
+    let ativo = true;
+    listarProblemasVenda(venda.id)
+      .then(data => { if (ativo) setProblemas(data); })
+      .catch(error => { if (ativo) setErro(error.message || 'Erro ao carregar problemas da venda.'); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
   }, [venda?.id]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!initialProblemaId || problemas.length === 0) return undefined;

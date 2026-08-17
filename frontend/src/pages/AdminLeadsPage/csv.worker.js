@@ -98,12 +98,6 @@ function parseCsvLine(line, delimiter) {
 /**
  * Detecta delimiter a partir do conteudo recebido.
  */
-function detectDelimiter(line) {
-  return [';', ',', '\t'].reduce((best, delimiter) => (
-    parseCsvLine(line, delimiter).length > parseCsvLine(line, best).length ? delimiter : best
-  ), ';');
-}
-
 function detectDelimiterLines(lines) {
   const sample = lines.slice(0, HEADER_LOOKAHEAD);
   return [';', ',', '\t'].reduce((best, delimiter) => {

@@ -1,4 +1,3 @@
-import React from 'react';
 
 /**
  * Renderiza um campo de texto controlado com label opcional.
