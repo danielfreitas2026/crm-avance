@@ -178,6 +178,22 @@ test('nao notifica venda direta ou atribuicao de outra consultora', async () => 
   assert.equal(chamadas, 0);
 });
 
+test('venda vinculada corresponde quando a responsavel e vendedora principal ou compartilhada', () => {
+  const atribuicao = { lead_linha_id: 42, usuario_id: 7, etapa: 'venda' };
+
+  assert.equal(vendaCorrespondeAtribuicao({
+    origem_lead_linha_id: 42,
+    criado_por_id: 8,
+    vendedora_id: 7
+  }, atribuicao), true);
+  assert.equal(vendaCorrespondeAtribuicao({
+    origem_lead_linha_id: 42,
+    criado_por_id: 8,
+    vendedora_id: 9,
+    vendedoras_ids: [9, 7]
+  }, atribuicao), true);
+});
+
 test('falhas do Telegram nao interrompem o processamento da venda fechada', async () => {
   const erroAnterior = console.error;
   console.error = () => {};

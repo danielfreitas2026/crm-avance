@@ -29,9 +29,50 @@ const {
   obterQuantidadeChipsVenda,
   obterUltimaAtividadeFunil,
   parseValorMonetario,
+  resolverLeadOrigemCadastro,
   validarVendedorasNosChips,
   vendaDeveAparecerNoFunil
 } = vendaService._internals;
+
+test('origem explicita tem prioridade e impede a busca automatica', async () => {
+  const explicita = { id: 15 };
+  let buscasAutomaticas = 0;
+  const resultado = await resolverLeadOrigemCadastro({
+    origemLeadLinhaId: 15,
+    usuarioId: 7,
+    cnpj: '12.345.678/0001-90',
+    vendedorasIds: [7],
+    criadoEm: '2026-08-18 12:00:00',
+    trx: {},
+    buscarExplicita: async () => explicita,
+    buscarAutomatica: async () => {
+      buscasAutomaticas += 1;
+      return { id: 99 };
+    }
+  });
+
+  assert.deepEqual(resultado, { linha: explicita, tipo: 'explicita' });
+  assert.equal(buscasAutomaticas, 0);
+});
+
+test('sem origem explicita usa apenas a resolucao prospectiva por CNPJ', async () => {
+  const automatica = { id: 22 };
+  const resultado = await resolverLeadOrigemCadastro({
+    origemLeadLinhaId: null,
+    usuarioId: 3,
+    cnpj: '12.345.678/0001-90',
+    vendedorasIds: [7, 9],
+    criadoEm: '2026-08-18 12:00:00',
+    trx: {},
+    buscarExplicita: async () => assert.fail('nao deve buscar origem explicita'),
+    buscarAutomatica: async parametros => {
+      assert.deepEqual(parametros.vendedorasIds, [7, 9]);
+      return automatica;
+    }
+  });
+
+  assert.deepEqual(resultado, { linha: automatica, tipo: 'automatica_cnpj' });
+});
 
 test('monta data efetiva com a ultima reversao ativa no fuso de Sao Paulo', () => {
   const expressao = montarExpressaoDataEfetivaVenda('vendas');

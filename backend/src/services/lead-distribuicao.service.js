@@ -388,9 +388,15 @@ function montarMensagemVendaFechadaTelegram(venda = {}, atribuicao = {}) {
 }
 
 function vendaCorrespondeAtribuicao(venda = {}, atribuicao = {}) {
+  const vendedorasIds = new Set([
+    Number(venda.vendedora_id),
+    ...(Array.isArray(venda.vendedoras_ids) ? venda.vendedoras_ids.map(Number) : [])
+  ].filter(Boolean));
+  const consultoraCorresponde = Number(venda.criado_por_id) === Number(atribuicao.usuario_id)
+    || vendedorasIds.has(Number(atribuicao.usuario_id));
   return Number(venda.origem_lead_linha_id) > 0
     && Number(venda.origem_lead_linha_id) === Number(atribuicao.lead_linha_id)
-    && Number(venda.criado_por_id) === Number(atribuicao.usuario_id)
+    && consultoraCorresponde
     && atribuicao.etapa === 'venda';
 }
 
@@ -432,16 +438,20 @@ async function enviarNotificacaoVendaFechada(venda, atribuicao, opcoes = {}) {
 }
 
 async function notificarVendaFechadaTelegram(vendaId, atribuicaoId, opcoes = {}) {
-  const [venda, atribuicao] = await Promise.all([
+  const [venda, atribuicao, vendedoras] = await Promise.all([
     db('vendas').where('id', Number(vendaId)).first(),
     db('lead_atribuicoes as la')
       .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
       .where('la.id', Number(atribuicaoId))
       .select('la.*', 'u.nome as consultora_nome')
-      .first()
+      .first(),
+    db('venda_vendedoras').where('venda_id', Number(vendaId)).select('usuario_id')
   ]);
   if (!venda || !atribuicao) return { enviado: false, motivo: 'venda_ou_atribuicao_nao_encontrada' };
-  return enviarNotificacaoVendaFechada(venda, atribuicao, opcoes);
+  return enviarNotificacaoVendaFechada({
+    ...venda,
+    vendedoras_ids: vendedoras.map(item => Number(item.usuario_id))
+  }, atribuicao, opcoes);
 }
 
 async function notificarAceiteTelegram(atribuicao, usuarioId, linha) {
