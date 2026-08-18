@@ -2,12 +2,14 @@
  * Servico de deteccao e notificacao de vendas paradas no funil.
  */
 const Notificacao = require('../models/Notificacao');
-const NotificacaoDestinatario = require('../models/NotificacaoDestinatario');
 const Usuario = require('../models/Usuario');
 const db = require('../database/connection');
 const { parseUtcDateTime } = require('../utils/datetime');
-const notificacaoEmailService = require('./notificacao-email.service');
 const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
+const {
+  salvarNotificacaoIdempotente,
+  desativarNotificacoesAtivas
+} = require('./notificacao-persistencia.service');
 
 const TIPO_NOTIFICACAO = 'venda_parada_funil';
 const PERMISSAO_VENDAS_PARADAS = 'notificacoes_vendas_paradas';
@@ -65,19 +67,9 @@ async function desativarNotificacaoVendaParada(vendaId, etapaCodigo, trx = null)
   try {
     const sourceKey = `${TIPO_NOTIFICACAO}:${vendaId}:${etapaCodigo}`;
 
-    const notificacoes = await Notificacao.query(trx)
-      .where('source_key', sourceKey)
-      .select('id');
-
-    if (notificacoes.length > 0) {
-      await NotificacaoDestinatario.query(trx)
-        .whereIn('notificacao_id', notificacoes.map(n => n.id))
-        .delete();
-    }
-
-    return Notificacao.query(trx)
-      .where('source_key', sourceKey)
-      .patch({ ativa: false, updated_at: new Date() });
+    return desativarNotificacoesAtivas(
+      Notificacao.query(trx).where('source_key', sourceKey)
+    );
   } catch (erro) {
     console.error('Erro ao desativar notificação de venda parada:', erro);
   }
@@ -169,51 +161,17 @@ async function sincronizarVendasParadas() {
           entidade_id: venda.id,
           source_key: sourceKey,
           dados: JSON.stringify(dados),
-          ativa: true,
-          updated_at: agora
+          ativa: true
         };
-
-        await db('notificacoes')
-          .insert(payload)
-          .onConflict('source_key')
-          .merge({
-            tipo: payload.tipo,
-            titulo: payload.titulo,
-            mensagem: payload.mensagem,
-            nivel: payload.nivel,
-            entidade: payload.entidade,
-            entidade_id: payload.entidade_id,
-            dados: payload.dados,
-            ativa: payload.ativa,
-            updated_at: payload.updated_at
-          });
-
-        const notificacao = await Notificacao.query()
-          .where('source_key', sourceKey)
-          .first();
-
         const destinatarios = await obterDestinatariosVenda(venda);
-
-        const destinatariosQuery = NotificacaoDestinatario.query()
-          .where('notificacao_id', notificacao.id);
-
-        if (destinatarios.length > 0) {
-          destinatariosQuery.whereNotIn('usuario_id', destinatarios);
-        }
-
-        await destinatariosQuery.delete();
-
-        for (const usuarioId of destinatarios) {
-          await db('notificacao_destinatarios')
-            .insert({
-              notificacao_id: notificacao.id,
-              usuario_id: usuarioId
-            })
-            .onConflict(['notificacao_id', 'usuario_id'])
-            .ignore();
-        }
-
-        notificacaoEmailService.enviarEmailsPendentesAsync(notificacao.id);
+        await salvarNotificacaoIdempotente({
+          sourceKeys: [sourceKey],
+          sourceKeyNova: sourceKey,
+          payload,
+          destinatarios,
+          agora,
+          rearmarQuando: notificacao => Number(notificacao.ativa) !== 1
+        });
       }
     }
   } catch (erro) {

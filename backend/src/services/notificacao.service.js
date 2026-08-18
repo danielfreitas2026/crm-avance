@@ -8,7 +8,10 @@ const NotificacaoDestinatario = require('../models/NotificacaoDestinatario');
 const Usuario = require('../models/Usuario');
 const db = require('../database/connection');
 const vendaNotificacaoParadaService = require('./venda-notificacao-parada.service');
-const notificacaoEmailService = require('./notificacao-email.service');
+const {
+  salvarNotificacaoIdempotente,
+  desativarNotificacoesAtivas
+} = require('./notificacao-persistencia.service');
 const { parseUtcDateTime } = require('../utils/datetime');
 const {
   parsePermissoes,
@@ -187,12 +190,11 @@ async function listarUsuariosDestinatarios(cliente, trx = null) {
  * Desativa notificacao fidelidade cliente quando nao e mais necessaria.
  */
 async function desativarNotificacaoFidelidadeCliente(clienteId, trx = null) {
-  return Notificacao.query(trx)
+  return desativarNotificacoesAtivas(Notificacao.query(trx)
     .where(function () {
       this.where('source_key', `${TIPO_FIDELIDADE_CLIENTE}:${clienteId}`)
         .orWhere('source_key', 'like', `${TIPO_FIDELIDADE_CLIENTE}:${clienteId}:%`);
-    })
-    .patch({ ativa: false, updated_at: new Date() });
+    }));
 }
 
 /**
@@ -204,19 +206,9 @@ async function desativarNotificacoesRetornoNota(notaId, trx = null) {
     `${TIPO_NOTA_RETORNO_DUE}:${notaId}`
   ];
 
-  const notificacoes = await Notificacao.query(trx)
-    .select('id')
-    .whereIn('source_key', sourceKeys);
-
-  if (notificacoes.length > 0) {
-    await NotificacaoDestinatario.query(trx)
-      .whereIn('notificacao_id', notificacoes.map(notificacao => notificacao.id))
-      .delete();
-  }
-
-  return Notificacao.query(trx)
-    .whereIn('source_key', sourceKeys)
-    .patch({ ativa: false, updated_at: new Date() });
+  return desativarNotificacoesAtivas(
+    Notificacao.query(trx).whereIn('source_key', sourceKeys)
+  );
 }
 
 /**
@@ -233,9 +225,9 @@ async function sincronizarFidelidadeCliente(clienteId, trx = null) {
     return null;
   }
 
-  await Notificacao.query(trx)
-    .where('source_key', `${TIPO_FIDELIDADE_CLIENTE}:${cliente.id}`)
-    .patch({ ativa: false, updated_at: new Date() });
+  await desativarNotificacoesAtivas(
+    Notificacao.query(trx).where('source_key', `${TIPO_FIDELIDADE_CLIENTE}:${cliente.id}`)
+  );
 
   const operadoras = cliente.operadorasAtuais?.length > 0
     ? cliente.operadorasAtuais
@@ -249,9 +241,9 @@ async function sincronizarFidelidadeCliente(clienteId, trx = null) {
     sourceKeysAtivas.push(sourceKey);
 
     if (diasRestantes === null || diasRestantes > 30) {
-      await Notificacao.query(trx)
-        .where('source_key', sourceKey)
-        .patch({ ativa: false, updated_at: new Date() });
+      await desativarNotificacoesAtivas(
+        Notificacao.query(trx).where('source_key', sourceKey)
+      );
       continue;
     }
 
@@ -267,10 +259,6 @@ async function sincronizarFidelidadeCliente(clienteId, trx = null) {
       dias_restantes: diasRestantes
     };
 
-    let notificacao = await Notificacao.query(trx)
-      .where('source_key', sourceKey)
-      .first();
-
     const payload = {
       tipo: TIPO_FIDELIDADE_CLIENTE,
       titulo: diasRestantes < 0 ? 'Fidelidade de cliente vencida' : 'Fidelidade de cliente perto do fim',
@@ -280,41 +268,18 @@ async function sincronizarFidelidadeCliente(clienteId, trx = null) {
       entidade_id: cliente.id,
       source_key: sourceKey,
       dados: JSON.stringify(dados),
-      ativa: true,
-      updated_at: new Date()
+      ativa: true
     };
 
-    if (notificacao) {
-      notificacao = await Notificacao.query(trx)
-        .patchAndFetchById(notificacao.id, payload);
-    } else {
-      notificacao = await Notificacao.query(trx)
-        .insertAndFetch(payload);
-    }
-
     const destinatarios = await listarUsuariosDestinatarios(cliente, trx);
-
-    const destinatariosQuery = NotificacaoDestinatario.query(trx)
-      .where('notificacao_id', notificacao.id);
-
-    if (destinatarios.length > 0) {
-      destinatariosQuery.whereNotIn('usuario_id', destinatarios);
-    }
-
-    await destinatariosQuery.delete();
-
-    const knex = trx || db;
-    for (const usuarioId of destinatarios) {
-      await knex('notificacao_destinatarios')
-        .insert({
-          notificacao_id: notificacao.id,
-          usuario_id: usuarioId
-        })
-        .onConflict(['notificacao_id', 'usuario_id'])
-        .ignore();
-    }
-
-    notificacaoEmailService.enviarEmailsPendentesAsync(notificacao.id);
+    const resultado = await salvarNotificacaoIdempotente({
+      sourceKeys: [sourceKey],
+      sourceKeyNova: sourceKey,
+      payload,
+      destinatarios,
+      trx
+    });
+    const notificacao = resultado.notificacao;
     ultimaNotificacao = notificacao;
   }
 
@@ -325,7 +290,7 @@ async function sincronizarFidelidadeCliente(clienteId, trx = null) {
     queryInativas.whereNotIn('source_key', sourceKeysAtivas);
   }
 
-  await queryInativas.patch({ ativa: false, updated_at: new Date() });
+  await desativarNotificacoesAtivas(queryInativas);
 
   return ultimaNotificacao;
 }
@@ -359,6 +324,10 @@ async function salvarNotificacaoRetornoNota(nota, etapa, agora) {
     return null;
   }
 
+  const sourceKeys = [
+    `${TIPO_NOTA_RETORNO_PRE}:${nota.id}`,
+    `${TIPO_NOTA_RETORNO_DUE}:${nota.id}`
+  ];
   const sourceKey = `${etapa}:${nota.id}`;
   const tituloNota = nota.titulo || 'Sem titulo';
   const destino = nota.entidade_tipo === 'cliente' ? 'clientes' : nota.entidade_tipo === 'lead' ? 'clientes-secretos' : 'vendas';
@@ -382,47 +351,20 @@ async function salvarNotificacaoRetornoNota(nota, etapa, agora) {
       retorno_etapa: isDue ? 'due' : 'pre',
       titulo_nota: tituloNota
     }),
-    ativa: true,
-    updated_at: agora
+    ativa: true
   };
-
-  // Upsert pelo unique de source_key: duas requisicoes concorrentes de
-  // GET /notificacoes sincronizam a mesma nota ao mesmo tempo.
-  await db('notificacoes')
-    .insert(payload)
-    .onConflict('source_key')
-    .merge({
-      tipo: payload.tipo,
-      titulo: payload.titulo,
-      mensagem: payload.mensagem,
-      nivel: payload.nivel,
-      entidade: payload.entidade,
-      entidade_id: payload.entidade_id,
-      dados: payload.dados,
-      ativa: payload.ativa,
-      updated_at: payload.updated_at
-    });
-
-  const notificacao = await Notificacao.query()
-    .where('source_key', sourceKey)
-    .first();
 
   const adminsIds = await listarAdminsAtivos();
   const destinatariosIds = Array.from(new Set([Number(nota.usuario_id), ...adminsIds].filter(Boolean)));
+  const resultado = await salvarNotificacaoIdempotente({
+    sourceKeys,
+    sourceKeyNova: sourceKey,
+    payload,
+    destinatarios: destinatariosIds,
+    agora
+  });
 
-  for (const usuarioId of destinatariosIds) {
-    await db('notificacao_destinatarios')
-      .insert({
-        notificacao_id: notificacao.id,
-        usuario_id: usuarioId
-      })
-      .onConflict(['notificacao_id', 'usuario_id'])
-      .ignore();
-  }
-
-  notificacaoEmailService.enviarEmailsPendentesAsync(notificacao.id);
-
-  return notificacao;
+  return resultado.notificacao;
 }
 
 /**
@@ -450,9 +392,6 @@ async function sincronizarRetornosNotas(usuarioId = null) {
     }
 
     if (retorno <= agora) {
-      await Notificacao.query()
-        .where('source_key', `${TIPO_NOTA_RETORNO_PRE}:${nota.id}`)
-        .patch({ ativa: false, updated_at: agora });
       await salvarNotificacaoRetornoNota(nota, TIPO_NOTA_RETORNO_DUE, agora);
     } else {
       await salvarNotificacaoRetornoNota(nota, TIPO_NOTA_RETORNO_PRE, agora);
@@ -479,6 +418,7 @@ async function salvarNotificacaoRetornoFuturoCliente(linha, etapa, agora) {
   const retorno = parseDataHora(linha.retorno_em);
   if (!retorno) return null;
   const isDue = etapa === TIPO_FUTURO_RETORNO_DUE;
+  const sourceKeys = TIPOS_FUTURO_RETORNO.map(tipo => `${tipo}:${linha.lead_linha_id}`);
   const sourceKey = `${etapa}:${linha.lead_linha_id}`;
   const nome = tituloFuturoCliente(linha.dados_json, linha.lead_linha_id);
   const retornoFormatado = formatarDataHoraBR(linha.retorno_em);
@@ -498,24 +438,22 @@ async function salvarNotificacaoRetornoFuturoCliente(linha, etapa, agora) {
       retorno_etapa: isDue ? 'due' : 'pre',
       titulo_nota: nome
     }),
-    ativa: true,
-    updated_at: agora
+    ativa: true
   };
-  await db('notificacoes').insert(payload).onConflict('source_key').merge(payload);
-  const notificacao = await Notificacao.query().where('source_key', sourceKey).first();
   const adminsIds = await listarAdminsAtivos();
   const destinatarios = Array.from(new Set([Number(linha.usuario_id), ...adminsIds].filter(Boolean)));
-  for (const destinatarioId of destinatarios) {
-    await db('notificacao_destinatarios').insert({ notificacao_id: notificacao.id, usuario_id: destinatarioId })
-      .onConflict(['notificacao_id', 'usuario_id']).ignore();
-  }
-  notificacaoEmailService.enviarEmailsPendentesAsync(notificacao.id);
-  return notificacao;
+  const resultado = await salvarNotificacaoIdempotente({
+    sourceKeys,
+    sourceKeyNova: sourceKey,
+    payload,
+    destinatarios,
+    agora
+  });
+  return resultado.notificacao;
 }
 
 /** Notificacao interna da distribuicao para venda via Telegram. */
 async function criarNotificacaoFuturoClienteDistribuido(dados, trx = null) {
-  const knex = trx || db;
   const linhaId = Number(dados.leadLinhaId);
   const vendedoraId = Number(dados.vendedoraId);
   const sourceKey = TIPO_FUTURO_CLIENTE_DISTRIBUIDO + ':' + linhaId;
@@ -529,19 +467,22 @@ async function criarNotificacaoFuturoClienteDistribuido(dados, trx = null) {
     entidade_id: linhaId,
     source_key: sourceKey,
     dados: JSON.stringify({ lead_linha_id: linhaId, encaminhado_por_telegram_id: String(dados.gerenteTelegramId || ''), encaminhado_em: agora.toISOString() }),
-    ativa: true,
-    updated_at: agora
+    ativa: true
   };
-  await knex('notificacoes').insert(payload).onConflict('source_key').merge(payload);
-  const notificacao = await Notificacao.query(trx).where('source_key', sourceKey).first();
-  await knex('notificacao_destinatarios').where('notificacao_id', notificacao.id).delete();
-  await knex('notificacao_destinatarios').insert({ notificacao_id: notificacao.id, usuario_id: vendedoraId });
-  return notificacao;
+  const resultado = await salvarNotificacaoIdempotente({
+    sourceKeys: [sourceKey],
+    sourceKeyNova: sourceKey,
+    payload,
+    destinatarios: [vendedoraId],
+    agora,
+    trx,
+    rearmarQuando: () => false
+  });
+  return resultado.notificacao;
 }
 
 /** Mantem o alerta ativo durante o prazo de contato depois do aceite. */
 async function atualizarNotificacaoFuturoClienteAceito(dados, trx = null) {
-  const knex = trx || db;
   const linhaId = Number(dados.leadLinhaId);
   const vendedoraId = Number(dados.vendedoraId);
   const sourceKey = `${TIPO_FUTURO_CLIENTE_DISTRIBUIDO}:${linhaId}`;
@@ -556,14 +497,18 @@ async function atualizarNotificacaoFuturoClienteAceito(dados, trx = null) {
     entidade_id: linhaId,
     source_key: sourceKey,
     dados: JSON.stringify({ lead_linha_id: linhaId, aceite_em: agora.toISOString(), prazo_acao_em: dados.prazoAcaoEm }),
-    ativa: true,
-    updated_at: agora
+    ativa: true
   };
-  await knex('notificacoes').insert(payload).onConflict('source_key').merge(payload);
-  const notificacao = await Notificacao.query(trx).where('source_key', sourceKey).first();
-  await knex('notificacao_destinatarios').where('notificacao_id', notificacao.id).delete();
-  await knex('notificacao_destinatarios').insert({ notificacao_id: notificacao.id, usuario_id: vendedoraId });
-  return notificacao;
+  const resultado = await salvarNotificacaoIdempotente({
+    sourceKeys: [sourceKey],
+    sourceKeyNova: sourceKey,
+    payload,
+    destinatarios: [vendedoraId],
+    agora,
+    trx,
+    rearmarQuando: () => false
+  });
+  return resultado.notificacao;
 }
 
 /**
@@ -600,12 +545,8 @@ async function sincronizarRetornosFuturosClientes() {
     const retorno = parseDataHora(linha.retorno_em);
     if (!retorno) continue;
     if (retorno <= agora) {
-      await Notificacao.query().where('source_key', `${TIPO_FUTURO_RETORNO_PRE}:${linha.lead_linha_id}`)
-        .patch({ ativa: false, updated_at: agora });
       await salvarNotificacaoRetornoFuturoCliente(linha, TIPO_FUTURO_RETORNO_DUE, agora);
     } else {
-      await Notificacao.query().where('source_key', `${TIPO_FUTURO_RETORNO_DUE}:${linha.lead_linha_id}`)
-        .patch({ ativa: false, updated_at: agora });
       await salvarNotificacaoRetornoFuturoCliente(linha, TIPO_FUTURO_RETORNO_PRE, agora);
     }
   }
@@ -614,6 +555,7 @@ async function sincronizarRetornosFuturosClientes() {
     .leftJoin('lead_sondagens as ls', 'ls.lead_linha_id', 'n.entidade_id')
     .leftJoin('lead_linhas as ll', 'll.id', 'n.entidade_id')
     .whereIn('n.tipo', TIPOS_FUTURO_RETORNO)
+    .where('n.ativa', true)
     .where(builder => builder.whereNull('ls.retorno_em').orWhereNull('ll.id').orWhere('ll.futuro_cliente', false).orWhereNotNull('ll.futuro_cliente_excluido_em').orWhereNotNull('ll.retorno_agendado_em').orWhereIn('ll.status_operacional', ['vendido', 'perdido']).orWhereNotNull('ll.venda_id').orWhereNotNull('ll.venda_recusada_em'))
     .distinct('n.id');
 
@@ -629,6 +571,7 @@ async function salvarNotificacaoRetornoLead(linha, etapa, agora) {
   const retorno = parseDataHora(linha.retorno_agendado_em);
   if (!retorno) return null;
   const isDue = etapa === TIPO_LEAD_RETORNO_DUE;
+  const sourceKeys = TIPOS_LEAD_RETORNO.map(tipo => `${tipo}:${linha.id}`);
   const sourceKey = `${etapa}:${linha.id}`;
   const nome = tituloFuturoCliente(linha.dados_json, linha.id);
   const retornoFormatado = formatarDataHoraBR(linha.retorno_agendado_em);
@@ -648,19 +591,18 @@ async function salvarNotificacaoRetornoLead(linha, etapa, agora) {
       retorno_etapa: isDue ? 'due' : 'pre',
       titulo_nota: nome
     }),
-    ativa: true,
-    updated_at: agora
+    ativa: true
   };
-  await db('notificacoes').insert(payload).onConflict('source_key').merge(payload);
-  const notificacao = await Notificacao.query().where('source_key', sourceKey).first();
   const adminsIds = await listarAdminsAtivos();
   const destinatarios = Array.from(new Set([Number(linha.atribuido_para_id), ...adminsIds].filter(Boolean)));
-  for (const destinatarioId of destinatarios) {
-    await db('notificacao_destinatarios').insert({ notificacao_id: notificacao.id, usuario_id: destinatarioId })
-      .onConflict(['notificacao_id', 'usuario_id']).ignore();
-  }
-  notificacaoEmailService.enviarEmailsPendentesAsync(notificacao.id);
-  return notificacao;
+  const resultado = await salvarNotificacaoIdempotente({
+    sourceKeys,
+    sourceKeyNova: sourceKey,
+    payload,
+    destinatarios,
+    agora
+  });
+  return resultado.notificacao;
 }
 
 /**
@@ -684,12 +626,8 @@ async function sincronizarRetornosLeads() {
     const retorno = parseDataHora(linha.retorno_agendado_em);
     if (!retorno) continue;
     if (retorno <= agora) {
-      await Notificacao.query().where('source_key', `${TIPO_LEAD_RETORNO_PRE}:${linha.id}`)
-        .patch({ ativa: false, updated_at: agora });
       await salvarNotificacaoRetornoLead(linha, TIPO_LEAD_RETORNO_DUE, agora);
     } else {
-      await Notificacao.query().where('source_key', `${TIPO_LEAD_RETORNO_DUE}:${linha.id}`)
-        .patch({ ativa: false, updated_at: agora });
       await salvarNotificacaoRetornoLead(linha, TIPO_LEAD_RETORNO_PRE, agora);
     }
   }
@@ -742,15 +680,8 @@ async function sincronizarRetornoNota(notaId) {
   }
 
   if (retorno <= agora) {
-    await Notificacao.query()
-      .where('source_key', `${TIPO_NOTA_RETORNO_PRE}:${id}`)
-      .patch({ ativa: false, updated_at: agora });
     return salvarNotificacaoRetornoNota(nota, TIPO_NOTA_RETORNO_DUE, agora);
   }
-
-  await Notificacao.query()
-    .where('source_key', `${TIPO_NOTA_RETORNO_DUE}:${id}`)
-    .patch({ ativa: false, updated_at: agora });
   return salvarNotificacaoRetornoNota(nota, TIPO_NOTA_RETORNO_PRE, agora);
 }
 
@@ -772,6 +703,7 @@ async function sincronizarRetornoLead(linhaId) {
       .whereIn('tipo', TIPOS_LEAD_RETORNO)
       .where('entidade', 'lead_linhas')
       .where('entidade_id', id)
+      .where('ativa', true)
       .patch({ ativa: false, updated_at: agora });
     return null;
   }
@@ -780,15 +712,8 @@ async function sincronizarRetornoLead(linhaId) {
   if (!retorno) return null;
 
   if (retorno <= agora) {
-    await Notificacao.query()
-      .where('source_key', `${TIPO_LEAD_RETORNO_PRE}:${id}`)
-      .patch({ ativa: false, updated_at: agora });
     return salvarNotificacaoRetornoLead(linha, TIPO_LEAD_RETORNO_DUE, agora);
   }
-
-  await Notificacao.query()
-    .where('source_key', `${TIPO_LEAD_RETORNO_DUE}:${id}`)
-    .patch({ ativa: false, updated_at: agora });
   return salvarNotificacaoRetornoLead(linha, TIPO_LEAD_RETORNO_PRE, agora);
 }
 
@@ -849,6 +774,12 @@ function aplicarFiltroTiposVisiveis(query, { podeReceberTodas, podeVerTudo, pode
  */
 function aplicarFiltroNavbar(query) {
   return query.whereNull('nd.ocultada_em');
+}
+
+function aplicarLimiteListagem(query, filtros = {}) {
+  if (filtros.escopo === 'dashboard') return query;
+  const limit = Math.min(Math.max(Number(filtros.limit || 20), 1), 50);
+  return query.limit(limit);
 }
 
 /**
@@ -928,13 +859,11 @@ async function listarNotificacoes(usuarioId, filtros = {}) {
     || usuarioTemPermissaoLocal(usuario, 'vendas_aprovacoes_decidir');
   const podeVerVendasParadas = usuarioTemPermissaoLocal(usuario, PERMISSAO_VENDAS_PARADAS);
 
-  const limit = Math.min(Number(filtros.limit || 20), 50);
   const ordemDataHora = filtros.ordem === 'data_hora_asc' ? 'asc' : 'desc';
   const query = aplicarJoinDestinatarioUsuario(Notificacao.query().alias('n'), usuarioId)
     .where('n.ativa', true)
     .orderBy('n.updated_at', ordemDataHora)
     .orderBy('n.id', ordemDataHora)
-    .limit(limit)
     .select(
       'nd.id as destinatario_id',
       'nd.lida_em',
@@ -949,6 +878,8 @@ async function listarNotificacoes(usuarioId, filtros = {}) {
       'n.created_at',
       'n.updated_at'
     );
+
+  aplicarLimiteListagem(query, filtros);
 
   aplicarFiltroTiposVisiveis(query, { podeReceberTodas, podeVerTudo, podeVerAprovacoes, podeVerVendasParadas });
 
@@ -1277,6 +1208,7 @@ module.exports = {
   limparNotificacoesSemObjetoReferente,
   _internals: {
     aplicarFiltroNavbar,
+    aplicarLimiteListagem,
     aplicarFiltroTiposVisiveis,
     isRetornoLeadAgendadoElegivel,
     salvarOcultacaoDestinatario

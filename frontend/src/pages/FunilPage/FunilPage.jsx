@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -8,6 +9,11 @@ import * as I from '../../components/Icons';
 import SelectFiltro from '../../components/SelectFiltro/SelectFiltro';
 import { STAGES as FALLBACK_STAGES } from '../../config/constants';
 import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
+import {
+  confirmarAberturaNotificacao,
+  falharAberturaNotificacao,
+  getNotificacaoIdParam
+} from '../../services/notificacao-abertura.service';
 import ClienteModal from '../Clientes/ClienteModal';
 import VendaModal, { ArquivosVendaTab } from '../VendasPage/VendaModal';
 import VendaProblemaPanel from '../VendasPage/VendaProblemaPanel';
@@ -1869,6 +1875,7 @@ const DADOS_MODAL_VENDA_INICIAIS = {
  * Renderiza funil page.
  */
 function FunilPage() {
+  const [searchParams] = useSearchParams();
   const usuario = getUsuarioLocal();
   const podeGerenciarEtapas = temPermissao(usuario, 'crud_funil_etapas');
   const podeAbrirVendaCompleta = temPermissao(usuario, [
@@ -1936,6 +1943,7 @@ function FunilPage() {
   const [clienteRapidoAberto, setClienteRapidoAberto] = useState(false);
   const [clienteRapidoInicial, setClienteRapidoInicial] = useState(null);
   const resolverClienteRapidoRef = useRef(null);
+  const aberturaNotificacaoProcessadaRef = useRef('');
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const vendasPorCliente = useMemo(() => contarVendasPorCliente(dadosModalVenda.vendas), [dadosModalVenda.vendas]);
@@ -2292,6 +2300,29 @@ function FunilPage() {
   useEffect(() => {
     carregarVendasInicial();
   }, []);
+
+  useEffect(() => {
+    const vendaId = Number(searchParams.get('venda_id') || 0);
+    const notificacaoId = getNotificacaoIdParam(searchParams);
+    if (loading || !vendaId || !notificacaoId) return;
+    const chaveAbertura = `${vendaId}:${notificacaoId}`;
+    if (aberturaNotificacaoProcessadaRef.current === chaveAbertura) return;
+    aberturaNotificacaoProcessadaRef.current = chaveAbertura;
+
+    const venda = sales.find(item => Number(item.id) === vendaId);
+    if (!venda) {
+      falharAberturaNotificacao(notificacaoId);
+      queueMicrotask(() => setError('A venda desta notificação não está mais disponível no funil.'));
+      return;
+    }
+
+    queueMicrotask(() => {
+      setSelectedSaleId(venda.id);
+      void confirmarAberturaNotificacao(notificacaoId).catch(error => {
+        console.error('Erro ao confirmar abertura da notificacao:', error);
+      });
+    });
+  }, [loading, sales, searchParams]);
 
   useEffect(() => {
     const id = setInterval(() => setAgora(Date.now()), 30_000);

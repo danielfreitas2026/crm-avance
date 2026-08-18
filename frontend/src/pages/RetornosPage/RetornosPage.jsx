@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
@@ -6,6 +6,11 @@ import { DEFAULT_OPERATORS as OPERATORS, STAGES } from '../../config/constants';
 import { listarEtapasFunil } from '../../services/config.service';
 import { atualizarStatusVenda, listarVendas } from '../../services/venda.service';
 import { parseUtcDateTime } from '../../utils/datetime';
+import {
+  confirmarAberturaNotificacao,
+  falharAberturaNotificacao,
+  getNotificacaoIdParam
+} from '../../services/notificacao-abertura.service';
 import { formatarNomeServico } from '../../utils/servicos';
 import './RetornosPage.css';
 
@@ -239,6 +244,7 @@ function RetornosPage() {
   const [error, setError] = useState('');
   const [selectedReturn, setSelectedReturn] = useState(null);
   const [stageLabels, setStageLabels] = useState(FALLBACK_STAGE_LABELS);
+  const aberturaNotificacaoProcessadaRef = useRef('');
 
   useEffect(() => {
     let ativo = true;
@@ -266,14 +272,28 @@ function RetornosPage() {
   }, []);
 
   const vendaIdParam = searchParams.get('venda_id');
-  const [vendaIdProcessado, setVendaIdProcessado] = useState(null);
-  if (!loading && vendaIdParam && vendaIdProcessado !== vendaIdParam) {
-    setVendaIdProcessado(vendaIdParam);
+  const notificacaoId = getNotificacaoIdParam(searchParams);
+
+  useEffect(() => {
+    if (loading || !vendaIdParam) return;
+    const chaveAbertura = `${vendaIdParam}:${notificacaoId || ''}`;
+    if (aberturaNotificacaoProcessadaRef.current === chaveAbertura) return;
+    aberturaNotificacaoProcessadaRef.current = chaveAbertura;
     const retorno = allReturns.find(item => String(item.id) === String(vendaIdParam));
-    if (retorno) setSelectedReturn(retorno);
-  } else if (!vendaIdParam && vendaIdProcessado) {
-    setVendaIdProcessado(null);
-  }
+    if (retorno) {
+      queueMicrotask(() => {
+        setSelectedReturn(retorno);
+        if (notificacaoId) {
+          void confirmarAberturaNotificacao(notificacaoId).catch(error => {
+            console.error('Erro ao confirmar abertura da notificacao:', error);
+          });
+        }
+      });
+      return;
+    }
+    if (notificacaoId) falharAberturaNotificacao(notificacaoId);
+    queueMicrotask(() => setError('O retorno desta notificação não está mais disponível.'));
+  }, [allReturns, loading, notificacaoId, vendaIdParam]);
 
   useEffect(() => {
     if (loading) return;

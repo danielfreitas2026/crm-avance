@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useDebounce } from '../../utils/useDebounce';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as I from '../../components/Icons';
@@ -17,6 +17,11 @@ import {
   previewImportacaoBaseAnterior
 } from '../../services/cliente.service';
 import { listarOperadoras, listarServicos, listarTiposVenda } from '../../services/config.service';
+import {
+  confirmarAberturaNotificacao,
+  falharAberturaNotificacao,
+  getNotificacaoIdParam
+} from '../../services/notificacao-abertura.service';
 import {
   atualizarVenda,
   buscarVendaPorId,
@@ -891,6 +896,8 @@ function Clientes() {
   const [searchParams, setSearchParams] = useSearchParams();
   const usuario = getUsuarioLocal();
   const clienteIdParam = searchParams.get('cliente_id') || '';
+  const abaNotificacaoParam = searchParams.get('aba');
+  const notificacaoIdParam = getNotificacaoIdParam(searchParams);
   const fidelidadeParam = searchParams.get('fidelidade') || '';
   const retornoParam = searchParams.get('retorno') || '';
   const novoClienteParam = searchParams.get('novo') === '1';
@@ -949,6 +956,7 @@ function Clientes() {
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [itensPorPagina, setItensPorPagina] = useState(20);
   const [totalClientes, setTotalClientes] = useState(0);
+  const aberturaNotificacaoProcessadaRef = useRef('');
 
   const buscaDeferred = useDeferredValue(busca);
   const buscaDebounced = useDebounce(buscaDeferred, 300);
@@ -1132,6 +1140,30 @@ function Clientes() {
       });
     return () => { ativo = false; };
   }, [filtros, itensPorPagina]);
+
+  useEffect(() => {
+    if (carregando || !clienteIdParam || !notificacaoIdParam) return;
+    const chaveAbertura = `${clienteIdParam}:${abaNotificacaoParam || 'cliente'}:${notificacaoIdParam}`;
+    if (aberturaNotificacaoProcessadaRef.current === chaveAbertura) return;
+    aberturaNotificacaoProcessadaRef.current = chaveAbertura;
+    const cliente = clientes.find(item => String(item.id) === String(clienteIdParam));
+    if (!cliente) {
+      falharAberturaNotificacao(notificacaoIdParam);
+      queueMicrotask(() => setErro('O cliente desta notificação não está mais disponível.'));
+      return;
+    }
+
+    const abrirNotas = abaNotificacaoParam === 'notas';
+    queueMicrotask(() => {
+      setClienteModal(cliente);
+      setClienteModalAba(abrirNotas ? 'notas' : 'cliente');
+      setClienteModalSomenteNotas(abrirNotas);
+      setModalAberto(true);
+      void confirmarAberturaNotificacao(notificacaoIdParam).catch(error => {
+        console.error('Erro ao confirmar abertura da notificacao:', error);
+      });
+    });
+  }, [abaNotificacaoParam, carregando, clienteIdParam, clientes, notificacaoIdParam]);
 
   useEffect(() => {
     /**

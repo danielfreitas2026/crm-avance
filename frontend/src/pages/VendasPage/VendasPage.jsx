@@ -13,6 +13,11 @@ import { listarEtapasFunil, listarOperadoras, listarServicos, listarTiposVenda }
 import { criarCliente as criarClientePrincipal, listarClientesSelect, verificarDocumentoCliente } from '../../services/cliente.service';
 import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import { formatUtcDateTime } from '../../utils/datetime';
+import {
+  confirmarAberturaNotificacao,
+  falharAberturaNotificacao,
+  getNotificacaoIdParam
+} from '../../services/notificacao-abertura.service';
 import SelectFiltro from '../../components/SelectFiltro/SelectFiltro';
 import { agruparOpcoesServicos, formatarNomeServico } from '../../utils/servicos';
 import {
@@ -952,6 +957,7 @@ function VendasPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const aberturaNotificacaoProcessadaRef = useRef('');
   const [vendas, setVendas] = useState([]);
   const [referenciasClientes, setReferenciasClientes] = useState([]);
   const [clientes, setClientes] = useState([]);
@@ -1295,12 +1301,16 @@ function VendasPage() {
 
   useEffect(() => {
     const vendaId = searchParams.get('venda_id');
+    const notificacaoId = getNotificacaoIdParam(searchParams);
     const abaParam = searchParams.get('aba');
     const problemaId = searchParams.get('problema_id');
     const abasPermitidas = ['venda', 'notas', ...(podeAcessarDocumentosVenda ? ['arquivos'] : []), 'problema', 'cancelamento'];
     const aba = abasPermitidas.includes(abaParam) ? abaParam : 'venda';
 
     if (!vendaId) return;
+    const chaveAbertura = `${vendaId}:${notificacaoId || ''}`;
+    if (aberturaNotificacaoProcessadaRef.current === chaveAbertura) return;
+    aberturaNotificacaoProcessadaRef.current = chaveAbertura;
 
     buscarVendaPorId(vendaId)
       .then(venda => {
@@ -1310,8 +1320,16 @@ function VendasPage() {
         setModalModoEdicao(false);
         setVendaInicial(null);
         setModalAberto(true);
+        if (notificacaoId) {
+          void confirmarAberturaNotificacao(notificacaoId).catch(error => {
+            console.error('Erro ao confirmar abertura da notificacao:', error);
+          });
+        }
       })
-      .catch(error => setErro(error.message || 'Erro ao abrir venda.'));
+      .catch(error => {
+        if (notificacaoId) falharAberturaNotificacao(notificacaoId);
+        setErro(error.message || 'Erro ao abrir venda.');
+      });
   }, [searchParams, navigate, podeAcessarDocumentosVenda]);
   /**
    * Limpa rota modal venda e restaura o estado inicial.

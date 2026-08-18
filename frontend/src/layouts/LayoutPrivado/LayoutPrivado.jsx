@@ -15,6 +15,12 @@ import {
   excluirNotificacao,
   listarNotificacoesUrgentes
 } from '../../services/notificacao.service';
+import {
+  aberturaNotificacaoPendente,
+  confirmarAberturaNotificacao,
+  falharAberturaNotificacao,
+  iniciarAberturaNotificacao
+} from '../../services/notificacao-abertura.service';
 import { contarMensagensNaoLidas } from '../../services/mensagem.service';
 import { listarFuturosClientesLeads } from '../../services/lead-planilha.service';
 import {
@@ -23,6 +29,7 @@ import {
   filtrarExclusoesPendentesNavbar,
   restaurarNotificacaoNavbar
 } from './notificacao-navbar.utils';
+import { resolverDestinoNotificacao } from './notificacao-destino';
 
 const routeConfigs = [
   { path: '/', title: 'Dashboard', sub: 'Indicadores, campanhas e gamificação', id: 'dashboard', end: true },
@@ -305,6 +312,7 @@ function LayoutPrivado({ children }) {
 
   const [alertasUrgentes, setAlertasUrgentes] = useState([]);
   const [aparenciasNotificacao, setAparenciasNotificacao] = useState([]);
+  const [detalheAlerta, setDetalheAlerta] = useState(null);
   const carregandoAlertasUrgentesRef = useRef(false);
   const atualizacaoAlertasUrgentesPendenteRef = useRef(false);
   const assinaturaAlertasUrgentesRef = useRef(null);
@@ -424,15 +432,14 @@ function LayoutPrivado({ children }) {
       carregandoAlertasUrgentesRef.current = true;
       try {
         const dados = await listarNotificacoesUrgentes();
-        const notificacoes = filtrarExclusoesPendentesNavbar(
+        const semExclusoesPendentes = filtrarExclusoesPendentesNavbar(
           dados.notificacoes || [],
           exclusoesAlertasPendentesRef.current
         );
+        const notificacoes = semExclusoesPendentes.filter(
+          notificacao => !aberturaNotificacaoPendente(notificacao.id)
+        );
         const assinatura = assinaturaNotificacoesNavbar(notificacoes);
-        if (assinaturaAlertasUrgentesRef.current !== null
-          && assinaturaAlertasUrgentesRef.current !== assinatura) {
-          window.dispatchEvent(new CustomEvent('pos-venda:mailing-atualizar'));
-        }
         assinaturaAlertasUrgentesRef.current = assinatura;
         setAlertasUrgentes(notificacoes);
       } catch (error) {
@@ -450,11 +457,13 @@ function LayoutPrivado({ children }) {
 
     const timer = setInterval(carregarAlertasUrgentes, 5000);
     window.addEventListener('pos-venda:notificacoes-atualizar', carregarAlertasUrgentes);
-    window.dispatchEvent(new CustomEvent('pos-venda:notificacoes-atualizar'));
+    window.addEventListener('pos-venda:navbar-notificacoes-atualizar', carregarAlertasUrgentes);
+    void carregarAlertasUrgentes();
 
     return () => {
       clearInterval(timer);
       window.removeEventListener('pos-venda:notificacoes-atualizar', carregarAlertasUrgentes);
+      window.removeEventListener('pos-venda:navbar-notificacoes-atualizar', carregarAlertasUrgentes);
     };
   }, [usuario]);
 
@@ -520,80 +529,35 @@ function LayoutPrivado({ children }) {
   }
 
   /**
-   * Retorna dados alerta a partir dos dados informados.
-   */
-  function getDadosAlerta(notificacao) {
-    if (!notificacao?.dados) return {};
-    if (typeof notificacao.dados === 'string') {
-      try {
-        return JSON.parse(notificacao.dados) || {};
-      } catch {
-        return {};
-      }
-    }
-    return notificacao.dados;
-  }
-
-  /**
-   * Monta rota alerta a partir dos dados informados.
-   */
-  function montarRotaAlerta(notificacao) {
-    const dados = getDadosAlerta(notificacao);
-    const entidadeId = notificacao.entidade_id || dados.entidade_id || '';
-    const vendaId = dados.venda_id || (notificacao.entidade === 'vendas' ? entidadeId : '') || entidadeId;
-    const clienteId = dados.cliente_id || (notificacao.entidade === 'clientes' ? entidadeId : '');
-    const linhaId = Number(notificacao.entidade_id || dados.lead_linha_id || 0);
-
-    switch (notificacao.tipo) {
-      case 'futuro_cliente_distribuido':
-        return linhaId > 0 ? '/futuros-clientes?linha_id=' + linhaId : '/futuros-clientes';
-      case 'futuro_cliente_retorno_pre':
-      case 'futuro_cliente_retorno_due':
-        return linhaId > 0 ? '/futuros-clientes?linha_id=' + linhaId : '/futuros-clientes';
-      case 'lead_retorno_pre':
-      case 'lead_retorno_due':
-        return linhaId > 0
-          ? '/futuros-clientes?aba=leads&linha_id=' + linhaId
-          : '/futuros-clientes?aba=leads';
-      case 'venda_problema_aberto':
-      case 'venda_problema_resolvido':
-      case 'venda_problema_correcao':
-        return vendaId
-          ? `/vendas?venda_id=${vendaId}&aba=problema${dados.problema_id ? `&problema_id=${dados.problema_id}` : ''}`
-          : '/vendas';
-      case 'venda_aprovacao_pendente':
-        return '/vendas/aprovacoes';
-      case 'venda_parada_funil':
-        return '/funil';
-      case 'venda_retorno_registrado':
-        return vendaId ? `/retornos?venda_id=${vendaId}` : '/retornos';
-      case 'cliente_fidelidade':
-        return clienteId ? `/clientes/${clienteId}/editar` : '/clientes';
-      case 'nota_retorno_pre':
-      case 'nota_retorno_due':
-        if (notificacao.entidade === 'clientes-secretos') {
-          return '/clientes-secretos';
-        }
-        if (notificacao.entidade === 'clientes') {
-          return clienteId ? `/clientes/${clienteId}/editar` : '/clientes';
-        }
-        return vendaId ? `/vendas?venda_id=${vendaId}` : '/vendas';
-      default:
-        if (notificacao.entidade === 'clientes-secretos') return '/clientes-secretos';
-        if (notificacao.entidade === 'clientes') return clienteId ? `/clientes/${clienteId}/editar` : '/clientes';
-        if (notificacao.entidade === 'vendas') return vendaId ? `/vendas?venda_id=${vendaId}` : '/vendas';
-        return '/';
-    }
-  }
-
-  /**
    * Abre venda alerta e prepara o estado necessario.
    */
   function abrirVendaAlerta(notificacao) {
-    const rota = montarRotaAlerta(notificacao);
+    const destino = resolverDestinoNotificacao(notificacao, usuario);
+    iniciarAberturaNotificacao(notificacao.id);
     ocultarAlertaUrgente(notificacao);
-    navigate(rota);
+    if (destino.podeAbrir) {
+      navigate(destino.rota);
+      return;
+    }
+
+    if (destino.motivoTipo !== 'sem_permissao') {
+      falharAberturaNotificacao(notificacao.id);
+    }
+    setDetalheAlerta({
+      notificacao,
+      motivo: destino.motivo,
+      confirmarAoExibir: destino.motivoTipo === 'sem_permissao'
+    });
   }
+
+  useEffect(() => {
+    if (!detalheAlerta?.notificacao?.id || !detalheAlerta.confirmarAoExibir) return;
+    const notificacao = detalheAlerta.notificacao;
+    confirmarAberturaNotificacao(notificacao.id).catch(error => {
+      console.error('Erro ao confirmar abertura da notificacao:', error);
+      setAlertasUrgentes(prev => restaurarNotificacaoNavbar(prev, notificacao));
+    });
+  }, [detalheAlerta]);
 
   const mostrarMobileFabNovaVenda = podeCriarVenda && location.pathname === '/vendas';
   const appClasses = [
@@ -691,6 +655,29 @@ function LayoutPrivado({ children }) {
           onClose={() => fecharClienteRapido(null)}
           onSave={salvarClienteRapido}
         />
+      )}
+
+      {detalheAlerta && (
+        <div className="modal-overlay" role="presentation" onMouseDown={() => setDetalheAlerta(null)}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="detalhe-notificacao-titulo" onMouseDown={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <div className="modal-client" id="detalhe-notificacao-titulo">{detalheAlerta.notificacao.titulo}</div>
+                <div className="modal-sub">Detalhes da notificação</div>
+              </div>
+              <button type="button" className="btn btn-icon btn-ghost" aria-label="Fechar detalhes da notificação" onClick={() => setDetalheAlerta(null)}>
+                <I.Close size={14} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p>{detalheAlerta.notificacao.mensagem}</p>
+              <div className="alert-error">{detalheAlerta.motivo}</div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-primary" onClick={() => setDetalheAlerta(null)}>Entendi</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {podeUsarChat && location.pathname !== '/mensagens' && (

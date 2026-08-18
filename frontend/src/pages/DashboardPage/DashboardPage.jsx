@@ -1129,7 +1129,7 @@ function DashboardPage() {
      * Carrega notificacoes dashboard e atualiza o estado relacionado.
      */
     const carregarNotificacoesDashboard = () => {
-      listarNotificacoes({ limit: 24 })
+      listarNotificacoes({ escopo: 'dashboard' })
         .then(data => {
           if (ativo) setNotificacoes(data.notificacoes || []);
         })

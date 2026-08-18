@@ -9,6 +9,10 @@ const api = vi.hoisted(() => ({
   getRankingCampanha: vi.fn(),
   resgatarCampanha: vi.fn()
 }));
+const notificacoesApi = vi.hoisted(() => ({
+  listarNotificacoes: vi.fn().mockResolvedValue({ notificacoes: [] }),
+  marcarNotificacaoLida: vi.fn()
+}));
 
 vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 vi.mock('../../layouts/LayoutPrivado/LayoutPrivado', () => ({ default: ({ children }) => <main>{children}</main> }));
@@ -26,7 +30,7 @@ vi.mock('../../services/config.service', () => ({
   listarEtapasFunil: vi.fn().mockResolvedValue([]), listarOperadoras: vi.fn().mockResolvedValue([]),
   listarServicos: vi.fn().mockResolvedValue([]), listarTiposVenda: vi.fn().mockResolvedValue([])
 }));
-vi.mock('../../services/notificacao.service', () => ({ listarNotificacoes: vi.fn().mockResolvedValue({ notificacoes: [] }), marcarNotificacaoLida: vi.fn() }));
+vi.mock('../../services/notificacao.service', () => notificacoesApi);
 vi.mock('../../services/dashboard.service', () => ({
   obterContextoNotificacoesDashboard: vi.fn().mockResolvedValue({ clientes: [], referencias_clientes: [], vendas_ativas_ids: [], vendas_retorno: [] })
 }));
@@ -73,6 +77,7 @@ describe('DashboardPage - campanhas coletivas', () => {
     expect(await screen.findByRole('dialog', { name: 'Meta coletiva' })).toBeInTheDocument();
     expect(screen.getByText('Ana')).toBeInTheDocument();
     expect(screen.getByText('Usuária Atual · Você')).toBeInTheDocument();
+    expect(notificacoesApi.listarNotificacoes).toHaveBeenCalledWith({ escopo: 'dashboard' });
   });
 
   it('exibe as vendas contabilizadas em uma aba do modal', async () => {

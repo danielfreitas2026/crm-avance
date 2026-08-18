@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
@@ -16,6 +16,11 @@ import {
 } from '../../services/venda.service';
 import VendaModal from './VendaModal';
 import { formatUtcDateTime } from '../../utils/datetime';
+import {
+  confirmarAberturaNotificacao,
+  falharAberturaNotificacao,
+  getNotificacaoIdParam
+} from '../../services/notificacao-abertura.service';
 import './VendasPage.css';
 
 const STATUS_LABEL = {
@@ -98,6 +103,8 @@ function VendasAprovacoesPage() {
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const solicitacaoFoco = searchParams.get('solicitacao_id');
+  const notificacaoId = getNotificacaoIdParam(searchParams);
+  const aberturaNotificacaoProcessadaRef = useRef('');
 
   /**
    * Carrega  e atualiza o estado relacionado.
@@ -176,6 +183,20 @@ function VendasAprovacoesPage() {
     });
   }, [solicitacoes, solicitacaoFoco]);
 
+  useEffect(() => {
+    if (carregando || !solicitacaoFoco || !notificacaoId) return;
+    const chaveAbertura = `${solicitacaoFoco}:${notificacaoId}`;
+    if (aberturaNotificacaoProcessadaRef.current === chaveAbertura) return;
+    aberturaNotificacaoProcessadaRef.current = chaveAbertura;
+    const encontrada = solicitacoes.find(item => String(item.id) === String(solicitacaoFoco));
+    if (encontrada) {
+      void abrirVenda(encontrada, notificacaoId);
+      return;
+    }
+    falharAberturaNotificacao(notificacaoId);
+    queueMicrotask(() => setErro('A solicitação desta notificação não está mais disponível.'));
+  }, [carregando, notificacaoId, solicitacaoFoco, solicitacoes]);
+
   /**
    * Processa aprovar conforme as regras do dominio.
    */
@@ -219,7 +240,7 @@ function VendasAprovacoesPage() {
   /**
    * Abre venda e prepara o estado necessario.
    */
-  async function abrirVenda(solicitacao) {
+  async function abrirVenda(solicitacao, notificacaoIdAbertura = null) {
     setErro('');
     setCarregandoVendaId(solicitacao.venda_id);
 
@@ -228,7 +249,13 @@ function VendasAprovacoesPage() {
       setVendaModal(venda || solicitacao.venda);
       setSolicitacaoModal(solicitacao);
       setModalModoEdicao(false);
+      if (notificacaoIdAbertura) {
+        void confirmarAberturaNotificacao(notificacaoIdAbertura).catch(error => {
+          console.error('Erro ao confirmar abertura da notificacao:', error);
+        });
+      }
     } catch (error) {
+      if (notificacaoIdAbertura) falharAberturaNotificacao(notificacaoIdAbertura);
       setErro(error.message || 'Erro ao abrir venda.');
     } finally {
       setCarregandoVendaId(null);

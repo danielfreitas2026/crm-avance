@@ -5,6 +5,11 @@ import DocProgresso from '../../components/DocProgresso';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import {
+  confirmarAberturaNotificacao,
+  falharAberturaNotificacao,
+  getNotificacaoIdParam
+} from '../../services/notificacao-abertura.service';
+import {
   adminDesvincularVendaLead,
   adminMarcarFuturoClienteLead,
   adminMarcarVendaRecusadaLead,
@@ -1769,6 +1774,7 @@ function LeadsRecebidosView({ agora }) {
     const id = Number(searchParams.get('linha_id'));
     return Number.isInteger(id) && id > 0 ? id : null;
   }, [searchParams]);
+  const notificacaoId = getNotificacaoIdParam(searchParams);
   const consultaLinhasAtiva = selecionados.length > 0 || Boolean(linhaNotificacaoId);
   const chaveConsultaLinhas = useMemo(() => JSON.stringify({
     selecionados,
@@ -1826,23 +1832,32 @@ function LeadsRecebidosView({ agora }) {
           setLinhas(linhasRecebidas);
           setTotalLinhas(totalRecebido);
           if (linhaNotificacaoId && notificacaoAbertaRef.current !== linhaNotificacaoId) {
+            notificacaoAbertaRef.current = linhaNotificacaoId;
             const linha = linhasRecebidas.find(item => Number(item.id) === linhaNotificacaoId);
             if (linha) {
-              notificacaoAbertaRef.current = linhaNotificacaoId;
               setErro('');
               setModalAdicionar(linha);
+              if (notificacaoId) {
+                void confirmarAberturaNotificacao(notificacaoId).catch(error => {
+                  console.error('Erro ao confirmar abertura da notificacao:', error);
+                });
+              }
             } else if (totalRecebido === 0) {
+              if (notificacaoId) falharAberturaNotificacao(notificacaoId);
               setErro('O lead desta notificacao nao esta mais disponivel.');
             }
           }
         }
       })
-      .catch(error => setErro(error.message || 'Erro ao carregar leads recebidos.'))
+      .catch(error => {
+        if (notificacaoId) falharAberturaNotificacao(notificacaoId);
+        setErro(error.message || 'Erro ao carregar leads recebidos.');
+      })
       .finally(() => {
         if (!cancelado) setConsultaLinhasConcluida(chaveConsultaLinhas);
       });
     return () => { cancelado = true; };
-  }, [selecionados, pagina, buscaDeferred, filtroStatus, linhaNotificacaoId, chaveConsultaLinhas]);
+  }, [selecionados, pagina, buscaDeferred, filtroStatus, linhaNotificacaoId, chaveConsultaLinhas, notificacaoId]);
   useEffect(() => {
     if (!erro) return undefined;
     const timer = setTimeout(() => setErro(''), 6000);
@@ -3034,6 +3049,7 @@ function FuturosClientesMainView({ agora }) {
   const [mesMetricas, setMesMetricas] = useState(() => dataLocalIso().slice(0, 7));
   const [dataInicioMetricas, setDataInicioMetricas] = useState(() => dataLocalIso());
   const [dataFimMetricas, setDataFimMetricas] = useState(() => dataLocalIso());
+  const notificacaoAbertaRef = useRef(null);
 
   const usuario = useMemo(() => getUsuarioLocal(), []);
   const podeGerenciar = temPermissao(usuario, 'futuros_clientes_registrar');
@@ -3042,6 +3058,7 @@ function FuturosClientesMainView({ agora }) {
     const id = Number(searchParams.get('linha_id'));
     return Number.isInteger(id) && id > 0 ? id : null;
   }, [searchParams]);
+  const notificacaoId = getNotificacaoIdParam(searchParams);
   const chaveConsulta = useMemo(() => JSON.stringify({
     pagina,
     busca: buscaDeferred,
@@ -3086,22 +3103,36 @@ function FuturosClientesMainView({ agora }) {
           setLinhas(linhasRecebidas);
           setTotal(totalRecebido);
           if (linhaNotificacaoId) {
+            const deveProcessarNotificacao = notificacaoId && notificacaoAbertaRef.current !== notificacaoId;
             const linha = linhasRecebidas.find(item => Number(item.id) === linhaNotificacaoId);
             if (linha) {
               setErro('');
               setLinhaAtiva(linha);
+              if (deveProcessarNotificacao) {
+                notificacaoAbertaRef.current = notificacaoId;
+                void confirmarAberturaNotificacao(notificacaoId).catch(error => {
+                  console.error('Erro ao confirmar abertura da notificacao:', error);
+                });
+              }
             } else if (totalRecebido === 0) {
+              if (deveProcessarNotificacao) {
+                notificacaoAbertaRef.current = notificacaoId;
+                falharAberturaNotificacao(notificacaoId);
+              }
               setErro('O futuro cliente desta notificacao nao esta mais disponivel.');
             }
           }
         }
       })
-      .catch(error => setErro(error.message || 'Erro ao carregar futuros clientes.'))
+      .catch(error => {
+        if (notificacaoId) falharAberturaNotificacao(notificacaoId);
+        setErro(error.message || 'Erro ao carregar futuros clientes.');
+      })
       .finally(() => {
         if (!cancelado) setConsultaConcluida(chaveConsulta);
       });
     return () => { cancelado = true; };
-  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, modoLixeira, linhaNotificacaoId, podeVerQuadroGeral, chaveConsulta]);
+  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, modoLixeira, linhaNotificacaoId, podeVerQuadroGeral, chaveConsulta, notificacaoId]);
 
   useEffect(() => {
     if (!podeVerQuadroGeral || modoLixeira || periodoMetricasInvalido) return;

@@ -7,6 +7,7 @@ const { _internals } = require('../src/services/notificacao.service');
 const {
   aplicarFiltroNavbar,
   aplicarFiltroTiposVisiveis,
+  aplicarLimiteListagem,
   salvarOcultacaoDestinatario
 } = _internals;
 
@@ -43,6 +44,14 @@ test('ocultacao e aplicada somente a fila da navbar', () => {
   aplicarFiltroNavbar(query);
 
   assert.match(query.toSQL().sql, /`nd`.`ocultada_em` is null/);
+});
+
+test('escopo do dashboard nao recebe corte arbitrario de tarefas', () => {
+  const dashboard = aplicarLimiteListagem(db('notificacoes').select('id'), { escopo: 'dashboard' }).toSQL().sql;
+  const padrao = aplicarLimiteListagem(db('notificacoes').select('id'), { limit: 24 }).toSQL().sql;
+
+  assert.doesNotMatch(dashboard, /limit \?/i);
+  assert.match(padrao, /limit \?/i);
 });
 
 test('oculta somente o registro do destinatario existente', async () => {

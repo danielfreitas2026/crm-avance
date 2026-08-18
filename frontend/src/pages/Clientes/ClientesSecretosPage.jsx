@@ -1,4 +1,5 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import * as I from '../../components/Icons';
 import SelectFiltro from '../../components/SelectFiltro/SelectFiltro';
 import ClienteModal from './ClienteModal';
@@ -12,6 +13,11 @@ import {
   verificarDocumentoClienteSecreto
 } from '../../services/cliente.service';
 import { listarOperadoras } from '../../services/config.service';
+import {
+  confirmarAberturaNotificacao,
+  falharAberturaNotificacao,
+  getNotificacaoIdParam
+} from '../../services/notificacao-abertura.service';
 import { useDebounce } from '../../utils/useDebounce';
 import './Clientes.css';
 
@@ -244,6 +250,7 @@ function clienteCasaComBusca(cliente, campo, termo) {
 }
 
 function ClientesSecretosPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const usuario = getUsuarioLocal();
   const usuarioId = Number(usuario?.id);
   const podeCriar = temPermissao(usuario, 'clientes_secretos_criar');
@@ -253,6 +260,7 @@ function ClientesSecretosPage() {
   const [operadoras, setOperadoras] = useState([]);
   const [modalAberto, setModalAberto] = useState(false);
   const [clienteModal, setClienteModal] = useState(null);
+  const [clienteModalSomenteNotas, setClienteModalSomenteNotas] = useState(false);
   const [clienteCadastroDraft, setClienteCadastroDraft] = useState(null);
   const [buscaCampo, setBuscaCampo] = useState('geral');
   const [busca, setBusca] = useState('');
@@ -265,6 +273,7 @@ function ClientesSecretosPage() {
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [excluindoId, setExcluindoId] = useState(null);
+  const aberturaNotificacaoProcessadaRef = useRef('');
 
   const buscaDeferred = useDeferredValue(busca);
   const buscaDebounced = useDebounce(buscaDeferred, 300);
@@ -347,6 +356,30 @@ function ClientesSecretosPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const clienteId = searchParams.get('cliente_id');
+    const notificacaoId = getNotificacaoIdParam(searchParams);
+    if (carregando || !clienteId || !notificacaoId) return;
+    const chaveAbertura = `${clienteId}:${notificacaoId}`;
+    if (aberturaNotificacaoProcessadaRef.current === chaveAbertura) return;
+    aberturaNotificacaoProcessadaRef.current = chaveAbertura;
+    const cliente = clientes.find(item => String(item.id) === String(clienteId));
+    if (!cliente) {
+      falharAberturaNotificacao(notificacaoId);
+      queueMicrotask(() => setErro('O lead desta notificação não está mais disponível.'));
+      return;
+    }
+
+    queueMicrotask(() => {
+      setClienteModal(cliente);
+      setClienteModalSomenteNotas(searchParams.get('aba') === 'notas');
+      setModalAberto(true);
+      void confirmarAberturaNotificacao(notificacaoId).catch(error => {
+        console.error('Erro ao confirmar abertura da notificacao:', error);
+      });
+    });
+  }, [carregando, clientes, searchParams]);
+
   function alterarBuscaCampo(campo) {
     setBuscaCampo(campo || 'geral');
     setBusca('');
@@ -378,12 +411,14 @@ function ClientesSecretosPage() {
   function abrirNovoLead() {
     if (!podeCriar) return;
     setClienteModal(null);
+    setClienteModalSomenteNotas(false);
     setModalAberto(true);
   }
 
   function abrirCliente(cliente) {
     if (!podeEditarCliente(cliente)) return;
     setClienteModal(cliente);
+    setClienteModalSomenteNotas(false);
     setModalAberto(true);
   }
 
@@ -429,10 +464,14 @@ function ClientesSecretosPage() {
           atualizarFn={atualizarClienteSecreto}
           verificarDocumentoFn={verificarDocumentoClienteSecreto}
           initialDraft={clienteCadastroDraft}
+          initialTab={clienteModalSomenteNotas ? 'notas' : 'cliente'}
+          notesOnly={clienteModalSomenteNotas}
           onDraftChange={setClienteCadastroDraft}
           onClose={() => {
             setModalAberto(false);
             setClienteModal(null);
+            setClienteModalSomenteNotas(false);
+            if (searchParams.has('notificacao_id')) setSearchParams({}, { replace: true });
           }}
           onSave={salvarLead}
         />
