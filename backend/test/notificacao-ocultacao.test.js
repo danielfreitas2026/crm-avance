@@ -4,7 +4,11 @@ const assert = require('node:assert/strict');
 const db = require('../src/database/connection');
 const { _internals } = require('../src/services/notificacao.service');
 
-const { aplicarFiltroTiposVisiveis, salvarOcultacaoDestinatario } = _internals;
+const {
+  aplicarFiltroNavbar,
+  aplicarFiltroTiposVisiveis,
+  salvarOcultacaoDestinatario
+} = _internals;
 
 function compilarVisibilidade(podeReceberTodas) {
   const query = db('notificacoes as n')
@@ -21,14 +25,24 @@ function compilarVisibilidade(podeReceberTodas) {
   return query.toSQL().sql;
 }
 
-test('notificacoes ocultadas nao aparecem nas consultas do usuario', () => {
+test('ocultacao da navbar nao altera a visibilidade das tarefas', () => {
   const consultaDestinatario = compilarVisibilidade(false);
   const consultaGlobal = compilarVisibilidade(true);
 
-  assert.match(consultaDestinatario, /`nd`.`ocultada_em` is null/);
+  assert.doesNotMatch(consultaDestinatario, /`nd`.`ocultada_em` is null/);
   assert.match(consultaDestinatario, /`nd`.`id` is not null/);
-  assert.match(consultaGlobal, /`nd`.`ocultada_em` is null/);
+  assert.doesNotMatch(consultaGlobal, /`nd`.`ocultada_em` is null/);
   assert.doesNotMatch(consultaGlobal, /`nd`.`id` is not null/);
+});
+
+test('ocultacao e aplicada somente a fila da navbar', () => {
+  const query = db('notificacoes as n')
+    .leftJoin('notificacao_destinatarios as nd', 'nd.notificacao_id', 'n.id')
+    .select('n.id');
+
+  aplicarFiltroNavbar(query);
+
+  assert.match(query.toSQL().sql, /`nd`.`ocultada_em` is null/);
 });
 
 test('oculta somente o registro do destinatario existente', async () => {

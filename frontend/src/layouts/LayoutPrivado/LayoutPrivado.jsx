@@ -17,6 +17,12 @@ import {
 } from '../../services/notificacao.service';
 import { contarMensagensNaoLidas } from '../../services/mensagem.service';
 import { listarFuturosClientesLeads } from '../../services/lead-planilha.service';
+import {
+  assinaturaNotificacoesNavbar,
+  chaveNotificacaoNavbar,
+  filtrarExclusoesPendentesNavbar,
+  restaurarNotificacaoNavbar
+} from './notificacao-navbar.utils';
 
 const routeConfigs = [
   { path: '/', title: 'Dashboard', sub: 'Indicadores, campanhas e gamificação', id: 'dashboard', end: true },
@@ -302,6 +308,7 @@ function LayoutPrivado({ children }) {
   const carregandoAlertasUrgentesRef = useRef(false);
   const atualizacaoAlertasUrgentesPendenteRef = useRef(false);
   const assinaturaAlertasUrgentesRef = useRef(null);
+  const exclusoesAlertasPendentesRef = useRef(new Set());
   const [aprovacoesPendentes, setAprovacoesPendentes] = useState(0);
   const [mensagensNaoLidas, setMensagensNaoLidas] = useState(0);
   const [futurosClientesPendentes, setFuturosClientesPendentes] = useState(0);
@@ -417,11 +424,11 @@ function LayoutPrivado({ children }) {
       carregandoAlertasUrgentesRef.current = true;
       try {
         const dados = await listarNotificacoesUrgentes();
-        const notificacoes = dados.notificacoes || [];
-        const assinatura = notificacoes
-          .map(notificacao => `${notificacao.destinatario_id || notificacao.id}:${notificacao.tipo}:${notificacao.ativa ? 1 : 0}`)
-          .sort()
-          .join('|');
+        const notificacoes = filtrarExclusoesPendentesNavbar(
+          dados.notificacoes || [],
+          exclusoesAlertasPendentesRef.current
+        );
+        const assinatura = assinaturaNotificacoesNavbar(notificacoes);
         if (assinaturaAlertasUrgentesRef.current !== null
           && assinaturaAlertasUrgentesRef.current !== assinatura) {
           window.dispatchEvent(new CustomEvent('pos-venda:mailing-atualizar'));
@@ -456,21 +463,32 @@ function LayoutPrivado({ children }) {
    */
   function ocultarAlertaUrgente(notificacao) {
     const chave = notificacao.destinatario_id || notificacao.id;
-    setAlertasUrgentes(prev => prev.filter(item => (item.destinatario_id || item.id) !== chave));
+    setAlertasUrgentes(prev => {
+      const atualizadas = prev.filter(item => (item.destinatario_id || item.id) !== chave);
+      assinaturaAlertasUrgentesRef.current = assinaturaNotificacoesNavbar(atualizadas);
+      return atualizadas;
+    });
   }
 
   /**
    * Exclui alerta urgente somente para o usuario atual.
    */
   async function excluirAlertaUrgente(notificacao) {
+    const chave = chaveNotificacaoNavbar(notificacao);
+    exclusoesAlertasPendentesRef.current.add(chave);
     ocultarAlertaUrgente(notificacao);
 
     try {
       await excluirNotificacao(notificacao.id);
-      window.dispatchEvent(new CustomEvent('pos-venda:notificacoes-atualizar'));
     } catch (error) {
       console.error('Erro ao excluir notificacao:', error);
-      window.dispatchEvent(new CustomEvent('pos-venda:notificacoes-atualizar'));
+      setAlertasUrgentes(prev => {
+        const restauradas = restaurarNotificacaoNavbar(prev, notificacao);
+        assinaturaAlertasUrgentesRef.current = assinaturaNotificacoesNavbar(restauradas);
+        return restauradas;
+      });
+    } finally {
+      exclusoesAlertasPendentesRef.current.delete(chave);
     }
   }
 

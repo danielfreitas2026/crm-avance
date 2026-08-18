@@ -823,8 +823,6 @@ function aplicarJoinDestinatarioUsuario(query, usuarioId) {
  * Aplica filtro tipos visiveis sobre a consulta ou conjunto informado.
  */
 function aplicarFiltroTiposVisiveis(query, { podeReceberTodas, podeVerTudo, podeVerAprovacoes, podeVerVendasParadas }) {
-  query.whereNull('nd.ocultada_em');
-
   if (!podeReceberTodas) {
     query.whereNotNull('nd.id');
   }
@@ -844,6 +842,13 @@ function aplicarFiltroTiposVisiveis(query, { podeReceberTodas, podeVerTudo, pode
   }
 
   return query;
+}
+
+/**
+ * Remove da fila da navbar as notificacoes ocultadas pelo usuario.
+ */
+function aplicarFiltroNavbar(query) {
+  return query.whereNull('nd.ocultada_em');
 }
 
 /**
@@ -1026,7 +1031,6 @@ async function listarUrgentes(usuarioId) {
     // para manter os alertas estaveis ate que uma acao os resolva.
     .orderBy('n.created_at', 'asc')
     .orderBy('n.id', 'asc')
-    .limit(5)
     .select(
       'nd.id as destinatario_id',
       'nd.lida_em',
@@ -1044,6 +1048,7 @@ async function listarUrgentes(usuarioId) {
     );
 
   aplicarFiltroTiposVisiveis(query, { podeReceberTodas, podeVerTudo, podeVerAprovacoes, podeVerVendasParadas });
+  aplicarFiltroNavbar(query);
 
   const notificacoes = await query;
 
@@ -1228,6 +1233,7 @@ async function ocultarNotificacao(notificacaoId, usuarioId) {
     .select('n.id', 'nd.id as destinatario_id');
 
   aplicarFiltroTiposVisiveis(query, { podeReceberTodas, podeVerTudo, podeVerAprovacoes, podeVerVendasParadas });
+  aplicarFiltroNavbar(query);
 
   const notificacao = await query.first();
   if (!notificacao) return false;
@@ -1270,6 +1276,7 @@ module.exports = {
   sincronizarNotificacoesPendentes,
   limparNotificacoesSemObjetoReferente,
   _internals: {
+    aplicarFiltroNavbar,
     aplicarFiltroTiposVisiveis,
     isRetornoLeadAgendadoElegivel,
     salvarOcultacaoDestinatario

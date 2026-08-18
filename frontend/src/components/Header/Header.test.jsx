@@ -32,4 +32,21 @@ describe('Header', () => {
 
     expect(onExcluirAlerta).toHaveBeenCalledWith(alerta);
   });
+
+  it('exibe mais de cinco alertas no modal da navbar', async () => {
+    const user = userEvent.setup();
+    const alertas = Array.from({ length: 6 }, (_, indice) => ({
+      id: indice + 1,
+      tipo: 'cliente_fidelidade',
+      titulo: `Alerta ${indice + 1}`,
+      mensagem: `Mensagem ${indice + 1}`
+    }));
+
+    render(<Header title="Dashboard" alertasUrgentes={alertas} />);
+
+    await user.click(screen.getByRole('button', { name: /6 avisos pendentes/i }));
+
+    expect(screen.getAllByRole('button', { name: 'Excluir notificação' })).toHaveLength(6);
+    expect(screen.getByText('Alerta 6')).toBeInTheDocument();
+  });
 });
