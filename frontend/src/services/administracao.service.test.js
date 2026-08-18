@@ -103,6 +103,7 @@ describe('servicos administrativos', () => {
     await fechamento.exportarVendasPeriodo({ data_inicio: '2026-01-01', data_fim: '2026-01-31' });
     await notificacao.listarNotificacoes({ lida: false, vazio: null });
     await notificacao.marcarNotificacaoLida(2);
+    await notificacao.excluirNotificacao(2);
     await mensagem.listarMensagens(7, { page: 3 });
     await mensagem.enviarMensagem(7, 'Oi', { arquivo_id: 1, nome_original: 'a.pdf' });
     await mensagem.enviarMensagensEmLote([7, 8], 'Olá', { arquivo_id: 1, nome_original: 'a.pdf' });
@@ -113,6 +114,7 @@ describe('servicos administrativos', () => {
     expect(apiGet).toHaveBeenCalledWith('/fechamento/vendas/9/dossie?pagina=2');
     expect(apiGet).toHaveBeenCalledWith('/notificacoes?lida=false');
     expect(apiRequest).toHaveBeenCalledWith('/notificacoes/2/lida', { method: 'PATCH' });
+    expect(apiDelete).toHaveBeenCalledWith('/notificacoes/2');
     expect(apiGet).toHaveBeenCalledWith('/mensagens/conversas/7?page=3');
     expect(apiPost).toHaveBeenCalledWith('/mensagens', { destinatario_id: 7, conteudo: 'Oi', arquivo_id: 1, nome_arquivo: 'a.pdf' });
     expect(apiPost).toHaveBeenCalledWith('/mensagens/lote', { destinatario_ids: [7, 8], conteudo: 'Olá', arquivo_id: 1, nome_arquivo: 'a.pdf' });

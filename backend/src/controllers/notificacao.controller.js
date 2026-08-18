@@ -88,6 +88,23 @@ async function marcarTodasLidas(req, res) {
 }
 
 /**
+ * Oculta uma notificacao somente para o usuario autenticado.
+ *
+ * @param {Object} req - Requisicao com id da notificacao em req.params.
+ * @param {Object} res - Resposta HTTP.
+ * @returns {Promise.<(Object|void)>} Status 204 quando concluido.
+ */
+async function excluir(req, res) {
+  try {
+    await notificacaoService.ocultarNotificacao(req.params.id, req.usuario.id);
+    return res.status(204).send();
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Erro ao excluir notificacao.' });
+  }
+}
+
+/**
  * Envia um e-mail de teste de notificacao para o usuario logado.
  *
  * @param {Object} req - Requisicao autenticada.
@@ -117,5 +134,6 @@ module.exports = {
   marcarLida,
   marcarPopupVisto,
   marcarTodasLidas,
+  excluir,
   testarEmail
 };

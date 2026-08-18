@@ -12,8 +12,8 @@ import { listarAparenciasNotificacao, listarOperadoras, listarServicos, listarTi
 import { criarVenda, listarAprovacoesVenda, listarVendedoras, obterReferenciasClientesVendas, uploadArquivoVenda } from '../../services/venda.service';
 import { criarNotaEntidade } from '../../services/nota.service';
 import {
-  listarNotificacoesUrgentes,
-  marcarPopupNotificacaoVisto
+  excluirNotificacao,
+  listarNotificacoesUrgentes
 } from '../../services/notificacao.service';
 import { contarMensagensNaoLidas } from '../../services/mensagem.service';
 import { listarFuturosClientesLeads } from '../../services/lead-planilha.service';
@@ -460,36 +460,17 @@ function LayoutPrivado({ children }) {
   }
 
   /**
-   * Executa a acao de confirmar popup notificacao mantendo o estado da tela consistente.
+   * Exclui alerta urgente somente para o usuario atual.
    */
-  function confirmarPopupNotificacao(notificacao) {
-    marcarPopupNotificacaoVisto(notificacao.id)
-      .then(() => {
-        window.dispatchEvent(new CustomEvent('pos-venda:notificacoes-atualizar'));
-      })
-      .catch(() => {});
-  }
-
-  /** Retorna se o alerta so pode ser encerrado por uma acao no registro. */
-  function alertaExigeAcao(notificacao) {
-    return [
-      'lead_retorno_pre',
-      'lead_retorno_due',
-      'futuro_cliente_retorno_pre',
-      'futuro_cliente_retorno_due',
-      'futuro_cliente_distribuido'
-    ].includes(notificacao?.tipo);
-  }
-  /**
-   * Fecha alerta urgente e limpa o estado relacionado.
-   */
-  function fecharAlertaUrgente(notificacao) {
+  async function excluirAlertaUrgente(notificacao) {
     ocultarAlertaUrgente(notificacao);
 
-    // Alertas operacionais voltam no proximo ciclo de atualizacao enquanto a
-    // condicao existir; somente uma acao valida no registro os encerra.
-    if (!alertaExigeAcao(notificacao)) {
-      confirmarPopupNotificacao(notificacao);
+    try {
+      await excluirNotificacao(notificacao.id);
+      window.dispatchEvent(new CustomEvent('pos-venda:notificacoes-atualizar'));
+    } catch (error) {
+      console.error('Erro ao excluir notificacao:', error);
+      window.dispatchEvent(new CustomEvent('pos-venda:notificacoes-atualizar'));
     }
   }
 
@@ -641,7 +622,7 @@ function LayoutPrivado({ children }) {
           estiloAlerta={estiloAlerta}
           tomAlerta={tomAlerta}
           onAbrirAlerta={abrirVendaAlerta}
-          onFecharAlerta={fecharAlertaUrgente}
+          onExcluirAlerta={excluirAlertaUrgente}
         />
         <div className="content">
           {sucessoNovaVenda && <div className="alert-success alert-timed alert-timed--success" style={{ marginBottom: 16 }}>{sucessoNovaVenda}</div>}

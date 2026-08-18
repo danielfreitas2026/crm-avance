@@ -1,7 +1,7 @@
 /**
  * Cliente de API para notificacoes, leitura e popups.
  */
-import { apiGet, apiRequest } from './api';
+import { apiDelete, apiGet, apiRequest } from './api';
 
 /**
  * Monta query a partir dos dados informados.
@@ -58,4 +58,11 @@ export async function marcarTodasNotificacoesLidas() {
   return apiRequest('/notificacoes/lidas', {
     method: 'PATCH'
   });
+}
+
+/**
+ * Exclui uma notificacao somente para o usuario atual.
+ */
+export async function excluirNotificacao(id) {
+  return apiDelete(`/notificacoes/${id}`);
 }

@@ -823,6 +823,8 @@ function aplicarJoinDestinatarioUsuario(query, usuarioId) {
  * Aplica filtro tipos visiveis sobre a consulta ou conjunto informado.
  */
 function aplicarFiltroTiposVisiveis(query, { podeReceberTodas, podeVerTudo, podeVerAprovacoes, podeVerVendasParadas }) {
+  query.whereNull('nd.ocultada_em');
+
   if (!podeReceberTodas) {
     query.whereNotNull('nd.id');
   }
@@ -1183,6 +1185,63 @@ async function marcarPopupVisto(notificacaoId, usuarioId) {
   return true;
 }
 
+/**
+ * Persiste a ocultacao no destinatario existente ou materializa o destinatario
+ * de uma notificacao global.
+ */
+async function salvarOcultacaoDestinatario({ notificacaoId, usuarioId, destinatarioId, ocultadaEm }, dependencias = {}) {
+  const DestinatarioModel = dependencias.DestinatarioModel || NotificacaoDestinatario;
+  const knex = dependencias.knex || db;
+
+  if (destinatarioId) {
+    await DestinatarioModel.query()
+      .patchAndFetchById(destinatarioId, { ocultada_em: ocultadaEm });
+    return;
+  }
+
+  await knex('notificacao_destinatarios')
+    .insert({
+      notificacao_id: notificacaoId,
+      usuario_id: usuarioId,
+      ocultada_em: ocultadaEm
+    })
+    .onConflict(['notificacao_id', 'usuario_id'])
+    .merge({ ocultada_em: ocultadaEm });
+}
+
+/**
+ * Oculta uma notificacao somente para o usuario atual.
+ */
+async function ocultarNotificacao(notificacaoId, usuarioId) {
+  const usuario = await Usuario.query()
+    .findById(usuarioId)
+    .withGraphFetched('role');
+  const podeReceberTodas = usuarioTemPermissaoLocal(usuario, PERMISSAO_RECEBER_TODAS);
+  const podeVerTudo = usuarioTemPermissaoLocal(usuario, PERMISSAO_VISUALIZAR);
+  const podeVerAprovacoes = usuarioTemPermissaoLocal(usuario, 'vendas_aprovacoes_visualizar')
+    || usuarioTemPermissaoLocal(usuario, 'vendas_aprovacoes_decidir');
+  const podeVerVendasParadas = usuarioTemPermissaoLocal(usuario, PERMISSAO_VENDAS_PARADAS);
+
+  const query = aplicarJoinDestinatarioUsuario(Notificacao.query().alias('n'), usuarioId)
+    .where('n.id', notificacaoId)
+    .where('n.ativa', true)
+    .select('n.id', 'nd.id as destinatario_id');
+
+  aplicarFiltroTiposVisiveis(query, { podeReceberTodas, podeVerTudo, podeVerAprovacoes, podeVerVendasParadas });
+
+  const notificacao = await query.first();
+  if (!notificacao) return false;
+
+  await salvarOcultacaoDestinatario({
+    notificacaoId: notificacao.id,
+    usuarioId,
+    destinatarioId: notificacao.destinatario_id,
+    ocultadaEm: new Date()
+  });
+
+  return true;
+}
+
 module.exports = {
   PERMISSAO_VISUALIZAR,
   PERMISSAO_RECEBER_TODAS,
@@ -1196,6 +1255,7 @@ module.exports = {
   marcarComoLida,
   marcarPopupVisto,
   marcarTodasComoLidas,
+  ocultarNotificacao,
   sincronizarFidelidadeCliente,
   sincronizarNotificacoesFidelidade,
   desativarNotificacoesRetornoNota,
@@ -1209,5 +1269,9 @@ module.exports = {
   sincronizarRetornosLeads,
   sincronizarNotificacoesPendentes,
   limparNotificacoesSemObjetoReferente,
-  _internals: { isRetornoLeadAgendadoElegivel }
+  _internals: {
+    aplicarFiltroTiposVisiveis,
+    isRetornoLeadAgendadoElegivel,
+    salvarOcultacaoDestinatario
+  }
 };

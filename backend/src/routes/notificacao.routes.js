@@ -12,5 +12,6 @@ router.post('/email-teste', notificacaoController.testarEmail);
 router.patch('/lidas', notificacaoController.marcarTodasLidas);
 router.patch('/:id/popup-visto', notificacaoController.marcarPopupVisto);
 router.patch('/:id/lida', notificacaoController.marcarLida);
+router.delete('/:id', notificacaoController.excluir);
 
 module.exports = router;

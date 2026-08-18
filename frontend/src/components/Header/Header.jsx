@@ -5,7 +5,7 @@ import { listarLinksExternos } from '../../services/config.service';
 /**
  * Renderiza header.
  */
-function Header({ title, subtitle, onNew, onMenuClick, mobileMenuOpen = false, alertasUrgentes = [], estiloAlerta, tomAlerta, onAbrirAlerta, onFecharAlerta }) {
+function Header({ title, subtitle, onNew, onMenuClick, mobileMenuOpen = false, alertasUrgentes = [], estiloAlerta, tomAlerta, onAbrirAlerta, onExcluirAlerta }) {
   const [linksExternos, setLinksExternos] = useState([]);
   const [linksOpen, setLinksOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -165,7 +165,7 @@ function Header({ title, subtitle, onNew, onMenuClick, mobileMenuOpen = false, a
                         <button type="button" className="btn btn-sm" onClick={() => { setNotificationsOpen(false); onAbrirAlerta?.(alerta); }}>
                           {['lead_retorno_pre', 'lead_retorno_due', 'futuro_cliente_retorno_pre', 'futuro_cliente_retorno_due', 'futuro_cliente_distribuido'].includes(alerta.tipo) ? 'Atender agora' : (alerta.entidade === 'clientes' ? 'Abrir cliente' : 'Abrir')}
                         </button>
-                        <button type="button" className="btn btn-icon btn-ghost urgent-alert-card__close" onClick={() => onFecharAlerta?.(alerta)} title="Fechar aviso" aria-label="Fechar aviso">
+                        <button type="button" className="btn btn-icon btn-ghost urgent-alert-card__close" onClick={() => onExcluirAlerta?.(alerta)} title="Excluir notificação" aria-label="Excluir notificação">
                           <span className="urgent-alert-card__close-mark" aria-hidden="true">X</span>
                         </button>
                       </div>
