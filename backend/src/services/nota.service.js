@@ -68,6 +68,11 @@ function formatarNota(nota) {
     titulo: nota.titulo || '',
     conteudo: nota.conteudo || '',
     retorno_agendado_para: nota.retorno_agendado_para || null,
+    retorno_realizado_em: nota.retorno_realizado_em || null,
+    retorno_realizado_por_id: nota.retorno_realizado_por_id || null,
+    retorno_status: !nota.retorno_agendado_para
+      ? 'sem_retorno'
+      : nota.retorno_realizado_em ? 'realizado' : 'agendado',
     created_at: nota.created_at,
     updated_at: nota.updated_at
   };
@@ -178,6 +183,11 @@ async function atualizarNota(notaId, usuarioId, dados) {
   const retornoAlterado = Object.prototype.hasOwnProperty.call(payload, 'retorno_agendado_para')
     && String(payload.retorno_agendado_para || '') !== String(nota.retorno_agendado_para || '');
 
+  if (retornoAlterado) {
+    payload.retorno_realizado_em = null;
+    payload.retorno_realizado_por_id = null;
+  }
+
   await db('entidade_notas')
     .where({ id: Number(notaId), usuario_id: Number(usuarioId) })
     .update({
@@ -190,6 +200,33 @@ async function atualizarNota(notaId, usuarioId, dados) {
   }
 
   return formatarNota(await db('entidade_notas').where({ id: Number(notaId) }).first());
+}
+
+/**
+ * Marca o retorno de uma nota como realizado sem apagar o agendamento original.
+ */
+async function realizarRetornoNota(notaId, usuarioId, opcoes = {}) {
+  const query = db('entidade_notas').where({ id: Number(notaId) });
+  if (!opcoes.ignorarProprietario) query.where('usuario_id', Number(usuarioId));
+  const nota = await query.first();
+
+  if (!nota) return null;
+  if (!nota.retorno_agendado_para) {
+    const error = new Error('Esta nota não possui retorno agendado.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  if (!nota.retorno_realizado_em) {
+    await db('entidade_notas').where({ id: nota.id }).update({
+      retorno_realizado_em: formatarDateTimeSQL(),
+      retorno_realizado_por_id: Number(usuarioId),
+      updated_at: formatarDateTimeSQL()
+    });
+  }
+
+  await notificacaoService.desativarNotificacoesRetornoNota(nota.id);
+  return formatarNota(await db('entidade_notas').where({ id: nota.id }).first());
 }
 
 /**
@@ -211,5 +248,6 @@ module.exports = {
   listarNotas,
   criarNota,
   atualizarNota,
+  realizarRetornoNota,
   excluirNota
 };

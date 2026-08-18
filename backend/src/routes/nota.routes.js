@@ -9,6 +9,7 @@ router.use(authMiddleware);
 router.get('/:tipo/:id', notaController.index);
 router.post('/:tipo/:id', notaController.store);
 router.put('/:notaId', notaController.update);
+router.patch('/:notaId/retorno-realizado', notaController.realizarRetorno);
 router.delete('/:notaId', notaController.destroy);
 
 module.exports = router;

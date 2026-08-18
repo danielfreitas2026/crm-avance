@@ -63,6 +63,16 @@ async function update(req, res) {
   }
 }
 
+async function realizarRetorno(req, res) {
+  try {
+    const nota = await notaService.realizarRetornoNota(req.params.notaId, req.usuario.id);
+    if (!nota) return res.status(404).json({ message: 'Nota não encontrada.' });
+    return res.json(nota);
+  } catch (error) {
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao concluir retorno.' });
+  }
+}
+
 /**
  * Remove uma nota do sistema.
  *
@@ -88,5 +98,6 @@ module.exports = {
   index,
   store,
   update,
+  realizarRetorno,
   destroy
 };

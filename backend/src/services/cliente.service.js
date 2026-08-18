@@ -1272,10 +1272,10 @@ async function montarResumoNotasClientes(clientes, usuarioId) {
     .groupBy('entidade_id')
     .select('entidade_id')
     .count('id as notas_total')
-    .select(Cliente.knex().raw('SUM(CASE WHEN retorno_agendado_para IS NULL THEN 0 ELSE 1 END) as notas_com_retorno_total'))
-    .select(Cliente.knex().raw('SUM(CASE WHEN retorno_agendado_para <= NOW() THEN 1 ELSE 0 END) as notas_retorno_vencido_total'))
-    .min('retorno_agendado_para as proximo_retorno_agendado_para')
-    .select(Cliente.knex().raw('MIN(CASE WHEN retorno_agendado_para <= NOW() THEN retorno_agendado_para ELSE NULL END) as proximo_retorno_vencido_para'));
+    .select(Cliente.knex().raw('SUM(CASE WHEN retorno_agendado_para IS NULL OR retorno_realizado_em IS NOT NULL THEN 0 ELSE 1 END) as notas_com_retorno_total'))
+    .select(Cliente.knex().raw('SUM(CASE WHEN retorno_realizado_em IS NULL AND retorno_agendado_para <= NOW() THEN 1 ELSE 0 END) as notas_retorno_vencido_total'))
+    .select(Cliente.knex().raw('MIN(CASE WHEN retorno_realizado_em IS NULL THEN retorno_agendado_para ELSE NULL END) as proximo_retorno_agendado_para'))
+    .select(Cliente.knex().raw('MIN(CASE WHEN retorno_realizado_em IS NULL AND retorno_agendado_para <= NOW() THEN retorno_agendado_para ELSE NULL END) as proximo_retorno_vencido_para'));
 
   return new Map(linhas.map(linha => ([
     Number(linha.entidade_id),
@@ -1542,6 +1542,7 @@ async function listarClientes(filtros = {}, usuarioId) {
         .where('entidade_tipo', 'cliente')
         .where('usuario_id', Number(usuarioId))
         .whereRaw('entidade_id = clientes.id')
+        .whereNull('retorno_realizado_em')
         .whereRaw('retorno_agendado_para <= NOW()')
     );
   }

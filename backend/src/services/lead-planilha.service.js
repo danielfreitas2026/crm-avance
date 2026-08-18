@@ -367,12 +367,17 @@ function aplicarFiltrosFuturosClientes(query, filtros = {}) {
   }
 
   if (retorno === 'com_retorno') {
-    query.whereNotNull('futuro_cliente_retorno');
+    query.whereNotNull('futuro_cliente_retorno')
+      .whereNull('futuro_cliente_retorno_realizado_em');
   } else if (retorno === 'sem_retorno') {
     query.whereNull('futuro_cliente_retorno');
   } else if (retorno === 'vencido') {
     query.whereNotNull('futuro_cliente_retorno')
+      .whereNull('futuro_cliente_retorno_realizado_em')
       .where('futuro_cliente_retorno', '<', formatarDateTimeSQL());
+  } else if (retorno === 'realizado') {
+    query.whereNotNull('futuro_cliente_retorno')
+      .whereNotNull('futuro_cliente_retorno_realizado_em');
   }
 
   return query;
@@ -491,6 +496,12 @@ function formatarLinha(linha) {
     sondagem,
     enriquecimento: formatarEnriquecimento(json.enriquecimento),
     futuro_cliente_retorno: retornoLinhaValido ? json.futuro_cliente_retorno : (sondagem?.retorno_em || null),
+    futuro_cliente_retorno_status: !(retornoLinhaValido ? json.futuro_cliente_retorno : sondagem?.retorno_em)
+      ? 'sem_retorno'
+      : json.futuro_cliente_retorno_realizado_em ? 'realizado' : 'agendado',
+    retorno_agendado_status: !json.retorno_agendado_em
+      ? 'sem_retorno'
+      : json.retorno_agendado_realizado_em ? 'realizado' : 'agendado',
     futuro_cliente_marcado_em: marcadoLinhaValido ? json.futuro_cliente_marcado_em : (sondagem?.respondido_em || null),
     planilha: formatarPlanilha(json.planilha),
     envio: formatarEnvio(json.envio)
@@ -2547,6 +2558,10 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
     ? formatarDateTimeSQL(parseUtcDateTime(linha.retorno_agendado_em))
     : null;
   const retorno = parseDataHoraRetorno(dados.retorno) || retornoAgendado;
+  const retornoAnterior = linha.futuro_cliente_retorno
+    ? formatarDateTimeSQL(parseUtcDateTime(linha.futuro_cliente_retorno))
+    : null;
+  const retornoFuturoAlterado = String(retorno || '') !== String(retornoAnterior || '');
 
   await LeadLinha.transaction(async trx => {
     let atribuicao = await LeadAtribuicao.query(trx)
@@ -2580,8 +2595,13 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
 
     await trx('lead_linhas').where('id', Number(linhaId)).update({
       futuro_cliente: true, futuro_cliente_notas: notas, futuro_cliente_retorno: retorno,
+      ...(retornoFuturoAlterado ? {
+        futuro_cliente_retorno_realizado_em: null,
+        futuro_cliente_retorno_realizado_por_id: null
+      } : {}),
       futuro_cliente_marcado_em: marcadoEm, futuro_cliente_marcado_por_id: donoSondagemId,
       retorno_agendado_em: null, retorno_agendado_observacao: null, retorno_agendado_por_id: null,
+      retorno_agendado_realizado_em: null, retorno_agendado_realizado_por_id: null,
       etapa_atual: atribuicaoVendaAceita ? 'venda' : 'sondagem',
       status_operacional: atribuicaoVendaAceita ? 'distribuido_venda' : 'qualificado',
       updated_at: new Date()
@@ -3297,6 +3317,10 @@ async function marcarRetornoLead(linhaId, usuarioId, dados = {}, opcoes = {}) {
   const donoId = opcoes.comoAdmin ? (Number(linha.atribuido_para_id) || Number(usuarioId)) : Number(usuarioId);
 
   const retorno = parseDataHoraRetorno(dados.retorno);
+  const retornoAnterior = linha.retorno_agendado_em
+    ? formatarDateTimeSQL(parseUtcDateTime(linha.retorno_agendado_em))
+    : null;
+  const retornoAlterado = String(retorno || '') !== String(retornoAnterior || '');
   const observacaoInformada = String(dados.observacao || '').trim();
   if (observacaoInformada.length > 2000) {
     throw criarHttpError(400, 'A observacao do retorno deve ter no maximo 2000 caracteres.');
@@ -3308,7 +3332,11 @@ async function marcarRetornoLead(linhaId, usuarioId, dados = {}, opcoes = {}) {
     await LeadLinha.query(trx).patchAndFetchById(linha.id, {
       retorno_agendado_em: retorno,
       retorno_agendado_observacao: retorno ? (observacaoInformada || null) : null,
-      retorno_agendado_por_id: retorno ? donoId : null
+      retorno_agendado_por_id: retorno ? donoId : null,
+      ...(retornoAlterado ? {
+        retorno_agendado_realizado_em: null,
+        retorno_agendado_realizado_por_id: null
+      } : {})
     });
 
     if (retorno) {
@@ -3323,6 +3351,51 @@ async function marcarRetornoLead(linhaId, usuarioId, dados = {}, opcoes = {}) {
 
   await sincronizarNotificacaoRetornoLead(linha.id);
 
+  return buscarLinhaFormatada(linha.id);
+}
+
+/**
+ * Marca como realizado um retorno direto do lead ou o retorno do futuro cliente.
+ */
+async function realizarRetornoLead(linhaId, usuarioId, dados = {}, opcoes = {}) {
+  const linha = await LeadLinha.query().findById(Number(linhaId));
+  if (!linha) throw criarHttpError(404, 'Lead nao encontrado.');
+
+  const origem = String(dados.origem || '').trim();
+  if (!['lead', 'futuro_cliente'].includes(origem)) {
+    throw criarHttpError(400, 'Origem do retorno invalida.');
+  }
+
+  const podeAcessar = Number(linha.atribuido_para_id) === Number(usuarioId)
+    || Number(linha.futuro_cliente_marcado_por_id) === Number(usuarioId);
+  if (!opcoes.comoAdmin && !opcoes.ignorarResponsavel && !podeAcessar) {
+    throw criarHttpError(403, 'Lead nao encontrado ou atribuido a outro usuario.');
+  }
+
+  const configuracao = origem === 'lead'
+    ? {
+      data: linha.retorno_agendado_em,
+      realizadoEm: linha.retorno_agendado_realizado_em,
+      campoEm: 'retorno_agendado_realizado_em',
+      campoPor: 'retorno_agendado_realizado_por_id'
+    }
+    : {
+      data: linha.futuro_cliente_retorno,
+      realizadoEm: linha.futuro_cliente_retorno_realizado_em,
+      campoEm: 'futuro_cliente_retorno_realizado_em',
+      campoPor: 'futuro_cliente_retorno_realizado_por_id'
+    };
+
+  if (!configuracao.data) throw criarHttpError(409, 'Este lead nao possui retorno agendado.');
+
+  if (!configuracao.realizadoEm) {
+    await LeadLinha.query().patchAndFetchById(linha.id, {
+      [configuracao.campoEm]: formatarDateTimeSQL(),
+      [configuracao.campoPor]: Number(usuarioId)
+    });
+  }
+
+  await desativarAlertasObrigatoriosDaLinha(linha.id);
   return buscarLinhaFormatada(linha.id);
 }
 
@@ -3513,6 +3586,7 @@ module.exports = {
   marcarChamadaNaoAtendidaLead,
   reverterChamadaNaoAtendidaLead,
   marcarRetornoLead,
+  realizarRetornoLead,
   buscarLinhaFormatada,
   listarFuturosClientesLixeira,
   enviarFuturoClienteParaLixeira,
