@@ -19,6 +19,7 @@ const dashboardIntegracaoService = require('./dashboard-integracao.service');
 const telegramService = require('./telegram.service');
 const telegramAprovacoesService = require('./telegram-aprovacoes.service');
 const leadDistribuicaoService = require('./lead-distribuicao.service');
+const vendaFuturoClienteService = require('./venda-futuro-cliente.service');
 const { parseUtcDateTime } = require('../utils/datetime');
 const { listarPermissoesEfetivas, usuarioTemPermissaoLocal } = require('../utils/permissoes');
 const ExcelJS = require('exceljs');
@@ -3099,9 +3100,40 @@ async function gerarEmailTemplateVenda(id, usuarioId) {
   return renderEmailVenda(venda);
 }
 
-/**
- * Cria venda com os dados informados.
- */
+/** Busca e bloqueia a origem escolhida explicitamente no fluxo de cadastro. */
+async function buscarLeadOrigemExplicita({ origemLeadLinhaId, usuarioId, trx }) {
+  return trx('lead_linhas')
+    .where({ id: origemLeadLinhaId, atribuido_para_id: Number(usuarioId) })
+    .where('futuro_cliente', true)
+    .whereNull('futuro_cliente_excluido_em')
+    .whereNull('venda_id')
+    .where(builder => builder.whereNull('status_operacional').orWhereNot('status_operacional', 'vendido'))
+    .forUpdate()
+    .first();
+}
+
+/** Prioriza a origem explicita e usa a correspondencia prospectiva como fallback. */
+async function resolverLeadOrigemCadastro({
+  origemLeadLinhaId,
+  usuarioId,
+  cnpj,
+  vendedorasIds,
+  criadoEm,
+  trx,
+  buscarExplicita = buscarLeadOrigemExplicita,
+  buscarAutomatica = vendaFuturoClienteService.buscarFuturoClienteParaVenda
+}) {
+  if (origemLeadLinhaId) {
+    const linha = await buscarExplicita({ origemLeadLinhaId, usuarioId, trx });
+    if (!linha) throw new Error('Futuro cliente nao encontrado, ja vendido ou atribuido a outro consultor.');
+    return { linha, tipo: 'explicita' };
+  }
+
+  const linha = await buscarAutomatica({ cnpj, vendedorasIds, criadoEm, trx });
+  return { linha, tipo: linha ? 'automatica_cnpj' : null };
+}
+
+/** Cria venda com os dados informados. */
 async function criarVenda(dados, usuarioId) {
   const instanteCadastro = new Date();
   const agora = formatarDateTimeSQL(instanteCadastro);
@@ -3147,30 +3179,24 @@ async function criarVenda(dados, usuarioId) {
   let solicitacaoAprovacaoCriadaId = null;
   let atribuicaoVendaFechadaId = null;
   const venda = await Venda.transaction(async trx => {
-    let leadOrigem = null;
-    if (origemLeadLinhaId) {
-      leadOrigem = await trx('lead_linhas')
-        .where({ id: origemLeadLinhaId, atribuido_para_id: Number(usuarioId) })
-        .where('futuro_cliente', true)
-        .whereNull('futuro_cliente_excluido_em')
-        .whereNull('venda_id')
-        .where(builder => builder.whereNull('status_operacional').orWhereNot('status_operacional', 'vendido'))
-        .first();
-      if (!leadOrigem) {
-        throw new Error('Futuro cliente nao encontrado, ja vendido ou atribuido a outro consultor.');
-      }
-    }
-    if (!leadOrigem && payload.cliente_id) {
-      const clienteOrigem = await trx('clientes').where('id', payload.cliente_id).first('origem_lead_linha_id');
-      if (clienteOrigem?.origem_lead_linha_id) {
-        leadOrigem = await trx('lead_linhas').where('id', clienteOrigem.origem_lead_linha_id).first();
-      }
-    }
+    const origemResolvida = await resolverLeadOrigemCadastro({
+      origemLeadLinhaId,
+      usuarioId,
+      cnpj: payload.cnpj,
+      vendedorasIds: vendedorasIds.length > 0 ? vendedorasIds : [payload.vendedora_id],
+      criadoEm: agora,
+      trx
+    });
+    const leadOrigem = origemResolvida.linha;
+    const origemLeadTipo = origemResolvida.tipo;
+    const origemSondadorId = Number(
+      leadOrigem?.primeira_ligacao_usuario_id || leadOrigem?.futuro_cliente_marcado_por_id
+    ) || null;
 
     const venda = await Venda.query(trx).insertAndFetch({
       ...payload,
       origem_lead_linha_id: leadOrigem?.id || null,
-      origem_sondador_id: leadOrigem?.futuro_cliente_marcado_por_id || null,
+      origem_sondador_id: origemSondadorId,
       status_funil: null,
       criado_por_id: usuarioId,
       criado_em: agora,
@@ -3185,7 +3211,9 @@ async function criarVenda(dados, usuarioId) {
       observacao: 'Venda cadastrada',
       dados: {
         venda_id: venda.id,
-        status_funil: venda.status_funil || null
+        status_funil: venda.status_funil || null,
+        origem_lead_linha_id: leadOrigem?.id || null,
+        origem_futuro_cliente_tipo: origemLeadTipo
       },
       createdAt: agora,
       trx
@@ -3214,7 +3242,7 @@ async function criarVenda(dados, usuarioId) {
       if (payload.cliente_id) {
         await trx('clientes').where('id', payload.cliente_id).update({
           origem_lead_linha_id: leadOrigem.id,
-          origem_sondador_id: leadOrigem.futuro_cliente_marcado_por_id,
+          origem_sondador_id: origemSondadorId,
           updated_at: new Date()
         });
       }
@@ -3226,7 +3254,11 @@ async function criarVenda(dados, usuarioId) {
         updated_at: new Date()
       });
       const atribuicaoVenda = await trx('lead_atribuicoes')
-        .where({ lead_linha_id: leadOrigem.id, usuario_id: Number(usuarioId), etapa: 'venda' })
+        .where({
+          lead_linha_id: leadOrigem.id,
+          usuario_id: Number(leadOrigem.atribuido_para_id),
+          etapa: 'venda'
+        })
         .orderBy('id', 'desc')
         .first('id', 'aceite_status');
       if (atribuicaoVenda) {
@@ -3243,9 +3275,7 @@ async function criarVenda(dados, usuarioId) {
             updated_at: new Date()
           });
       }
-      await trx('notificacoes')
-        .where('source_key', `futuro_cliente_distribuido:${leadOrigem.id}`)
-        .update({ ativa: false, updated_at: new Date() });
+      await notificacaoService.desativarAlertasObrigatoriosDaLinha(leadOrigem.id, trx);
     }
 
     await dashboardIntegracaoService.registrarVendaPendente(venda, trx);
@@ -4430,6 +4460,7 @@ module.exports = {
     obterQuantidadeChipsVenda,
     obterUltimaAtividadeFunil,
     parseValorMonetario,
+    resolverLeadOrigemCadastro,
     filtrarVendasRelatorioPorVendedora,
     resumirGigasItensChips,
     somarQuantidadeItensChips,
