@@ -1,7 +1,8 @@
 const express = require('express');
 const cors = require('cors');
+const { loadEnvironment } = require('./config/environment');
 
-require('dotenv').config();
+loadEnvironment();
 const db = require('./config/database');
 const usuarioRoutes = require('./routes/usuario.routes');
 const roleRoutes = require('./routes/role.routes');

@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
@@ -1040,13 +1040,15 @@ function HistoricoPage() {
     }
   }
 
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
-  useEffect(() => {
+  const carregarAoFiltrar = useEffectEvent(() => {
     setPaginaAtual(1);
-    const timer = setTimeout(() => carregar(1), 250);
+    void carregar(1);
+  });
+
+  useEffect(() => {
+    const timer = setTimeout(carregarAoFiltrar, 250);
     return () => clearTimeout(timer);
   }, [buscaDeferred, filtroAtual.id, filtroAtual.entidade, filtroAtual.tipo, filtroStatus]);
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   const modoVendasCompacto = filtro === 'vendas';
   const gruposVenda = useMemo(() => {

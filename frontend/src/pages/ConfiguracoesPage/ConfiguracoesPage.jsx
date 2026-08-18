@@ -141,6 +141,35 @@ function montarSugestoesClientesAntigos(colunas) {
   };
 }
 
+function obterColunasClientesAntigos(preview, abasSelecionadas) {
+  const abasComColunas = preview?.abas?.filter(item => Array.isArray(item.colunas)) || [];
+  const selecionadas = new Set(abasSelecionadas);
+  const origem = abasComColunas.length > 0
+    ? abasComColunas.filter(item => selecionadas.has(item.nome)).flatMap(item => item.colunas || [])
+    : preview?.colunas || [];
+  const vistas = new Set();
+
+  return origem.filter(coluna => {
+    if (!coluna?.nome || vistas.has(coluna.nome)) return false;
+    vistas.add(coluna.nome);
+    return true;
+  });
+}
+
+function ajustarMapeamentoClientesAntigos(mapeamento, colunas) {
+  const sugestoes = montarSugestoesClientesAntigos(colunas);
+  const proximo = { ...mapeamento };
+
+  Object.keys(proximo).forEach(campo => {
+    if (proximo[campo] && !encontrarColunaImportacao(colunas, proximo[campo])) {
+      proximo[campo] = sugestoes[campo] || '';
+    }
+  });
+
+  if (!proximo.cnpj && sugestoes.cnpj) proximo.cnpj = sugestoes.cnpj;
+  return proximo;
+}
+
 /**
  * Processa mascarar brl conforme as regras do dominio.
  */
@@ -298,20 +327,10 @@ function ConfiguracoesPage() {
   const [caResultado, setCaResultado] = useState(null);
   const [caAbasSelecionadas, setCaAbasSelecionadas] = useState([]);
 
-  const caColunasSelecionadas = useMemo(() => {
-    const abasComColunas = caPreview?.abas?.filter(item => Array.isArray(item.colunas)) || [];
-    const selecionadas = new Set(caAbasSelecionadas);
-    const origem = abasComColunas.length > 0
-      ? abasComColunas.filter(item => selecionadas.has(item.nome)).flatMap(item => item.colunas || [])
-      : caPreview?.colunas || [];
-    const vistas = new Set();
-
-    return origem.filter(coluna => {
-      if (!coluna?.nome || vistas.has(coluna.nome)) return false;
-      vistas.add(coluna.nome);
-      return true;
-    });
-  }, [caPreview, caAbasSelecionadas]);
+  const caColunasSelecionadas = useMemo(
+    () => obterColunasClientesAntigos(caPreview, caAbasSelecionadas),
+    [caPreview, caAbasSelecionadas]
+  );
 
   const caCnpjSelecionadoValido = useMemo(() => (
     Boolean(caMapeamento.cnpj && encontrarColunaImportacao(caColunasSelecionadas, caMapeamento.cnpj))
@@ -380,38 +399,21 @@ function ConfiguracoesPage() {
 
 
   function caToggleTodasAbas(marcar) {
-    setCaAbasSelecionadas(marcar ? (caPreview?.abas || []).map(item => item.nome) : []);
+    const proximas = marcar ? (caPreview?.abas || []).map(item => item.nome) : [];
+    setCaAbasSelecionadas(proximas);
+    setCaMapeamento(prev => ajustarMapeamentoClientesAntigos(prev, obterColunasClientesAntigos(caPreview, proximas)));
   }
 
   function caToggleAba(nome) {
-    setCaAbasSelecionadas(prev => (
-      prev.includes(nome)
-        ? prev.filter(item => item !== nome)
-        : [...prev, nome]
+    const proximas = caAbasSelecionadas.includes(nome)
+      ? caAbasSelecionadas.filter(item => item !== nome)
+      : [...caAbasSelecionadas, nome];
+    setCaAbasSelecionadas(proximas);
+    setCaMapeamento(mapeamento => ajustarMapeamentoClientesAntigos(
+      mapeamento,
+      obterColunasClientesAntigos(caPreview, proximas)
     ));
   }
-
-  useEffect(() => {
-    if (!caPreview) return;
-
-    const sugestoes = montarSugestoesClientesAntigos(caColunasSelecionadas);
-
-    setCaMapeamento(prev => {
-      const proximo = { ...prev };
-
-      Object.keys(proximo).forEach(campo => {
-        if (proximo[campo] && !encontrarColunaImportacao(caColunasSelecionadas, proximo[campo])) {
-          proximo[campo] = sugestoes[campo] || '';
-        }
-      });
-
-      if (!proximo.cnpj && sugestoes.cnpj) {
-        proximo.cnpj = sugestoes.cnpj;
-      }
-
-      return Object.keys(proximo).some(campo => proximo[campo] !== prev[campo]) ? proximo : prev;
-    });
-  }, [caPreview, caColunasSelecionadas]);
 
   useEffect(() => {
     if (!sucesso) return undefined;
@@ -454,11 +456,36 @@ function ConfiguracoesPage() {
     }
   }
 
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
-    carregarDados();
-  }, []);
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
+    let ativo = true;
+    Promise.all([
+      permissoes.operadoras
+        ? listarOperadorasAdmin()
+        : permissoes.regrasComissao ? listarOperadoras() : Promise.resolve([]),
+      permissoes.tiposVenda ? listarTiposVendaAdmin() : Promise.resolve([]),
+      permissoes.servicos ? listarServicosAdmin() : Promise.resolve([]),
+      permissoes.links ? listarLinksExternosAdmin() : Promise.resolve([]),
+      permissoes.regrasComissao ? listarRegrasComissaoAdmin() : Promise.resolve([]),
+      permissoes.notificacoes ? listarAparenciasNotificacaoAdmin() : Promise.resolve([])
+    ])
+      .then(([operadoras, tiposVenda, servicos, links, regrasComissao, notificacoes]) => {
+        if (ativo) setDados({ operadoras, tiposVenda, servicos, links, regrasComissao, notificacoes });
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao carregar configurações.');
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+    return () => { ativo = false; };
+  }, [
+    permissoes.operadoras,
+    permissoes.tiposVenda,
+    permissoes.servicos,
+    permissoes.links,
+    permissoes.regrasComissao,
+    permissoes.notificacoes
+  ]);
 
   /**
    * Executa a acao de resetar forms mantendo o estado da tela consistente.

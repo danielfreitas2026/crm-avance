@@ -12,6 +12,7 @@ import ClienteModal from '../Clientes/ClienteModal';
 import VendaModal from '../VendasPage/VendaModal';
 import * as I from '../../components/Icons';
 import { formatUtcDateTime, getUtcDateTimeTimestamp, parseUtcDateTime } from '../../utils/datetime';
+import { calcularSegmentosCirculares } from './dashboard.utils';
 import './DashboardPage.css';
 
 /**
@@ -62,7 +63,6 @@ const TIPOS_RETORNO_PAGINA_LEADS = [
 const TIPOS_RETORNO_MAILING = ['lead_retorno_pre', 'lead_retorno_due'];
 const TIPO_FUTURO_CLIENTE_DISTRIBUIDO = 'futuro_cliente_distribuido';
 const TIPOS_PROBLEMA_VENDA = ['venda_problema_aberto', 'venda_problema_resolvido', 'venda_problema_correcao'];
-const TIPOS_APROVACAO_VENDA = ['venda_aprovacao_pendente'];
 const TIPO_VENDA_PARADA = 'venda_parada_funil';
 const RETORNO_PRE_AVISO_MINUTOS = 15;
 const NOTIFICATION_DRAWER_KEYS = ['retornos', 'fidelidade', 'ligacoes', 'vendas-paradas', 'problemas'];
@@ -128,7 +128,7 @@ const TODAY_STATS_COLORS = ['#2563eb', '#16a34a', '#e87900', '#9333ea'];
  */
 function TodayDonut({ items }) {
   const total = items.reduce((sum, item) => sum + Math.max(0, Number(item.value) || 0), 0);
-  let offset = 0;
+  const segments = calcularSegmentosCirculares(items, total);
   const pipelineItem = items.find(item => item.key === 'pipeline');
   const pipelineShare = total > 0 ? (Math.max(0, Number(pipelineItem?.value) || 0) / total) * 100 : 0;
 
@@ -138,10 +138,7 @@ function TodayDonut({ items }) {
         <div className="today-donut__empty" />
       ) : (
         <svg viewBox="0 0 42 42" aria-hidden="true">
-          {items.map((item, index) => {
-            const value = Math.max(0, Number(item.value) || 0);
-            const share = (value / total) * 100;
-            const segment = (
+          {segments.map(({ item, index, share, offset }) => (
               <circle
                 key={item.key}
                 className="today-donut__segment"
@@ -152,10 +149,7 @@ function TodayDonut({ items }) {
                 strokeDasharray={`${share} ${100 - share}`}
                 strokeDashoffset={25 - offset}
               />
-            );
-            offset += share;
-            return segment;
-          })}
+          ))}
         </svg>
       )}
       <div className="today-donut__center">
@@ -255,7 +249,7 @@ function TodayStatsChart({ items, type }) {
   const maxValue = Math.max(...items.map(item => Math.max(0, Number(item.value) || 0)), 1);
 
   if (type === 'pie') {
-    let offset = 0;
+    const segments = calcularSegmentosCirculares(items, total);
 
     return (
       <div className="today-chart today-chart--pie">
@@ -264,10 +258,7 @@ function TodayStatsChart({ items, type }) {
             <div className="today-chart__pie-empty" />
           ) : (
             <svg viewBox="0 0 42 42" role="img">
-              {items.map((item, index) => {
-                const value = Math.max(0, Number(item.value) || 0);
-                const share = (value / total) * 100;
-                const segment = (
+              {segments.map(({ item, index, share, offset }) => (
                   <circle
                     key={item.key}
                     className="today-chart__pie-segment"
@@ -278,10 +269,7 @@ function TodayStatsChart({ items, type }) {
                     strokeDasharray={`${share} ${100 - share}`}
                     strokeDashoffset={25 - offset}
                   />
-                );
-                offset += share;
-                return segment;
-              })}
+              ))}
             </svg>
           )}
         </div>
@@ -786,61 +774,6 @@ function getInitials(name) {
 /**
  * Retorna notification target a partir dos dados informados.
  */
-function getNotificationTarget(notificacao) {
-  if (notificacao.tipo === TIPO_FUTURO_CLIENTE_DISTRIBUIDO) {
-    const linhaId = Number(notificacao.entidade_id || notificacao.dados?.lead_linha_id || 0);
-    return linhaId > 0 ? `/futuros-clientes?linha_id=${linhaId}` : '/futuros-clientes';
-  }
-
-  if (TIPOS_RETORNO_PAGINA_LEADS.includes(notificacao.tipo)) {
-    const linhaId = Number(notificacao.entidade_id || notificacao.dados?.lead_linha_id || 0);
-    return TIPOS_RETORNO_MAILING.includes(notificacao.tipo)
-      ? (linhaId > 0 ? '/futuros-clientes?aba=leads&linha_id=' + linhaId : '/futuros-clientes?aba=leads')
-      : (linhaId > 0 ? '/futuros-clientes?linha_id=' + linhaId : '/futuros-clientes');
-  }
-
-  if (notificacao.tipo === 'cliente_fidelidade') {
-    return Number(notificacao.dados?.dias_restantes ?? 1) < 0
-      ? '/clientes?fidelidade=vencida'
-      : '/clientes?fidelidade=alerta';
-  }
-
-  if (notificacao.entidade === 'clientes') {
-    const clienteId = notificacao.entidade_id || notificacao.dados?.entidade_id;
-    return clienteId ? `/clientes?cliente_id=${clienteId}&highlight=${clienteId}` : '/clientes';
-  }
-
-  if (notificacao.entidade === 'clientes-secretos') {
-    return '/clientes-secretos';
-  }
-  if (notificacao.entidade === 'vendas') {
-    const vendaId = notificacao.entidade_id || notificacao.dados?.venda_id;
-    if (!vendaId) return '/vendas';
-
-    if (TIPOS_APROVACAO_VENDA.includes(notificacao.tipo)) {
-      const solicitacaoId = notificacao.dados?.solicitacao_id;
-      return solicitacaoId ? `/vendas/aprovacoes?solicitacao_id=${solicitacaoId}` : '/vendas/aprovacoes';
-    }
-
-    if (TIPOS_PROBLEMA_VENDA.includes(notificacao.tipo)) {
-      const problemaId = notificacao.dados?.problema_id;
-      return `/vendas?venda_id=${vendaId}&aba=problema${problemaId ? `&problema_id=${problemaId}` : ''}`;
-    }
-
-    if (notificacao.tipo === TIPO_VENDA_PARADA) {
-      return `/vendas?venda_id=${vendaId}`;
-    }
-
-    if (TIPOS_RETORNO_NOTA.includes(notificacao.tipo)) {
-      return `/vendas?venda_id=${vendaId}&aba=notas`;
-    }
-
-    return `/vendas?venda_id=${vendaId}`;
-  }
-
-  return null;
-}
-
 /**
  * Retorna retorno timestamp a partir dos dados informados.
  */
@@ -1087,7 +1020,7 @@ function DashboardPage() {
   const [operadoras, setOperadoras] = useState([]);
   const [tiposVenda, setTiposVenda] = useState([]);
   const [servicos, setServicos] = useState([]);
-  const [etapasFunil, setEtapasFunil] = useState([]);
+  const [, setEtapasFunil] = useState([]);
   const [clienteModal, setClienteModal] = useState(null);
   const [clienteModalAba, setClienteModalAba] = useState('cliente');
   const [vendaModal, setVendaModal] = useState(null);
@@ -1151,10 +1084,6 @@ function DashboardPage() {
           setOpenedGifts(new Set((data.resgatadas || []).map(Number)));
         })
         .catch(console.error);
-    } else {
-      setCampanhas([]);
-      setProgresso({});
-      setOpenedGifts(new Set());
     }
 
     if (podeVerResumoVendas || podeVerRetornos) {
@@ -1193,10 +1122,7 @@ function DashboardPage() {
   }, [podeVerNotificacoes]);
 
   useEffect(() => {
-    if (!podeVerNotificacoes) {
-      setNotificacoes([]);
-      return undefined;
-    }
+    if (!podeVerNotificacoes) return undefined;
 
     let ativo = true;
     /**
@@ -1232,23 +1158,7 @@ function DashboardPage() {
   /**
    * Trata o evento de read notification.
    */
-  async function handleReadNotification(notificacao) {
-    if (!notificacao.lida) {
-      await marcarNotificacaoLida(notificacao.id);
-      setNotificacoes(prev => prev.map(item => (
-        item.id === notificacao.id ? { ...item, lida: true } : item
-      )));
-      window.dispatchEvent(new CustomEvent('pos-venda:notificacoes-atualizar'));
-    }
-
-    const target = getNotificationTarget(notificacao);
-
-    if (target) {
-      navigate(target);
-    }
-  }
-
-  /**
+    /**
    * Marca notificacao como lida local conforme a acao solicitada.
    */
   async function marcarNotificacaoComoLidaLocal(notificacao) {
@@ -1545,19 +1455,7 @@ function DashboardPage() {
   /**
    * Verifica se team goal drawer open atende a condicao esperada.
    */
-  const proximaFidelidade = notificacoesFidelidade[0];
-  const proximoRetorno = notificacoesRetorno[0];
-  const proximoProblema = notificacoesProblema[0];
-  const retornosNaoLidos = notificacoesRetorno.some(notificacao => !notificacao.lida);
-  const retornosVencidos = notificacoesRetorno.filter(notificacao => notificacao.tipo === 'nota_retorno_due').length;
-  const problemasNaoLidos = notificacoesProblema.some(notificacao => !notificacao.lida);
-  const fidelidadeTextoPrazo = proximaFidelidade?.dados?.dias_restantes < 0
-    ? `vencida há ${Math.abs(proximaFidelidade.dados.dias_restantes)} dia${Math.abs(proximaFidelidade.dados.dias_restantes) === 1 ? '' : 's'}`
-    : proximaFidelidade?.dados?.dias_restantes === 0
-      ? 'vence hoje'
-      : `vence em ${proximaFidelidade?.dados?.dias_restantes} dias`;
-
-  /**
+                /**
    * Trata o evento de open gift.
    */
   const handleOpenGift = async (campanha) => {
@@ -1805,109 +1703,6 @@ function DashboardPage() {
               })}
             </div>
             )}
-          </section>
-        )}
-
-        {false && (notificacoesFidelidade.length > 0 || notificacoesRetorno.length > 0 || notificacoesProblema.length > 0) && (
-          <section className="home-notifications">
-            <div className="home-notifications__header">
-              <div>
-                <h2>Notificações</h2>
-                <p>Acompanhe os três pontos que exigem atenção imediata.</p>
-              </div>
-            </div>
-
-            <div className="home-notifications__list">
-              <button
-                type="button"
-                className={`home-notification home-notification--fixed home-notification--fidelity ${proximaFidelidade?.lida ? '' : 'is-unread'} ${proximaFidelidade?.nivel || 'warn'} ${notificacoesFidelidade.length === 0 ? 'is-empty' : ''}`}
-                disabled={notificacoesFidelidade.length === 0}
-                onClick={() => proximaFidelidade && handleReadNotification(proximaFidelidade)}
-              >
-                <span className="home-notification__icon">
-                  <I.AlertTriangle size={16} />
-                </span>
-                <span className="home-notification__content">
-                  <em>Fidelidade</em>
-                  <strong>
-                    {notificacoesFidelidade.length > 0
-                      ? `${notificacoesFidelidade.length} cliente${notificacoesFidelidade.length === 1 ? '' : 's'} em alerta`
-                      : 'Sem fidelidades em alerta'}
-                  </strong>
-                  <span>
-                    {proximaFidelidade
-                      ? `Mais urgente: ${proximaFidelidade.dados?.cliente_nome || 'cliente'} - ${fidelidadeTextoPrazo}.`
-                      : 'Nenhum cliente perto do vencimento agora.'}
-                  </span>
-                </span>
-                <span className="home-notification__days">
-                  {proximaFidelidade?.dados?.dias_restantes === 0
-                    ? 'Hoje'
-                    : proximaFidelidade?.dados?.dias_restantes < 0
-                      ? 'Vencida'
-                      : proximaFidelidade?.dados?.dias_restantes !== undefined
-                        ? `${proximaFidelidade.dados.dias_restantes} dias`
-                        : 'Ok'}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                className={`home-notification home-notification--fixed ${retornosNaoLidos ? 'is-unread' : ''} ${proximoRetorno?.nivel || 'warn'} ${notificacoesRetorno.length === 0 ? 'is-empty' : ''}`}
-                disabled={notificacoesRetorno.length === 0}
-                onClick={() => {
-                  if (!proximoRetorno) return;
-                  handleReadNotification(proximoRetorno);
-                }}
-              >
-                <span className="home-notification__icon">
-                  <I.AlertTriangle size={16} />
-                </span>
-                <span className="home-notification__content">
-                  <em>Retornos</em>
-                  <strong>
-                    {notificacoesRetorno.length > 0
-                      ? `${notificacoesRetorno.length} retorno${notificacoesRetorno.length === 1 ? '' : 's'} de ligação`
-                      : 'Sem retornos pendentes'}
-                  </strong>
-                  <span>
-                    {proximoRetorno
-                      ? `Mais urgente: ${proximoRetorno.dados?.titulo_nota || 'nota'} - ${formatarRetornoResumo(proximoRetorno)}.`
-                      : 'Nenhuma ligação pendente para acompanhar.'}
-                  </span>
-                </span>
-                <span className="home-notification__days">
-                  {retornosVencidos > 0 ? `${retornosVencidos} vencido${retornosVencidos === 1 ? '' : 's'}` : notificacoesRetorno.length > 0 ? 'Em breve' : 'Ok'}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                className={`home-notification home-notification--fixed home-notification--problem ${problemasNaoLidos ? 'is-unread' : ''} ${proximoProblema?.nivel || 'danger'} ${notificacoesProblema.length === 0 ? 'is-empty' : ''}`}
-                disabled={notificacoesProblema.length === 0}
-                onClick={() => proximoProblema && handleReadNotification(proximoProblema)}
-              >
-                <span className="home-notification__icon">
-                  <I.AlertTriangle size={16} />
-                </span>
-                <span className="home-notification__content">
-                  <em>Vendas com problema</em>
-                  <strong>
-                    {notificacoesProblema.length > 0
-                      ? `${notificacoesProblema.length} venda${notificacoesProblema.length === 1 ? '' : 's'} exigindo ação`
-                      : 'Nenhuma venda problemática'}
-                  </strong>
-                  <span>
-                    {proximoProblema
-                      ? proximoProblema.mensagem
-                      : 'Tudo certo com as vendas acompanhadas.'}
-                  </span>
-                </span>
-                <span className="home-notification__days">
-                  {notificacoesProblema.length > 0 ? 'Urgente' : 'Ok'}
-                </span>
-              </button>
-            </div>
           </section>
         )}
 

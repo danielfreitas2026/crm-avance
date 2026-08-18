@@ -424,12 +424,8 @@ function DocumentosTab({ vendaId }) {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     let ativo = true;
-    setLoading(true);
-    setErro('');
-
     listarArquivosVenda(vendaId)
       .then(resp => {
         if (!ativo) return;
@@ -448,7 +444,6 @@ function DocumentosTab({ vendaId }) {
       ativo = false;
     };
   }, [vendaId]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (loading) return <div className="fechamento-empty">Carregando documentos...</div>;
   if (erro) return <div className="alert-error">{erro}</div>;
@@ -497,12 +492,8 @@ function VendaDossieModal({ vendaId, periodo, onClose }) {
       : ABAS_BASE
   ), [podeVerDocumentos]);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     let ativo = true;
-    setLoading(true);
-    setErro('');
-
     getDossieVenda(vendaId, periodo)
       .then(resp => {
         if (!ativo) return;
@@ -521,7 +512,6 @@ function VendaDossieModal({ vendaId, periodo, onClose }) {
       ativo = false;
     };
   }, [vendaId, periodo]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
     <div className="modal-overlay" onClick={onClose}>

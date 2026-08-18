@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
@@ -470,13 +470,15 @@ function HistoricoLixeiraPage() {
     }
   }
 
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
-  useEffect(() => {
+  const carregarAoFiltrar = useEffectEvent(() => {
     setPaginaAtual(1);
-    const timer = setTimeout(() => carregar(1), 250);
+    void carregar(1);
+  });
+
+  useEffect(() => {
+    const timer = setTimeout(carregarAoFiltrar, 250);
     return () => clearTimeout(timer);
   }, [buscaDeferred]);
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   const grupos = useMemo(() => agruparLogsVenda(logs), [logs]);
 

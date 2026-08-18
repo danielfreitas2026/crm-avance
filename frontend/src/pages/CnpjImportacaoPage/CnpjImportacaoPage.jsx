@@ -384,12 +384,6 @@ function CnpjImportacaoPage() {
     carregarBuscasRealizadas();
   }, []);
 
-  useEffect(() => {
-    if (buscaPorTexto && modoBuscaTelefone !== 'somente_google') {
-      setModoBuscaTelefone('somente_google');
-    }
-  }, [buscaPorTexto, modoBuscaTelefone]);
-
   async function carregarGoogleKeys() {
     setCarregandoGoogleKeys(true);
     try {

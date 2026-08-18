@@ -131,11 +131,14 @@ function ClientesLixeiraPage() {
     }
   }
 
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
-    carregarClientes();
+    let ativo = true;
+    listarClientesLixeira({ busca: '' })
+      .then(data => { if (ativo) setClientes(data); })
+      .catch(error => { if (ativo) setErro(error.message || 'Erro ao carregar lixeira de clientes.'); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
   }, []);
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   /**
    * Trata o evento de buscar.

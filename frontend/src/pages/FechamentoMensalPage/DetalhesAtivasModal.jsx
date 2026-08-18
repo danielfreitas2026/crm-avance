@@ -432,12 +432,8 @@ function DetalhesAtivasModal({ secao = 'ativas', periodo, onClose, onAbrirVenda,
   const buscaDeferred = useDeferredValue(busca);
   const [filtros, setFiltros] = useState(FILTROS_INICIAIS);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     let ativo = true;
-    setLoading(true);
-    setErro(null);
-
     getDetalhesChips({ secao, ...periodo })
       .then(resp => {
         if (!ativo) return;
@@ -463,7 +459,6 @@ function DetalhesAtivasModal({ secao = 'ativas', periodo, onClose, onAbrirVenda,
       ativo = false;
     };
   }, [secao, periodo, reloadKey]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const linhasBase = useMemo(() => (Array.isArray(dados.linhas) ? dados.linhas : []), [dados.linhas]);
 

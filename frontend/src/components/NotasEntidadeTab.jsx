@@ -120,13 +120,15 @@ function NotaEditor({ value, salvando, onChange, onCancel, onSave, saveLabel = '
  */
 function NotasEntidadeTab({ tipo, entidadeId, pendingNotas = [], onPendingNotasChange = () => {} }) {
   const [notas, setNotas] = useState([]);
-  const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
   const [criando, setCriando] = useState(false);
   const [draftNova, setDraftNova] = useState(NOTA_VAZIA);
   const [editandoId, setEditandoId] = useState(null);
   const [draftEdicao, setDraftEdicao] = useState(NOTA_VAZIA);
   const [salvando, setSalvando] = useState(false);
+  const [chaveNotasCarregadas, setChaveNotasCarregadas] = useState('');
+  const chaveNotas = entidadeId ? `${tipo}:${entidadeId}` : '';
+  const carregandoVisivel = Boolean(chaveNotas && chaveNotasCarregadas !== chaveNotas);
 
   const labelEntidade = useMemo(() => {
     if (tipo === 'cliente') return 'cliente';
@@ -134,28 +136,27 @@ function NotasEntidadeTab({ tipo, entidadeId, pendingNotas = [], onPendingNotasC
     return 'venda';
   }, [tipo]);
 
-  /**
-   * Carrega notas e atualiza o estado relacionado.
-   */
-  async function carregarNotas() {
-    if (!entidadeId) return;
-
-    setCarregando(true);
-    setErro('');
-
-    try {
-      const data = await listarNotasEntidade(tipo, entidadeId);
-      setNotas(Array.isArray(data) ? data : []);
-    } catch (error) {
-      setErro(error.message || 'Erro ao carregar notas.');
-    } finally {
-      setCarregando(false);
-    }
-  }
-
   useEffect(() => {
-    carregarNotas();
-  }, [tipo, entidadeId]);
+    if (!entidadeId) return undefined;
+    let ativo = true;
+
+    listarNotasEntidade(tipo, entidadeId)
+      .then(data => {
+        if (!ativo) return;
+        setNotas(Array.isArray(data) ? data : []);
+        setErro('');
+        setChaveNotasCarregadas(chaveNotas);
+      })
+      .catch(error => {
+        if (!ativo) return;
+        setErro(error.message || 'Erro ao carregar notas.');
+        setChaveNotasCarregadas(chaveNotas);
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [tipo, entidadeId, chaveNotas]);
 
   /**
    * Executa a acao de iniciar nova nota mantendo o estado da tela consistente.
@@ -387,7 +388,7 @@ function NotasEntidadeTab({ tipo, entidadeId, pendingNotas = [], onPendingNotasC
         />
       )}
 
-      {carregando ? (
+      {carregandoVisivel ? (
         <div className="notes-loading">Carregando notas...</div>
       ) : notas.length === 0 && !criando ? (
         <div className="notes-empty notes-empty--compact">

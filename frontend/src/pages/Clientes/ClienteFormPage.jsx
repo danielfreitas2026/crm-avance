@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import AutoResizeTextarea from '../../components/AutoResizeTextarea';
-import CnpjSugestoes, { formatarMensagemResumoCnpj } from '../../components/CnpjSugestoes';
+import CnpjSugestoes from '../../components/CnpjSugestoes';
+import { formatarMensagemResumoCnpj } from '../../components/cnpjSugestoes.utils';
 import * as I from '../../components/Icons';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import {
@@ -339,6 +340,22 @@ function ClienteFormPage() {
     }));
   }
 
+  function atualizarDocumento(valor) {
+    atualizarCampo('cnpj', valor);
+    const cnpjInvalido = tipoBusca === 'cnpj'
+      && sanitizarCnpj(valor).length === 14
+      && !validarDigitosCnpj(sanitizarCnpj(valor));
+    setCnpjStatus(cnpjInvalido
+      ? { tipo: 'erro', mensagem: 'CNPJ inválido.' }
+      : { tipo: '', mensagem: '' });
+    setDocumentoDuplicado(null);
+    setDocumentoStatus({ tipo: '', mensagem: '' });
+    setCnpjDados(null);
+    setCnpjSugestoes({});
+    ultimoCnpjConsultadoRef.current = '';
+    ultimoDocumentoVerificadoRef.current = '';
+  }
+
   /**
    * Executa a acao de alterar tipo busca mantendo o estado da tela consistente.
    */
@@ -528,56 +545,22 @@ function ClienteFormPage() {
     }
   }
 
+  const verificarDocumentoNoEffect = useEffectEvent(verificarDuplicidadeDocumento);
+  const buscarCnpjNoEffect = useEffectEvent(buscarDadosCnpj);
+
   useEffect(() => {
-    if (tipoBusca !== 'cnpj') {
-      setCnpjStatus({ tipo: '', mensagem: '' });
-      setDocumentoDuplicado(null);
-      setDocumentoStatus({ tipo: '', mensagem: '' });
-      setCnpjDados(null);
-      setCnpjSugestoes({});
-      return;
-    }
+    if (tipoBusca !== 'cnpj') return undefined;
 
     const cnpj = sanitizarCnpj(form.cnpj);
+    if (cnpj.length !== 14 || !validarDigitosCnpj(cnpj)) return undefined;
 
-    if (cnpj.length === 0) {
-      setCnpjStatus({ tipo: '', mensagem: '' });
-      setDocumentoDuplicado(null);
-      setDocumentoStatus({ tipo: '', mensagem: '' });
-      setCnpjDados(null);
-      setCnpjSugestoes({});
-      return;
-    }
+    const timeout = setTimeout(() => {
+      verificarDocumentoNoEffect(cnpj).then(duplicado => {
+        if (!duplicado) buscarCnpjNoEffect(false);
+      });
+    }, 450);
 
-    if (cnpj.length < 14) {
-      setDocumentoDuplicado(null);
-      setDocumentoStatus({ tipo: '', mensagem: '' });
-      ultimoDocumentoVerificadoRef.current = '';
-      return;
-    }
-
-    if (cnpj.length === 14) {
-      if (!validarDigitosCnpj(cnpj)) {
-        setCnpjStatus({ tipo: 'erro', mensagem: 'CNPJ inválido.' });
-        setDocumentoDuplicado(null);
-        setDocumentoStatus({ tipo: '', mensagem: '' });
-        setCnpjDados(null);
-        setCnpjSugestoes({});
-        return;
-      }
-
-      setCnpjStatus({ tipo: '', mensagem: '' });
-      setCnpjDados(null);
-      setCnpjSugestoes({});
-
-      const timeout = setTimeout(() => {
-        verificarDuplicidadeDocumento(cnpj).then(duplicado => {
-          if (!duplicado) buscarDadosCnpj(false);
-        });
-      }, 450);
-
-      return () => clearTimeout(timeout);
-    }
+    return () => clearTimeout(timeout);
   }, [form.cnpj, tipoBusca]);
 
   useEffect(() => {
@@ -585,21 +568,10 @@ function ClienteFormPage() {
 
     const cpf = sanitizarCpf(form.cnpj);
 
-    if (cpf.length < 11) {
-      setDocumentoDuplicado(null);
-      setDocumentoStatus({ tipo: '', mensagem: '' });
-      ultimoDocumentoVerificadoRef.current = '';
-      return;
-    }
-
-    if (!validarDigitosCpf(cpf)) {
-      setDocumentoDuplicado(null);
-      setDocumentoStatus({ tipo: '', mensagem: '' });
-      return;
-    }
+    if (cpf.length !== 11 || !validarDigitosCpf(cpf)) return undefined;
 
     const timeout = setTimeout(() => {
-      verificarDuplicidadeDocumento(cpf);
+      verificarDocumentoNoEffect(cpf);
     }, 450);
 
     return () => clearTimeout(timeout);
@@ -742,7 +714,7 @@ function ClienteFormPage() {
                           <>
                             <input
                               value={form.cnpj}
-                              onChange={event => atualizarCampo('cnpj', formatarCpf(event.target.value))}
+                              onChange={event => atualizarDocumento(formatarCpf(event.target.value))}
                               placeholder="000.000.000-00"
                               inputMode="numeric"
                               maxLength={14}
@@ -770,7 +742,7 @@ function ClienteFormPage() {
                           <>
                             <input
                               value={form.cnpj}
-                              onChange={event => atualizarCampo('cnpj', formatarCnpj(event.target.value))}
+                              onChange={event => atualizarDocumento(formatarCnpj(event.target.value))}
                               placeholder="00.000.000/0000-00"
                               inputMode="numeric"
                               maxLength={18}

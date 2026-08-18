@@ -1,4 +1,3 @@
-import React from 'react';
 
 /**
  * Renderiza planos manager modal.

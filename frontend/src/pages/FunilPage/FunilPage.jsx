@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -11,11 +11,8 @@ import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import ClienteModal from '../Clientes/ClienteModal';
 import VendaModal, { ArquivosVendaTab } from '../VendasPage/VendaModal';
 import VendaProblemaPanel from '../VendasPage/VendaProblemaPanel';
-import {
-  WhatsappMensagemModal,
-  montarChecklistWhatsappVenda,
-  obterDocumentosFaltantesPadrao
-} from '../VendasPage/VendasPage';
+import { WhatsappMensagemModal } from '../VendasPage/VendasPage';
+import { montarChecklistWhatsappVenda, obterDocumentosFaltantesPadrao } from '../VendasPage/vendasWhatsapp';
 import {
   atualizarEtapaFunil,
   criarEtapaFunil,
@@ -875,15 +872,13 @@ function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onOpenFul
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [revertModalOpen, setRevertModalOpen] = useState(false);
   const [historicoEventos, setHistoricoEventos] = useState(sale.historico);
-  const [historicoCarregando, setHistoricoCarregando] = useState(false);
+  const [historicoCarregando, setHistoricoCarregando] = useState(true);
   const cancelada = Boolean(sale.canceladaEm);
   const priorityInfo = getPriorityInfo(sale.priority);
   const podeAcessarDocumentos = Boolean(podeVerDocumentos || podeAdicionarDocumentos);
 
   useEffect(() => {
     let cancelado = false;
-    setHistoricoCarregando(true);
-
     buscarVendaPorId(sale.id)
       .then(venda => {
         if (cancelado) return;
@@ -901,7 +896,7 @@ function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onOpenFul
       });
 
     return () => { cancelado = true; };
-  }, [sale.id, stageLabels]);
+  }, [sale.id, sale.stage, stageLabels]);
 
   const saleComHistorico = { ...sale, historico: historicoEventos };
 
@@ -1932,7 +1927,7 @@ function FunilPage() {
   const [copiandoEmail, setCopiandoEmail] = useState(false);
   const [whatsappMensagem, setWhatsappMensagem] = useState(null);
   const [copiandoWhatsapp, setCopiandoWhatsapp] = useState(false);
-  const [agora, setAgora] = useState(Date.now);
+  const [, setAgora] = useState(Date.now);
   const [baixandoXlsxId, setBaixandoXlsxId] = useState(null);
   const [vendaCompleta, setVendaCompleta] = useState(null);
   const [dadosModalVenda, setDadosModalVenda] = useState(DADOS_MODAL_VENDA_INICIAIS);
@@ -2293,11 +2288,10 @@ function FunilPage() {
     }
   }
 
-  /* eslint-disable react-hooks/exhaustive-deps */
+  const carregarVendasInicial = useEffectEvent(carregarVendas);
   useEffect(() => {
-    carregarVendas();
+    carregarVendasInicial();
   }, []);
-  /* eslint-enable react-hooks/exhaustive-deps */
 
   useEffect(() => {
     const id = setInterval(() => setAgora(Date.now()), 30_000);
@@ -2653,6 +2647,7 @@ function FunilPage() {
     <LayoutPrivado>
       {selectedSale && (
         <SaleModal
+          key={selectedSale.id}
           sale={selectedSale}
           stages={stagesValidas}
           stageLabels={stageLabels}

@@ -1,4 +1,5 @@
 import { formatDateValue } from '../utils/datetime';
+import { formatarMensagemResumoCnpj } from './cnpjSugestoes.utils';
 
 /**
  * Formata a data de atualizacao retornada pela fonte de CNPJ.
@@ -14,25 +15,6 @@ function getConfiancaLabel(valor) {
   if (valor === 'alta') return 'alta';
   if (valor === 'baixa') return 'baixa';
   return 'media';
-}
-
-/**
- * Monta o resumo textual das fontes usadas na consulta de CNPJ.
- */
-export function formatarMensagemResumoCnpj(dados) {
-  if (!dados) return '';
-
-  const totalFontes = dados.fontesComSucesso?.length || (dados.fonte ? 1 : 0);
-  const origem = totalFontes > 1 ? `${totalFontes} fontes` : (dados.fontesComSucesso?.[0] || dados.fonte || 'fonte publica');
-  const datas = Object.values(dados.fontesPorCampo || {})
-    .map(meta => meta?.atualizadoEm)
-    .filter(Boolean)
-    .sort((a, b) => new Date(b) - new Date(a));
-  const dataMaisRecente = datas[0] ? ` Atualizado na fonte em ${formatarData(datas[0])}.` : ' Sem data de atualização informada.';
-  const alertas = dados.alertas?.length ? ` ${dados.alertas.length} alerta(s) para conferencia.` : '';
-  const cache = dados.cache ? ' Resposta do cache.' : '';
-
-  return `Sugestoes encontradas em ${origem}.${dataMaisRecente}${alertas}${cache}`;
 }
 
 /**

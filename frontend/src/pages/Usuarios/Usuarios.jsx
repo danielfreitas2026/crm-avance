@@ -13,12 +13,14 @@ import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import {
   garantirPermissaoPosVenda as garantirPermissaoPosVendaCompartilhada,
   montarGruposPermissoes as montarGruposPermissoesCompartilhados,
-  PermissaoGrupo as PermissaoGrupoCompartilhado,
-  CopiarPermissoesSelect,
   getPermissoesCopiaveis as getPermissoesCopiaveisCompartilhado,
   getPermissoesSelecionadasUsuario,
   montarPermissoesAdminParaSalvar
 } from './permissoes';
+import {
+  CopiarPermissoesSelect,
+  PermissaoGrupo as PermissaoGrupoCompartilhado
+} from './permissoes.components';
 import './Usuarios.css';
 
 /**

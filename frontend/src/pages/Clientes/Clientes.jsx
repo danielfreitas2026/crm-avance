@@ -901,8 +901,7 @@ function Clientes() {
   const podeEditar = temPermissao(usuario, 'clientes_editar');
   const podeGerenciarConsultoras = temPermissao(usuario, 'clientes_atribuir_vendedora');
   const podeExcluir = temPermissao(usuario, 'clientes_excluir');
-  const podeLimparBaseAnterior = podeExcluir;
-  const podeListarClientes = temPermissao(usuario, ['clientes_ver_proprios', 'clientes_ver_todos']);
+    const podeListarClientes = temPermissao(usuario, ['clientes_ver_proprios', 'clientes_ver_todos']);
   const podeEditarVenda = temPermissao(usuario, ['vendas_editar', 'pos_venda']);
   const podeCompartilharVenda = temPermissao(usuario, 'compartilhar_venda');
   const podeVerDocumentosVenda = temPermissao(usuario, 'vendas_documentos');
@@ -1013,24 +1012,6 @@ function Clientes() {
   }, [erro]);
 
   /**
-   * Carrega dados estaticos e atualiza o estado relacionado.
-   */
-  async function carregarDadosEstaticos() {
-    try {
-      const [operadorasData, contagemData, consultorasData] = await Promise.all([
-        listarOperadoras(),
-        contarVendasConcluidasPorCliente(),
-        podeGerenciarConsultoras ? listarVendedoras() : Promise.resolve([])
-      ]);
-      setOperadoras(operadorasData);
-      setVendasConcluidasContagem(contagemData || {});
-      if (podeGerenciarConsultoras) setVendedorasVenda(consultorasData || []);
-    } catch (error) {
-      setErro(error.message || 'Erro ao carregar dados.');
-    }
-  }
-
-  /**
    * Carrega clientes e atualiza o estado relacionado.
    */
   async function carregarClientes(proximosFiltros = filtros, pagina = paginaAtual, porPagina = itensPorPagina) {
@@ -1078,26 +1059,37 @@ function Clientes() {
     setDadosVendaModalCarregados(true);
   }
 
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
-    carregarDadosEstaticos();
-  }, []);
+    let ativo = true;
+    Promise.all([
+      listarOperadoras(),
+      contarVendasConcluidasPorCliente(),
+      podeGerenciarConsultoras ? listarVendedoras() : Promise.resolve([])
+    ])
+      .then(([operadorasData, contagemData, consultorasData]) => {
+        if (!ativo) return;
+        setOperadoras(operadorasData);
+        setVendasConcluidasContagem(contagemData || {});
+        if (podeGerenciarConsultoras) setVendedorasVenda(consultorasData || []);
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao carregar dados.');
+      });
+    return () => { ativo = false; };
+  }, [podeGerenciarConsultoras]);
 
-  useEffect(() => {
+  const chaveParametros = `${clienteIdParam}:${fidelidadeParam}:${retornoParam}`;
+  const [parametrosAplicados, setParametrosAplicados] = useState(chaveParametros);
+  if (parametrosAplicados !== chaveParametros) {
+    setParametrosAplicados(chaveParametros);
     setClienteIdFiltro(clienteIdParam);
-  }, [clienteIdParam]);
-
-  useEffect(() => {
     setFidelidade(fidelidadeParam);
-  }, [fidelidadeParam]);
-
-  useEffect(() => {
     setRetorno(retornoParam);
-  }, [retornoParam]);
+  }
 
-  useEffect(() => {
-    if (!novoClienteParam) return;
-
+  const [novoClienteProcessado, setNovoClienteProcessado] = useState(false);
+  if (novoClienteParam && !novoClienteProcessado) {
+    setNovoClienteProcessado(true);
     if (podeCriar) {
       setClienteModal(null);
       setClienteModalAba('cliente');
@@ -1106,17 +1098,40 @@ function Clientes() {
     } else {
       setErro('Você não tem permissão para cadastrar clientes.');
     }
+  } else if (!novoClienteParam && novoClienteProcessado) {
+    setNovoClienteProcessado(false);
+  }
 
+  useEffect(() => {
+    if (!novoClienteParam) return;
     const proximosParams = new URLSearchParams(searchParams);
     proximosParams.delete('novo');
     setSearchParams(proximosParams, { replace: true });
-  }, [novoClienteParam, podeCriar, searchParams, setSearchParams]);
+  }, [novoClienteParam, searchParams, setSearchParams]);
+
+  const [filtrosAplicados, setFiltrosAplicados] = useState(filtros);
+  if (filtrosAplicados !== filtros) {
+    setFiltrosAplicados(filtros);
+    setPaginaAtual(1);
+    setCarregando(true);
+  }
 
   useEffect(() => {
-    setPaginaAtual(1);
-    carregarClientes(filtros, 1);
-  }, [filtros]);
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
+    let ativo = true;
+    listarClientes({ ...filtros, page: 1, per_page: itensPorPagina })
+      .then(dados => {
+        if (!ativo) return;
+        setClientes(dados.data);
+        setTotalClientes(dados.total);
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao carregar clientes.');
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+    return () => { ativo = false; };
+  }, [filtros, itensPorPagina]);
 
   useEffect(() => {
     /**
@@ -1840,7 +1855,7 @@ function Clientes() {
             paginaAtual={paginaAtual}
             itensPorPagina={itensPorPagina}
             onPagina={pagina => { setPaginaAtual(pagina); carregarClientes(filtros, pagina); }}
-            onItensPorPagina={n => { setItensPorPagina(n); setPaginaAtual(1); carregarClientes(filtros, 1, n); }}
+            onItensPorPagina={n => { setCarregando(true); setItensPorPagina(n); setPaginaAtual(1); }}
           />
         </div>
       </div>

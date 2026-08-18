@@ -53,12 +53,8 @@ function DetalhesModal({ secao, periodo, onClose }) {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     let ativo = true;
-    setLoading(true);
-    setErro(null);
-
     getDetalhes({ secao, ...periodo })
       .then(lista => {
         if (!ativo) return;
@@ -77,7 +73,6 @@ function DetalhesModal({ secao, periodo, onClose }) {
       ativo = false;
     };
   }, [secao, periodo]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const titulosSecao = {
     total: 'Detalhes — Total de vendas',

@@ -162,8 +162,23 @@ function AdminCampanhasPage() {
     finally { setLoading(false); }
   };
   // A carga inicial sincroniza o estado local com as três fontes da tela.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    let ativo = true;
+    Promise.all([getCampanhas(), listarOperadoras(), getParticipantesCampanha()])
+      .then(([data, ops, users]) => {
+        if (!ativo) return;
+        setCampanhas(data.map(c => ({ ...c, operadora_ids: c.operadora_ids || [], participante_ids: c.participante_ids || [], venda_excecao_ids: c.venda_excecao_ids || [], vendas_excecao: c.vendas_excecao || [], regras: normalizarRegrasTela(c) })));
+        setOperadoras(ops);
+        setUsuarios(users);
+      })
+      .catch(() => {
+        if (ativo) setMessage({ type: 'error', text: 'Não foi possível carregar as campanhas.' });
+      })
+      .finally(() => {
+        if (ativo) setLoading(false);
+      });
+    return () => { ativo = false; };
+  }, []);
   useLayoutEffect(() => {
     if (campanhaAdicionadaId.current === null) return;
     const elemento = elementosCampanhas.current.get(campanhaAdicionadaId.current);

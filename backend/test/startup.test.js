@@ -35,9 +35,9 @@ test('AUTO_MIGRATE respeita configuracao explicita e ativa por padrao em produca
   assert.equal(autoMigrateAtivo('true'), true);
   assert.equal(autoMigrateAtivo(' TRUE '), true);
   assert.equal(autoMigrateAtivo('false'), false);
-  assert.equal(autoMigrateAtivo(undefined, 'production'), true);
-  assert.equal(autoMigrateAtivo(undefined, 'development'), false);
-  assert.equal(autoMigrateAtivo(undefined, 'test'), false);
+  assert.equal(autoMigrateAtivo('', 'production'), true);
+  assert.equal(autoMigrateAtivo('', 'development'), false);
+  assert.equal(autoMigrateAtivo('', 'test'), false);
 });
 
 test('executa migration, abre a API e depois inicia os agendamentos', async () => {
@@ -180,7 +180,7 @@ test('executa migration automaticamente em producao sem exigir AUTO_MIGRATE', as
     port: 3000,
     iniciarAgendamentos: () => eventos.push('agendamentos'),
     logger,
-    autoMigrate: undefined,
+    autoMigrate: '',
     ambiente: 'production'
   });
 

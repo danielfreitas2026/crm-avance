@@ -17,9 +17,9 @@ import {
   getPermissoesSelecionadasUsuario,
   montarGruposPermissoes,
   montarPermissoesAdminParaSalvar,
-  PERMISSOES_ADMIN_EXPLICITAS,
-  PermissaoGrupo
+  PERMISSOES_ADMIN_EXPLICITAS
 } from '../Usuarios/permissoes';
+import { PermissaoGrupo } from '../Usuarios/permissoes.components';
 
 import '../Usuarios/Usuarios.css';
 import './EditarUsuarioPage.css';
@@ -177,7 +177,7 @@ function EditarUsuarioPage() {
     }
 
     return m;
-  }, [nome, email, ativo, senha, roleId, permissoesSelecionadas, dadosOriginais, podeGerenciarPermissoes, isAdminEditado]);
+  }, [nome, email, ativo, senha, roleId, permissoesSelecionadas, dadosOriginais, podeGerenciarPermissoes]);
 
   const temMudancas = Object.keys(mudancas).length > 0;
   const totalMudancas = Object.keys(mudancas).length;

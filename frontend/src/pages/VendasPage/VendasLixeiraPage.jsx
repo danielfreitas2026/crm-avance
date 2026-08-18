@@ -111,11 +111,14 @@ function VendasLixeiraPage() {
     }
   }
 
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
-    carregarDados();
+    let ativo = true;
+    listarVendasLixeira({ busca: '' })
+      .then(data => { if (ativo) setVendas(data); })
+      .catch(error => { if (ativo) setErro(error.message || 'Erro ao carregar lixeira de vendas.'); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
   }, []);
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   /**
    * Trata o evento de buscar.
