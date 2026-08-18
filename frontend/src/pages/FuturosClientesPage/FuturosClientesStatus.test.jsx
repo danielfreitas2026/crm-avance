@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import {
+  AvaliacaoPrimeiraLigacao,
   LeadStatusMailing
 } from './FuturosClientesPage';
 import { getClasseLinhaLead, isVendaRecusada } from './lead-status';
@@ -35,5 +36,14 @@ describe('status de venda recusada no mailing recebido', () => {
       status_operacional: 'perdido',
       cliente_recusou: 1
     })).toBe(false);
+  });
+});
+
+describe('avaliação da primeira ligação', () => {
+  it('exibe os textos acentuados quando a ligação ainda não foi avaliada', () => {
+    render(<AvaliacaoPrimeiraLigacao linha={{}} />);
+
+    expect(screen.getByText('Avaliação da primeira ligação')).toBeVisible();
+    expect(screen.getByText('Ainda não avaliada')).toBeVisible();
   });
 });

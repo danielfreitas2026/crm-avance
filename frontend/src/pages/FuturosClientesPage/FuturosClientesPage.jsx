@@ -1210,9 +1210,9 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
     try {
       const resultado = await avaliarPrimeiraLigacaoLead(linha.id, avaliacaoPrimeiraLigacao);
       onLinhaAtualizada(resultado.linha);
-      setSucessoAvaliacao('Avaliacao da primeira ligacao salva.');
+      setSucessoAvaliacao('Avaliação da primeira ligação salva.');
     } catch (error) {
-      setErro(error.message || 'Erro ao avaliar a primeira ligacao.');
+      setErro(error.message || 'Erro ao avaliar a primeira ligação.');
     } finally {
       setSalvandoAvaliacao(false);
     }
@@ -1447,10 +1447,10 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
                   )}
                   {podeAvaliarPrimeiraLigacao && <div className="primeira-ligacao-avaliacao">
                     <div>
-                      <strong>A primeira ligacao foi assertiva?</strong>
+                      <strong>A primeira ligação foi assertiva?</strong>
                       <span>Avalie o atendimento que originou este futuro cliente.</span>
                     </div>
-                    <div className="primeira-ligacao-avaliacao__opcoes" role="group" aria-label="Avaliacao da primeira ligacao">
+                    <div className="primeira-ligacao-avaliacao__opcoes" role="group" aria-label="Avaliação da primeira ligação">
                       <label className="primeira-ligacao-avaliacao__opcao is-bom">
                         <input type="checkbox" checked={avaliacaoPrimeiraLigacao === 'bom'} onChange={() => setAvaliacaoPrimeiraLigacao(atual => atual === 'bom' ? '' : 'bom')} disabled={salvandoAvaliacao} />
                         <span>Bom</span>
@@ -2246,6 +2246,28 @@ function LeadsRecebidosView({ agora }) {
 // ─── Modal: detalhe do futuro cliente ────────────────────────────────────────
 
 /**
+ * Exibe o resultado da avaliação da primeira ligação.
+ */
+export function AvaliacaoPrimeiraLigacao({ linha }) {
+  return (
+    <div className="primeira-ligacao-avaliacao primeira-ligacao-avaliacao--somente-leitura">
+      <div>
+        <strong>Avaliação da primeira ligação</strong>
+        <span>Resultado informado pela consultora que recebeu o futuro cliente.</span>
+      </div>
+      <strong>{({
+        bom: 'Bom',
+        mais_ou_menos: 'Mais ou menos',
+        ruim: 'Ruim'
+      })[linha.primeira_ligacao_avaliacao] || 'Ainda não avaliada'}</strong>
+      {linha.primeira_ligacao_avaliada_em && (
+        <small>Registrada em {formatarDataHora(linha.primeira_ligacao_avaliada_em)}</small>
+      )}
+    </div>
+  );
+}
+
+/**
  * Renderiza futuro cliente detalhe modal.
  */
 function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVenda }) {
@@ -2406,20 +2428,7 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
             </div>
           )}
 
-          <div className="primeira-ligacao-avaliacao primeira-ligacao-avaliacao--somente-leitura">
-            <div>
-              <strong>Avaliacao da primeira ligacao</strong>
-              <span>Resultado informado pela consultora que recebeu o futuro cliente.</span>
-            </div>
-            <strong>{({
-              bom: 'Bom',
-              mais_ou_menos: 'Mais ou menos',
-              ruim: 'Ruim'
-            })[linha.primeira_ligacao_avaliacao] || 'Ainda nao avaliada'}</strong>
-            {linha.primeira_ligacao_avaliada_em && (
-              <small>Registrada em {formatarDataHora(linha.primeira_ligacao_avaliada_em)}</small>
-            )}
-          </div>
+          <AvaliacaoPrimeiraLigacao linha={linha} />
 
           <div className="futuro-cliente-form">
             <div className="futuro-cliente-form__grid">
