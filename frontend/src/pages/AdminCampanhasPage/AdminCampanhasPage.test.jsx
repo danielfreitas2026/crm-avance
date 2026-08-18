@@ -52,6 +52,39 @@ describe('AdminCampanhasPage - regras individuais', () => {
     api.updateCampanhas.mockResolvedValue({});
   });
 
+  it('oferece somente as quatro categorias ativas', async () => {
+    api.getCampanhas.mockResolvedValue([campanhaBase({ categoria: 'registro_cliente' })]);
+    render(<AdminCampanhasPage />);
+
+    const categoria = await screen.findByLabelText('Categoria');
+    expect([...categoria.options].map(option => [option.value, option.textContent])).toEqual([
+      ['registro_cliente', 'Registro de cliente'],
+      ['valor_monetario', 'Valor em vendas'],
+      ['quantidade_chip', 'Quantidade de chip'],
+      ['outros', 'Outro']
+    ]);
+  });
+
+  it('preserva a categoria legada somente na campanha que ja a utiliza', async () => {
+    render(<AdminCampanhasPage />);
+
+    const categoria = await screen.findByLabelText('Categoria');
+    expect(categoria).toHaveValue('venda');
+    expect([...categoria.options].map(option => option.value)).toEqual([
+      'registro_cliente', 'valor_monetario', 'quantidade_chip', 'outros', 'venda'
+    ]);
+    expect(screen.getByRole('option', { name: 'Venda' })).toBeInTheDocument();
+  });
+
+  it('cria novas campanhas com a categoria registro de cliente', async () => {
+    const user = userEvent.setup();
+    api.createCampanha.mockResolvedValue(campanhaBase({ id: 11, categoria: 'registro_cliente', desc: 'Registrar 1 cliente' }));
+    render(<AdminCampanhasPage />);
+
+    await user.click(await screen.findByRole('button', { name: /adicionar campanha/i }));
+    expect(api.createCampanha).toHaveBeenCalledWith(expect.objectContaining({ categoria: 'registro_cliente' }));
+  });
+
   it('mostra e leva o foco ate a campanha adicionada', async () => {
     const user = userEvent.setup();
     api.createCampanha.mockResolvedValue(campanhaBase({ id: 11, desc: 'Registrar 1 cliente' }));

@@ -41,7 +41,8 @@ const CATEGORY_LABELS = {
   portabilidade: 'Portabilidade',
   internet: 'Internet',
   valor_monetario: 'Valor em vendas',
-  outros: 'Outros',
+  quantidade_chip: 'Quantidade de chip',
+  outros: 'Outro',
 };
 
 const TIPOS_RETORNO_NOTA = [

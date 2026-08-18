@@ -1,7 +1,7 @@
 const db = require('../database/connection');
 
 const PERIODOS_VALIDOS = ['personalizado'];
-const CATEGORIAS_VALIDAS = ['registro_cliente', 'venda', 'chip_novo', 'portabilidade', 'internet', 'valor_monetario', 'outros'];
+const CATEGORIAS_VALIDAS = ['registro_cliente', 'venda', 'chip_novo', 'portabilidade', 'internet', 'valor_monetario', 'quantidade_chip', 'outros'];
 const PUBLICOS_BASE_VALIDOS = ['ambos', 'base', 'nao_base'];
 const TIPOS_REGRA_VALIDOS = ['categoria', 'chip_novo', 'portabilidade', 'novo_portabilidade', 'internet'];
 const TIPOS_CHIP_REGRA_VALIDOS = ['ambos', 'novo', 'portabilidade'];

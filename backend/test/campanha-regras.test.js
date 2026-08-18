@@ -98,6 +98,29 @@ test('filtra chips novos, portabilidades ou ambos dentro da mesma venda', () => 
   }, [venda], []), 180);
 });
 
+test('quantidade de chip soma os itens conforme as regras de elegibilidade', () => {
+  const vendas = [{
+    cliente_da_base: false,
+    valores_unitarios_chips: [
+      item(2, 'novo', 1),
+      item(3, 'portabilidade', 1),
+      item(4, 'novo', 2)
+    ]
+  }];
+  const campanha = tipo_chip => ({
+    categoria: 'quantidade_chip',
+    regras: [{ operadora_id: 1, publico_base: 'nao_base', tipo: 'categoria', tipo_chip }]
+  });
+
+  assert.equal(calcularValorCampanha(campanha('novo'), vendas, []), 2);
+  assert.equal(calcularValorCampanha(campanha('portabilidade'), vendas, []), 3);
+  assert.equal(calcularValorCampanha(campanha('ambos'), vendas, []), 5);
+  assert.equal(calcularValorCampanha({
+    categoria: 'quantidade_chip',
+    regras: [{ operadora_id: 1, publico_base: 'nao_base', tipo: 'chip_novo', tipo_chip: 'novo' }]
+  }, vendas, []), 2);
+});
+
 test('mantem ambos como padrao e nao duplica itens atendidos por regras diferentes', () => {
   const venda = {
     cliente_da_base: false,
@@ -183,6 +206,9 @@ test('valida datas reais e ordem do periodo fixo', () => {
   assert.match(validarCampanha({ ...base, data_inicio: '2026-09-01' }), /anterior ou igual/i);
   assert.equal(validarCampanha({ ...base, regras: [{ operadora_id: null, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'novo' }] }), null);
   assert.match(validarCampanha({ ...base, regras: [{ operadora_id: null, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'invalido' }] }), /regra de elegibilidade inválida/i);
+  assert.equal(validarCampanha({ ...base, categoria: 'quantidade_chip' }), null);
+  assert.match(validarCampanha({ ...base, categoria: 'outros', categoria_personalizada: '' }), /categoria personalizada/i);
+  assert.equal(validarCampanha({ ...base, categoria: 'outros', categoria_personalizada: 'Seguro' }), null);
 });
 
 test('resolve estados e transforma fim inclusivo em limite exclusivo', () => {
@@ -224,6 +250,26 @@ test('distribui itens compartilhados por vendedora e fecha com o total coletivo'
   assert.deepEqual(contribuicoes, { 10: 100, 20: 80 });
   assert.equal(ranking.reduce((soma, pessoa) => soma + pessoa.contribuicao, 0), 180);
   assert.deepEqual(ranking.map(pessoa => pessoa.id), [10, 20]);
+});
+
+test('distribui a quantidade de chips elegiveis entre as vendedoras', () => {
+  const campanha = {
+    categoria: 'quantidade_chip',
+    regras: [{ operadora_id: 1, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'ambos' }]
+  };
+  const vendas = [{
+    vendedora_id: 10,
+    valores_unitarios_chips: [
+      { ...item(2, 'novo', 1), vendedora_id: 10 },
+      { ...item(3, 'portabilidade', 1), vendedora_id: 20 },
+      { ...item(4, 'novo', 2), vendedora_id: 20 }
+    ]
+  }];
+
+  assert.deepEqual(calcularContribuicoesCampanha(campanha, vendas, [], [{ id: 10 }, { id: 20 }]), {
+    10: 2,
+    20: 3
+  });
 });
 
 test('atribui venda geral somente a vendedora principal', () => {
@@ -268,6 +314,7 @@ test('excecao ignora regras e usa a metrica integral de cada categoria', () => {
   assert.equal(calcularValorCampanha({ ...base, categoria: 'chip_novo' }, [venda], []), 5);
   assert.equal(calcularValorCampanha({ ...base, categoria: 'portabilidade' }, [venda], []), 5);
   assert.equal(calcularValorCampanha({ ...base, categoria: 'internet' }, [venda], []), 5);
+  assert.equal(calcularValorCampanha({ ...base, categoria: 'quantidade_chip' }, [venda], []), 5);
   assert.equal(calcularValorCampanha({ ...base, categoria: 'valor_monetario' }, [venda], []), 250);
 });
 
@@ -288,6 +335,23 @@ test('excecao substitui a venda regular sem duplicar e credita vendedor externo'
   assert.equal(vendas[0].__excecao, true);
   assert.deepEqual(contribuicoes, { 10: 0, 30: 1 });
   assert.equal(ranking[0].id, 30);
+});
+
+test('excecao de quantidade de chip credita todos os itens aos respectivos vendedores', () => {
+  const campanha = { categoria: 'quantidade_chip', regras: [{ operadora_id: 99, publico_base: 'base', tipo: 'internet' }] };
+  const venda = {
+    __excecao: true,
+    vendedora_id: 10,
+    valores_unitarios_chips: [
+      { ...item(2, 'novo', 1), vendedora_id: 10 },
+      { ...item(3, 'portabilidade', 2), vendedora_id: 30 }
+    ]
+  };
+
+  assert.deepEqual(calcularContribuicoesCampanha(campanha, [venda], [], [{ id: 10 }]), {
+    10: 2,
+    30: 3
+  });
 });
 
 test('lista somente vendas que efetivamente contabilizam na campanha', () => {

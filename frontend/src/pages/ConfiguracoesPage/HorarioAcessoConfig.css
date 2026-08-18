@@ -22,10 +22,16 @@
 .access-hours__save-status { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
 .access-hours__save-status.is-pending { color: var(--warn); }
 .access-hours__save-status.is-saved { color: var(--success); }
+@media (min-width: 641px) {
+  body:has(.chat-flutuante) .access-hours__actions { flex-wrap: wrap; padding-right: 154px; }
+}
 @media (max-width: 720px) {
   .access-hours__heading, .access-hours__users-title { align-items: stretch; flex-direction: column; }
   .access-hours__day { grid-template-columns: 1fr 1fr; }
   .access-hours__day-name { grid-column: 1 / -1; }
   .access-hours__user-list { grid-template-columns: 1fr; }
   .access-hours__actions { align-items: stretch; flex-direction: column; }
+}
+@media (max-width: 640px) {
+  body:has(.chat-flutuante) .access-hours__actions { padding-bottom: 68px; }
 }

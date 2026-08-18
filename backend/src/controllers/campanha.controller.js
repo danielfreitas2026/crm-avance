@@ -546,6 +546,10 @@ function calcularValorCampanha(campanha, vendas, clientes) {
       return acc + itensElegiveis.reduce((total, item) => total + item.quantidade, 0);
     }
 
+    if (categoria === 'quantidade_chip') {
+      return acc + itensElegiveis.reduce((total, item) => total + item.quantidade, 0);
+    }
+
     if (categoria === 'valor_monetario') {
       const valorItens = itensElegiveis.reduce((total, item) => total + (item.quantidade * item.valor_unitario), 0);
       return acc + (valorItens > 0 ? valorItens : Number(venda.valor_total || 0));
@@ -629,7 +633,9 @@ function calcularContribuicoesCampanha(campanha, vendas = [], clientes = [], par
 
       const servicoInternet = categoria === 'internet' && normalizarTexto(venda.servico) === 'internet';
       for (const item of itensElegiveis) {
-        const elegivel = categoria === 'chip_novo'
+        const elegivel = categoria === 'quantidade_chip'
+          ? true
+          : categoria === 'chip_novo'
           ? item.tipo === 'novo'
           : categoria === 'portabilidade'
             ? item.tipo === 'portabilidade'

@@ -6,12 +6,16 @@ import Paginacao from '../../components/Paginacao/Paginacao';
 import * as I from '../../components/Icons';
 import './AdminCampanhasPage.css';
 
-const CATEGORIAS = [['registro_cliente', 'Registro de cliente'], ['venda', 'Venda'], ['chip_novo', 'Chip novo'], ['portabilidade', 'Portabilidade'], ['internet', 'Internet'], ['valor_monetario', 'Valor em vendas'], ['outros', 'Outros']];
+const CATEGORIAS = [['registro_cliente', 'Registro de cliente'], ['valor_monetario', 'Valor em vendas'], ['quantidade_chip', 'Quantidade de chip'], ['outros', 'Outro']];
+const CATEGORIAS_LEGADAS = { venda: 'Venda', chip_novo: 'Chip novo', portabilidade: 'Portabilidade', internet: 'Internet' };
 const PUBLICOS = [['ambos', 'Clientes base e não base'], ['base', 'Somente clientes base'], ['nao_base', 'Somente clientes não base']];
 const TIPOS_REGRA = [['categoria', 'Categoria da campanha'], ['chip_novo', 'Chip novo'], ['portabilidade', 'Portabilidade'], ['novo_portabilidade', 'Novo e portabilidade'], ['internet', 'Internet']];
 const TIPOS_CHIP = [['novo', 'Novo'], ['portabilidade', 'Portabilidade'], ['ambos', 'Novo e portabilidade']];
 const alternarId = (ids, id) => ids.map(Number).includes(Number(id)) ? ids.filter(item => Number(item) !== Number(id)) : [...ids, Number(id)];
 const regraPadrao = () => ({ operadora_id: null, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'ambos' });
+const categoriasDisponiveis = categoriaAtual => CATEGORIAS.some(([valor]) => valor === categoriaAtual)
+  ? CATEGORIAS
+  : [...CATEGORIAS, [categoriaAtual, CATEGORIAS_LEGADAS[categoriaAtual] || categoriaAtual]];
 const hojeISO = () => {
   const partes = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -264,7 +268,7 @@ function AdminCampanhasPage() {
               <label className="admin-campanhas-field--wide">Nome da campanha<input value={campanha.desc || ''} onChange={e => change(campanha.id, 'desc', e.target.value)} placeholder="Ex.: Registre 10 clientes" /></label>
               <label>Data inicial{campanha.periodo_bloqueado && <small>Bloqueada após o primeiro resgate.</small>}<input type="date" value={campanha.data_inicio || ''} disabled={campanha.periodo_bloqueado} onChange={e => change(campanha.id, 'data_inicio', e.target.value)} required /></label>
               <label>Data final{campanha.periodo_bloqueado && <small>Bloqueada após o primeiro resgate.</small>}<input type="date" value={campanha.data_fim || ''} disabled={campanha.periodo_bloqueado} min={campanha.data_inicio || undefined} onChange={e => change(campanha.id, 'data_fim', e.target.value)} required /></label>
-              <label>Categoria<select value={campanha.categoria} onChange={e => change(campanha.id, 'categoria', e.target.value)}>{CATEGORIAS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+              <label>Categoria<select value={campanha.categoria} onChange={e => change(campanha.id, 'categoria', e.target.value)}>{categoriasDisponiveis(campanha.categoria).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
               <label>{campanha.categoria === 'valor_monetario' ? 'Meta (R$)' : 'Alvo'}<input type="number" min="0.01" step={campanha.categoria === 'valor_monetario' ? '0.01' : '1'} value={campanha.target} onChange={e => change(campanha.id, 'target', Number(e.target.value) || 0)} /></label>
               {campanha.categoria === 'outros' && <label className="admin-campanhas-field--wide">Nome da categoria<input value={campanha.categoria_personalizada || ''} onChange={e => change(campanha.id, 'categoria_personalizada', e.target.value)} placeholder="Ex.: Seguro" /></label>}
             </div>
