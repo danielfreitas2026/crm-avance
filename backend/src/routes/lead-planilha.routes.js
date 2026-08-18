@@ -113,7 +113,6 @@ router.put(
   }),
   leadPlanilhaController.atualizarMeuCampo
 );
-router.post('/me/linhas/:id/venda', leadPlanilhaController.vincularVenda);
 router.post(
   '/me/linhas/:id/venda-recusada',
   exigirUmaPermissao(['futuros_clientes_registrar']),
@@ -324,6 +323,45 @@ router.post(
     dados: req => ({ linha_id: req.params.id, retorno: req.body?.retorno, observacao: req.body?.observacao, usuario_id: req.usuario?.id })
   }),
   leadPlanilhaController.adminMarcarRetorno
+);
+router.get(
+  '/linhas/:id/vendas-candidatas',
+  exigirUmaPermissao(['gerenciar_leads']),
+  leadPlanilhaController.listarVendasCandidatas
+);
+router.post(
+  '/linhas/:id/venda',
+  exigirUmaPermissao(['gerenciar_leads']),
+  auditar({
+    acao: 'lead_linha.venda_vinculada_manual',
+    entidade: 'lead_linhas',
+    entidade_id: (req, resultado) => resultado?.linha_id || req.params.id,
+    dados: (req, resultado) => ({
+      linha_id: req.params.id,
+      venda_id: resultado?.venda_id || req.body?.venda_id,
+      primeira_ligacao_usuario_id: resultado?.origem_sondador_id || null,
+      vendedor_preservado_id: resultado?.vendedor_id || null,
+      gerente_id: req.usuario?.id
+    })
+  }),
+  leadPlanilhaController.adminVincularVenda
+);
+router.delete(
+  '/linhas/:id/venda',
+  exigirUmaPermissao(['gerenciar_leads']),
+  auditar({
+    acao: 'lead_linha.venda_desvinculada_manual',
+    entidade: 'lead_linhas',
+    entidade_id: (req, resultado) => resultado?.linha_id || req.params.id,
+    dados: (req, resultado) => ({
+      linha_id: req.params.id,
+      venda_id: resultado?.venda_id || null,
+      primeira_ligacao_usuario_id: resultado?.origem_sondador_id || null,
+      vendedor_preservado_id: resultado?.vendedor_id || null,
+      gerente_id: req.usuario?.id
+    })
+  }),
+  leadPlanilhaController.adminDesvincularVenda
 );
 router.get('/:id/destinatarios-envios', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.destinatariosEnviosPlanilha);
 router.post('/:id/cancelar-envios', exigirUmaPermissao(['gerenciar_leads']), auditar({ acao: 'lead_envio.cancelado', entidade: 'lead_planilhas', entidade_id: req => req.params.id, dados: req => ({ planilha_id: req.params.id, usuario_destino_id: req.body?.usuario_id || null, cancelado_por_id: req.usuario?.id }) }), leadPlanilhaController.cancelarEnviosPlanilha);

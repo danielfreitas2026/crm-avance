@@ -5,8 +5,10 @@ import DocProgresso from '../../components/DocProgresso';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import {
+  adminDesvincularVendaLead,
   adminMarcarFuturoClienteLead,
   adminMarcarVendaRecusadaLead,
+  adminVincularVendaLead,
   avaliarPrimeiraLigacaoLead,
   atualizarCampoLeadRecebido,
   excluirFuturoCliente,
@@ -14,6 +16,7 @@ import {
   exportarMetricasFuturosClientesExcel,
   listarFuturosClientesLeads,
   listarFuturosClientesLixeira,
+  listarVendasCandidatasLead,
   listarQuadroFuturosClientes,
   listarMetricasFuturosClientes,
   listarMeusLeadEnvios,
@@ -2267,6 +2270,145 @@ export function AvaliacaoPrimeiraLigacao({ linha }) {
   );
 }
 
+/** Permite ao gerente escolher e confirmar uma venda existente do mesmo CNPJ. */
+export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }) {
+  const [dados, setDados] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+  const [processando, setProcessando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [confirmacao, setConfirmacao] = useState(null);
+
+  useEffect(() => {
+    let ativo = true;
+    listarVendasCandidatasLead(linha.id)
+      .then(resultado => {
+        if (ativo) setDados(resultado);
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao localizar vendas do CNPJ.');
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+    return () => { ativo = false; };
+  }, [linha.id]);
+
+  async function confirmarAcao() {
+    setProcessando(true);
+    setErro('');
+    try {
+      const resultado = confirmacao.tipo === 'desvincular'
+        ? await adminDesvincularVendaLead(linha.id)
+        : await adminVincularVendaLead(linha.id, confirmacao.venda.id);
+      onAtualizado(resultado.linha);
+    } catch (error) {
+      setErro(error.message || 'Nao foi possivel atualizar o vinculo.');
+      setConfirmacao(null);
+      setProcessando(false);
+    }
+  }
+
+  const vendaConfirmada = confirmacao?.venda || dados?.vinculo_atual?.venda;
+  return (
+    <div className="modal-overlay">
+      <div className="modal vincular-venda-modal" role="dialog" aria-modal="true" aria-label="Vincular venda">
+        <div className="modal-header">
+          <div className="modal-header-row">
+            <div>
+              <div className="modal-client">Gerenciar vínculo de venda</div>
+              <div className="modal-sub">Futuro cliente #{linha.id}</div>
+            </div>
+            <button type="button" className="btn btn-icon btn-ghost" title="Fechar" onClick={onClose} disabled={processando}>
+              <I.Close size={14} />
+            </button>
+          </div>
+        </div>
+
+        <div className="modal-body">
+          {carregando && <div className="vincular-venda-estado">Buscando vendas do mesmo CNPJ...</div>}
+          {erro && <div className="alert-error">{erro}</div>}
+
+          {!carregando && dados && (
+            <>
+              <div className="vincular-venda-resumo">
+                <span>CNPJ pesquisado</span>
+                <strong>{formatarCnpj(dados.cnpj)}</strong>
+                <small>Origem: {dados.cnpj_origem === 'sondagem' ? 'sondagem' : 'mailing'}</small>
+              </div>
+
+              {dados.vinculo_atual && (
+                <div className="vincular-venda-atual">
+                  <div>
+                    <strong>Venda vinculada: #{dados.vinculo_atual.venda.id}</strong>
+                    <span>{dados.vinculo_atual.venda.razao_social || 'Razão social não informada'}</span>
+                  </div>
+                  {dados.vinculo_atual.pode_desvincular ? (
+                    <button type="button" className="btn btn-danger" onClick={() => setConfirmacao({ tipo: 'desvincular' })}>
+                      Desvincular venda
+                    </button>
+                  ) : (
+                    <small>Este vínculo veio do cadastro direto da venda e não pode ser desfeito por este fluxo.</small>
+                  )}
+                </div>
+              )}
+
+              {!dados.vendas.length ? (
+                <div className="vincular-venda-estado">Nenhuma venda não excluída foi encontrada para este CNPJ.</div>
+              ) : (
+                <div className="vincular-venda-lista">
+                  {dados.vendas.map(venda => (
+                    <article className={`vincular-venda-item${venda.disponivel ? '' : ' is-blocked'}`} key={venda.id}>
+                      <div className="vincular-venda-item__topo">
+                        <div>
+                          <strong>Venda #{venda.id}</strong>
+                          <span>{venda.razao_social || 'Razão social não informada'}</span>
+                        </div>
+                        <strong>{Number(venda.valor_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                      </div>
+                      <div className="vincular-venda-item__dados">
+                        <span>Data: {formatarData(venda.data_venda)}</span>
+                        <span>Etapa: {venda.status_funil_nome}</span>
+                        <span>Vendedor(es): {venda.vendedores.map(item => item.nome).join(', ') || '-'}</span>
+                        <span>Criador: {venda.criador?.nome || '-'}</span>
+                      </div>
+                      {venda.motivo_bloqueio ? (
+                        <div className="vincular-venda-bloqueio"><I.AlertTriangle size={14} /> {venda.motivo_bloqueio}</div>
+                      ) : (
+                        <button type="button" className="btn btn-primary" onClick={() => setConfirmacao({ tipo: 'vincular', venda })}>
+                          Selecionar venda
+                        </button>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {confirmacao && (
+            <div className="vincular-venda-confirmacao" role="alertdialog" aria-label="Confirmar vínculo">
+              <strong>{confirmacao.tipo === 'desvincular' ? 'Confirmar desvínculo?' : `Vincular a venda #${vendaConfirmada?.id}?`}</strong>
+              <span>{confirmacao.tipo === 'desvincular'
+                ? 'O futuro cliente e a atribuição comercial voltarão exatamente ao estado anterior salvo.'
+                : 'Esta ação marcará o futuro cliente como venda concluída. Os vendedores e a autoria da venda não serão alterados.'}</span>
+              <div>
+                <button type="button" className="btn" onClick={() => setConfirmacao(null)} disabled={processando}>Cancelar</button>
+                <button type="button" className={confirmacao.tipo === 'desvincular' ? 'btn btn-danger' : 'btn btn-primary'} onClick={confirmarAcao} disabled={processando}>
+                  {processando ? 'Processando...' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose} disabled={processando}>Fechar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Renderiza futuro cliente detalhe modal.
  */
@@ -2274,6 +2416,7 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
   const vendaRegistrada = isFuturoClienteVendido(linha);
   const vendaRecusada = isVendaRecusada(linha);
   const [etapa, setEtapa] = useState('ver'); // 'ver' | 'venda'
+  const [vinculoAberto, setVinculoAberto] = useState(false);
   const [notas, setNotas] = useState(linha.futuro_cliente_notas || '');
   const [motivoRecusa, setMotivoRecusa] = useState(linha.venda_recusada_motivo || '');
   const [retorno, setRetorno] = useState(formatarParaDatetimeLocal(linha.futuro_cliente_retorno));
@@ -2375,6 +2518,16 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
         usuario={usuario}
         onClose={onClose}
         onConfirm={onRegistrarVenda}
+      />
+    );
+  }
+
+  if (vinculoAberto) {
+    return (
+      <VincularVendaFuturoClienteModal
+        linha={linha}
+        onClose={() => setVinculoAberto(false)}
+        onAtualizado={onAtualizado}
       />
     );
   }
@@ -2532,13 +2685,19 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
 
         <div className="modal-footer">
           {vendaRegistrada ? (
-            <div className="lead-already-qualified-notice">Este futuro cliente ja possui uma venda registrada. Acesse a pagina de Vendas para visualizar a venda.</div>
+            <>
+              <div className="lead-already-qualified-notice">Este futuro cliente ja possui uma venda registrada. Acesse a pagina de Vendas para visualizar a venda.</div>
+              {comoAdmin && <button type="button" className="btn" onClick={() => setVinculoAberto(true)}>Gerenciar vínculo</button>}
+            </>
           ) : vendaRecusada ? (
             <div className="futuro-cliente-recusa is-saved">Venda recusada para este futuro cliente.</div>
           ) : (
-            <button type="button" className="btn" onClick={() => setEtapa('venda')} disabled={salvando}>
-              <I.Chart size={14} /> Registrar venda
-            </button>
+            <>
+              <button type="button" className="btn" onClick={() => setEtapa('venda')} disabled={salvando}>
+                <I.Chart size={14} /> Registrar venda
+              </button>
+              {comoAdmin && <button type="button" className="btn btn-primary" onClick={() => setVinculoAberto(true)} disabled={salvando}>Vincular venda</button>}
+            </>
           )}
           <div style={{ flex: 1 }} />
           <button type="button" className="btn" onClick={onClose} disabled={salvando}>Cancelar</button>

@@ -281,8 +281,16 @@ export function avaliarPrimeiraLigacaoLead(linhaId, avaliacao) {
   return apiPost(`/lead-planilhas/me/linhas/${linhaId}/avaliacao-primeira-ligacao`, { avaliacao });
 }
 
-export function vincularVendaLead(linhaId, vendaId) {
-  return apiPost(`/lead-planilhas/me/linhas/${linhaId}/venda`, { venda_id: vendaId });
+export function listarVendasCandidatasLead(linhaId) {
+  return apiGet(`/lead-planilhas/linhas/${linhaId}/vendas-candidatas`);
+}
+
+export function adminVincularVendaLead(linhaId, vendaId) {
+  return apiPost(`/lead-planilhas/linhas/${linhaId}/venda`, { venda_id: vendaId });
+}
+
+export function adminDesvincularVendaLead(linhaId) {
+  return apiDelete(`/lead-planilhas/linhas/${linhaId}/venda`);
 }
 
 export function marcarVendaRecusadaLead(linhaId, motivo) {

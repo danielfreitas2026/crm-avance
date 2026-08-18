@@ -354,9 +354,10 @@ function aplicarFiltrosFuturosClientes(query, filtros = {}) {
   const retorno = String(filtros.retorno || '').trim();
 
   if (situacao === 'em_negociacao') {
-    query.where(builder => builder
-      .whereNull('status_operacional')
-      .orWhereNotIn('status_operacional', ['vendido', 'perdido']));
+    query.whereNull('venda_id')
+      .where(builder => builder
+        .whereNull('status_operacional')
+        .orWhereNotIn('status_operacional', ['vendido', 'perdido']));
   } else if (situacao === 'venda_concluida') {
     query.where(builder => builder
       .where('status_operacional', 'vendido')
@@ -2784,7 +2785,6 @@ async function listarFuturosClientes(filtros = {}, usuarioId) {
 }
 
 async function obterMetricasFuturosClientes(filtros = {}) {
-  await reconciliarVendasFuturosClientesSemOrigem();
   const usuarioResponsavel = 'COALESCE(ll.primeira_ligacao_usuario_id, ll.futuro_cliente_marcado_por_id, ll.retorno_agendado_por_id, ll.cliente_recusou_por_id, ll.chamada_nao_atendida_por_id)';
   // O histórico é preenchido no reenvio para que a métrica continue refletindo a
   // primeira tentativa, mesmo que o status operacional da linha seja reaberto.
@@ -3010,100 +3010,6 @@ async function linhaPossuiVendaPorCnpj(linha, trx = db) {
     .first('v.id');
 
   return Boolean(venda);
-}
-
-async function reconciliarVendasFuturosClientesSemOrigem() {
-  const vendas = await db('vendas')
-    .whereNull('origem_lead_linha_id')
-    .whereNull('excluido_em')
-    .whereNotNull('cnpj')
-    .select('id', 'cliente_id', 'cnpj', 'vendedora_id', 'criado_por_id', 'created_at')
-    .orderBy('id', 'desc')
-    .limit(500);
-  if (!vendas.length) return 0;
-
-  const linhas = await db('lead_linhas')
-    .where('futuro_cliente', true)
-    .whereNull('futuro_cliente_excluido_em')
-    .whereNull('venda_id')
-    .select('id', 'dados_json', 'atribuido_para_id', 'futuro_cliente_marcado_por_id', 'futuro_cliente_marcado_em');
-  const index = new Map();
-  linhas.forEach(linha => extrairCnpjsLinha(linha).forEach(cnpj => {
-    const lista = index.get(cnpj) || [];
-    lista.push(linha);
-    index.set(cnpj, lista);
-  }));
-
-  let total = 0;
-  for (const venda of vendas) {
-    const cnpj = String(venda.cnpj || '').replace(/\D/g, '');
-    const candidatos = (index.get(cnpj) || []).filter(linha => {
-      const vendedorCorresponde = Number(linha.atribuido_para_id) === Number(venda.vendedora_id)
-        || Number(linha.atribuido_para_id) === Number(venda.criado_por_id);
-      return vendedorCorresponde && (!linha.futuro_cliente_marcado_em || !venda.created_at
-        || new Date(linha.futuro_cliente_marcado_em) <= new Date(venda.created_at));
-    });
-    if (candidatos.length !== 1) continue;
-    const linha = candidatos[0];
-    await db.transaction(async trx => {
-      await trx('vendas').where('id', venda.id).whereNull('origem_lead_linha_id').update({
-        origem_lead_linha_id: linha.id,
-        origem_sondador_id: linha.futuro_cliente_marcado_por_id
-      });
-      await trx('lead_linhas').where('id', linha.id).whereNull('venda_id').update({
-        venda_id: venda.id,
-        cliente_id: venda.cliente_id || null,
-        etapa_atual: 'venda',
-        status_operacional: 'vendido',
-        updated_at: new Date()
-      });
-      if (venda.cliente_id) {
-        await trx('clientes').where('id', venda.cliente_id).update({
-          origem_lead_linha_id: linha.id,
-          origem_sondador_id: linha.futuro_cliente_marcado_por_id,
-          updated_at: new Date()
-        });
-      }
-      await trx('lead_atribuicoes')
-        .where({ lead_linha_id: linha.id, etapa: 'venda' })
-        .orderBy('id', 'desc').limit(1)
-        .update({ status: 'vendido', finalizado_em: venda.created_at || new Date(), updated_at: new Date() });
-    });
-    total += 1;
-    index.delete(cnpj);
-  }
-  return total;
-}
-
-async function vincularVendaAoLead(linhaId, vendaId, usuarioId) {
-  const venda = await db('vendas').where('id', Number(vendaId)).first();
-  if (!venda) throw criarHttpError(404, 'Venda nao encontrada.');
-  if (Number(venda.criado_por_id) !== Number(usuarioId) && Number(venda.vendedora_id) !== Number(usuarioId)) {
-    throw criarHttpError(403, 'Voce nao pode vincular esta venda ao lead.');
-  }
-  const linha = await LeadLinha.query().findById(Number(linhaId));
-  if (!linha || Number(linha.atribuido_para_id) !== Number(usuarioId)) {
-    throw criarHttpError(403, 'Lead nao encontrado ou atribuido a outro usuario.');
-  }
-  await LeadLinha.transaction(async trx => {
-    await LeadLinha.query(trx).patchAndFetchById(linha.id, {
-      venda_id: Number(vendaId), cliente_id: venda.cliente_id || null,
-      venda_recusada_motivo: null, venda_recusada_em: null, venda_recusada_por_id: null,
-      etapa_atual: 'venda', status_operacional: 'vendido'
-    });
-    const atribuicao = await LeadAtribuicao.query(trx)
-      .where({ lead_linha_id: linha.id, usuario_id: usuarioId, etapa: 'venda' })
-      .orderBy('id', 'desc').first();
-    if (atribuicao) {
-      await LeadAtribuicao.query(trx).patchAndFetchById(atribuicao.id, {
-        status: 'vendido',
-        finalizado_em: formatarDateTimeSQL(),
-        acao_registrada_em: formatarDateTimeSQL(),
-        acao_registrada_tipo: 'venda_registrada'
-      });
-    }
-  });
-  return { linha_id: Number(linhaId), venda_id: Number(vendaId), cliente_id: venda.cliente_id || null };
 }
 
 async function marcarVendaRecusadaLead(linhaId, usuarioId, dados = {}, opcoes = {}) {
@@ -3600,7 +3506,6 @@ module.exports = {
   listarFuturosClientes,
   obterMetricasFuturosClientes,
   gerarXlsxProdutividadePrimeiraLigacao,
-  vincularVendaAoLead,
   marcarVendaRecusadaLead,
   reverterVendaRecusadaLead,
   marcarClienteRecusouLead,
@@ -3614,6 +3519,7 @@ module.exports = {
   restaurarFuturoCliente,
   excluirFuturoClienteDefinitivo,
   _internals: {
+    aplicarFiltrosFuturosClientes,
     aplicarFiltrosQuery,
     aplicarFiltroVendaRecusada,
     combinarMetricasEnvio,

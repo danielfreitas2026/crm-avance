@@ -588,6 +588,145 @@
   max-width: 96vw;
 }
 
+.vincular-venda-modal {
+  width: 760px;
+  max-width: 96vw;
+}
+
+.vincular-venda-resumo,
+.vincular-venda-atual,
+.vincular-venda-confirmacao {
+  display: flex;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.vincular-venda-resumo {
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.vincular-venda-resumo span {
+  color: var(--text-2);
+}
+
+.vincular-venda-resumo small {
+  margin-left: auto;
+  color: var(--text-2);
+}
+
+.vincular-venda-atual {
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.vincular-venda-atual > div,
+.vincular-venda-confirmacao {
+  flex-direction: column;
+}
+
+.vincular-venda-atual span,
+.vincular-venda-atual small,
+.vincular-venda-confirmacao span {
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+.vincular-venda-lista {
+  display: grid;
+  gap: 10px;
+  max-height: 430px;
+  margin-top: 14px;
+  overflow-y: auto;
+}
+
+.vincular-venda-item {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.vincular-venda-item.is-blocked {
+  background: var(--surface-2);
+  opacity: 0.8;
+}
+
+.vincular-venda-item__topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.vincular-venda-item__topo > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.vincular-venda-item__topo span,
+.vincular-venda-item__dados {
+  color: var(--text-2);
+}
+
+.vincular-venda-item__dados {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 16px;
+  font-size: 0.85rem;
+}
+
+.vincular-venda-item > .btn {
+  align-self: flex-end;
+}
+
+.vincular-venda-bloqueio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.vincular-venda-estado {
+  padding: 28px 12px;
+  color: var(--text-2);
+  text-align: center;
+}
+
+.vincular-venda-confirmacao {
+  margin-top: 14px;
+  border-color: var(--primary);
+}
+
+.vincular-venda-confirmacao > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+@media (max-width: 640px) {
+  .vincular-venda-atual,
+  .vincular-venda-item__topo {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .vincular-venda-item__dados {
+    grid-template-columns: 1fr;
+  }
+}
+
 .adicionar-lead-dados {
   display: grid;
   grid-template-columns: 1fr 1fr;

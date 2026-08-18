@@ -6,6 +6,7 @@
  */
 const leadPlanilhaService = require('../services/lead-planilha.service');
 const leadDistribuicaoService = require('../services/lead-distribuicao.service');
+const leadVendaVinculoManualService = require('../services/lead-venda-vinculo-manual.service');
 
 /**
  * Processa index conforme as regras do dominio.
@@ -403,12 +404,38 @@ async function exportarMetricasFuturosClientes(req, res) {
   }
 }
 
-async function vincularVenda(req, res) {
+async function listarVendasCandidatas(req, res) {
   try {
-    return res.json(await leadPlanilhaService.vincularVendaAoLead(req.params.id, req.body?.venda_id, req.usuario.id));
+    return res.json(await leadVendaVinculoManualService.listarVendasCandidatas(req.params.id));
   } catch (error) {
     console.error(error);
-    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao vincular venda ao lead.' });
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao localizar vendas candidatas.' });
+  }
+}
+
+async function adminVincularVenda(req, res) {
+  try {
+    const resultado = await leadVendaVinculoManualService.vincularVenda(
+      req.params.id,
+      req.body?.venda_id,
+      req.usuario.id
+    );
+    const linha = await leadPlanilhaService.buscarLinhaFormatada(req.params.id);
+    return res.json({ ...resultado, linha: linha.linha });
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao vincular venda ao futuro cliente.' });
+  }
+}
+
+async function adminDesvincularVenda(req, res) {
+  try {
+    const resultado = await leadVendaVinculoManualService.desvincularVenda(req.params.id, req.usuario.id);
+    const linha = await leadPlanilhaService.buscarLinhaFormatada(req.params.id);
+    return res.json({ ...resultado, linha: linha.linha });
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao desvincular venda do futuro cliente.' });
   }
 }
 
@@ -662,7 +689,9 @@ module.exports = {
   republicarPendentesAntigosTelegram,
   metricasFuturosClientes,
   exportarMetricasFuturosClientes,
-  vincularVenda,
+  listarVendasCandidatas,
+  adminVincularVenda,
+  adminDesvincularVenda,
   marcarVendaRecusada,
   marcarClienteRecusou,
   reverterClienteRecusou,
