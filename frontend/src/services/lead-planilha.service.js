@@ -285,12 +285,15 @@ export function avaliarPrimeiraLigacaoLead(linhaId, avaliacao) {
   return apiPost(`/lead-planilhas/me/linhas/${linhaId}/avaliacao-primeira-ligacao`, { avaliacao });
 }
 
-export function listarVendasCandidatasLead(linhaId) {
-  return apiGet(`/lead-planilhas/linhas/${linhaId}/vendas-candidatas`);
+export function listarVendasCandidatasLead(linhaId, cnpj) {
+  const query = cnpj ? `?cnpj=${encodeURIComponent(cnpj)}` : '';
+  return apiGet(`/lead-planilhas/linhas/${linhaId}/vendas-candidatas${query}`);
 }
 
-export function adminVincularVendaLead(linhaId, vendaId) {
-  return apiPost(`/lead-planilhas/linhas/${linhaId}/venda`, { venda_id: vendaId });
+export function adminVincularVendaLead(linhaId, vendaId, cnpj) {
+  const payload = { venda_id: vendaId };
+  if (cnpj) payload.cnpj = cnpj;
+  return apiPost(`/lead-planilhas/linhas/${linhaId}/venda`, payload);
 }
 
 export function adminDesvincularVendaLead(linhaId) {
@@ -436,6 +439,11 @@ export function aceitarFuturoCliente(linhaId) {
 /** Recusa a indicacao e a devolve para novo encaminhamento. */
 export function recusarFuturoCliente(linhaId, motivo = '') {
   return apiPost(`/lead-planilhas/me/futuros-clientes/${linhaId}/recusar`, { motivo });
+}
+
+/** Envia um futuro cliente reservado na carteira para a distribuicao do Telegram. */
+export function enviarFuturoClienteParaDistribuicao(linhaId) {
+  return apiPost(`/lead-planilhas/me/futuros-clientes/${linhaId}/distribuir`, {});
 }
 
 /**

@@ -36,6 +36,8 @@ function resposta(vendas = [vendaDisponivel], vinculoAtual = null) {
     futuro_cliente_id: 8,
     cnpj: '12345678000190',
     cnpj_origem: 'sondagem',
+    cnpj_original: '12345678000190',
+    cnpj_original_origem: 'sondagem',
     vinculo_atual: vinculoAtual,
     vendas
   };
@@ -67,8 +69,54 @@ describe('modal de vínculo manual de venda', () => {
     expect(adminVincularVendaLead).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Confirmar' }));
-    await waitFor(() => expect(adminVincularVendaLead).toHaveBeenCalledWith(8, 21));
+    await waitFor(() => expect(adminVincularVendaLead).toHaveBeenCalledWith(8, 21, '12345678000190'));
     expect(onAtualizado).toHaveBeenCalledWith({ id: 8, venda_id: 21 });
+  });
+
+  it('busca por CNPJ alternativo, invalida a lista anterior e avisa antes de vincular', async () => {
+    const vendaAlternativa = { ...vendaDisponivel, id: 31, razao_social: 'Empresa Alternativa' };
+    listarVendasCandidatasLead
+      .mockResolvedValueOnce(resposta())
+      .mockResolvedValueOnce({
+        ...resposta([vendaAlternativa]),
+        cnpj: '17025544000704',
+        cnpj_origem: 'informado'
+      });
+    adminVincularVendaLead.mockResolvedValue({ linha: { id: 8, venda_id: 31 } });
+    const user = userEvent.setup();
+
+    render(<VincularVendaFuturoClienteModal linha={{ id: 8 }} onClose={vi.fn()} onAtualizado={vi.fn()} />);
+    const input = await screen.findByRole('textbox', { name: 'CNPJ para buscar vendas' });
+    expect(input).toHaveValue('12.345.678/0001-90');
+    expect(screen.getByText('Empresa Correta')).toBeVisible();
+
+    await user.clear(input);
+    await user.type(input, '17025544000704');
+    expect(screen.queryByText('Empresa Correta')).not.toBeInTheDocument();
+    expect(screen.getByText('Clique em Buscar para atualizar as vendas deste CNPJ.')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+    await waitFor(() => expect(listarVendasCandidatasLead).toHaveBeenLastCalledWith(8, '17025544000704'));
+    expect(await screen.findByText('Empresa Alternativa')).toBeVisible();
+    expect(screen.getByText(/O CNPJ original do futuro cliente não será alterado/)).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Selecionar venda' }));
+    expect(screen.getByText(/diferente do cadastro/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await waitFor(() => expect(adminVincularVendaLead).toHaveBeenCalledWith(8, 31, '17025544000704'));
+  });
+
+  it('nao pesquisa enquanto o CNPJ digitado estiver incompleto', async () => {
+    listarVendasCandidatasLead.mockResolvedValue(resposta());
+    const user = userEvent.setup();
+
+    render(<VincularVendaFuturoClienteModal linha={{ id: 8 }} onClose={vi.fn()} onAtualizado={vi.fn()} />);
+    const input = await screen.findByRole('textbox', { name: 'CNPJ para buscar vendas' });
+    await user.clear(input);
+    await user.type(input, '123');
+
+    expect(screen.getByRole('button', { name: 'Buscar' })).toBeDisabled();
+    expect(listarVendasCandidatasLead).toHaveBeenCalledTimes(1);
   });
 
   it('exibe lista vazia e erro de busca', async () => {

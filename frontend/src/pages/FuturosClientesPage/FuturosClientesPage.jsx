@@ -16,6 +16,7 @@ import {
   adminVincularVendaLead,
   avaliarPrimeiraLigacaoLead,
   atualizarCampoLeadRecebido,
+  enviarFuturoClienteParaDistribuicao,
   excluirFuturoCliente,
   excluirFuturoClienteDefinitivo,
   exportarMetricasFuturosClientesExcel,
@@ -867,7 +868,7 @@ function formatarWhatsappSondagem(sondagem) {
   return sondagem?.whatsapp_ddd ? `(${sondagem.whatsapp_ddd}) ${sondagem.whatsapp_numero || ''}` : '-';
 }
 
-function ChipsItensSondagem({ itens, onChange, disabled }) {
+function ChipsItensSondagem({ itens, onChange, disabled, complementoRodape = null }) {
   function atualizar(index, campo, valor) {
     onChange(itens.map((item, itemIndex) => itemIndex === index ? { ...item, [campo]: valor } : item));
   }
@@ -875,6 +876,11 @@ function ChipsItensSondagem({ itens, onChange, disabled }) {
     if (itens.length <= 1) return;
     onChange(itens.filter((_, itemIndex) => itemIndex !== index));
   }
+  const botaoAdicionar = (
+    <button type="button" className="btn btn-sm chips-sondagem-add" onClick={() => onChange([...itens, { quantidade: '', preco_por_chip: '' }])} disabled={disabled}>
+      <I.Plus size={14} /> Adicionar outro valor de chip
+    </button>
+  );
   return (
     <div className="chips-sondagem-editor">
       {itens.map((item, index) => (
@@ -892,9 +898,12 @@ function ChipsItensSondagem({ itens, onChange, disabled }) {
           )}
         </div>
       ))}
-      <button type="button" className="btn btn-sm chips-sondagem-add" onClick={() => onChange([...itens, { quantidade: '', preco_por_chip: '' }])} disabled={disabled}>
-        <I.Plus size={14} /> Adicionar outro valor de chip
-      </button>
+      {complementoRodape ? (
+        <div className="chips-sondagem-footer">
+          {botaoAdicionar}
+          {complementoRodape}
+        </div>
+      ) : botaoAdicionar}
     </div>
   );
 }
@@ -1184,8 +1193,44 @@ function EnriquecimentoAutomatico({ enriquecimento }) {
   );
 }
 
+export function EscolherDestinoFuturoClienteModal({ processando, onClose, onChoose }) {
+  const dialogRef = useDialogAcessivel(onClose, processando);
+  return (
+    <div className="modal-overlay futuro-cliente-destino-overlay">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="futuro-cliente-destino-titulo" className="modal futuro-cliente-destino-modal">
+        <div className="modal-header">
+          <div className="modal-header-row">
+            <div>
+              <div id="futuro-cliente-destino-titulo" className="modal-client">O que deseja fazer com este futuro cliente?</div>
+              <div className="modal-sub">Escolha onde ele ficará após o cadastro.</div>
+            </div>
+            <button type="button" className="btn btn-icon btn-ghost" aria-label="Fechar escolha de destino" onClick={onClose} disabled={processando}>
+              <I.Close size={14} />
+            </button>
+          </div>
+        </div>
+        <div className="modal-body futuro-cliente-destino-modal__opcoes">
+          <button type="button" className="futuro-cliente-destino-opcao" onClick={() => onChoose('carteira')} disabled={processando}>
+            <I.User size={22} />
+            <span><strong>Ficar comigo</strong><small>Mantenha o futuro cliente na sua carteira para acompanhar depois.</small></span>
+          </button>
+          <button type="button" className="futuro-cliente-destino-opcao is-primary" onClick={() => onChoose('distribuicao')} disabled={processando}>
+            <I.Send size={22} />
+            <span><strong>Enviar para distribuição</strong><small>Publique no Telegram para que outra consultora possa assumir.</small></span>
+          </button>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose} disabled={processando}>Voltar ao formulário</button>
+          {processando && <span className="muted">Salvando futuro cliente...</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda, onFuturoClienteSalvo, onLinhaAtualizada }) {
-  const dialogRef = useDialogAcessivel(onClose);
+  const [confirmacaoDestinoAberta, setConfirmacaoDestinoAberta] = useState(false);
+  const dialogRef = useDialogAcessivel(onClose, confirmacaoDestinoAberta);
   const vendaRegistrada = isFuturoClienteVendido(linha);
   const vendaRecusada = isVendaRecusada(linha);
   const clienteRecusou = Boolean(linha.cliente_recusou);
@@ -1379,20 +1424,24 @@ export function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistr
   /**
    * Salva futuro cliente com os dados informados.
    */
-  async function salvarFuturoCliente(event) {
+  function salvarFuturoCliente(event) {
     event.preventDefault();
+    setErro('');
+    const retornoIso = datetimeRetornoParaIso(retorno);
+    if (retorno && !retornoIso) {
+      setErro('Informe uma data e hora de retorno validas.');
+      return;
+    }
+    setConfirmacaoDestinoAberta(true);
+  }
+
+  async function confirmarDestinoFuturoCliente(destino) {
     setSalvando(true);
     setErro('');
-
     try {
       const retornoIso = datetimeRetornoParaIso(retorno);
-      if (retorno && !retornoIso) {
-        setErro('Informe uma data e hora de retorno validas.');
-        setSalvando(false);
-        return;
-      }
-
       const resultado = await marcarFuturoClienteLead(linha.id, {
+        destino,
         notas,
         retorno: retornoIso,
         razao_social: razaoSocial,
@@ -1412,6 +1461,7 @@ export function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistr
     } catch (error) {
       setErro(error.message || 'Erro ao registrar futuro cliente.');
       setSalvando(false);
+      setConfirmacaoDestinoAberta(false);
     }
   }
 
@@ -1442,7 +1492,7 @@ export function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistr
           </div>
         </div>
 
-        <div className={`modal-body${etapa === 'opcoes' ? ' adicionar-lead-modal__body--opcoes' : ''}`}>
+        <div className={`modal-body${etapa === 'opcoes' ? ' adicionar-lead-modal__body--opcoes' : ' adicionar-lead-modal__body--futuro'}`}>
           <section className="adicionar-lead-informacoes" aria-label="Informações da planilha">
             <div className={`adicionar-lead-dados${linha.enriquecimento ? ' adicionar-lead-dados--with-enriquecimento' : ''}`}>
               {camposLead.map(({ label, valor }) => (
@@ -1686,7 +1736,7 @@ export function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistr
           )}
 
           {etapa === 'futuro' && (
-            <form className="futuro-cliente-form" onSubmit={salvarFuturoCliente}>
+            <form className="futuro-cliente-form" aria-label="Registrar futuro cliente" onSubmit={salvarFuturoCliente}>
               <div className="futuro-cliente-form__grid">
                 <div className="form-field">
                   <label>CNPJ</label>
@@ -1716,13 +1766,14 @@ export function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistr
                   {operadoras.map(operadora => <option key={operadora.id} value={operadora.id}>{operadora.nome}</option>)}
                 </select>
               </div>
-              <ChipsItensSondagem itens={chipsItens} onChange={setChipsItens} disabled={salvando} />              <div className="form-field">
+              <div className="form-field">
                 <label>Operadora de interesse</label>
                 <select value={operadoraInteresseId} onChange={event => setOperadoraInteresseId(event.target.value)} disabled={salvando}>
                   <option value="">Selecione</option>
                   {operadoras.map(operadora => <option key={operadora.id} value={operadora.id}>{operadora.nome}</option>)}
                 </select>
               </div>
+              <ChipsItensSondagem itens={chipsItens} onChange={setChipsItens} disabled={salvando} />
               <div className="futuro-cliente-estimativa">
                 <span>Media mensal estimada</span>
                 <strong>{valorMensalEstimado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
@@ -1790,6 +1841,13 @@ export function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistr
           )}
         </div>
       </div>
+      {confirmacaoDestinoAberta && (
+        <EscolherDestinoFuturoClienteModal
+          processando={salvando}
+          onClose={() => setConfirmacaoDestinoAberta(false)}
+          onChoose={confirmarDestinoFuturoCliente}
+        />
+      )}
       {buscaGoogleAberta && <BuscarTelefoneGoogleModal linha={linha} onClose={() => setBuscaGoogleAberta(false)} />}
     </div>
   );
@@ -2392,7 +2450,11 @@ export function AvaliacaoPrimeiraLigacao({ linha }) {
 /** Permite ao gerente escolher e confirmar uma venda existente do mesmo CNPJ. */
 export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }) {
   const dialogRef = useDialogAcessivel(onClose);
+  const buscaSequenciaRef = useRef(0);
   const [dados, setDados] = useState(null);
+  const [cnpjInput, setCnpjInput] = useState('');
+  const [cnpjPesquisado, setCnpjPesquisado] = useState('');
+  const [buscaPendente, setBuscaPendente] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState('');
@@ -2402,7 +2464,12 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
     let ativo = true;
     listarVendasCandidatasLead(linha.id)
       .then(resultado => {
-        if (ativo) setDados(resultado);
+        if (ativo) {
+          setDados(resultado);
+          setCnpjInput(formatarCnpj(resultado.cnpj));
+          setCnpjPesquisado(resultado.cnpj);
+          setBuscaPendente(false);
+        }
       })
       .catch(error => {
         if (ativo) setErro(error.message || 'Erro ao localizar vendas do CNPJ.');
@@ -2410,8 +2477,48 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
       .finally(() => {
         if (ativo) setCarregando(false);
       });
-    return () => { ativo = false; };
+    return () => {
+      ativo = false;
+      buscaSequenciaRef.current += 1;
+    };
   }, [linha.id]);
+
+  function alterarCnpj(event) {
+    const valor = formatarCnpj(event.target.value);
+    const digitos = valor.replace(/\D/g, '');
+    setCnpjInput(valor);
+    setBuscaPendente(digitos !== cnpjPesquisado);
+    setConfirmacao(null);
+    setErro('');
+  }
+
+  async function buscarOutroCnpj(event) {
+    event.preventDefault();
+    const cnpj = cnpjInput.replace(/\D/g, '');
+    if (cnpj.length !== 14) {
+      setErro('Informe um CNPJ com 14 dígitos.');
+      return;
+    }
+
+    const sequencia = buscaSequenciaRef.current + 1;
+    buscaSequenciaRef.current = sequencia;
+    setCarregando(true);
+    setErro('');
+    setConfirmacao(null);
+    try {
+      const resultado = await listarVendasCandidatasLead(linha.id, cnpj);
+      if (buscaSequenciaRef.current !== sequencia) return;
+      setDados(resultado);
+      setCnpjInput(formatarCnpj(resultado.cnpj));
+      setCnpjPesquisado(resultado.cnpj);
+      setBuscaPendente(false);
+    } catch (error) {
+      if (buscaSequenciaRef.current !== sequencia) return;
+      setErro(error.message || 'Erro ao localizar vendas do CNPJ.');
+    } finally {
+      if (buscaSequenciaRef.current === sequencia) setCarregando(false);
+    }
+  }
 
   async function confirmarAcao() {
     setProcessando(true);
@@ -2419,7 +2526,7 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
     try {
       const resultado = confirmacao.tipo === 'desvincular'
         ? await adminDesvincularVendaLead(linha.id)
-        : await adminVincularVendaLead(linha.id, confirmacao.venda.id);
+        : await adminVincularVendaLead(linha.id, confirmacao.venda.id, confirmacao.cnpj);
       onAtualizado(resultado.linha);
     } catch (error) {
       setErro(error.message || 'Nao foi possivel atualizar o vinculo.');
@@ -2429,6 +2536,10 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
   }
 
   const vendaConfirmada = confirmacao?.venda || dados?.vinculo_atual?.venda;
+  const cnpjOriginal = dados?.cnpj_original || (dados?.cnpj_origem !== 'informado' ? dados?.cnpj : null);
+  const origemOriginal = dados?.cnpj_original_origem || (dados?.cnpj_origem !== 'informado' ? dados?.cnpj_origem : null);
+  const cnpjDiferente = Boolean(cnpjOriginal && cnpjPesquisado && cnpjOriginal !== cnpjPesquisado);
+  const confirmacaoCnpjDiferente = Boolean(cnpjOriginal && confirmacao?.cnpj && cnpjOriginal !== confirmacao.cnpj);
   return (
     <div className="modal-overlay">
       <div ref={dialogRef} tabIndex={-1} className="modal vincular-venda-modal" role="dialog" aria-modal="true" aria-label="Vincular venda">
@@ -2445,16 +2556,43 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
         </div>
 
         <div className="modal-body">
+          <form className="vincular-venda-resumo" onSubmit={buscarOutroCnpj}>
+            <label htmlFor="vincular-venda-cnpj">CNPJ para buscar vendas</label>
+            <div className="vincular-venda-resumo__busca">
+              <input
+                id="vincular-venda-cnpj"
+                inputMode="numeric"
+                maxLength="18"
+                placeholder="00.000.000/0000-00"
+                value={cnpjInput}
+                onChange={alterarCnpj}
+                disabled={carregando || processando}
+              />
+              <button type="submit" className="btn btn-primary" disabled={carregando || processando || cnpjInput.replace(/\D/g, '').length !== 14 || !buscaPendente}>
+                {carregando ? 'Buscando...' : 'Buscar'}
+              </button>
+            </div>
+            {cnpjOriginal && (
+              <small>
+                CNPJ original: {formatarCnpj(cnpjOriginal)} · Origem: {origemOriginal === 'sondagem' ? 'sondagem' : 'mailing'}
+              </small>
+            )}
+          </form>
+
           {carregando && <div className="vincular-venda-estado">Buscando vendas do mesmo CNPJ...</div>}
           {erro && <div className="alert-error">{erro}</div>}
+          {!carregando && buscaPendente && !erro && (
+            <div className="vincular-venda-estado">Clique em Buscar para atualizar as vendas deste CNPJ.</div>
+          )}
 
-          {!carregando && dados && (
+          {!carregando && dados && !buscaPendente && (
             <>
-              <div className="vincular-venda-resumo">
-                <span>CNPJ pesquisado</span>
-                <strong>{formatarCnpj(dados.cnpj)}</strong>
-                <small>Origem: {dados.cnpj_origem === 'sondagem' ? 'sondagem' : 'mailing'}</small>
-              </div>
+              {cnpjDiferente && (
+                <div className="vincular-venda-aviso" role="status">
+                  <I.AlertTriangle size={16} />
+                  Este CNPJ será usado somente para localizar e vincular a venda. O CNPJ original do futuro cliente não será alterado.
+                </div>
+              )}
 
               {dados.vinculo_atual && (
                 <div className="vincular-venda-atual">
@@ -2494,7 +2632,7 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
                       {venda.motivo_bloqueio ? (
                         <div className="vincular-venda-bloqueio"><I.AlertTriangle size={14} /> {venda.motivo_bloqueio}</div>
                       ) : (
-                        <button type="button" className="btn btn-primary" onClick={() => setConfirmacao({ tipo: 'vincular', venda })}>
+                        <button type="button" className="btn btn-primary" onClick={() => setConfirmacao({ tipo: 'vincular', venda, cnpj: cnpjPesquisado })}>
                           Selecionar venda
                         </button>
                       )}
@@ -2510,7 +2648,9 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
               <strong>{confirmacao.tipo === 'desvincular' ? 'Confirmar desvínculo?' : `Vincular a venda #${vendaConfirmada?.id}?`}</strong>
               <span>{confirmacao.tipo === 'desvincular'
                 ? 'O futuro cliente e a atribuição comercial voltarão exatamente ao estado anterior salvo.'
-                : 'Esta ação marcará o futuro cliente como venda concluída. Os vendedores e a autoria da venda não serão alterados.'}</span>
+                : confirmacaoCnpjDiferente
+                  ? `A venda corresponde ao CNPJ ${formatarCnpj(confirmacao.cnpj)}, diferente do cadastro. O CNPJ original não será alterado.`
+                  : 'Esta ação marcará o futuro cliente como venda concluída. Os vendedores e a autoria da venda não serão alterados.'}</span>
               <div>
                 <button type="button" className="btn" onClick={() => setConfirmacao(null)} disabled={processando}>Cancelar</button>
                 <button type="button" className={confirmacao.tipo === 'desvincular' ? 'btn btn-danger' : 'btn btn-primary'} onClick={confirmarAcao} disabled={processando}>
@@ -2532,7 +2672,7 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
 /**
  * Renderiza futuro cliente detalhe modal.
  */
-export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVenda, somenteLeitura = false }) {
+export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onDistribuido, onRegistrarVenda, somenteLeitura = false }) {
   const dialogRef = useDialogAcessivel(onClose);
   const vendaRegistrada = isFuturoClienteVendido(linha);
   const vendaRecusada = isVendaRecusada(linha);
@@ -2561,6 +2701,7 @@ export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegi
   const [telefoneFixo, setTelefoneFixo] = useState(() => formatarWhatsappInput(linha.sondagem?.telefone_fixo || ''));
   const [terminal, setTerminal] = useState(() => formatarWhatsappInput(linha.sondagem?.terminal || ''));
   const [dataAtivacao, setDataAtivacao] = useState(() => String(linha.sondagem?.data_ativacao || '').slice(0, 10));
+  const [distribuindo, setDistribuindo] = useState(false);
   const valorMensalEstimado = chipsItens.reduce((total, item) => total
     + ((Number(item.quantidade) || 0) * moedaBRParaNumero(item.preco_por_chip)), 0);
 
@@ -2571,8 +2712,14 @@ export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegi
   const usuario = useMemo(() => getUsuarioLocal(), []);
   const comoAdmin = useMemo(() => temPermissao(usuario, 'gerenciar_leads'), [usuario]);
   const ehResponsavel = Number(linha.atribuido_para_id) === Number(usuario?.id);
+  const ehDono = Number(linha.futuro_cliente_marcado_por_id) === Number(usuario?.id);
   const podeEditar = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'futuros_clientes_registrar')));
   const podeRegistrarVenda = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'vendas_criar')));
+  const podeEnviarDistribuicao = !somenteLeitura
+    && ehDono
+    && linha.futuro_cliente_destino === 'carteira'
+    && !vendaRegistrada
+    && !vendaRecusada;
 
   const camposLead = useMemo(() => {
     const dados = linha.dados_json || {};
@@ -2616,6 +2763,18 @@ export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegi
     } catch (error) {
       setErro(error.message || 'Erro ao marcar venda recusada.');
       setSalvando(false);
+    }
+  }
+
+  async function enviarParaDistribuicao() {
+    setDistribuindo(true);
+    setErro('');
+    try {
+      const resultado = await enviarFuturoClienteParaDistribuicao(linha.id);
+      onDistribuido?.(resultado.linha);
+    } catch (error) {
+      setErro(error.message || 'Erro ao enviar futuro cliente para distribuicao.');
+      setDistribuindo(false);
     }
   }
 
@@ -2743,100 +2902,158 @@ export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegi
               <p>Revise as informações comerciais e mantenha o próximo contato atualizado.</p>
             </header>
             <fieldset className="futuro-cliente-form future-client-readonly" disabled={!podeEditar}>
-            <div className="futuro-cliente-form__grid">
-              <div className="form-field">
-                <label>CNPJ</label>
-                <input value={cnpj} onChange={event => setCnpj(formatarCnpj(event.target.value))} maxLength="18" disabled={salvando} />
-              </div>
-              <div className="form-field">
-                <label>Razão social</label>
-                <input value={razaoSocial} onChange={event => setRazaoSocial(event.target.value)} maxLength="240" disabled={salvando} />
-              </div>
-            </div>
-            <div className="form-field">
-              <label>Nome de quem falou</label>
-              <input value={contatoNome} onChange={event => setContatoNome(event.target.value)} required disabled={salvando} />
-            </div>
-            <div className="form-field">
-              <label>ADM ou RL</label>
-              <select value={contatoTipo} onChange={event => setContatoTipo(event.target.value)} required disabled={salvando}>
-                <option value="">Selecione</option>
-                <option value="adm">ADM</option>
-                <option value="rl">RL</option>
-              </select>
-            </div>
-            <div className="form-field">
-              <label>Operadora atual</label>
-              <select value={operadoraAtualId} onChange={event => setOperadoraAtualId(event.target.value)} required disabled={salvando}>
-                <option value="">Selecione</option>
-                {operadoras.map(operadora => <option key={operadora.id} value={operadora.id}>{operadora.nome}</option>)}
-              </select>
-            </div>
-              <ChipsItensSondagem itens={chipsItens} onChange={setChipsItens} disabled={salvando} />              <div className="form-field">
-                <label>Operadora de interesse</label>
-                <select value={operadoraInteresseId} onChange={event => setOperadoraInteresseId(event.target.value)} disabled={salvando}>
-                  <option value="">Selecione</option>
-                  {operadoras.map(operadora => <option key={operadora.id} value={operadora.id}>{operadora.nome}</option>)}
-                </select>
-              </div>
-            <div className="futuro-cliente-estimativa">
-              <span>Media mensal estimada</span>
-              <strong>{valorMensalEstimado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
-            </div>
-            <div className="form-field">
-              <label>Melhor número para contato</label>
-              <input type="tel" inputMode="numeric" maxLength="15" autoComplete="tel" placeholder="(11) 99999-9999" value={melhorNumeroContato} onChange={event => setMelhorNumeroContato(formatarWhatsappInput(event.target.value))} required disabled={salvando} />
-            </div>
-            <div className="form-field">
-              <label>WhatsApp com DDD</label>
-              <input type="tel" inputMode="numeric" maxLength="15" autoComplete="tel" placeholder="(11) 99999-9999" value={whatsapp} onChange={event => setWhatsapp(formatarWhatsappInput(event.target.value))} required disabled={salvando} />
-            </div>
-            <div className="form-field">
-              <label>Fixo com DDD</label>
-              <input type="tel" inputMode="numeric" maxLength="15" autoComplete="tel" placeholder="(11) 3333-4444" value={telefoneFixo} onChange={event => setTelefoneFixo(formatarWhatsappInput(event.target.value))} disabled={salvando} />
-            </div>
-            <div className="form-field">
-              <label>Terminal</label>
-              <input type="tel" inputMode="numeric" maxLength="15" autoComplete="tel" placeholder="(11) 99999-9999" value={terminal} onChange={event => setTerminal(formatarWhatsappInput(event.target.value))} disabled={salvando} />
-            </div>
-            <div className="form-field">
-              <label>Data da ativacao</label>
-              <input type="date" value={dataAtivacao} onChange={event => setDataAtivacao(event.target.value)} disabled={salvando} />
-            </div>
-            <div className="form-field futuro-cliente-detalhe__campo-largo">
-              <label>Observações</label>
-              <textarea
-                rows={3}
-                value={notas}
-                onChange={event => setNotas(event.target.value)}
-                placeholder="Observações, interesses, histórico..."
-                disabled={salvando}
-              />
-            </div>
-            <div className="form-field">
-              <label>Data de retorno</label>
-              <input
-                type="datetime-local"
-                value={retorno}
-                onChange={event => setRetorno(event.target.value)}
-                disabled={salvando}
-              />
-            </div>
-            {vendaRecusada ? (
-              <div className="futuro-cliente-recusa is-saved">
-                <strong>Venda recusada</strong>
-                <span>{linha.venda_recusada_motivo || 'Motivo nao informado.'}</span>
-                {linha.venda_recusada_em && <small>Marcada em {formatarDataHora(linha.venda_recusada_em)}</small>}
-              </div>
-            ) : !vendaRegistrada && podeEditar && (
-              <div className="futuro-cliente-recusa">
-                <label>Venda recusada</label>
-                <textarea rows={3} value={motivoRecusa} onChange={event => setMotivoRecusa(event.target.value)} placeholder="Informe o motivo da recusa" disabled={salvando} />
-                <button type="button" className="btn btn-danger" onClick={salvarVendaRecusada} disabled={salvando || !motivoRecusa.trim()}>
-                  Marcar venda recusada
-                </button>
-              </div>
-            )}
+              <section className="futuro-cliente-form__secao" aria-labelledby="futuro-cliente-form-empresa">
+                <div className="futuro-cliente-form__secao-header">
+                  <h4 id="futuro-cliente-form-empresa">Empresa</h4>
+                  <p>Identificação principal do futuro cliente.</p>
+                </div>
+                <div className="futuro-cliente-form__secao-grid">
+                  <div className="form-field">
+                    <label htmlFor="futuro-cliente-cnpj">CNPJ</label>
+                    <input id="futuro-cliente-cnpj" value={cnpj} onChange={event => setCnpj(formatarCnpj(event.target.value))} maxLength="18" disabled={salvando} />
+                  </div>
+                  <div className="form-field futuro-cliente-form__campo-largo">
+                    <label htmlFor="futuro-cliente-razao-social">Razão social</label>
+                    <input id="futuro-cliente-razao-social" value={razaoSocial} onChange={event => setRazaoSocial(event.target.value)} maxLength="240" disabled={salvando} />
+                  </div>
+                </div>
+              </section>
+
+              <section className="futuro-cliente-form__secao" aria-labelledby="futuro-cliente-form-contato">
+                <div className="futuro-cliente-form__secao-header">
+                  <h4 id="futuro-cliente-form-contato">Contato</h4>
+                  <p>Responsável abordado e canais para a próxima conversa.</p>
+                </div>
+                <div className="futuro-cliente-form__secao-grid">
+                  <div className="form-field">
+                    <label htmlFor="futuro-cliente-contato-nome">Nome de quem falou</label>
+                    <input id="futuro-cliente-contato-nome" value={contatoNome} onChange={event => setContatoNome(event.target.value)} required disabled={salvando} />
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor="futuro-cliente-contato-tipo">ADM ou RL</label>
+                    <select id="futuro-cliente-contato-tipo" value={contatoTipo} onChange={event => setContatoTipo(event.target.value)} required disabled={salvando}>
+                      <option value="">Selecione</option>
+                      <option value="adm">ADM</option>
+                      <option value="rl">RL</option>
+                    </select>
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor="futuro-cliente-melhor-numero">Melhor número para contato</label>
+                    <input id="futuro-cliente-melhor-numero" type="tel" inputMode="numeric" maxLength="15" autoComplete="tel" placeholder="(11) 99999-9999" value={melhorNumeroContato} onChange={event => setMelhorNumeroContato(formatarWhatsappInput(event.target.value))} required disabled={salvando} />
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor="futuro-cliente-whatsapp">WhatsApp com DDD</label>
+                    <input id="futuro-cliente-whatsapp" type="tel" inputMode="numeric" maxLength="15" autoComplete="tel" placeholder="(11) 99999-9999" value={whatsapp} onChange={event => setWhatsapp(formatarWhatsappInput(event.target.value))} required disabled={salvando} />
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor="futuro-cliente-telefone-fixo">Fixo com DDD</label>
+                    <input id="futuro-cliente-telefone-fixo" type="tel" inputMode="numeric" maxLength="15" autoComplete="tel" placeholder="(11) 3333-4444" value={telefoneFixo} onChange={event => setTelefoneFixo(formatarWhatsappInput(event.target.value))} disabled={salvando} />
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor="futuro-cliente-terminal">Terminal</label>
+                    <input id="futuro-cliente-terminal" type="tel" inputMode="numeric" maxLength="15" autoComplete="tel" placeholder="(11) 99999-9999" value={terminal} onChange={event => setTerminal(formatarWhatsappInput(event.target.value))} disabled={salvando} />
+                  </div>
+                </div>
+              </section>
+
+              <section className="futuro-cliente-form__secao" aria-labelledby="futuro-cliente-form-cenario">
+                <div className="futuro-cliente-form__secao-header">
+                  <h4 id="futuro-cliente-form-cenario">Cenário comercial</h4>
+                  <p>Operadoras envolvidas e situação atual do contrato.</p>
+                </div>
+                <div className="futuro-cliente-form__secao-grid">
+                  <div className="form-field">
+                    <label htmlFor="futuro-cliente-operadora-atual">Operadora atual</label>
+                    <select id="futuro-cliente-operadora-atual" value={operadoraAtualId} onChange={event => setOperadoraAtualId(event.target.value)} required disabled={salvando}>
+                      <option value="">Selecione</option>
+                      {operadoras.map(operadora => <option key={operadora.id} value={operadora.id}>{operadora.nome}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor="futuro-cliente-operadora-interesse">Operadora de interesse</label>
+                    <select id="futuro-cliente-operadora-interesse" value={operadoraInteresseId} onChange={event => setOperadoraInteresseId(event.target.value)} disabled={salvando}>
+                      <option value="">Selecione</option>
+                      {operadoras.map(operadora => <option key={operadora.id} value={operadora.id}>{operadora.nome}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor="futuro-cliente-data-ativacao">Data da ativação</label>
+                    <input id="futuro-cliente-data-ativacao" type="date" value={dataAtivacao} onChange={event => setDataAtivacao(event.target.value)} disabled={salvando} />
+                  </div>
+                </div>
+              </section>
+
+              <section className="futuro-cliente-form__secao" aria-labelledby="futuro-cliente-form-proposta">
+                <div className="futuro-cliente-form__secao-header">
+                  <h4 id="futuro-cliente-form-proposta">Proposta</h4>
+                  <p>Quantidade, preço dos chips e estimativa mensal.</p>
+                </div>
+                <div className="futuro-cliente-form__proposta">
+                  <ChipsItensSondagem
+                    itens={chipsItens}
+                    onChange={setChipsItens}
+                    disabled={salvando}
+                    complementoRodape={(
+                      <div className="futuro-cliente-estimativa">
+                        <span>Média mensal estimada</span>
+                        <strong>{valorMensalEstimado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                      </div>
+                    )}
+                  />
+                </div>
+              </section>
+
+              <section className="futuro-cliente-form__secao futuro-cliente-form__secao--observacoes" aria-labelledby="futuro-cliente-form-observacoes">
+                <div className="futuro-cliente-form__secao-header">
+                  <h4 id="futuro-cliente-form-observacoes">Observações</h4>
+                  <p>Registre informações importantes, interesses e o histórico da negociação.</p>
+                </div>
+                <div className="form-field">
+                  <label htmlFor="futuro-cliente-observacoes">Anotações comerciais</label>
+                  <textarea
+                    id="futuro-cliente-observacoes"
+                    rows={4}
+                    value={notas}
+                    onChange={event => setNotas(event.target.value)}
+                    placeholder="Observações, interesses, histórico..."
+                    disabled={salvando}
+                  />
+                </div>
+              </section>
+
+              <section className="futuro-cliente-form__secao" aria-labelledby="futuro-cliente-form-acompanhamento">
+                <div className="futuro-cliente-form__secao-header">
+                  <h4 id="futuro-cliente-form-acompanhamento">Acompanhamento</h4>
+                  <p>Defina o próximo retorno e registre o desfecho da negociação.</p>
+                </div>
+                <div className="futuro-cliente-form__secao-grid">
+                  <div className="form-field">
+                    <label htmlFor="futuro-cliente-data-retorno">Data de retorno</label>
+                    <input
+                      id="futuro-cliente-data-retorno"
+                      type="datetime-local"
+                      value={retorno}
+                      onChange={event => setRetorno(event.target.value)}
+                      disabled={salvando}
+                    />
+                  </div>
+                </div>
+                {vendaRecusada ? (
+                  <div className="futuro-cliente-recusa is-saved">
+                    <strong>Venda recusada</strong>
+                    <span>{linha.venda_recusada_motivo || 'Motivo nao informado.'}</span>
+                    {linha.venda_recusada_em && <small>Marcada em {formatarDataHora(linha.venda_recusada_em)}</small>}
+                  </div>
+                ) : !vendaRegistrada && podeEditar && (
+                  <div className="futuro-cliente-recusa">
+                    <label>Venda recusada</label>
+                    <textarea rows={3} value={motivoRecusa} onChange={event => setMotivoRecusa(event.target.value)} placeholder="Informe o motivo da recusa" disabled={salvando} />
+                    <button type="button" className="btn btn-danger" onClick={salvarVendaRecusada} disabled={salvando || !motivoRecusa.trim()}>
+                      Marcar venda recusada
+                    </button>
+                  </div>
+                )}
+              </section>
             </fieldset>
           </section>
 
@@ -2845,6 +3062,11 @@ export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegi
 
         <div className="modal-footer futuro-cliente-detalhe__footer">
           <div className="futuro-cliente-detalhe__acoes futuro-cliente-detalhe__acoes--principais">
+            {podeEnviarDistribuicao && (
+              <button type="button" className="btn" onClick={enviarParaDistribuicao} disabled={salvando || distribuindo}>
+                <I.Send size={14} /> {distribuindo ? 'Enviando...' : 'Enviar para distribuição'}
+              </button>
+            )}
             {vendaRegistrada ? (
               <>
                 <div className="lead-already-qualified-notice">Este futuro cliente ja possui uma venda registrada. Acesse a pagina de Vendas para visualizar a venda.</div>
@@ -2862,8 +3084,8 @@ export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegi
             )}
           </div>
           <div className="futuro-cliente-detalhe__acoes futuro-cliente-detalhe__acoes--confirmacao">
-            <button type="button" className="btn" onClick={onClose} disabled={salvando}>Cancelar</button>
-            {podeEditar && <button type="submit" className="btn btn-primary" disabled={salvando}>
+            <button type="button" className="btn" onClick={onClose} disabled={salvando || distribuindo}>Cancelar</button>
+            {podeEditar && <button type="submit" className="btn btn-primary" disabled={salvando || distribuindo}>
               {salvando ? 'Salvando...' : 'Salvar'}
             </button>}
           </div>
@@ -3344,6 +3566,13 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     fecharDetalhe();
   }
 
+  function handleDistribuido(linhaDistribuida) {
+    setLinhas(prev => prev.filter(item => item.id !== linhaDistribuida.id));
+    setTotal(prev => Math.max(0, prev - 1));
+    fecharDetalhe();
+    setSucesso('Futuro cliente enviado para a distribuição do Telegram.');
+  }
+
   function handleAceito(linhaAtualizada) {
     const atualizada = { ...linhaAtualizada, atribuicao_id: linhaAtiva?.atribuicao_id || linhaAtualizada.atribuicao_id };
     setLinhas(prev => prev.map(item => (item.atribuicao_id || item.id) === (atualizada.atribuicao_id || atualizada.id) ? atualizada : item));
@@ -3494,6 +3723,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
           linha={linhaAtiva}
           onClose={fecharDetalhe}
           onAtualizado={handleAtualizado}
+          onDistribuido={handleDistribuido}
           onRegistrarVenda={handleRegistrarVenda}
           somenteLeitura={escopoTodos || (modoRecebidos && (linhaAtiva?.distribuicao?.status !== 'aceito' || Boolean(linhaAtiva?.distribuicao?.acao_registrada_em)))}
         />
@@ -4211,6 +4441,16 @@ function primeiraAcaoVisual(linha) {
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
+/** Alterna entre a carteira do usuário e a visão geral permitida. */
+export function SeletorEscopoFuturosClientes({ escopoTodos, onChange }) {
+  return (
+    <div className="future-scope-switch" role="group" aria-label="Escopo dos futuros clientes">
+      <button type="button" className={!escopoTodos ? 'active' : ''} aria-pressed={!escopoTodos} onClick={() => onChange(false)}>Meus</button>
+      <button type="button" className={escopoTodos ? 'active' : ''} aria-pressed={escopoTodos} onClick={() => onChange(true)}>Todos</button>
+    </div>
+  );
+}
+
 /**
  * Renderiza futuros clientes page.
  */
@@ -4260,7 +4500,7 @@ function FuturosClientesPage() {
         </div>
 
         {abaAtiva === 'meus' && <>
-          {podeVerTodos && <div className="future-scope-switch" role="group" aria-label="Escopo dos futuros clientes"><button type="button" className={!escopoTodos ? 'active' : ''} onClick={() => setEscopoTodos(false)}>Meus</button><button type="button" className={escopoTodos ? 'active' : ''} onClick={() => setEscopoTodos(true)}>Todos</button></div>}
+          {podeVerTodos && <SeletorEscopoFuturosClientes escopoTodos={escopoTodos} onChange={setEscopoTodos} />}
           <FuturosClientesMainView agora={agora} tipo="meus" escopoTodos={escopoTodos} />
         </>}
         {abaAtiva === 'recebidos' && <FuturosClientesMainView agora={agora} tipo="recebidos" />}
