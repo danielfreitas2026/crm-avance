@@ -1016,40 +1016,6 @@
   background: var(--surface-2);
 }
 
-.leads-transfer-toggle {
-  display: grid;
-  grid-template-columns: 18px 1fr;
-  gap: 10px;
-  align-items: flex-start;
-  margin-top: 12px;
-  padding: 11px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  cursor: pointer;
-}
-
-.leads-transfer-toggle input {
-  margin-top: 3px;
-}
-
-.leads-transfer-toggle strong,
-.leads-transfer-toggle small {
-  display: block;
-}
-
-.leads-transfer-toggle strong {
-  color: var(--text);
-  font-size: 13px;
-  margin-bottom: 2px;
-}
-
-.leads-transfer-toggle small {
-  color: var(--text-2);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
 .leads-column-editor {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1689,43 +1655,118 @@
   flex: 0 0 auto;
 }
 
-.leads-retry-status {
+.leads-mailing-selector {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
 }
 
-.leads-retry-status > strong,
-.leads-retry-status > small {
+.leads-mailing-selector-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.leads-mailing-selector-header strong,
+.leads-mailing-selector-header small,
+.leads-mailing-card strong,
+.leads-mailing-card small {
   display: block;
 }
 
-.leads-retry-status > small {
+.leads-mailing-selector-header strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.leads-mailing-selector-header small,
+.leads-mailing-card small {
   color: var(--text-3);
+  font-size: 12px;
   line-height: 1.35;
 }
 
-.leads-retry-options,
-.leads-retry-statuses {
+.leads-mailing-selector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.leads-mailing-group-label {
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.leads-mailing-group-grid {
   display: grid;
   gap: 8px;
 }
 
-.leads-retry-options {
+.leads-mailing-group-grid.distribution {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.leads-retry-statuses {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.leads-mailing-group-grid.markings {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.leads-retry-options .leads-check-card,
-.leads-retry-statuses .leads-check-card {
+.leads-mailing-card {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 9px;
   min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+
+.leads-mailing-card:hover {
+  border-color: var(--info);
+}
+
+.leads-mailing-card.selected {
+  border-color: var(--info);
+  background: var(--info-bg);
+  box-shadow: 0 0 0 1px var(--info);
+}
+
+.leads-mailing-card input {
+  margin-top: 3px;
+}
+
+.leads-mailing-card strong {
+  margin-bottom: 3px;
+  color: var(--text);
+  font-size: 13px;
 }
 
 @media (max-width: 640px) {
-  .leads-retry-statuses {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .leads-mailing-selector-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .leads-mailing-selector-actions {
+    justify-content: flex-start;
+  }
+
+  .leads-mailing-group-grid.distribution,
+  .leads-mailing-group-grid.markings {
+    grid-template-columns: 1fr;
   }
 }
 .lead-doc-cancel {

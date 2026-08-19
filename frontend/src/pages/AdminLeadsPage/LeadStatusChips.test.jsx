@@ -125,6 +125,13 @@ describe('LeadStatusChips', () => {
     expect(chip.getAttribute('title')).toMatch(/^Retorno: /);
   });
 
+  it('oculta somente o chip de venda registrada sem apagar o vinculo', () => {
+    renderChips({ venda_id: 44, venda_registrada_oculta: 1, futuro_cliente: 1 });
+
+    expect(screen.queryByText('Venda registrada')).not.toBeInTheDocument();
+    expect(screen.getByText('Futuro cliente')).toBeVisible();
+  });
+
   it.each([
     ['bom', 'Bom', 'quality-good'],
     ['mais_ou_menos', 'Mais ou menos', 'quality-medium'],

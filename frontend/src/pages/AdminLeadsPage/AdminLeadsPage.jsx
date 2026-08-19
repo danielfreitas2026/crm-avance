@@ -231,7 +231,7 @@ export function LeadStatusChips({ linha }) {
           <span className="pill-dot"></span>1&ordf; liga&ccedil;&atilde;o: {avaliacao.label}
         </span>
       )}
-      {isLeadVendaRegistrada(linha) && (
+      {isLeadVendaRegistrada(linha) && !linha?.venda_registrada_oculta && (
         <span className="pill lead-status-pill sold" title="Este futuro cliente possui uma venda vinculada"><span className="pill-dot"></span>Venda registrada</span>
       )}
       {isLeadVendaRecusada(linha) && (
@@ -314,10 +314,19 @@ function montarFiltrosBackend(filtros, colunas, planilhasSelecionadas, schema) {
   });
 }
 
+const GRUPOS_MAILING = [
+  { id: 'nao_enviado', label: 'Não enviado', descricao: 'Mailing que ainda não foi distribuído.', secao: 'distribuicao' },
+  { id: 'enviado_sem_marcacao', label: 'Enviado', descricao: 'Já distribuído e sem outra marcação.', secao: 'distribuicao' },
+  { id: 'chamada_nao_atendida', label: 'Chamada não atendida', descricao: 'Remove esta marcação ao reenviar.', secao: 'marcacoes' },
+  { id: 'cliente_recusou', label: 'Cliente recusou', descricao: 'Remove esta marcação ao reenviar.', secao: 'marcacoes' },
+  { id: 'retorno_agendado', label: 'Retorno marcado', descricao: 'Remove esta marcação ao reenviar.', secao: 'marcacoes' },
+  { id: 'venda_registrada', label: 'Venda registrada', descricao: 'Oculta somente esta tag ao reenviar.', secao: 'marcacoes' }
+];
+
 /**
  * Renderiza dividir modal.
  */
-function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDivisao, onClose, onSave }) {
+export function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDivisao, onClose, onSave }) {
   const [nome, setNome] = useState(`Envio ${new Date().toLocaleDateString('pt-BR')}`);
   const [usuarios, setUsuarios] = useState([]);
   const [buscaUsuario, setBuscaUsuario] = useState('');
@@ -326,13 +335,11 @@ function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDi
   const [manual, setManual] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
-  const [incluirEnviados, setIncluirEnviados] = useState(false);
-  const [statusReenvio, setStatusReenvio] = useState([]);
-  const [modoStatusReenvio, setModoStatusReenvio] = useState('incluir');
-  const [disponiveisReenvio, setDisponiveisReenvio] = useState(null);
+  const [gruposMailing, setGruposMailing] = useState(['nao_enviado']);
+  const [capacidadeSondagem, setCapacidadeSondagem] = useState(null);
   const [etapa, setEtapa] = useState('sondagem');
   const [disponiveisVenda, setDisponiveisVenda] = useState(null);
-  const [carregandoDisponiveis, setCarregandoDisponiveis] = useState(false);
+  const [carregandoDisponiveis, setCarregandoDisponiveis] = useState(true);
 
   useEffect(() => {
     if (etapa !== 'venda') return;
@@ -359,18 +366,31 @@ function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDi
   }, [etapa, filtrosDivisao]);
 
   useEffect(() => {
-    if (!incluirEnviados || etapa !== 'sondagem' || statusReenvio.length === 0) return undefined;
+    if (etapa !== 'sondagem') return undefined;
+    if (gruposMailing.length === 0) return undefined;
     let cancelado = false;
-    listarLeadLinhas({ ...filtrosDivisao, filters: JSON.stringify(filtrosDivisao?.filters || []), somente_enviados: true, status_reenvio: statusReenvio, status_reenvio_modo: modoStatusReenvio, page: 1, page_size: 1 })
+    listarLeadLinhas({
+      ...filtrosDivisao,
+      filters: JSON.stringify(filtrosDivisao?.filters || []),
+      grupos_mailing: gruposMailing,
+      page: 1,
+      page_size: 1
+    })
       .then(resultado => {
         if (cancelado) return;
         const total = Number(resultado?.total || 0);
-        setDisponiveisReenvio(total);
+        setCapacidadeSondagem(total);
         setQuantidade(String(total));
       })
-      .catch(error => { if (!cancelado) setErro(error.message || 'Erro ao contar mailing para reenvio.'); });
+      .catch(error => {
+        if (!cancelado) {
+          setCapacidadeSondagem(0);
+          setErro(error.message || 'Erro ao contar mailing disponível.');
+        }
+      })
+      .finally(() => { if (!cancelado) setCarregandoDisponiveis(false); });
     return () => { cancelado = true; };
-  }, [incluirEnviados, etapa, filtrosDivisao, statusReenvio, modoStatusReenvio]);
+  }, [etapa, filtrosDivisao, gruposMailing]);
 
   /**
    * Alterna usuario no estado atual.
@@ -379,8 +399,30 @@ function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDi
     setUsuarios(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   }
 
-  function toggleStatusReenvio(status) {
-    setStatusReenvio(prev => prev.includes(status) ? prev.filter(item => item !== status) : [...prev, status]);
+  function toggleGrupoMailing(grupo) {
+    const proximos = gruposMailing.includes(grupo)
+      ? gruposMailing.filter(item => item !== grupo)
+      : [...gruposMailing, grupo];
+    setGruposMailing(proximos);
+    if (proximos.length === 0) {
+      setCapacidadeSondagem(0);
+      setQuantidade('');
+      setCarregandoDisponiveis(false);
+    } else {
+      setCarregandoDisponiveis(true);
+    }
+  }
+
+  function selecionarTodosGruposMailing() {
+    setGruposMailing(GRUPOS_MAILING.map(grupo => grupo.id));
+    setCarregandoDisponiveis(true);
+  }
+
+  function limparGruposMailing() {
+    setGruposMailing([]);
+    setCapacidadeSondagem(0);
+    setQuantidade('');
+    setCarregandoDisponiveis(false);
   }
 
   /**
@@ -412,9 +454,7 @@ function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDi
           ? { ...filtrosDivisao, somente_qualificados: true, disponivel_venda: true }
           : filtrosDivisao,
         colunas_visiveis: colunasVisiveis,
-        incluir_enviados: incluirEnviados,
-        status_reenvio: statusReenvio,
-        status_reenvio_modo: modoStatusReenvio,
+        grupos_mailing: etapa === 'sondagem' ? gruposMailing : undefined,
         etapa,
         alocacao_manual: manual?.valores || {}
       });
@@ -442,15 +482,9 @@ function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDi
   const quantidadeNumerica = Number(quantidade || 0);
   const disponiveisPadrao = Number(resumoLeads?.nao_enviados || 0);
   const jaEnviados = Number(resumoLeads?.enviados || 0);
-  const totalResumo = Number(resumoLeads?.total || totalLinhas || 0);
   const capacidadeAtual = etapa === 'venda'
     ? Number(disponiveisVenda || 0)
-    : (incluirEnviados && statusReenvio.length > 0)
-      ? Number(disponiveisReenvio || 0)
-      : (incluirEnviados ? totalResumo : disponiveisPadrao);
-  const vaiTransferir = incluirEnviados
-    ? Math.max(0, quantidadeNumerica - disponiveisPadrao)
-    : 0;
+    : Number(capacidadeSondagem || 0);
   const termoBuscaUsuario = buscaUsuario
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -490,10 +524,7 @@ function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDi
               <select value={etapa} onChange={event => {
                 const proximaEtapa = event.target.value;
                 setEtapa(proximaEtapa);
-                if (proximaEtapa === 'venda') {
-                  setIncluirEnviados(true);
-                  setCarregandoDisponiveis(true);
-                }
+                setCarregandoDisponiveis(true);
               }}>
                 <option value="sondagem">Primeira ligacao / sondagem</option>
                 <option value="venda">Futuros clientes / venda</option>
@@ -529,43 +560,50 @@ function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDi
               ? (carregandoDisponiveis
                 ? 'Contando futuros clientes qualificados e disponiveis...'
                 : `${formatarNumero(capacidadeAtual)} futuro(s) cliente(s) qualificado(s) estao disponiveis para esta distribuicao.`)
-              : incluirEnviados
-              ? `Este envio pode usar mailing novo e transferir até ${formatarNumero(Math.min(vaiTransferir, jaEnviados))} registro(s) já enviados.`
-              : 'O envio automático começa no próximo registro ainda não enviado e ignora os mailing já distribuídos.'}
+              : (carregandoDisponiveis
+                ? 'Contando os mailing que correspondem à seleção...'
+                : gruposMailing.length === 0
+                  ? 'Selecione ao menos um grupo de mailing para continuar.'
+                  : `${formatarNumero(capacidadeAtual)} registro(s) correspondem exatamente aos grupos selecionados.`)}
           </div>
 
-          <label className="leads-transfer-toggle">
-            <input
-              type="checkbox"
-              checked={incluirEnviados}
-              onChange={event => setIncluirEnviados(event.target.checked)}
-              disabled={etapa === 'venda'}
-            />
-            <span>
-              <strong>Incluir mailing já enviados</strong>
-              <small>Use para transferir mailing que já foram enviados para outro vendedor.</small>
-            </span>
-          </label>
-
-          {incluirEnviados && (
-            <>
-              <div className="leads-warning">Mailing já enviados que entrarem nesta divisão serão transferidos para o novo vendedor e novo envio.</div>
-              {etapa === 'sondagem' && (
-                <div className="leads-retry-status">
-                  <strong>Filtrar reenvio por status (opcional)</strong>
-                  <small>Escolha se deseja reenviar somente os marcados ou manter os marcados fora deste novo envio.</small>
-                  <div className="leads-retry-options">
-                    <label className="leads-check-card"><input type="radio" name="modo-status-reenvio" checked={modoStatusReenvio === 'incluir'} onChange={() => setModoStatusReenvio('incluir')} /><span>Reenviar somente os marcados</span></label>
-                    <label className="leads-check-card"><input type="radio" name="modo-status-reenvio" checked={modoStatusReenvio === 'excluir'} onChange={() => setModoStatusReenvio('excluir')} /><span>{'Não reenviar os marcados'}</span></label>
-                  </div>
-                  <div className="leads-retry-statuses">
-                    {[['chamada_nao_atendida', 'Chamada não atendida'], ['cliente_recusou', 'Cliente recusou'], ['retorno_agendado', 'Retorno marcado']].map(([status, rotulo]) => (
-                      <label key={status} className="leads-check-card"><input type="checkbox" checked={statusReenvio.includes(status)} onChange={() => toggleStatusReenvio(status)} /><span>{rotulo}</span></label>
-                    ))}
-                  </div>
+          {etapa === 'sondagem' && (
+            <section className="leads-mailing-selector" aria-labelledby="grupos-mailing-title">
+              <div className="leads-mailing-selector-header">
+                <div>
+                  <strong id="grupos-mailing-title">Escolha quais mailing enviar</strong>
+                  <small>Combine livremente os grupos. Cada registro entra apenas uma vez.</small>
                 </div>
+                <div className="leads-mailing-selector-actions">
+                  <button type="button" className="btn btn-sm" onClick={selecionarTodosGruposMailing}>Selecionar todos</button>
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={limparGruposMailing}>Limpar seleção</button>
+                </div>
+              </div>
+
+              <div className="leads-mailing-group-label">Distribuição</div>
+              <div className="leads-mailing-group-grid distribution">
+                {GRUPOS_MAILING.filter(grupo => grupo.secao === 'distribuicao').map(grupo => (
+                  <label key={grupo.id} className={`leads-mailing-card ${gruposMailing.includes(grupo.id) ? 'selected' : ''}`}>
+                    <input type="checkbox" checked={gruposMailing.includes(grupo.id)} onChange={() => toggleGrupoMailing(grupo.id)} />
+                    <span><strong>{grupo.label}</strong><small>{grupo.descricao}</small></span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="leads-mailing-group-label">Marcações</div>
+              <div className="leads-mailing-group-grid markings">
+                {GRUPOS_MAILING.filter(grupo => grupo.secao === 'marcacoes').map(grupo => (
+                  <label key={grupo.id} className={`leads-mailing-card ${gruposMailing.includes(grupo.id) ? 'selected' : ''}`}>
+                    <input type="checkbox" checked={gruposMailing.includes(grupo.id)} onChange={() => toggleGrupoMailing(grupo.id)} />
+                    <span><strong>{grupo.label}</strong><small>{grupo.descricao}</small></span>
+                  </label>
+                ))}
+              </div>
+
+              {gruposMailing.some(grupo => ['chamada_nao_atendida', 'cliente_recusou', 'retorno_agendado', 'venda_registrada'].includes(grupo)) && (
+                <div className="leads-warning">As marcações selecionadas serão removidas ou ocultadas nos mailing reenviados. A venda continuará vinculada e as outras marcações serão preservadas.</div>
               )}
-            </>
+            </section>
           )}
 
           <div className="leads-block-title">Vendedores</div>
@@ -636,7 +674,7 @@ function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, filtrosDi
 
         <div className="modal-footer">
           <button type="button" className="btn" onClick={onClose}>Cancelar</button>
-          <button type="submit" className="btn btn-primary" disabled={salvando || carregandoDisponiveis || quantidadeNumerica <= 0 || quantidadeNumerica > capacidadeAtual || usuarios.length === 0 || colunasVisiveis.length === 0}>
+          <button type="submit" className="btn btn-primary" disabled={salvando || carregandoDisponiveis || (etapa === 'sondagem' && gruposMailing.length === 0) || quantidadeNumerica <= 0 || quantidadeNumerica > capacidadeAtual || usuarios.length === 0 || colunasVisiveis.length === 0}>
             {salvando ? 'Enviando...' : 'Enviar mailing'}
           </button>
         </div>
