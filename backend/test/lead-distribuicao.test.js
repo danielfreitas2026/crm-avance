@@ -15,6 +15,7 @@ const {
   montarMensagemEnvioExpiradoTelegram,
   montarMensagemRetornoAgendadoTelegram,
   montarMensagemVendaFechadaTelegram,
+  montarPatchAceite,
   montarPatchPrazoRetorno,
   prazoAcaoMinutos,
   prazoAtribuicaoVencido,
@@ -57,6 +58,32 @@ test('prioriza o prazo persistido em atribuicoes novas', () => {
   assert.equal(prazoAtribuicaoVencido(atribuicao, '2026-07-30T15:30:00.000Z'), false);
 });
 
+test('aceite sem retorno inicia uma janela completa a partir do aceite', () => {
+  const agora = new Date('2026-07-30T15:00:00.000Z');
+  const patch = montarPatchAceite({}, agora);
+
+  assert.equal(patch.acao_registrada_tipo, null);
+  assert.equal(patch.acao_registrada_em, null);
+  assert.equal(patch.prazo_acao_em.toISOString(), '2026-07-30T15:30:00.000Z');
+});
+
+test('aceite reconhece retorno futuro preexistente e usa retorno mais trinta minutos', () => {
+  const agora = new Date('2026-07-30T15:00:00.000Z');
+  const patch = montarPatchAceite({ retorno_agendado_em: '2026-07-30T16:00:00.000Z' }, agora);
+
+  assert.equal(patch.acao_registrada_tipo, 'retorno_agendado');
+  assert.equal(patch.acao_registrada_em, agora);
+  assert.equal(patch.prazo_acao_em.toISOString(), '2026-07-30T16:30:00.000Z');
+});
+
+test('aceite com retorno vencido concede trinta minutos a partir do aceite', () => {
+  const agora = new Date('2026-07-30T15:00:00.000Z');
+  const patch = montarPatchAceite({ futuro_cliente_retorno: '2026-07-30T14:00:00.000Z' }, agora);
+
+  assert.equal(patch.acao_registrada_tipo, 'retorno_agendado');
+  assert.equal(patch.prazo_acao_em.toISOString(), '2026-07-30T15:30:00.000Z');
+});
+
 test('agenda devolucao para 30 minutos apos o retorno e reinicia prazo ao remover', () => {
   const agora = new Date('2026-07-30T15:00:00.000Z');
   const agendado = montarPatchPrazoRetorno('2026-07-31 15:30:00', agora);
@@ -91,7 +118,8 @@ test('consulta prazos vencidos dos dois estados e inclui fallback legado', () =>
   assert.match(consulta.sql, /`prazo_acao_em` <= \?/);
   assert.match(consulta.sql, /`prazo_acao_em` is null/);
   assert.match(consulta.sql, /`atribuido_em` <= \?/);
-  assert.match(consulta.sql, /coalesce\(ll\.retorno_agendado_em, ll\.futuro_cliente_retorno\) <= \?/i);
+  assert.match(consulta.sql, /`acao_registrada_tipo` = \? and `la`\.`prazo_acao_em` is not null and `la`\.`prazo_acao_em` <= \?/i);
+  assert.doesNotMatch(consulta.sql, /coalesce\(ll\.retorno_agendado_em, ll\.futuro_cliente_retorno\)/i);
   assert.deepEqual(consulta.bindings.slice(1, 3), [
     leadDistribuicaoService.ACEITE_AGUARDANDO,
     leadDistribuicaoService.ACEITE_ACEITO
@@ -144,6 +172,21 @@ test('monta a mensagem de envio expirado apenas com cancelamento e dados essenci
     'CNPJ: 12.345.678/0001-90',
     'Data do envio: 30/07/2026, 12:00'
   ].join('\n'));
+});
+
+test('monta a notificacao de aceite exibindo o retorno preexistente', () => {
+  const texto = montarMensagemAceiteTelegram({
+    atribuido_em: '2026-07-30T15:00:00.000Z',
+    prazo_acao_em: '2026-07-31T16:00:00.000Z',
+    acao_registrada_tipo: 'retorno_agendado'
+  }, 'Ana Consultora', {
+    id: 42,
+    retorno_agendado_em: '2026-07-31T15:30:00.000Z',
+    sondagem: { razao_social: 'Empresa Teste LTDA', cnpj: '12.345.678/0001-90' }
+  });
+
+  assert.match(texto, /retorno já agendado para 31\/07\/2026, 12:30/i);
+  assert.match(texto, /Prazo para registrar o contato no CRM: 13:00/);
 });
 
 test('diferencia no Telegram a expiracao sem aceite', () => {
@@ -275,6 +318,7 @@ test('worker separa expiracao sem aceite e sem acao e protege contra concorrenci
     leadDistribuicaoService.ACEITE_ACEITO
   ]);
   assert.deepEqual(chamadas.map(item => item.opcoes.atribuicaoIdEsperada), [11, 12, 13, 14]);
+  assert.equal(chamadas.every(item => item.opcoes.validarPrazoVencido), true);
   assert.equal(chamadas[3].opcoes.permitirRetornoVencido, true);
 });
 

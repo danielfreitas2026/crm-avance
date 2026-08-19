@@ -1,6 +1,7 @@
 const db = require('../database/connection');
 const notificacaoService = require('./notificacao.service');
 const telegramService = require('./telegram.service');
+const leadTelegramPublicacaoService = require('./lead-telegram-publicacao.service');
 const { parseUtcDateTime } = require('../utils/datetime');
 
 const ACEITE_AGUARDANDO = 'aguardando_aceite';
@@ -41,6 +42,24 @@ function prazoAtribuicaoVencido(atribuicao, agora = new Date()) {
     && !Number.isNaN(referencia.getTime())
     && prazo.getTime() <= referencia.getTime()
   );
+}
+
+function montarPatchAceite(linha, agora = new Date()) {
+  const retorno = parseUtcDateTime(linha?.retorno_agendado_em || linha?.futuro_cliente_retorno);
+  const prazoPadrao = calcularPrazoAcao(agora);
+  const prazoRetorno = retorno ? calcularPrazoAcao(retorno) : null;
+  const prazo = prazoRetorno && prazoRetorno.getTime() > prazoPadrao.getTime()
+    ? prazoRetorno
+    : prazoPadrao;
+
+  return {
+    aceite_status: ACEITE_ACEITO,
+    aceite_em: agora,
+    acao_registrada_em: retorno ? agora : null,
+    acao_registrada_tipo: retorno ? 'retorno_agendado' : null,
+    prazo_acao_em: prazo,
+    updated_at: agora
+  };
 }
 
 function retornoDistribuicaoVencido(linha, agora = new Date()) {
@@ -188,7 +207,6 @@ function ocultarDetalhesAntesDoAceite(linha, atribuicao) {
 
 async function aceitar(linhaId, usuarioId) {
   const agora = new Date();
-  const prazo = calcularPrazoAcao(agora);
 
   const resultado = await db.transaction(async trx => {
     const linha = await trx('lead_linhas')
@@ -233,12 +251,8 @@ async function aceitar(linhaId, usuarioId) {
       throw error;
     }
 
-    await trx('lead_atribuicoes').where('id', atribuicao.id).update({
-      aceite_status: ACEITE_ACEITO,
-      aceite_em: agora,
-      prazo_acao_em: prazo,
-      updated_at: agora
-    });
+    const patchAceite = montarPatchAceite(linha, agora);
+    await trx('lead_atribuicoes').where('id', atribuicao.id).update(patchAceite);
     await trx('lead_linhas').where('id', linha.id).update({
       atribuido_para_id: Number(usuarioId),
       envio_id: atribuicao.envio_id,
@@ -254,11 +268,11 @@ async function aceitar(linhaId, usuarioId) {
     await notificacaoService.atualizarNotificacaoFuturoClienteAceito({
       leadLinhaId: linha.id,
       vendedoraId: usuarioId,
-      prazoAcaoEm: prazo
+      prazoAcaoEm: patchAceite.prazo_acao_em
     }, trx);
 
     return {
-      atribuicao: { ...atribuicao, aceite_status: ACEITE_ACEITO, aceite_em: agora, prazo_acao_em: prazo },
+      atribuicao: { ...atribuicao, ...patchAceite },
       linha: { ...linha, sondagem }
     };
   });
@@ -269,6 +283,7 @@ async function aceitar(linhaId, usuarioId) {
       aceiteStatusEsperado: ACEITE_AGUARDANDO,
       atribuicaoIdEsperada: resultado.atribuicao.id,
       motivo: 'Prazo para aceitar a indicacao expirado',
+      validarPrazoVencido: true,
       republicar: true,
       silencioso: true
     });
@@ -370,13 +385,22 @@ async function carregarLinhaTelegram(linhaId) {
 
 function montarMensagemAceiteTelegram(atribuicao, nomeConsultora, linha = {}) {
   const prazo = new Date(atribuicao.prazo_acao_em);
-  const horaPrazo = Number.isNaN(prazo.getTime())
+  const horaPrazoBase = Number.isNaN(prazo.getTime())
     ? 'Não informado'
     : prazo.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
       timeZone: 'America/Sao_Paulo'
     });
+  const retorno = parseUtcDateTime(linha.retorno_agendado_em || linha.futuro_cliente_retorno);
+  const retornoFormatado = retorno?.toLocaleString('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'America/Sao_Paulo'
+  });
+  const horaPrazo = atribuicao.acao_registrada_tipo === 'retorno_agendado' && retorno
+    ? `${horaPrazoBase} (retorno já agendado para ${retornoFormatado})`
+    : horaPrazoBase;
   const sondagem = linha.sondagem || {};
   const empresa = obterNomeEmpresa(linha.dados_json, linha.id, sondagem.razao_social);
   const cnpj = obterCnpjEmpresa(linha.dados_json, sondagem.cnpj);
@@ -699,15 +723,6 @@ async function encerrarMensagemTelegram(atribuicao, textoStatus, aceiteStatusFin
   }
 }
 
-async function republicarNoTelegram(linhaId) {
-  try {
-    const linha = await carregarLinhaTelegram(linhaId);
-    if (linha) await telegramService.enviarFuturoCliente(linha);
-  } catch (error) {
-    console.error('Erro ao republicar futuro cliente no Telegram:', error.message);
-  }
-}
-
 function deveRepublicarPendenteAntiga(linha, possuiEncaminhamentoDeVenda) {
   return Boolean(
     linha
@@ -716,23 +731,6 @@ function deveRepublicarPendenteAntiga(linha, possuiEncaminhamentoDeVenda) {
     && linha.status_operacional === 'qualificado'
     && !possuiEncaminhamentoDeVenda
   );
-}
-
-async function reservarRepublicacaoPendente(linhaId) {
-  try {
-    await db('lead_telegram_republicacoes').insert({
-      lead_linha_id: Number(linhaId),
-      status: 'processando',
-      tentativas: 1
-    });
-    return true;
-  } catch (error) {
-    if (error.code !== 'ER_DUP_ENTRY') throw error;
-    const atualizada = await db('lead_telegram_republicacoes')
-      .where({ lead_linha_id: Number(linhaId), status: 'falhou' })
-      .update({ status: 'processando', tentativas: db.raw('tentativas + 1'), updated_at: new Date() });
-    return Boolean(atualizada);
-  }
 }
 
 async function republicarPendentesAntigosNoTelegram() {
@@ -751,28 +749,12 @@ async function republicarPendentesAntigosNoTelegram() {
   let falhas = 0;
   for (const pendente of pendentes) {
     const linhaId = Number(pendente.id);
-    if (!await reservarRepublicacaoPendente(linhaId)) continue;
-    try {
-      const linha = await carregarLinhaTelegram(linhaId);
-      if (!deveRepublicarPendenteAntiga(linha, false)) {
-        await db('lead_telegram_republicacoes').where('lead_linha_id', linhaId).update({ status: 'ignorado', updated_at: new Date() });
-        continue;
-      }
-      const resultado = await telegramService.enviarFuturoCliente(linha);
-      if (!resultado.enviado) throw new Error(resultado.motivo || 'Telegram nao configurado');
-      await db('lead_telegram_republicacoes').where('lead_linha_id', linhaId).update({
-        status: 'publicado',
-        telegram_chat_id: String(process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID || ''),
-        telegram_message_id: String(resultado.message_id || ''),
-        publicado_em: new Date(),
-        updated_at: new Date()
-      });
-      publicados += 1;
-    } catch (error) {
-      console.error(`Erro ao republicar futuro cliente pendente #${linhaId}:`, error.message);
-      await db('lead_telegram_republicacoes').where('lead_linha_id', linhaId).update({ status: 'falhou', updated_at: new Date() });
-      falhas += 1;
-    }
+    await leadTelegramPublicacaoService.enfileirarRepublicacao(linhaId);
+    const resultado = await leadTelegramPublicacaoService.processarRepublicacaoDaLinha(linhaId, {
+      carregarLinha: carregarLinhaTelegram
+    });
+    if (resultado.publicado) publicados += 1;
+    if (resultado.falhou) falhas += 1;
   }
   return { encontrados: pendentes.length, publicados, falhas };
 }
@@ -809,7 +791,7 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
     if (!linha) return null;
     const expirandoRetorno = opcoes.permitirRetornoVencido
       && atribuicao.acao_registrada_tipo === 'retorno_agendado';
-    if (expirandoRetorno && !retornoDistribuicaoVencido(linha, agora)) {
+    if ((opcoes.validarPrazoVencido || expirandoRetorno) && !prazoAtribuicaoVencido(atribuicao, agora)) {
       return { prazoAtualizado: true };
     }
     if (atribuicao.aceite_status === ACEITE_ACEITO && atribuicao.acao_registrada_em && !expirandoRetorno) {
@@ -857,6 +839,9 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
     await trx('notificacoes')
       .where('source_key', `futuro_cliente_distribuido:${Number(linhaId)}`)
       .update({ ativa: false, updated_at: agora });
+    if (opcoes.republicar !== false) {
+      await leadTelegramPublicacaoService.enfileirarRepublicacao(linhaId, trx, agora);
+    }
     return { atribuicao, linhaId: Number(linhaId) };
   });
 
@@ -881,7 +866,11 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
         ? `retorno vencido ha ${prazoAcaoMinutos()} minutos sem novo desfecho para ${usuario?.nome || 'consultor(a)'}`
       : `cancelado${usuario?.nome ? ` para ${usuario.nome}` : ''}`;
   await encerrarMensagemTelegram(resultado.atribuicao, textoStatus, aceiteStatusFinal);
-  if (opcoes.republicar !== false) await republicarNoTelegram(resultado.linhaId);
+  if (opcoes.republicar !== false) {
+    await leadTelegramPublicacaoService.processarRepublicacaoDaLinha(resultado.linhaId, {
+      carregarLinha: carregarLinhaTelegram
+    });
+  }
   return resultado;
 }
 
@@ -915,7 +904,8 @@ function queryAtribuicoesVencidas(agora = new Date(), database = db) {
       }).orWhere(function retornoVencido() {
         this.where('la.aceite_status', ACEITE_ACEITO)
           .where('la.acao_registrada_tipo', 'retorno_agendado')
-          .whereRaw('COALESCE(ll.retorno_agendado_em, ll.futuro_cliente_retorno) <= ?', [limiteLegado]);
+          .whereNotNull('la.prazo_acao_em')
+          .where('la.prazo_acao_em', '<=', agora);
       });
     })
     .select('la.id', 'la.lead_linha_id', 'la.aceite_status', 'la.acao_registrada_tipo');
@@ -939,6 +929,7 @@ async function processarPrazosVencidos(opcoes = {}) {
         aceiteStatusEsperado: item.aceite_status,
         atribuicaoIdEsperada: item.id,
         permitirRetornoVencido: retornoVencido,
+        validarPrazoVencido: true,
         motivo: aguardandoAceite
             ? 'Prazo para aceitar a indicacao expirado'
           : retornoVencido
@@ -986,6 +977,7 @@ module.exports = {
     prazoAtribuicaoVencido,
     prazoEfetivoAtribuicao,
     retornoDistribuicaoVencido,
+    montarPatchAceite,
     montarPatchPrazoRetorno,
     queryAtribuicoesVencidas,
     tipoAcaoValida,
