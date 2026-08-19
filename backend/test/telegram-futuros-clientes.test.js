@@ -26,6 +26,21 @@ test('mantem o botao de cancelar envio sem nome quando a consultora nao estiver 
   }]]);
 });
 
+test('inicia o primeiro prazo no momento do encaminhamento', () => {
+  const enviadoEm = new Date('2026-07-30T15:00:00.000Z');
+  const atribuicao = telegramInternals.montarAtribuicaoDistribuicao({
+    linhaId: 123,
+    envioId: 456,
+    vendedoraId: 9,
+    gerenteTelegramId: 77,
+    telegramContexto: { chatId: -1001, messageId: 88, mensagemTexto: 'Indicacao' }
+  }, enviadoEm);
+
+  assert.equal(atribuicao.aceite_status, 'aguardando_aceite');
+  assert.equal(atribuicao.atribuido_em, enviadoEm);
+  assert.equal(atribuicao.prazo_acao_em.toISOString(), '2026-07-30T15:30:00.000Z');
+});
+
 test('republica somente futuro cliente antigo qualificado e nunca encaminhado', () => {
   const linhaPendente = { futuro_cliente: true, status_operacional: 'qualificado', futuro_cliente_excluido_em: null };
   assert.equal(distribuicaoInternals.deveRepublicarPendenteAntiga(linhaPendente, false), true);

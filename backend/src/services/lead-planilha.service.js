@@ -2703,6 +2703,7 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
     : null;
   const retornoFuturoAlterado = String(retorno || '') !== String(retornoAnterior || '');
 
+  let prazoRetornoDistribuicaoAtualizado = false;
   await LeadLinha.transaction(async trx => {
     let atribuicao = await LeadAtribuicao.query(trx)
       .where({ lead_linha_id: Number(linhaId), usuario_id: donoSondagemId, etapa: 'sondagem' })
@@ -2746,14 +2747,12 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
       status_operacional: atribuicaoVendaAceita ? 'distribuido_venda' : 'qualificado',
       updated_at: new Date()
     });
-    if (retorno) {
-      await leadDistribuicaoService.registrarAcaoValida(
-        linhaId,
-        donoId,
-        'retorno_agendado',
-        trx
-      );
-    }
+    prazoRetornoDistribuicaoAtualizado = Boolean(await leadDistribuicaoService.atualizarPrazoRetorno(
+      linhaId,
+      donoId,
+      retorno,
+      trx
+    ));
   });
 
   await sincronizarNotificacoesRetornoLeads();
@@ -2764,6 +2763,9 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
     .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'));
 
   const linhaFormatada = formatarLinha(atualizada);
+  if (prazoRetornoDistribuicaoAtualizado && retorno && retornoFuturoAlterado) {
+    await leadDistribuicaoService.notificarRetornoAgendadoTelegram(linhaId, retorno);
+  }
   if (deveNotificarTelegram) {
     try {
       const publicacao = await telegramService.enviarFuturoCliente(linhaFormatada);
@@ -3468,6 +3470,7 @@ async function marcarRetornoLead(linhaId, usuarioId, dados = {}, opcoes = {}) {
 
   await desativarAlertasObrigatoriosDaLinha(linha.id);
 
+  let prazoRetornoDistribuicaoAtualizado = false;
   await LeadLinha.transaction(async trx => {
     await LeadLinha.query(trx).patchAndFetchById(linha.id, {
       retorno_agendado_em: retorno,
@@ -3479,17 +3482,19 @@ async function marcarRetornoLead(linhaId, usuarioId, dados = {}, opcoes = {}) {
       } : {})
     });
 
-    if (retorno) {
-      await leadDistribuicaoService.registrarAcaoValida(
-        linha.id,
-        donoId,
-        'retorno_agendado',
-        trx
-      );
-    }
+    prazoRetornoDistribuicaoAtualizado = Boolean(await leadDistribuicaoService.atualizarPrazoRetorno(
+      linha.id,
+      donoId,
+      retorno,
+      trx
+    ));
   });
 
   await sincronizarNotificacaoRetornoLead(linha.id);
+
+  if (prazoRetornoDistribuicaoAtualizado && retorno && retornoAlterado) {
+    await leadDistribuicaoService.notificarRetornoAgendadoTelegram(linha.id, retorno);
+  }
 
   return buscarLinhaFormatada(linha.id);
 }
