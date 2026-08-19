@@ -3888,7 +3888,7 @@ function VendaModal({
   );
   const podeAdicionarDocumentosVendaEfetivo = Boolean(podeAdicionarDocumentosVenda);
   const podeAcessarDocumentosVenda = Boolean(podeVerDocumentosVenda || podeAdicionarDocumentosVendaEfetivo);
-  const vendaBloqueadaParaUsuario = enviadaPosVenda && !usuarioPosVenda;
+  const vendaBloqueadaParaUsuario = enviadaPosVenda && !usuarioPosVenda && !modoReversao;
   const podeRegistrarReversaoEfetivo = Boolean(venda?.id && podeRegistrarReversao && usuarioPodeAcessarVendaModal);
   const podeExcluirReversaoEfetivo = Boolean(venda?.id && podeExcluirReversao && usuarioPodeAcessarVendaModal);
   const podeCorrigirDataVenda = !editando || usuarioPosVenda || usuarioAdmin;
@@ -4063,7 +4063,7 @@ function VendaModal({
   }
 
   function iniciarReversao() {
-    if (!podeRegistrarReversaoEfetivo || vendaBloqueadaParaUsuario) return;
+    if (!podeRegistrarReversaoEfetivo) return;
     setErro('');
     setObservacaoReversao('');
     setAbaAtiva('venda');
@@ -5520,7 +5520,7 @@ function VendaModal({
           {abaExibida === 'problema' || abaExibida === 'cancelamento' ? (
             <>
               {podeRegistrarReversaoEfetivo && (
-                <button type="button" className="btn venda-reversao-btn" disabled={vendaBloqueadaParaUsuario} onClick={iniciarReversao}>
+                <button type="button" className="btn venda-reversao-btn" onClick={iniciarReversao}>
                   <I.History size={14} /> Registrar Reversão
                 </button>
               )}
@@ -5530,7 +5530,7 @@ function VendaModal({
             <>
               <button type="button" className="btn" onClick={handleClose}>Fechar</button>
               {podeRegistrarReversaoEfetivo && !podeEditarVendaEfetivo && (
-                <button type="button" className="btn venda-reversao-btn" disabled={salvando || vendaBloqueadaParaUsuario || docsAlterados} onClick={iniciarReversao}>
+                <button type="button" className="btn venda-reversao-btn" disabled={salvando || docsAlterados} onClick={iniciarReversao}>
                   <I.History size={14} /> Registrar Reversão
                 </button>
               )}
@@ -5540,7 +5540,7 @@ function VendaModal({
                 </button>
               )}
               {podeRegistrarReversaoEfetivo && podeEditarVendaEfetivo && (
-                <button type="button" className="btn venda-reversao-btn" disabled={salvando || vendaBloqueadaParaUsuario || docsAlterados} onClick={iniciarReversao}>
+                <button type="button" className="btn venda-reversao-btn" disabled={salvando || docsAlterados} onClick={iniciarReversao}>
                   <I.History size={14} /> Registrar Reversão
                 </button>
               )}

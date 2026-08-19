@@ -11,6 +11,7 @@ const {
   montarDetalhesChipsExportacao,
   montarAtribuicoesVendedorasVenda,
   montarAlteracoesReversao,
+  validarBloqueioEdicaoPosVenda,
   anexarReversoesVenda,
   aplicarFiltrosDataEfetivaVenda,
   aplicarOrdenacaoDataEfetivaVenda,
@@ -183,6 +184,19 @@ test('monta alteracoes de reversao normalizando campos simples e compostos', () 
     { campo: 'cliente_da_base', anterior: false, novo: true },
     { campo: 'vendedoras', anterior: [2], novo: [2, 3] }
   ]);
+});
+
+test('permite reversao de venda enviada ao pos-venda sem exigir permissao de pos-venda', () => {
+  assert.doesNotThrow(() => validarBloqueioEdicaoPosVenda({
+    enviada_pos_venda_em: '2026-08-13 11:00:00'
+  }, false, true));
+});
+
+test('mantem bloqueada a edicao comum de venda enviada para usuario sem permissao de pos-venda', () => {
+  assert.throws(
+    () => validarBloqueioEdicaoPosVenda({ enviada_pos_venda_em: '2026-08-13 11:00:00' }, false, false),
+    error => error.statusCode === 403 && /Apenas usuários com permissão de pós-venda/i.test(error.message)
+  );
 });
 
 test('anexa reversoes cronologicas e campos marcados ao retorno da venda', () => {
