@@ -31,6 +31,24 @@ async function registrar(linhaId, publicacao = {}) {
   return true;
 }
 
+/** Registra uma tentativa sem publicacao para permitir nova tentativa segura. */
+async function registrarFalha(linhaId) {
+  const id = Number(linhaId);
+  if (!id) return false;
+  const agora = new Date();
+  await db('lead_telegram_republicacoes')
+    .insert({
+      lead_linha_id: id,
+      status: 'falhou',
+      tentativas: 1,
+      created_at: agora,
+      updated_at: agora
+    })
+    .onConflict('lead_linha_id')
+    .ignore();
+  return true;
+}
+
 async function marcarRevertido(linha, opcoes = {}) {
   const publicacao = await db('lead_telegram_republicacoes')
     .where('lead_linha_id', Number(linha?.id))
@@ -48,4 +66,4 @@ async function marcarRevertido(linha, opcoes = {}) {
   return resultado;
 }
 
-module.exports = { registrar, marcarRevertido };
+module.exports = { registrar, registrarFalha, marcarRevertido };

@@ -2504,6 +2504,52 @@ function deveNotificarNovoFuturoCliente(linha) {
   return !jaEraFuturoCliente && !linha?.futuro_cliente_marcado_em;
 }
 
+function aplicarEscopoCarteiraFuturosClientes(query, usuarioId) {
+  return query.where('futuro_cliente_marcado_por_id', Number(usuarioId))
+    .where(builder => builder
+      .whereNull('futuro_cliente_destino')
+      .orWhereNot('futuro_cliente_destino', DESTINO_FUTURO_CLIENTE_DISTRIBUICAO));
+}
+
+const DESTINO_FUTURO_CLIENTE_CARTEIRA = 'carteira';
+const DESTINO_FUTURO_CLIENTE_DISTRIBUICAO = 'distribuicao';
+
+function resolverDestinoNovoFuturoCliente(linha, dados = {}) {
+  if (linha?.futuro_cliente) return linha.futuro_cliente_destino || null;
+  if (dados.destino === undefined || dados.destino === null || dados.destino === '') {
+    return DESTINO_FUTURO_CLIENTE_DISTRIBUICAO;
+  }
+  const destino = String(dados.destino).trim().toLowerCase();
+  if (![DESTINO_FUTURO_CLIENTE_CARTEIRA, DESTINO_FUTURO_CLIENTE_DISTRIBUICAO].includes(destino)) {
+    throw criarHttpError(400, 'Destino do futuro cliente invalido.');
+  }
+  return destino;
+}
+
+async function publicarFuturoClienteTelegram(linhaFormatada) {
+  try {
+    const publicacao = await telegramService.enviarFuturoCliente(linhaFormatada);
+    if (publicacao.enviado && publicacao.message_id) {
+      await leadTelegramPublicacaoService.registrar(linhaFormatada.id, publicacao);
+    } else {
+      await leadTelegramPublicacaoService.registrarFalha(linhaFormatada.id);
+    }
+    return publicacao;
+  } catch (error) {
+    // A indisponibilidade do Telegram nao pode desfazer o cadastro ou a decisao de distribuicao.
+    console.error('Erro ao notificar futuro cliente no Telegram:', {
+      message: error.response?.data?.description || error.message,
+      status: error.response?.status
+    });
+    try {
+      await leadTelegramPublicacaoService.registrarFalha(linhaFormatada.id);
+    } catch (registroError) {
+      console.error('Erro ao registrar falha de publicacao do futuro cliente:', registroError.message);
+    }
+    return { enviado: false, motivo: error.message };
+  }
+}
+
 async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = {}) {
   const linha = await LeadLinha.query().findById(linhaId);
   if (!linha) throw criarHttpError(404, 'Lead nÃ£o encontrado.');
@@ -2533,7 +2579,10 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
     ? (Number(linha.futuro_cliente_marcado_por_id) || donoId)
     : donoId;
 
-  const deveNotificarTelegram = deveNotificarNovoFuturoCliente(linha);
+  const novoFuturoCliente = deveNotificarNovoFuturoCliente(linha);
+  const destinoFuturoCliente = resolverDestinoNovoFuturoCliente(linha, dados);
+  const deveNotificarTelegram = novoFuturoCliente
+    && destinoFuturoCliente === DESTINO_FUTURO_CLIENTE_DISTRIBUICAO;
   const marcadoEm = linha.futuro_cliente_marcado_em || formatarDateTimeSQL();
 
   const razaoSocial = String(dados.razao_social || '').trim().slice(0, 240) || null;
@@ -2638,6 +2687,7 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
         futuro_cliente_retorno_realizado_por_id: null
       } : {}),
       futuro_cliente_marcado_em: marcadoEm, futuro_cliente_marcado_por_id: donoSondagemId,
+      ...(novoFuturoCliente ? { futuro_cliente_destino: destinoFuturoCliente } : {}),
       retorno_agendado_em: null, retorno_agendado_observacao: null, retorno_agendado_por_id: null,
       retorno_agendado_realizado_em: null, retorno_agendado_realizado_por_id: null,
       etapa_atual: atribuicaoVendaAceita ? 'venda' : 'sondagem',
@@ -2663,21 +2713,56 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
 
   const linhaFormatada = formatarLinha(atualizada);
   if (deveNotificarTelegram) {
-    try {
-      const publicacao = await telegramService.enviarFuturoCliente(linhaFormatada);
-      if (publicacao.enviado && publicacao.message_id) {
-        await leadTelegramPublicacaoService.registrar(linhaId, publicacao);
-      }
-    } catch (error) {
-      // A indisponibilidade do Telegram nao pode desfazer o cadastro do lead.
-      console.error('Erro ao notificar futuro cliente no Telegram:', {
-        message: error.response?.data?.description || error.message,
-        status: error.response?.status
-      });
-    }
+    await publicarFuturoClienteTelegram(linhaFormatada);
   }
 
   return { linha: linhaFormatada };
+}
+
+async function enviarFuturoClienteParaDistribuicao(linhaId, usuarioId) {
+  const id = Number(linhaId);
+  const usuario = Number(usuarioId);
+  let devePublicar = false;
+
+  await LeadLinha.transaction(async trx => {
+    const linha = await LeadLinha.query(trx).findById(id).forUpdate();
+    const erro = obterErroEnvioFuturoClienteDistribuicao(linha, usuario);
+    if (erro) throw criarHttpError(erro.statusCode, erro.message);
+    if (linha.futuro_cliente_destino === DESTINO_FUTURO_CLIENTE_DISTRIBUICAO) return;
+    await LeadLinha.query(trx).patchAndFetchById(id, {
+      futuro_cliente_destino: DESTINO_FUTURO_CLIENTE_DISTRIBUICAO,
+      updated_at: new Date()
+    });
+    devePublicar = true;
+  });
+
+  const atualizada = await LeadLinha.query()
+    .findById(id)
+    .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
+    .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'));
+  const linhaFormatada = formatarLinha(atualizada);
+  const publicacao = devePublicar
+    ? await publicarFuturoClienteTelegram(linhaFormatada)
+    : { enviado: false, motivo: 'ja_destinado_distribuicao' };
+  return { linha: linhaFormatada, publicacao };
+}
+
+function obterErroEnvioFuturoClienteDistribuicao(linha, usuarioId) {
+  if (!linha || !linha.futuro_cliente || linha.futuro_cliente_excluido_em) {
+    return { statusCode: 404, message: 'Futuro cliente nao encontrado.' };
+  }
+  if (Number(linha.futuro_cliente_marcado_por_id) !== Number(usuarioId)) {
+    return { statusCode: 403, message: 'Voce nao pode distribuir este futuro cliente.' };
+  }
+  if (linha.futuro_cliente_destino === DESTINO_FUTURO_CLIENTE_DISTRIBUICAO) return null;
+  if (linha.futuro_cliente_destino !== DESTINO_FUTURO_CLIENTE_CARTEIRA) {
+    return { statusCode: 409, message: 'Futuros clientes antigos permanecem na carteira e nao podem ser republicados por esta acao.' };
+  }
+  if (linha.venda_id || linha.etapa_atual === 'venda'
+    || ['distribuido_venda', 'vendido', 'perdido'].includes(linha.status_operacional)) {
+    return { statusCode: 409, message: 'Este futuro cliente nao esta disponivel para distribuicao.' };
+  }
+  return null;
 }
 
 /**
@@ -2773,10 +2858,10 @@ async function listarFuturosClientes(filtros = {}, usuarioId) {
   if (filtrarPorLinhaDaNotificacao) {
     query.where('id', linhaId);
     if (usuarioId) {
-      query.where('futuro_cliente_marcado_por_id', usuarioId);
+      aplicarEscopoCarteiraFuturosClientes(query, usuarioId);
     }
   } else if (usuarioId) {
-    query.where('futuro_cliente_marcado_por_id', usuarioId);
+    aplicarEscopoCarteiraFuturosClientes(query, usuarioId);
   }
 
   // O indicador da navegacao deve considerar somente os encaminhamentos que
@@ -4193,6 +4278,7 @@ module.exports = {
   exportarCsv,
   gerarPlanilhaXlsx,
   marcarComoFuturoCliente,
+  enviarFuturoClienteParaDistribuicao,
   reverterFuturoClienteLead,
   listarFuturosClientes,
   listarFuturosClientesRecebidos,
@@ -4218,7 +4304,8 @@ module.exports = {
     _internals: {
       aplicarBuscaDadosJson,
       aplicarBuscaMailingsUsuario,
-      aplicarFiltrosFuturosClientes,
+    aplicarFiltrosFuturosClientes,
+    aplicarEscopoCarteiraFuturosClientes,
       aplicarFiltrosQuery,
     aplicarFiltroVendaRecusada,
     combinarMetricasEnvio,
@@ -4232,6 +4319,8 @@ module.exports = {
     obterErroReversaoFuturoCliente,
     montarPatchReversaoFuturoCliente,
     deveNotificarNovoFuturoCliente,
+    resolverDestinoNovoFuturoCliente,
+    obterErroEnvioFuturoClienteDistribuicao,
     adicionarClassificacaoVendas,
     selecionarVendaAntiga,
     subtrairMesesUtc,

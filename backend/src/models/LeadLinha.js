@@ -26,6 +26,7 @@ class LeadLinha extends Model {
         futuro_cliente_retorno_realizado_por_id: { type: ['integer', 'null'] },
         futuro_cliente_marcado_em: { type: ['string', 'object', 'null'] },
         futuro_cliente_marcado_por_id: { type: ['integer', 'null'] },
+        futuro_cliente_destino: { type: ['string', 'null'], enum: ['carteira', 'distribuicao', null] },
         etapa_atual: { type: ['string', 'null'] },
         status_operacional: { type: ['string', 'null'] },
         cliente_id: { type: ['integer', 'null'] },

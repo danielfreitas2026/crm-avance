@@ -8,6 +8,7 @@ const {
   normalizarCnpjVenda,
   resolverCnpjFuturoCliente
 } = require('./lead-cnpj.service');
+const { validarCnpj } = require('./cnpj.service');
 
 function criarHttpError(statusCode, message) {
   const error = new Error(message);
@@ -19,6 +20,24 @@ function formatarDateTimeSQL(data = new Date()) {
   const pad = value => String(value).padStart(2, '0');
   return `${data.getUTCFullYear()}-${pad(data.getUTCMonth() + 1)}-${pad(data.getUTCDate())} `
     + `${pad(data.getUTCHours())}:${pad(data.getUTCMinutes())}:${pad(data.getUTCSeconds())}`;
+}
+
+function resolverCnpjPesquisa(linha, cnpjInformado) {
+  if (cnpjInformado === undefined || cnpjInformado === null || String(cnpjInformado).trim() === '') {
+    return resolverCnpjFuturoCliente(linha);
+  }
+
+  try {
+    return { cnpj: validarCnpj(cnpjInformado), origem: 'informado' };
+  } catch (error) {
+    throw criarHttpError(422, error.message || 'Informe um CNPJ valido para buscar vendas.');
+  }
+}
+
+function validarVendaCompativelComCnpj(venda, cnpj) {
+  if (normalizarCnpjVenda(venda) !== cnpj) {
+    throw criarHttpError(409, 'A venda selecionada pertence a outro CNPJ.');
+  }
 }
 
 function montarVendaCandidata(venda, contexto = {}) {
@@ -84,12 +103,18 @@ async function carregarVendedoras(vendaIds, trx = db) {
   }, new Map());
 }
 
-async function listarVendasCandidatas(linhaId) {
+async function listarVendasCandidatas(linhaId, cnpjInformado) {
   const linha = await carregarLinha(linhaId);
   if (!linha || !linha.futuro_cliente || linha.futuro_cliente_excluido_em) {
     throw criarHttpError(404, 'Futuro cliente ativo nao encontrado.');
   }
-  const referencia = resolverCnpjFuturoCliente(linha);
+  const referencia = resolverCnpjPesquisa(linha, cnpjInformado);
+  let referenciaOriginal = null;
+  try {
+    referenciaOriginal = resolverCnpjFuturoCliente(linha);
+  } catch (error) {
+    if (!cnpjInformado) throw error;
+  }
   const cnpjVendaSql = expressaoCnpjVenda();
   const vendasEncontradas = await db('vendas as v')
     .leftJoin('clientes as c', 'c.id', 'v.cliente_id')
@@ -135,6 +160,8 @@ async function listarVendasCandidatas(linhaId) {
     futuro_cliente_id: Number(linha.id),
     cnpj: referencia.cnpj,
     cnpj_origem: referencia.origem,
+    cnpj_original: referenciaOriginal?.cnpj || null,
+    cnpj_original_origem: referenciaOriginal?.origem || null,
     primeira_ligacao: {
       usuario_id: Number(linha.primeira_ligacao_usuario_id || linha.futuro_cliente_marcado_por_id) || null,
       usuario_nome: linha.primeira_ligacao_usuario_nome || linha.futuro_cliente_marcado_por_nome || null
@@ -148,7 +175,7 @@ async function listarVendasCandidatas(linhaId) {
   };
 }
 
-async function vincularVenda(linhaId, vendaId, usuarioId) {
+async function vincularVenda(linhaId, vendaId, usuarioId, cnpjInformado) {
   const agora = formatarDateTimeSQL();
   const resultado = await db.transaction(async trx => {
     const linha = await carregarLinha(linhaId, trx, true);
@@ -162,7 +189,7 @@ async function vincularVenda(linhaId, vendaId, usuarioId) {
       throw criarHttpError(409, 'Reverta a recusa antes de vincular uma venda.');
     }
 
-    const referencia = resolverCnpjFuturoCliente(linha);
+    const referencia = resolverCnpjPesquisa(linha, cnpjInformado);
     const venda = await trx('vendas as v')
       .leftJoin('clientes as c', 'c.id', 'v.cliente_id')
       .where('v.id', Number(vendaId))
@@ -170,9 +197,7 @@ async function vincularVenda(linhaId, vendaId, usuarioId) {
       .first('v.*', 'c.cnpj_digitos as cliente_cnpj_digitos');
     if (!venda || venda.excluido_em) throw criarHttpError(404, 'Venda nao encontrada.');
     if (venda.cancelada_em) throw criarHttpError(409, 'Vendas canceladas nao podem ser vinculadas.');
-    if (normalizarCnpjVenda(venda) !== referencia.cnpj) {
-      throw criarHttpError(409, 'A venda selecionada pertence a outro CNPJ.');
-    }
+    validarVendaCompativelComCnpj(venda, referencia.cnpj);
     if (venda.origem_lead_linha_id) {
       throw criarHttpError(409, `Esta venda ja esta vinculada ao futuro cliente #${venda.origem_lead_linha_id}.`);
     }
@@ -234,7 +259,8 @@ async function vincularVenda(linhaId, vendaId, usuarioId) {
       linha_id: Number(linha.id),
       venda_id: Number(venda.id),
       origem_sondador_id: origemSondadorId,
-      vendedor_id: Number(venda.vendedora_id) || null
+      vendedor_id: Number(venda.vendedora_id) || null,
+      cnpj_pesquisado: referencia.cnpj
     };
   });
   return resultado;
@@ -310,6 +336,8 @@ module.exports = {
     extrairCnpjsMailing,
     montarVendaCandidata,
     normalizarCnpjVenda,
-    resolverCnpjFuturoCliente
+    resolverCnpjPesquisa,
+    resolverCnpjFuturoCliente,
+    validarVendaCompativelComCnpj
   }
 };

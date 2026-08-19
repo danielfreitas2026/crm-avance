@@ -36,6 +36,17 @@ router.post(
   leadPlanilhaController.recusarFuturoCliente
 );
 router.get('/me/futuros-clientes/lixeira', exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']), leadPlanilhaController.listarFuturosClientesLixeira);
+router.post(
+  '/me/futuros-clientes/:id/distribuir',
+  exigirUmaPermissao(['futuros_clientes_registrar']),
+  auditar({
+    acao: 'lead_linha.futuro_cliente_enviado_distribuicao',
+    entidade: 'lead_linhas',
+    entidade_id: req => req.params.id,
+    dados: req => ({ linha_id: req.params.id, destino: 'distribuicao', usuario_id: req.usuario?.id })
+  }),
+  leadPlanilhaController.distribuirFuturoCliente
+);
 router.delete(
   '/me/futuros-clientes/:id',
   exigirUmaPermissao(['futuros_clientes_registrar']),
@@ -81,6 +92,7 @@ router.post(
       linha_id: req.params.id,
       notas: req.body?.notas,
       retorno: req.body?.retorno,
+      destino: req.body?.destino,
       usuario_id: req.usuario?.id
     })
   }),
@@ -341,6 +353,7 @@ router.post(
     dados: (req, resultado) => ({
       linha_id: req.params.id,
       venda_id: resultado?.venda_id || req.body?.venda_id,
+      cnpj_pesquisado: resultado?.cnpj_pesquisado || req.body?.cnpj || null,
       primeira_ligacao_usuario_id: resultado?.origem_sondador_id || null,
       vendedor_preservado_id: resultado?.vendedor_id || null,
       gerente_id: req.usuario?.id

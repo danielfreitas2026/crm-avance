@@ -2,7 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { _internals } = require('../src/services/lead-planilha.service');
 
-const { deveNotificarNovoFuturoCliente, deduplicarIndicacoesEnvio } = _internals;
+const {
+  aplicarEscopoCarteiraFuturosClientes,
+  deveNotificarNovoFuturoCliente,
+  deduplicarIndicacoesEnvio,
+  obterErroEnvioFuturoClienteDistribuicao,
+  resolverDestinoNovoFuturoCliente
+} = _internals;
+const db = require('../src/database/connection');
 
 test('notifica o Telegram somente ao qualificar um futuro cliente pela primeira vez', () => {
   assert.equal(deveNotificarNovoFuturoCliente({
@@ -23,6 +30,43 @@ test('nao renotifica registro ja qualificado mesmo com booleano legado inconsist
     futuro_cliente: false,
     futuro_cliente_marcado_em: '2026-07-20 12:30:00'
   }), false);
+});
+
+test('resolve o destino apenas no primeiro cadastro e preserva compatibilidade', () => {
+  assert.equal(resolverDestinoNovoFuturoCliente({ futuro_cliente: false }, { destino: 'carteira' }), 'carteira');
+  assert.equal(resolverDestinoNovoFuturoCliente({ futuro_cliente: false }, { destino: 'distribuicao' }), 'distribuicao');
+  assert.equal(resolverDestinoNovoFuturoCliente({ futuro_cliente: false }, {}), 'distribuicao');
+  assert.equal(resolverDestinoNovoFuturoCliente({ futuro_cliente: true, futuro_cliente_destino: 'carteira' }, { destino: 'distribuicao' }), 'carteira');
+  assert.equal(resolverDestinoNovoFuturoCliente({ futuro_cliente: true, futuro_cliente_destino: null }, {}), null);
+  assert.throws(() => resolverDestinoNovoFuturoCliente({ futuro_cliente: false }, { destino: 'invalido' }), /Destino do futuro cliente invalido/);
+});
+
+test('carteira propria preserva legados e exclui somente destino distribuicao', () => {
+  const query = db('lead_linhas').select('*');
+  aplicarEscopoCarteiraFuturosClientes(query, 17);
+  const consulta = query.toSQL();
+
+  assert.match(consulta.sql, /futuro_cliente_marcado_por_id/);
+  assert.match(consulta.sql, /futuro_cliente_destino.*is null.*not.*futuro_cliente_destino/);
+  assert.deepEqual(consulta.bindings, [17, 'distribuicao']);
+});
+
+test('envio posterior valida dono, legado e estados finais e aceita repeticao', () => {
+  const disponivel = {
+    futuro_cliente: true,
+    futuro_cliente_excluido_em: null,
+    futuro_cliente_marcado_por_id: 17,
+    futuro_cliente_destino: 'carteira',
+    status_operacional: 'qualificado',
+    etapa_atual: 'sondagem',
+    venda_id: null
+  };
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao(disponivel, 17), null);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, futuro_cliente_destino: 'distribuicao' }, 17), null);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, futuro_cliente_destino: null }, 17)?.statusCode, 409);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao(disponivel, 18)?.statusCode, 403);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, status_operacional: 'vendido' }, 17)?.statusCode, 409);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, futuro_cliente_excluido_em: new Date() }, 17)?.statusCode, 404);
 });
 
 test('exibe somente o encaminhamento mais recente de uma indicacao duplicada', () => {

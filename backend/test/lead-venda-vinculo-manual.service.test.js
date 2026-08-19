@@ -32,6 +32,33 @@ test('nao aceita busca sem CNPJ reconhecido', () => {
   );
 });
 
+test('aceita CNPJ alternativo valido sem alterar a referencia original', () => {
+  const linha = {
+    sondagem_cnpj: '12.345.678/0001-90',
+    dados_json: { CNPJ: '12.345.678/0001-90' }
+  };
+
+  assert.deepEqual(
+    _internals.resolverCnpjPesquisa(linha, '17.025.544/0007-04'),
+    { cnpj: '17025544000704', origem: 'informado' }
+  );
+  assert.deepEqual(
+    _internals.resolverCnpjPesquisa(linha),
+    { cnpj: '12345678000190', origem: 'sondagem' }
+  );
+});
+
+test('rejeita CNPJ alternativo invalido e venda de outro documento', () => {
+  assert.throws(
+    () => _internals.resolverCnpjPesquisa({}, '12.345.678/0001-90'),
+    error => error.statusCode === 422 && /inválido/.test(error.message)
+  );
+  assert.throws(
+    () => _internals.validarVendaCompativelComCnpj({ cnpj: '17025544000704' }, '11222333000181'),
+    error => error.statusCode === 409 && /outro CNPJ/.test(error.message)
+  );
+});
+
 test('normaliza o CNPJ efetivo da venda e so usa o cliente como fallback', () => {
   assert.equal(_internals.normalizarCnpjVenda({ cnpj: '12345678000190', cliente_cnpj_digitos: '98765432000110' }), '12345678000190');
   assert.equal(_internals.normalizarCnpjVenda({ cnpj: '', cliente_cnpj_digitos: '12.345.678/0001-90' }), '12345678000190');

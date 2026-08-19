@@ -529,6 +529,7 @@ function deveRepublicarPendenteAntiga(linha, possuiEncaminhamentoDeVenda) {
     && linha.futuro_cliente
     && !linha.futuro_cliente_excluido_em
     && linha.status_operacional === 'qualificado'
+    && linha.futuro_cliente_destino !== 'carteira'
     && !possuiEncaminhamentoDeVenda
   );
 }
@@ -554,6 +555,7 @@ async function republicarPendentesAntigosNoTelegram() {
   const pendentes = await db('lead_linhas as ll')
     .where({ 'll.futuro_cliente': true, 'll.status_operacional': 'qualificado' })
     .whereNull('ll.futuro_cliente_excluido_em')
+    .where(builder => builder.whereNull('ll.futuro_cliente_destino').orWhere('ll.futuro_cliente_destino', 'distribuicao'))
     .whereNotExists(function semEncaminhamentoDeVenda() {
       this.select('*')
         .from('lead_atribuicoes as la')

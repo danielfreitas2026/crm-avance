@@ -314,6 +314,15 @@ async function marcarFuturoCliente(req, res) {
   }
 }
 
+async function distribuirFuturoCliente(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.enviarFuturoClienteParaDistribuicao(req.params.id, req.usuario.id));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao enviar futuro cliente para distribuicao.' });
+  }
+}
+
 /**
  * Registra a avaliacao da primeira ligacao pela consultora receptora.
  */
@@ -455,7 +464,7 @@ async function exportarMetricasFuturosClientes(req, res) {
 
 async function listarVendasCandidatas(req, res) {
   try {
-    return res.json(await leadVendaVinculoManualService.listarVendasCandidatas(req.params.id));
+    return res.json(await leadVendaVinculoManualService.listarVendasCandidatas(req.params.id, req.query?.cnpj));
   } catch (error) {
     console.error(error);
     return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao localizar vendas candidatas.' });
@@ -467,7 +476,8 @@ async function adminVincularVenda(req, res) {
     const resultado = await leadVendaVinculoManualService.vincularVenda(
       req.params.id,
       req.body?.venda_id,
-      req.usuario.id
+      req.usuario.id,
+      req.body?.cnpj
     );
     const linha = await leadPlanilhaService.buscarLinhaFormatada(req.params.id);
     return res.json({ ...resultado, linha: linha.linha });
@@ -731,6 +741,7 @@ module.exports = {
   atualizarMeuCampo,
   exportarMinhas,
   marcarFuturoCliente,
+  distribuirFuturoCliente,
   avaliarPrimeiraLigacao,
   listarFuturosClientes,
   listarFuturosClientesRecebidos,

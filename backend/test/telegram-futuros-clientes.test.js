@@ -32,4 +32,6 @@ test('republica somente futuro cliente antigo qualificado e nunca encaminhado', 
   assert.equal(distribuicaoInternals.deveRepublicarPendenteAntiga(linhaPendente, true), false);
   assert.equal(distribuicaoInternals.deveRepublicarPendenteAntiga({ ...linhaPendente, status_operacional: 'distribuido_venda' }, false), false);
   assert.equal(distribuicaoInternals.deveRepublicarPendenteAntiga({ ...linhaPendente, futuro_cliente_excluido_em: new Date() }, false), false);
+  assert.equal(distribuicaoInternals.deveRepublicarPendenteAntiga({ ...linhaPendente, futuro_cliente_destino: 'carteira' }, false), false);
+  assert.equal(distribuicaoInternals.deveRepublicarPendenteAntiga({ ...linhaPendente, futuro_cliente_destino: 'distribuicao' }, false), true);
 });
