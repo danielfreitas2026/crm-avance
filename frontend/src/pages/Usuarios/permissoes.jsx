@@ -304,6 +304,11 @@ export const GRUPOS_PERMISSOES = [
             chave: 'gerenciar_leads',
             nome: 'Gerenciar mailing',
             descricao: 'Permite importar planilhas, filtrar e distribuir mailing entre vendedores.'
+          },
+          {
+            chave: 'futuros_clientes_ver_todos',
+            nome: 'Visualizar todos os futuros clientes',
+            descricao: 'Permite alternar entre a carteira própria e a carteira completa de futuros clientes.'
           }
         ]
       }

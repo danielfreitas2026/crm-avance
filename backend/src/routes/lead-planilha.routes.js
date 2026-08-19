@@ -9,8 +9,10 @@ const { exigirUmaPermissao } = require('../middlewares/permissao.middleware');
 router.use(authMiddleware);
 
 router.get('/me/envios', leadPlanilhaController.meusEnvios);
+router.get('/me/mailings', leadPlanilhaController.meusMailings);
 router.get('/me/linhas', leadPlanilhaController.minhasLinhas);
 router.get('/me/futuros-clientes', exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']), leadPlanilhaController.listarFuturosClientes);
+router.get('/me/futuros-clientes/recebidos', exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']), leadPlanilhaController.listarFuturosClientesRecebidos);
 router.post(
   '/me/futuros-clientes/:id/aceitar',
   exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']),
@@ -380,7 +382,7 @@ router.put(
 );
 router.post('/exportar', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.exportar);
 router.post('/exportar-xlsx/:id', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.exportarPlanilhaXlsx);
-router.get('/futuros-clientes', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.listarTodosFuturosClientes);
+router.get('/futuros-clientes', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.listarTodosFuturosClientes);
 router.post(
   '/futuros-clientes/republicar-pendentes-telegram',
   exigirUmaPermissao(['gerenciar_leads']),
@@ -393,6 +395,9 @@ router.post(
 );
 router.get('/futuros-clientes/metricas', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.metricasFuturosClientes);
 router.get('/futuros-clientes/metricas/exportar', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.exportarMetricasFuturosClientes);
+router.get('/futuros-clientes/estatisticas/resumo', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.estatisticasResumo);
+router.get('/futuros-clientes/estatisticas/usuarios/:usuarioId/mailings', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.estatisticasMailings);
+router.get('/futuros-clientes/estatisticas/usuarios/:usuarioId/mailings/:envioId/linhas', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.estatisticasLinhas);
 router.post(
   '/dividir',
   exigirUmaPermissao(['gerenciar_leads']),

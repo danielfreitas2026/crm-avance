@@ -252,6 +252,15 @@ async function meusEnvios(req, res) {
   }
 }
 
+async function meusMailings(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.listarMailingsDoUsuario(req.query, req.usuario.id));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Erro ao listar mailings recebidos.' });
+  }
+}
+
 /**
  * Processa minhas linhas conforme as regras do dominio.
  */
@@ -335,6 +344,15 @@ async function listarFuturosClientes(req, res) {
   }
 }
 
+async function listarFuturosClientesRecebidos(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.listarFuturosClientesRecebidos(req.query, req.usuario.id));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Erro ao listar futuros clientes recebidos.' });
+  }
+}
+
 /** Aceita uma indicacao e inicia o prazo para registro de contato. */
 async function aceitarFuturoCliente(req, res) {
   try {
@@ -389,17 +407,48 @@ async function metricasFuturosClientes(req, res) {
   }
 }
 
+async function estatisticasResumo(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.obterEstatisticasResumo(req.query));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Erro ao carregar o resumo estatistico.' });
+  }
+}
+
+async function estatisticasMailings(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.obterEstatisticasMailings({ ...req.query, usuario_id: req.params.usuarioId }));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Erro ao carregar os mailings do usuario.' });
+  }
+}
+
+async function estatisticasLinhas(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.obterEstatisticasLinhas({
+      ...req.query,
+      usuario_id: req.params.usuarioId,
+      envio_id: req.params.envioId
+    }));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Erro ao carregar os leads do mailing.' });
+  }
+}
+
 /** Exporta a produtividade de primeira ligação em Excel. */
 async function exportarMetricasFuturosClientes(req, res) {
   try {
-    const { buffer, nome } = await leadPlanilhaService.gerarXlsxProdutividadePrimeiraLigacao(req.query);
+    const { buffer, nome } = await leadPlanilhaService.gerarXlsxEstatisticasFuturosClientes(req.query);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${nome}"`);
     return res.send(buffer);
   } catch (error) {
     console.error(error);
     return res.status(error.statusCode || 500).json({
-      message: error.message || 'Erro ao exportar a produtividade da primeira ligação.'
+      message: error.message || 'Erro ao exportar as estatísticas de futuros clientes.'
     });
   }
 }
@@ -677,17 +726,22 @@ module.exports = {
   envios,
   atualizarNomeEnvio,
   meusEnvios,
+  meusMailings,
   minhasLinhas,
   atualizarMeuCampo,
   exportarMinhas,
   marcarFuturoCliente,
   avaliarPrimeiraLigacao,
   listarFuturosClientes,
+  listarFuturosClientesRecebidos,
   aceitarFuturoCliente,
   recusarFuturoCliente,
   listarTodosFuturosClientes,
   republicarPendentesAntigosTelegram,
   metricasFuturosClientes,
+  estatisticasResumo,
+  estatisticasMailings,
+  estatisticasLinhas,
   exportarMetricasFuturosClientes,
   listarVendasCandidatas,
   adminVincularVenda,

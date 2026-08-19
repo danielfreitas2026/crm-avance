@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as I from '../../components/Icons';
 import {
   aceitarFuturoCliente,
@@ -9,6 +9,22 @@ function FuturoClienteAceiteModal({ linha, onClose, onAceito, onRecusado }) {
   const [processando, setProcessando] = useState(false);
   const [motivo, setMotivo] = useState('');
   const [erro, setErro] = useState('');
+  const fecharRef = useRef(null);
+  const status = linha?.distribuicao?.status;
+  const podeResponder = status === 'aguardando_aceite';
+
+  useEffect(() => {
+    const focoAnterior = document.activeElement;
+    fecharRef.current?.focus();
+    const fecharComEscape = event => {
+      if (event.key === 'Escape' && !processando) onClose();
+    };
+    document.addEventListener('keydown', fecharComEscape);
+    return () => {
+      document.removeEventListener('keydown', fecharComEscape);
+      focoAnterior?.focus?.();
+    };
+  }, [onClose, processando]);
 
   async function aceitar() {
     setProcessando(true);
@@ -49,11 +65,12 @@ function FuturoClienteAceiteModal({ linha, onClose, onAceito, onRecusado }) {
         <div className="modal-header">
           <div className="modal-header-row">
             <div>
-              <div className="modal-client" id="aceite-indicacao-titulo">Nova indicação</div>
-              <div className="modal-sub">Os dados serão liberados somente depois do aceite.</div>
+              <div className="modal-client" id="aceite-indicacao-titulo">{podeResponder ? 'Nova indicação' : 'Histórico do encaminhamento'}</div>
+              <div className="modal-sub">Os dados permanecem protegidos quando o encaminhamento não foi aceito.</div>
             </div>
             <button
               type="button"
+              ref={fecharRef}
               className="btn btn-icon btn-ghost"
               title="Fechar"
               aria-label="Fechar modal"
@@ -69,12 +86,12 @@ function FuturoClienteAceiteModal({ linha, onClose, onAceito, onRecusado }) {
           <div className="trash-warning">
             <I.History size={20} />
             <div>
-              <strong>Ao aceitar, você terá 30 minutos para registrar uma ação no CRM.</strong>
-              <span>Venda, cliente recusou, chamada não atendida ou retorno agendado encerram a contagem.</span>
+              <strong>{podeResponder ? 'Ao aceitar, você terá 30 minutos para registrar uma ação no CRM.' : `Este encaminhamento está ${status || 'encerrado'}.`}</strong>
+              <span>{podeResponder ? 'Venda, cliente recusou, chamada não atendida ou retorno agendado encerram a contagem.' : `Recebido em ${linha.recebido_em || linha.distribuicao?.atribuido_em || '-'}.`}</span>
             </div>
           </div>
 
-          <label className="form-field" style={{ marginTop: 16 }}>
+          {podeResponder && <label className="form-field" style={{ marginTop: 16 }}>
             <span>Motivo da recusa (opcional)</span>
             <textarea
               rows={3}
@@ -83,19 +100,19 @@ function FuturoClienteAceiteModal({ linha, onClose, onAceito, onRecusado }) {
               onChange={event => setMotivo(event.target.value)}
               disabled={processando}
             />
-          </label>
+          </label>}
           {erro && <div className="alert-error" style={{ marginTop: 12 }}>{erro}</div>}
         </div>
 
         <div className="modal-footer">
-          <button type="button" className="btn btn-danger" onClick={recusar} disabled={processando}>
+          {podeResponder && <button type="button" className="btn btn-danger" onClick={recusar} disabled={processando}>
             {processando ? 'Processando...' : 'Recusar indicação'}
-          </button>
+          </button>}
           <div style={{ flex: 1 }} />
-          <button type="button" className="btn" onClick={onClose} disabled={processando}>Agora não</button>
-          <button type="button" className="btn btn-primary" onClick={aceitar} disabled={processando}>
+          <button type="button" className="btn" onClick={onClose} disabled={processando}>{podeResponder ? 'Agora não' : 'Fechar'}</button>
+          {podeResponder && <button type="button" className="btn btn-primary" onClick={aceitar} disabled={processando}>
             {processando ? 'Processando...' : 'Aceitar e ver detalhes'}
-          </button>
+          </button>}
         </div>
       </div>
     </div>

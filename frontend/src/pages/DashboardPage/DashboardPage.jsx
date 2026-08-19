@@ -1205,16 +1205,16 @@ function DashboardPage() {
 
     if (notificacao.tipo === TIPO_FUTURO_CLIENTE_DISTRIBUIDO) {
       const linhaId = Number(notificacao.entidade_id || notificacao.dados?.lead_linha_id || 0);
-      navigate(linhaId > 0 ? `/futuros-clientes?linha_id=${linhaId}` : '/futuros-clientes');
+      navigate(linhaId > 0 ? `/futuros-clientes?aba=recebidos&linha_id=${linhaId}` : '/futuros-clientes?aba=recebidos');
       return;
     }
 
     if (TIPOS_RETORNO_PAGINA_LEADS.includes(notificacao.tipo)) {
       const linhaId = Number(notificacao.entidade_id || notificacao.dados?.lead_linha_id || 0);
       if (TIPOS_RETORNO_MAILING.includes(notificacao.tipo)) {
-        navigate(linhaId > 0 ? `/futuros-clientes?aba=leads&linha_id=${linhaId}` : '/futuros-clientes?aba=leads');
+        navigate(linhaId > 0 ? `/futuros-clientes?aba=mailings&linha_id=${linhaId}` : '/futuros-clientes?aba=mailings');
       } else {
-        navigate(linhaId > 0 ? `/futuros-clientes?linha_id=${linhaId}` : '/futuros-clientes');
+        navigate(linhaId > 0 ? `/futuros-clientes?aba=meus&linha_id=${linhaId}` : '/futuros-clientes?aba=meus');
       }
       return;
     }

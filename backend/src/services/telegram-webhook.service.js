@@ -57,6 +57,7 @@ async function distribuir(linhaId, vendedoraId, gerenteTelegramId, telegramConte
     const dadosLead = obterDadosLead(linha.dados_json);
     const resultadoEnvio = await trx('lead_envios').insert({
       nome: `Indicacao #${linhaId}`,
+      origem: 'futuro_cliente_telegram',
       total_linhas: 1,
       colunas_visiveis: JSON.stringify(Object.keys(dadosLead)),
       criado_por_id: null

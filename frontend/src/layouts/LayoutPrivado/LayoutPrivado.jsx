@@ -22,7 +22,7 @@ import {
   iniciarAberturaNotificacao
 } from '../../services/notificacao-abertura.service';
 import { contarMensagensNaoLidas } from '../../services/mensagem.service';
-import { listarFuturosClientesLeads } from '../../services/lead-planilha.service';
+import { listarFuturosClientesRecebidos } from '../../services/lead-planilha.service';
 import {
   assinaturaNotificacoesNavbar,
   chaveNotificacaoNavbar,
@@ -388,7 +388,7 @@ function LayoutPrivado({ children }) {
 
     async function carregar() {
       try {
-        const dados = await listarFuturosClientesLeads({ page: 1, page_size: 1, aguardando_aceite: true });
+        const dados = await listarFuturosClientesRecebidos({ page: 1, page_size: 1, status: 'acao' });
         if (ativo) setFuturosClientesPendentes(Number(dados?.total || 0));
       } catch {
         if (ativo) setFuturosClientesPendentes(0);

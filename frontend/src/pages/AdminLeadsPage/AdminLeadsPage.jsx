@@ -31,6 +31,7 @@ import {
 } from '../../services/lead-planilha.service';
 import { previewPlanilhaClientesAntigos } from '../../services/cliente-antigo.service';
 import { formatUtcDateTime, localDateTimeInputToUtc, toLocalDateTimeInputFromUtc } from '../../utils/datetime';
+import { getVendaClassificacaoTipo } from '../FuturosClientesPage/lead-status';
 import './AdminLeadsPage.css';
 
 const MAPEAMENTO_CLIENTES_ANTIGOS = {
@@ -178,7 +179,7 @@ function isLeadVendaRecusada(linha) {
  * Indica se o lead possui uma venda vinculada.
  */
 function isLeadVendaRegistrada(linha) {
-  return Boolean(linha?.venda_id || linha?.status_operacional === 'vendido' || linha?.possui_venda_cliente);
+  return Boolean(getVendaClassificacaoTipo(linha));
 }
 
 /**
@@ -231,8 +232,11 @@ export function LeadStatusChips({ linha }) {
           <span className="pill-dot"></span>1&ordf; liga&ccedil;&atilde;o: {avaliacao.label}
         </span>
       )}
-      {isLeadVendaRegistrada(linha) && (
-        <span className="pill lead-status-pill sold" title="Este futuro cliente possui uma venda vinculada"><span className="pill-dot"></span>Venda registrada</span>
+      {getVendaClassificacaoTipo(linha) === 'venda_futuro_cliente' && (
+        <span className="pill lead-status-pill sold" title="Venda originada por este futuro cliente"><span className="pill-dot"></span>Venda registrada por futuro cliente</span>
+      )}
+      {getVendaClassificacaoTipo(linha) === 'venda_antiga_registrada' && (
+        <span className="pill lead-status-pill old-sale" title="Venda concluída antes do recebimento deste mailing"><span className="pill-dot"></span>Venda antiga registrada</span>
       )}
       {isLeadVendaRecusada(linha) && (
         <span className="pill lead-status-pill refused" title={linha.venda_recusada_motivo ? `Motivo: ${linha.venda_recusada_motivo}` : 'Venda recusada'}>

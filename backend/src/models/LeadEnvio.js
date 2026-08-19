@@ -15,6 +15,7 @@ class LeadEnvio extends Model {
       properties: {
         id: { type: 'integer' },
         nome: { type: 'string', minLength: 1, maxLength: 240 },
+        origem: { type: 'string', enum: ['mailing', 'futuro_cliente_telegram'] },
         total_linhas: { type: 'integer' },
         colunas_visiveis: { type: ['array', 'string', 'null'] },
         criado_por_id: { type: ['integer', 'null'] },

@@ -243,6 +243,10 @@ export function listarMeusLeadEnvios() {
   return apiGet('/lead-planilhas/me/envios');
 }
 
+export function listarMeusMailings(filtros = {}) {
+  return apiGet(`/lead-planilhas/me/mailings${montarQuery(filtros)}`);
+}
+
 /**
  * Lista minhas lead linhas conforme os filtros e parametros informados.
  */
@@ -406,6 +410,22 @@ export async function exportarMetricasFuturosClientesExcel(filtros = {}) {
  */
 export function listarFuturosClientesLeads(filtros = {}) {
   return apiGet(`/lead-planilhas/me/futuros-clientes${montarQuery(filtros)}`);
+}
+
+export function listarFuturosClientesRecebidos(filtros = {}) {
+  return apiGet(`/lead-planilhas/me/futuros-clientes/recebidos${montarQuery(filtros)}`);
+}
+
+export function listarEstatisticasFuturosClientes(filtros = {}) {
+  return apiGet(`/lead-planilhas/futuros-clientes/estatisticas/resumo${montarQuery(filtros)}`);
+}
+
+export function listarEstatisticasMailingsUsuario(usuarioId, filtros = {}) {
+  return apiGet(`/lead-planilhas/futuros-clientes/estatisticas/usuarios/${usuarioId}/mailings${montarQuery(filtros)}`);
+}
+
+export function listarEstatisticasLinhasMailing(usuarioId, envioId, filtros = {}) {
+  return apiGet(`/lead-planilhas/futuros-clientes/estatisticas/usuarios/${usuarioId}/mailings/${envioId}/linhas${montarQuery(filtros)}`);
 }
 
 /** Aceita a indicacao e libera seus detalhes. */

@@ -979,7 +979,7 @@ function aplicarFiltrosQuery(query, filtros = {}, opcoes = {}) {
     query.whereNotNull('retorno_agendado_em').where('futuro_cliente', false);
   } else if (status === 'chamada_nao_atendida') {
     query.where('chamada_nao_atendida', true).where('futuro_cliente', false);
-  } else if (status === 'venda_registrada') {
+  } else if (status === 'venda_registrada' || status === 'venda_futuro_cliente') {
     query.where('futuro_cliente', true).whereNull('futuro_cliente_excluido_em')
       .where(builder => builder.whereNotNull('venda_id').orWhere('status_operacional', 'vendido'));
   } else if (status === 'venda_recusada') {
@@ -995,8 +995,18 @@ function aplicarFiltrosQuery(query, filtros = {}, opcoes = {}) {
       .whereNot('status_operacional', 'perdido')
       .whereNull('retorno_agendado_em');
   }
-  if (filtros.busca) {
-    query.whereRaw('LOWER(CAST(dados_json AS CHAR)) LIKE ?', [`%${String(filtros.busca).toLowerCase()}%`]);
+  if (filtros.busca) aplicarBuscaDadosJson(query, filtros.busca);
+  if (filtros.busca_global) {
+    const buscaGlobal = String(filtros.busca_global).trim().toLowerCase();
+    query.where(builder => {
+      aplicarBuscaDadosJson(builder, buscaGlobal);
+      builder.orWhereExists(
+        db('lead_envios as le_busca')
+          .select(db.raw('1'))
+          .whereRaw('le_busca.id = lead_linhas.envio_id')
+          .whereRaw('LOWER(COALESCE(le_busca.nome, "")) LIKE ?', [`%${buscaGlobal}%`])
+      );
+    });
   }
 
   const filtrosColuna = parseJson(filtros.filters, Array.isArray(filtros.filters) ? filtros.filters : []);
@@ -1042,6 +1052,7 @@ function aplicarFiltroVendaRecusada(query) {
 function filtrosPermitemIndicacaoPendente(filtros = {}) {
   const status = String(filtros.status || '').trim();
   return !String(filtros.busca || '').trim()
+    && !String(filtros.busca_global || '').trim()
     && (!status || status === 'futuro_cliente');
 }
 
@@ -1116,6 +1127,25 @@ async function carregarIndicacoesPendentes(query, offset, limit) {
 async function listarLinhas(filtros = {}, opcoes = {}) {
   const page = Math.max(1, Number(filtros.page || 1));
   const pageSize = Math.min(500, Math.max(1, Number(filtros.page_size || filtros.pageSize || 200)));
+  if (String(filtros.status || '') === 'venda_antiga_registrada') {
+    const queryClassificacao = LeadLinha.query();
+    aplicarFiltrosQuery(queryClassificacao, { ...filtros, status: '' }, opcoes);
+    const candidatas = await queryClassificacao
+      .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
+      .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'))
+      .orderBy('planilha_id', 'asc')
+      .orderBy('row_index', 'asc');
+    const classificadas = (await adicionarClassificacaoVendas(candidatas.map(formatarLinha)))
+      .filter(linha => linha.venda_classificacao?.tipo === 'venda_antiga_registrada');
+    const data = classificadas.slice((page - 1) * pageSize, page * pageSize);
+    return {
+      data,
+      total: classificadas.length,
+      resumo: { total: classificadas.length, enviados: classificadas.length, qualificados: 0, nao_enviados: 0 },
+      page,
+      page_size: pageSize
+    };
+  }
   const baseQuery = LeadLinha.query();
   aplicarFiltrosQuery(baseQuery, filtros, opcoes);
 
@@ -1169,14 +1199,17 @@ async function listarLinhas(filtros = {}, opcoes = {}) {
     .filter(cliente => idsComVenda.has(Number(cliente.id)))
     .map(cliente => cliente.cnpj_digitos));
 
+  const linhasFormatadas = [
+    ...pendentes,
+    ...linhasVinculadas.map(linha => ({
+      ...formatarLinha(linha),
+      possui_venda_cliente: Array.from(extrairCnpjsLinha(linha)).some(cnpj => cnpjsComVenda.has(cnpj))
+    }))
+  ];
+  const data = await adicionarClassificacaoVendas(linhasFormatadas);
+
   return {
-    data: [
-      ...pendentes,
-      ...linhasVinculadas.map(linha => ({
-        ...formatarLinha(linha),
-        possui_venda_cliente: Array.from(extrairCnpjsLinha(linha)).some(cnpj => cnpjsComVenda.has(cnpj))
-      }))
-    ],
+    data,
     total,
     resumo: {
       total,
@@ -1550,6 +1583,7 @@ async function dividirLeads(dados, usuarioId) {
   return LeadEnvio.transaction(async trx => {
     const envio = await LeadEnvio.query(trx).insertAndFetch({
       nome: String(dados.nome).trim(),
+      origem: 'mailing',
       total_linhas: quantidadeTotal,
       colunas_visiveis: JSON.stringify(dados.colunas_visiveis || []),
       criado_por_id: usuarioId
@@ -2360,7 +2394,11 @@ function obterStatusExportacao(linha) {
 
   if (linha.futuro_cliente && linha.futuro_cliente_excluido_em) status.push('Na lixeira');
   if (linha.futuro_cliente && !linha.futuro_cliente_excluido_em) status.push('Futuro cliente');
-  if (linha.venda_id || linha.status_operacional === 'vendido' || linha.possui_venda_cliente) status.push('Venda registrada');
+  if (linha.venda_classificacao?.tipo === 'venda_futuro_cliente' || linha.venda_id || linha.status_operacional === 'vendido') {
+    status.push('Venda registrada por futuro cliente');
+  } else if (linha.venda_classificacao?.tipo === 'venda_antiga_registrada' || linha.possui_venda_cliente) {
+    status.push('Venda antiga registrada');
+  }
   if (linha.status_operacional === 'perdido' || linha.venda_recusada_em || linha.venda_recusada_motivo) status.push('Venda recusada');
   if (linha.cliente_recusou) status.push('Cliente recusou');
   if (linha.chamada_nao_atendida) status.push('Chamada n\u00e3o atendida');
@@ -2735,25 +2773,10 @@ async function listarFuturosClientes(filtros = {}, usuarioId) {
   if (filtrarPorLinhaDaNotificacao) {
     query.where('id', linhaId);
     if (usuarioId) {
-      query.where(builder => builder
-        .where('futuro_cliente_marcado_por_id', usuarioId)
-        .orWhere('atribuido_para_id', usuarioId)
-        .orWhereExists(
-          db('lead_atribuicoes as la')
-            .select(db.raw('1'))
-            .whereRaw('la.lead_linha_id = lead_linhas.id')
-            .where('la.usuario_id', Number(usuarioId))
-            .where('la.etapa', 'venda')
-            .whereIn('la.aceite_status', [
-              leadDistribuicaoService.ACEITE_AGUARDANDO,
-              leadDistribuicaoService.ACEITE_ACEITO
-            ])
-        ));
+      query.where('futuro_cliente_marcado_por_id', usuarioId);
     }
   } else if (usuarioId) {
-    query.where(builder => builder
-      .where('futuro_cliente_marcado_por_id', usuarioId)
-      .orWhere('atribuido_para_id', usuarioId));
+    query.where('futuro_cliente_marcado_por_id', usuarioId);
   }
 
   // O indicador da navegacao deve considerar somente os encaminhamentos que
@@ -2786,8 +2809,7 @@ async function listarFuturosClientes(filtros = {}, usuarioId) {
     usuarioId
   );
 
-  return {
-    data: linhas.map(linha => {
+  const formatadas = linhas.map(linha => {
       const formatada = formatarLinha(linha);
       const distribuicao = distribuicoes.get(Number(linha.id));
       return usuarioId
@@ -2797,7 +2819,11 @@ async function listarFuturosClientes(filtros = {}, usuarioId) {
           distribuicao: leadDistribuicaoService.dadosDistribuicao(distribuicao),
           detalhes_bloqueados: false
         };
-    }),
+    });
+  const data = await adicionarClassificacaoVendas(formatadas);
+
+  return {
+    data,
     total,
     page,
     page_size: pageSize
@@ -3004,6 +3030,597 @@ async function gerarXlsxProdutividadePrimeiraLigacao(filtros = {}) {
     buffer: await workbook.xlsx.writeBuffer(),
     nome: `produtividade-primeira-ligacao-${sufixo}.xlsx`
   };
+}
+
+/** Retorna apenas os digitos quando o termo informado pode representar um documento. */
+function normalizarBuscaDocumento(valor) {
+  const busca = String(valor || '').trim();
+  if (!busca || !/^[\d\s./-]+$/.test(busca)) return '';
+  const digitos = busca.replace(/\D/g, '');
+  return digitos.length >= 3 ? digitos : '';
+}
+
+/** Aplica busca textual no JSON e, para documentos, tambem ignora mascara e espacos. */
+function aplicarBuscaDadosJson(query, busca, coluna = 'dados_json') {
+  const termo = String(busca || '').trim().toLowerCase();
+  if (!termo) return query;
+
+  const digitos = normalizarBuscaDocumento(termo);
+  return query.where(builder => {
+    builder.whereRaw(`LOWER(CAST(${coluna} AS CHAR)) LIKE ?`, [`%${termo}%`]);
+    if (digitos) {
+      builder.orWhereRaw(
+        `REPLACE(REPLACE(REPLACE(REPLACE(CAST(${coluna} AS CHAR), '.', ''), '/', ''), '-', ''), ' ', '') LIKE ?`,
+        [`%${digitos}%`]
+      );
+    }
+  });
+}
+
+/** Filtra mailings por nome ou por uma linha pertencente ao usuario autenticado. */
+function aplicarBuscaMailingsUsuario(query, busca, usuarioId) {
+  const termo = String(busca || '').trim().toLowerCase();
+  if (!termo) return query;
+
+  return query.where(builder => builder
+    .whereRaw('LOWER(lead_envios.nome) LIKE ?', [`%${termo}%`])
+    .orWhereExists(
+      aplicarBuscaDadosJson(
+        db('lead_linhas as ll_busca')
+          .select(db.raw('1'))
+          .whereRaw('ll_busca.envio_id = lead_envios.id')
+          .where('ll_busca.atribuido_para_id', Number(usuarioId)),
+        termo,
+        'll_busca.dados_json'
+      )
+    ));
+}
+
+/** Lista somente mailings grandes recebidos pelo usuario, com busca e paginacao. */
+async function listarMailingsDoUsuario(filtros = {}, usuarioId) {
+  const page = Math.max(1, Number(filtros.page || 1));
+  const pageSize = Math.min(100, Math.max(1, Number(filtros.page_size || 24)));
+  const busca = String(filtros.busca || '').trim();
+  const base = LeadEnvio.query()
+    .whereNull('cancelado_em')
+    .where('origem', 'mailing')
+    .whereExists(
+      LeadEnvioUsuario.query()
+        .select(1)
+        .whereRaw('lead_envio_usuarios.envio_id = lead_envios.id')
+        .where('lead_envio_usuarios.usuario_id', usuarioId)
+    );
+  if (busca) aplicarBuscaMailingsUsuario(base, busca, usuarioId);
+  const total = await base.clone().resultSize();
+  const encontrados = await base
+    .withGraphFetched('usuarios.usuario')
+    .modifyGraph('usuarios.usuario', builder => builder.select('id', 'nome', 'email'))
+    .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
+    .offset((page - 1) * pageSize)
+    .limit(pageSize);
+  const ids = encontrados.map(item => Number(item.id));
+  const metricas = ids.length ? await LeadLinha.query()
+    .select('envio_id')
+    .count('id as total_linhas')
+    .select(db.raw('SUM(CASE WHEN (futuro_cliente = 1 AND futuro_cliente_excluido_em IS NULL) OR venda_recusada_em IS NOT NULL OR cliente_recusou = 1 OR chamada_nao_atendida = 1 THEN 1 ELSE 0 END) as total_trabalhados'))
+    .select(db.raw('SUM(CASE WHEN cliente_recusou = 1 THEN 1 ELSE 0 END) as total_recusados'))
+    .select(db.raw('SUM(CASE WHEN chamada_nao_atendida = 1 THEN 1 ELSE 0 END) as total_nao_atendidos'))
+    .select(db.raw('SUM(CASE WHEN futuro_cliente = 1 AND futuro_cliente_excluido_em IS NULL THEN 1 ELSE 0 END) as total_futuros'))
+    .whereIn('envio_id', ids)
+    .where('atribuido_para_id', usuarioId)
+    .groupBy('envio_id') : [];
+  const porEnvio = new Map(metricas.map(item => [Number(item.envio_id), combinarMetricasEnvio({
+    totalLinhas: item.total_linhas,
+    totalTrabalhados: item.total_trabalhados,
+    totalRecusados: item.total_recusados,
+    totalNaoAtendidos: item.total_nao_atendidos,
+    totalFuturos: item.total_futuros
+  })]));
+  const envios = encontrados.map(envio => {
+    const formatado = formatarEnvio(envio);
+    const resumo = porEnvio.get(Number(envio.id)) || combinarMetricasEnvio();
+    return { ...formatado, total_linhas: resumo.totalLinhas, total_trabalhados: resumo.totalTrabalhados, total_recusados: resumo.totalRecusados, total_nao_atendidos: resumo.totalNaoAtendidos, total_futuros: resumo.totalFuturos, total_a_trabalhar: resumo.totalATrabalhar };
+  });
+  return {
+    data: envios,
+    total,
+    page,
+    page_size: pageSize
+  };
+}
+
+function aplicarFiltroAceiteRecebidos(query, status) {
+  const valor = String(status || 'acao').trim();
+  if (valor === 'acao') {
+    query.where(builder => builder
+      .where('la.aceite_status', leadDistribuicaoService.ACEITE_AGUARDANDO)
+      .orWhere(subquery => subquery
+        .where('la.aceite_status', leadDistribuicaoService.ACEITE_ACEITO)
+        .whereNull('la.acao_registrada_em')));
+  } else if (valor === 'encerrado') {
+    query.whereNotNull('la.acao_registrada_em');
+  } else if (valor && valor !== 'todos') {
+    query.where('la.aceite_status', valor);
+  }
+  return query;
+}
+
+/** Lista cada encaminhamento de futuro cliente recebido pelo Telegram. */
+async function listarFuturosClientesRecebidos(filtros = {}, usuarioId) {
+  const page = Math.max(1, Number(filtros.page || 1));
+  const pageSize = Math.min(100, Math.max(1, Number(filtros.page_size || 30)));
+  const base = db('lead_atribuicoes as la')
+    .leftJoin('lead_envios as le', 'le.id', 'la.envio_id')
+    .where('la.usuario_id', Number(usuarioId))
+    .where('la.etapa', 'venda')
+    .whereNotNull('la.aceite_status');
+  aplicarFiltroAceiteRecebidos(base, filtros.status);
+  const linhaId = Number(filtros.linha_id || 0);
+  if (linhaId > 0) base.where('la.lead_linha_id', linhaId);
+
+  const busca = String(filtros.busca || '').trim().toLowerCase();
+  if (busca) {
+    base.where(builder => builder
+      .whereRaw('LOWER(COALESCE(le.nome, "")) LIKE ?', [`%${busca}%`])
+      .orWhereExists(
+        db('lead_linhas as ll_busca')
+          .select(db.raw('1'))
+          .whereRaw('ll_busca.id = la.lead_linha_id')
+          .whereRaw('LOWER(CAST(ll_busca.dados_json AS CHAR)) LIKE ?', [`%${busca}%`])
+      ));
+  }
+
+  const totalResultado = await base.clone().count({ total: 'la.id' }).first();
+  const atribuicoes = await base.clone()
+    .select('la.*', 'le.nome as envio_nome', 'le.created_at as envio_created_at')
+    .orderBy('la.atribuido_em', 'desc')
+    .orderBy('la.id', 'desc')
+    .offset((page - 1) * pageSize)
+    .limit(pageSize);
+  const linhas = atribuicoes.length
+    ? await LeadLinha.query().findByIds(atribuicoes.map(item => Number(item.lead_linha_id)))
+      .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
+    : [];
+  const linhasPorId = new Map(linhas.map(linha => [Number(linha.id), linha]));
+  const formatadas = atribuicoes.flatMap(atribuicao => {
+    const linha = linhasPorId.get(Number(atribuicao.lead_linha_id));
+    if (!linha) return [];
+    const distribuicao = leadDistribuicaoService.dadosDistribuicao(atribuicao);
+    const aceita = Boolean(atribuicao.aceite_em);
+    if (!aceita) {
+      return [{
+        id: linha.id,
+        atribuicao_id: Number(atribuicao.id),
+        futuro_cliente: true,
+        futuro_cliente_marcado_em: linha.futuro_cliente_marcado_em,
+        recebido_em: atribuicao.atribuido_em,
+        status_operacional: linha.status_operacional,
+        dados_json: {},
+        sondagem: null,
+        envio: { id: atribuicao.envio_id, nome: atribuicao.envio_nome || 'Indicacao recebida' },
+        distribuicao,
+        detalhes_bloqueados: true
+      }];
+    }
+    return [{
+      ...formatarLinha(linha),
+      atribuicao_id: Number(atribuicao.id),
+      recebido_em: atribuicao.atribuido_em,
+      distribuicao,
+      detalhes_bloqueados: false
+    }];
+  });
+  return {
+    data: await adicionarClassificacaoVendas(formatadas),
+    total: Number(totalResultado?.total || 0),
+    page,
+    page_size: pageSize
+  };
+}
+
+function primeiraAcaoLinha(linha) {
+  return linha.primeira_ligacao_em
+    || linha.futuro_cliente_marcado_em
+    || linha.cliente_recusou_em
+    || linha.chamada_nao_atendida_em
+    || linha.retorno_agendado_em
+    || linha.venda_recusada_em
+    || null;
+}
+
+function dataDentroPeriodo(valor, filtros = {}) {
+  if (!valor) return false;
+  const data = parseUtcDateTime(valor);
+  if (!data) return false;
+  const iso = data.toISOString().slice(0, 10);
+  if (filtros.data_inicio && iso < filtros.data_inicio) return false;
+  if (filtros.data_fim && iso > filtros.data_fim) return false;
+  return true;
+}
+
+function novoResumoEstatistica(base = {}) {
+  return {
+    ...base,
+    recebidos: 0,
+    trabalhados: 0,
+    pendentes: 0,
+    tentativas_registradas: 0,
+    retornos_agendados: 0,
+    clientes_recusaram: 0,
+    chamadas_nao_atendidas: 0,
+    qualificados: 0,
+    enviados_telegram: 0,
+    aceitos_telegram: 0,
+    recusados_expirados_telegram: 0,
+    vendas_futuro_cliente: 0,
+    vendas_antigas: 0,
+    vendas_recusadas: 0,
+    potencial_mensal: 0,
+    valor_vendido: 0,
+    tempo_primeira_acao_total_min: 0,
+    tempo_primeira_acao_amostra: 0
+  };
+}
+
+function finalizarResumoEstatistica(resumo) {
+  return {
+    ...resumo,
+    produtividade_pct: resumo.recebidos ? Number(((resumo.trabalhados / resumo.recebidos) * 100).toFixed(1)) : 0,
+    qualificacao_pct: resumo.trabalhados ? Number(((resumo.qualificados / resumo.trabalhados) * 100).toFixed(1)) : 0,
+    conversao_pct: resumo.qualificados ? Number(((resumo.vendas_futuro_cliente / resumo.qualificados) * 100).toFixed(1)) : 0,
+    tempo_medio_primeira_acao_min: resumo.tempo_primeira_acao_amostra
+      ? Math.round(resumo.tempo_primeira_acao_total_min / resumo.tempo_primeira_acao_amostra)
+      : null
+  };
+}
+
+async function carregarLinhasEstatisticas(filtros = {}) {
+  const query = db('lead_atribuicoes as la')
+    .join('lead_linhas as ll', 'll.id', 'la.lead_linha_id')
+    .join('lead_envios as le', 'le.id', 'la.envio_id')
+    .join('usuarios as u', 'u.id', 'la.usuario_id')
+    .leftJoin('lead_sondagens as ls', 'ls.lead_linha_id', 'll.id')
+    .leftJoin('vendas as v', 'v.id', 'll.venda_id')
+    .where('la.etapa', 'sondagem')
+    .where('le.origem', 'mailing')
+    .select(
+      'll.*',
+      'la.usuario_id as estatistica_usuario_id',
+      'la.atribuido_em as recebido_em',
+      'le.id as estatistica_envio_id',
+      'le.nome as estatistica_envio_nome',
+      'le.created_at as envio_created_at',
+      'u.nome as estatistica_usuario_nome',
+      'ls.valor_mensal_estimado',
+      'v.valor_total as venda_valor_total'
+    );
+  if (filtros.usuario_id) query.where('la.usuario_id', Number(filtros.usuario_id));
+  if (filtros.envio_id) query.where('la.envio_id', Number(filtros.envio_id));
+  const linhas = await query;
+  const preparadas = linhas.map(linha => ({
+    ...linha,
+    mailing_recebido_em: linha.recebido_em,
+    dados_json: parseJson(linha.dados_json, {}),
+    envio: {
+      id: Number(linha.estatistica_envio_id),
+      nome: linha.estatistica_envio_nome,
+      created_at: linha.envio_created_at
+    }
+  }));
+  const classificadas = await adicionarClassificacaoVendas(preparadas);
+  const ids = classificadas.map(linha => Number(linha.id));
+  const auditorias = ids.length ? await db('audit_logs')
+    .where('entidade', 'lead_linhas')
+    .whereIn('entidade_id', ids.map(String))
+    .whereIn('acao', [
+      'lead_linha.futuro_cliente_marcado',
+      'lead_linha.cliente_recusou',
+      'lead_linha.chamada_nao_atendida',
+      'lead_linha.retorno_marcado'
+    ])
+    .select('entidade_id') : [];
+  const tentativas = new Map();
+  auditorias.forEach(item => tentativas.set(Number(item.entidade_id), (tentativas.get(Number(item.entidade_id)) || 0) + 1));
+  const distribuicoes = ids.length ? await db('lead_atribuicoes')
+    .whereIn('lead_linha_id', ids)
+    .where('etapa', 'venda')
+    .whereNotNull('aceite_status')
+    .select('lead_linha_id', 'aceite_status') : [];
+  const distribuicoesPorLinha = new Map();
+  distribuicoes.forEach(item => {
+    const linhaId = Number(item.lead_linha_id);
+    const resumo = distribuicoesPorLinha.get(linhaId) || { enviados: 0, aceitos: 0, recusados_expirados: 0 };
+    resumo.enviados += 1;
+    if (item.aceite_status === leadDistribuicaoService.ACEITE_ACEITO) resumo.aceitos += 1;
+    if ([leadDistribuicaoService.ACEITE_RECUSADO, leadDistribuicaoService.ACEITE_EXPIRADO].includes(item.aceite_status)) resumo.recusados_expirados += 1;
+    distribuicoesPorLinha.set(linhaId, resumo);
+  });
+  return classificadas.map(linha => ({
+    ...linha,
+    tentativas_conhecidas: Math.max(tentativas.get(Number(linha.id)) || 0, primeiraAcaoLinha(linha) ? 1 : 0),
+    estatistica_distribuicao: distribuicoesPorLinha.get(Number(linha.id)) || { enviados: 0, aceitos: 0, recusados_expirados: 0 }
+  }));
+}
+
+function agregarEstatisticas(linhas, filtros = {}, chaveFn) {
+  const grupos = new Map();
+  linhas.forEach(linha => {
+    const chave = chaveFn(linha);
+    if (!grupos.has(chave.id)) grupos.set(chave.id, novoResumoEstatistica(chave));
+    const resumo = grupos.get(chave.id);
+    const recebidoNoPeriodo = dataDentroPeriodo(linha.recebido_em, filtros);
+    const primeiraAcao = primeiraAcaoLinha(linha);
+    const acaoNoPeriodo = dataDentroPeriodo(primeiraAcao, filtros);
+    if (recebidoNoPeriodo) {
+      resumo.recebidos += 1;
+      if (!primeiraAcao) resumo.pendentes += 1;
+    }
+    if (!acaoNoPeriodo) return;
+    resumo.trabalhados += 1;
+    resumo.tentativas_registradas += Number(linha.tentativas_conhecidas || 0);
+    resumo.retornos_agendados += linha.retorno_agendado_em ? 1 : 0;
+    resumo.clientes_recusaram += linha.cliente_recusou ? 1 : 0;
+    resumo.chamadas_nao_atendidas += linha.chamada_nao_atendida ? 1 : 0;
+    resumo.qualificados += linha.futuro_cliente ? 1 : 0;
+    resumo.enviados_telegram += Number(linha.estatistica_distribuicao?.enviados || 0);
+    resumo.aceitos_telegram += Number(linha.estatistica_distribuicao?.aceitos || 0);
+    resumo.recusados_expirados_telegram += Number(linha.estatistica_distribuicao?.recusados_expirados || 0);
+    resumo.vendas_recusadas += linha.venda_recusada_em || linha.venda_recusada_motivo ? 1 : 0;
+    resumo.vendas_futuro_cliente += linha.venda_classificacao?.tipo === 'venda_futuro_cliente' ? 1 : 0;
+    resumo.vendas_antigas += linha.venda_classificacao?.tipo === 'venda_antiga_registrada' ? 1 : 0;
+    resumo.potencial_mensal += Number(linha.valor_mensal_estimado || 0);
+    resumo.valor_vendido += linha.venda_classificacao?.tipo === 'venda_futuro_cliente'
+      ? Number(linha.venda_classificacao.valor_total || linha.venda_valor_total || 0) : 0;
+    const inicio = parseUtcDateTime(linha.recebido_em);
+    const fim = parseUtcDateTime(primeiraAcao);
+    if (inicio && fim && fim >= inicio) {
+      resumo.tempo_primeira_acao_total_min += Math.round((fim - inicio) / 60000);
+      resumo.tempo_primeira_acao_amostra += 1;
+    }
+  });
+  return [...grupos.values()].map(finalizarResumoEstatistica);
+}
+
+async function obterEstatisticasResumo(filtros = {}) {
+  const linhas = await carregarLinhasEstatisticas(filtros);
+  const usuarios = agregarEstatisticas(linhas, filtros, linha => ({
+    id: Number(linha.estatistica_usuario_id),
+    usuario_id: Number(linha.estatistica_usuario_id),
+    usuario_nome: linha.estatistica_usuario_nome || 'Usuario removido'
+  }));
+  const total = finalizarResumoEstatistica(usuarios.reduce((acc, item) => {
+    Object.keys(acc).forEach(chave => {
+      if (typeof acc[chave] === 'number' && !chave.endsWith('_pct') && chave !== 'tempo_medio_primeira_acao_min') {
+        acc[chave] += Number(item[chave] || 0);
+      }
+    });
+    return acc;
+  }, novoResumoEstatistica({ id: 'total' })));
+  return { total, usuarios };
+}
+
+async function obterEstatisticasMailings(filtros = {}) {
+  const linhas = await carregarLinhasEstatisticas(filtros);
+  return agregarEstatisticas(linhas, filtros, linha => ({
+    id: Number(linha.estatistica_envio_id),
+    envio_id: Number(linha.estatistica_envio_id),
+    envio_nome: linha.estatistica_envio_nome
+  }));
+}
+
+async function obterEstatisticasLinhas(filtros = {}) {
+  const page = Math.max(1, Number(filtros.page || 1));
+  const pageSize = Math.min(200, Math.max(1, Number(filtros.page_size || 50)));
+  let linhas = await carregarLinhasEstatisticas(filtros);
+  const busca = String(filtros.busca || '').trim().toLowerCase();
+  if (busca) linhas = linhas.filter(linha => JSON.stringify(linha.dados_json || {}).toLowerCase().includes(busca));
+  return {
+    data: linhas.slice((page - 1) * pageSize, page * pageSize),
+    total: linhas.length,
+    page,
+    page_size: pageSize
+  };
+}
+
+async function gerarXlsxEstatisticasFuturosClientes(filtros = {}) {
+  if (filtros.data_inicio && filtros.data_fim && filtros.data_inicio > filtros.data_fim) {
+    throw criarHttpError(400, 'A data inicial deve ser anterior ou igual a data final.');
+  }
+  const linhas = await carregarLinhasEstatisticas(filtros);
+  const usuarios = agregarEstatisticas(linhas, filtros, linha => ({
+    id: Number(linha.estatistica_usuario_id),
+    usuario_nome: linha.estatistica_usuario_nome || 'Usuario removido'
+  }));
+  const mailings = agregarEstatisticas(linhas, filtros, linha => ({
+    id: `${linha.estatistica_usuario_id}:${linha.estatistica_envio_id}`,
+    usuario_nome: linha.estatistica_usuario_nome || 'Usuario removido',
+    envio_nome: linha.estatistica_envio_nome || `Mailing #${linha.estatistica_envio_id}`
+  }));
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'CRM Avance';
+  workbook.created = new Date();
+  const colunasResumo = [
+    ['Usuario', 'usuario_nome'], ['Recebidos', 'recebidos'], ['Trabalhados', 'trabalhados'], ['Pendentes', 'pendentes'],
+    ['Tentativas', 'tentativas_registradas'], ['Retornos', 'retornos_agendados'], ['Clientes recusaram', 'clientes_recusaram'],
+    ['Nao atendidas', 'chamadas_nao_atendidas'], ['Qualificados', 'qualificados'], ['Telegram', 'enviados_telegram'],
+    ['Aceites', 'aceitos_telegram'], ['Recusas/expiracoes', 'recusados_expirados_telegram'], ['Vendas futuro cliente', 'vendas_futuro_cliente'],
+    ['Vendas antigas', 'vendas_antigas'], ['Produtividade %', 'produtividade_pct'], ['Conversao %', 'conversao_pct'],
+    ['Tempo medio primeira acao (min)', 'tempo_medio_primeira_acao_min'], ['Potencial mensal', 'potencial_mensal'], ['Valor vendido', 'valor_vendido']
+  ];
+  const adicionarTabela = (nome, colunas, dados) => {
+    const ws = workbook.addWorksheet(nome);
+    ws.addRow(colunas.map(([titulo]) => titulo));
+    dados.forEach(item => ws.addRow(colunas.map(([, chave]) => item[chave] ?? '')));
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, ws.rowCount), column: colunas.length } };
+    ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
+    ws.columns = colunas.map(([titulo]) => ({ width: Math.max(14, Math.min(34, titulo.length + 4)) }));
+    return ws;
+  };
+  adicionarTabela('Resumo por usuário', colunasResumo, usuarios);
+  adicionarTabela('Mailings', [['Usuario', 'usuario_nome'], ['Mailing', 'envio_nome'], ...colunasResumo.slice(1)], mailings);
+  adicionarTabela('Leads', [
+    ['Usuario', 'estatistica_usuario_nome'], ['Mailing', 'estatistica_envio_nome'], ['Lead ID', 'id'], ['Recebido em', 'recebido_em'],
+    ['Primeira acao', 'primeira_acao_exportacao'], ['Tentativas', 'tentativas_conhecidas'], ['Status da venda', 'venda_tipo_exportacao'],
+    ['Venda ID', 'venda_id_exportacao'], ['Valor vendido', 'venda_valor_exportacao'], ['Dados', 'dados_exportacao']
+  ], linhas.map(linha => ({
+    ...linha,
+    primeira_acao_exportacao: primeiraAcaoLinha(linha),
+    venda_tipo_exportacao: linha.venda_classificacao?.tipo || '',
+    venda_id_exportacao: linha.venda_classificacao?.venda_id || '',
+    venda_valor_exportacao: linha.venda_classificacao?.valor_total || '',
+    dados_exportacao: JSON.stringify(linha.dados_json || {})
+  })));
+  const sufixo = filtros.data_inicio || filtros.data_fim ? `${filtros.data_inicio || 'inicio'}-a-${filtros.data_fim || 'hoje'}` : 'todo-periodo';
+  return { buffer: await workbook.xlsx.writeBuffer(), nome: `estatisticas-futuros-clientes-${sufixo}.xlsx` };
+}
+
+function subtrairMesesUtc(valor, meses) {
+  const data = parseUtcDateTime(valor);
+  if (!data) return null;
+  const resultado = new Date(data);
+  const dia = resultado.getUTCDate();
+  resultado.setUTCDate(1);
+  resultado.setUTCMonth(resultado.getUTCMonth() - Number(meses || 0));
+  const ultimoDia = new Date(Date.UTC(
+    resultado.getUTCFullYear(),
+    resultado.getUTCMonth() + 1,
+    0
+  )).getUTCDate();
+  resultado.setUTCDate(Math.min(dia, ultimoDia));
+  return resultado;
+}
+
+function selecionarVendaAntiga(linha, anterioresPorCnpj) {
+  const recebidoEm = linha.mailing_recebido_em || linha.recebido_em || linha.envio?.created_at || linha.created_at;
+  const limite = subtrairMesesUtc(recebidoEm, 24);
+  const recebido = parseUtcDateTime(recebidoEm);
+  let anterior = null;
+  if (!limite || !recebido) return null;
+  for (const cnpj of extrairCnpjsLinha(linha)) {
+    const candidata = (anterioresPorCnpj.get(cnpj) || [])
+      .filter(venda => {
+        const concluida = parseUtcDateTime(venda.entrada_etapa_final_em);
+        return concluida && concluida > limite && concluida < recebido;
+      })
+      .sort((a, b) => new Date(b.entrada_etapa_final_em) - new Date(a.entrada_etapa_final_em))[0];
+    if (candidata && (!anterior || new Date(candidata.entrada_etapa_final_em) > new Date(anterior.entrada_etapa_final_em))) anterior = candidata;
+  }
+  return anterior;
+}
+
+function sqlEntradaEtapaFinal(aliasVenda) {
+  const alias = aliasVenda === 'v' ? 'v' : 'vendas';
+  return `(
+    SELECT MAX(vh.created_at)
+    FROM venda_historicos vh
+    WHERE vh.venda_id = ${alias}.id AND vh.status_novo = ?
+  )`;
+}
+
+/**
+ * Adiciona a classificacao canonica da venda a linhas ja formatadas.
+ * A venda originada pelo futuro cliente sempre prevalece sobre uma venda
+ * anterior do mesmo CNPJ.
+ */
+async function adicionarClassificacaoVendas(linhas = []) {
+  if (!linhas.length) return linhas;
+
+  const linhaIds = [...new Set(linhas.map(linha => Number(linha.id)).filter(Boolean))];
+  const vendaIds = [...new Set(linhas.map(linha => Number(linha.venda_id)).filter(Boolean))];
+  const cnpjs = new Set();
+  linhas.forEach(linha => extrairCnpjsLinha(linha).forEach(cnpj => cnpjs.add(cnpj)));
+  const recebimentosMailing = linhaIds.length ? await db('lead_atribuicoes')
+    .whereIn('lead_linha_id', linhaIds)
+    .where('etapa', 'sondagem')
+    .select('lead_linha_id')
+    .min({ recebido_em: 'atribuido_em' })
+    .groupBy('lead_linha_id') : [];
+  const recebimentoPorLinha = new Map(recebimentosMailing.map(item => [Number(item.lead_linha_id), item.recebido_em]));
+  const etapaFinal = await db('funil_etapas')
+    .where('etapa_final', true)
+    .orderBy('ativo', 'desc')
+    .orderBy('ordem', 'asc')
+    .first('codigo');
+  const codigoEtapaFinal = etapaFinal?.codigo || 'concluido';
+
+  const vendasVinculadas = vendaIds.length || linhaIds.length
+    ? await db('vendas').where(builder => {
+      if (vendaIds.length) builder.whereIn('id', vendaIds);
+      if (linhaIds.length) {
+        const metodo = vendaIds.length ? 'orWhereIn' : 'whereIn';
+        builder[metodo]('origem_lead_linha_id', linhaIds);
+      }
+    })
+      .select('id', 'origem_lead_linha_id', 'data_venda', 'valor_total')
+      .select(db.raw(`${sqlEntradaEtapaFinal('vendas')} AS entrada_etapa_final_em`, [codigoEtapaFinal]))
+    : [];
+  const vinculadasPorId = new Map(vendasVinculadas.map(venda => [Number(venda.id), venda]));
+  const vinculadasPorLinha = new Map(vendasVinculadas
+    .filter(venda => Number(venda.origem_lead_linha_id))
+    .map(venda => [Number(venda.origem_lead_linha_id), venda]));
+
+  const vendasAnteriores = cnpjs.size
+    ? await db('clientes as c')
+      .join('vendas as v', 'v.cliente_id', 'c.id')
+      .whereIn('c.cnpj_digitos', [...cnpjs])
+      .whereNull('v.excluido_em')
+      .whereNull('v.cancelada_em')
+      .where('v.status_funil', codigoEtapaFinal)
+      .whereExists(
+        db('venda_historicos as vh')
+          .select(db.raw('1'))
+          .whereRaw('vh.venda_id = v.id')
+          .where('vh.status_novo', codigoEtapaFinal)
+      )
+      .select(
+        'c.cnpj_digitos',
+        'v.id',
+        'v.data_venda',
+        'v.valor_total'
+      )
+      .select(db.raw(`${sqlEntradaEtapaFinal('v')} AS entrada_etapa_final_em`, [codigoEtapaFinal]))
+    : [];
+  const anterioresPorCnpj = new Map();
+  vendasAnteriores.forEach(venda => {
+    const chave = String(venda.cnpj_digitos || '');
+    if (!anterioresPorCnpj.has(chave)) anterioresPorCnpj.set(chave, []);
+    anterioresPorCnpj.get(chave).push(venda);
+  });
+
+  return linhas.map(linha => {
+    const linhaClassificada = {
+      ...linha,
+      mailing_recebido_em: linha.mailing_recebido_em || recebimentoPorLinha.get(Number(linha.id)) || linha.envio?.created_at || null
+    };
+    const vendaId = Number(linha.venda_id || 0);
+    const venda = vinculadasPorLinha.get(Number(linha.id)) || vinculadasPorId.get(vendaId);
+    if (venda || vendaId || linha.status_operacional === 'vendido') {
+      return {
+        ...linhaClassificada,
+        venda_classificacao: {
+          tipo: 'venda_futuro_cliente',
+          venda_id: Number(venda?.id || vendaId) || null,
+          concluida_em: venda?.entrada_etapa_final_em || venda?.data_venda || null,
+          valor_total: venda?.valor_total == null ? null : Number(venda.valor_total)
+        }
+      };
+    }
+
+    const anterior = selecionarVendaAntiga(linhaClassificada, anterioresPorCnpj);
+
+    return {
+      ...linhaClassificada,
+      venda_classificacao: anterior ? {
+        tipo: 'venda_antiga_registrada',
+        venda_id: Number(anterior.id),
+        concluida_em: anterior.entrada_etapa_final_em,
+        valor_total: anterior.valor_total == null ? null : Number(anterior.valor_total)
+      } : null
+    };
+  });
 }
 
 function extrairCnpjsLinha(linha) {
@@ -3435,7 +4052,7 @@ async function limparFuturosClientesVencidosDaLixeira(usuarioId = null) {
     .where('futuro_cliente_excluir_definitivo_em', '<=', formatarDateTimeSQL());
 
   if (usuarioId) {
-    query.where('atribuido_para_id', Number(usuarioId));
+    query.where('futuro_cliente_marcado_por_id', Number(usuarioId));
   }
 
   return query.update({
@@ -3463,7 +4080,7 @@ async function listarFuturosClientesLixeira(filtros = {}, usuarioId) {
   let query = LeadLinha.query()
     .withGraphFetched('[planilha, envio, futuroClienteExcluidoPor]')
     .modifyGraph('futuroClienteExcluidoPor', builder => builder.select('id', 'nome', 'email'))
-    .where('atribuido_para_id', usuarioId)
+    .where('futuro_cliente_marcado_por_id', usuarioId)
     .where('futuro_cliente', true)
     .whereNotNull('futuro_cliente_excluido_em');
 
@@ -3493,7 +4110,7 @@ async function enviarFuturoClienteParaLixeira(linhaId, usuarioId) {
 
   return db('lead_linhas')
     .where('id', Number(linhaId))
-    .where('atribuido_para_id', Number(usuarioId))
+    .where('futuro_cliente_marcado_por_id', Number(usuarioId))
     .where('futuro_cliente', true)
     .whereNull('futuro_cliente_excluido_em')
     .update({
@@ -3510,7 +4127,7 @@ async function enviarFuturoClienteParaLixeira(linhaId, usuarioId) {
 async function restaurarFuturoCliente(linhaId, usuarioId) {
   const atualizados = await db('lead_linhas')
     .where('id', Number(linhaId))
-    .where('atribuido_para_id', Number(usuarioId))
+    .where('futuro_cliente_marcado_por_id', Number(usuarioId))
     .where('futuro_cliente', true)
     .whereNotNull('futuro_cliente_excluido_em')
     .update({
@@ -3535,7 +4152,7 @@ async function restaurarFuturoCliente(linhaId, usuarioId) {
 async function excluirFuturoClienteDefinitivo(linhaId, usuarioId) {
   return db('lead_linhas')
     .where('id', Number(linhaId))
-    .where('atribuido_para_id', Number(usuarioId))
+    .where('futuro_cliente_marcado_por_id', Number(usuarioId))
     .where('futuro_cliente', true)
     .whereNotNull('futuro_cliente_excluido_em')
     .update({
@@ -3567,6 +4184,7 @@ module.exports = {
   atualizarCampoLinhaRecebida,
   avaliarPrimeiraLigacao,
   listarEnviosDoUsuario,
+  listarMailingsDoUsuario,
   listarTodosEnvios,
   atualizarNomeEnvio,
   listarDestinatariosEnviosPlanilha,
@@ -3577,8 +4195,13 @@ module.exports = {
   marcarComoFuturoCliente,
   reverterFuturoClienteLead,
   listarFuturosClientes,
+  listarFuturosClientesRecebidos,
+  obterEstatisticasResumo,
+  obterEstatisticasMailings,
+  obterEstatisticasLinhas,
   obterMetricasFuturosClientes,
   gerarXlsxProdutividadePrimeiraLigacao,
+  gerarXlsxEstatisticasFuturosClientes,
   marcarVendaRecusadaLead,
   reverterVendaRecusadaLead,
   marcarClienteRecusouLead,
@@ -3592,19 +4215,26 @@ module.exports = {
   enviarFuturoClienteParaLixeira,
   restaurarFuturoCliente,
   excluirFuturoClienteDefinitivo,
-  _internals: {
-    aplicarFiltrosFuturosClientes,
-    aplicarFiltrosQuery,
+    _internals: {
+      aplicarBuscaDadosJson,
+      aplicarBuscaMailingsUsuario,
+      aplicarFiltrosFuturosClientes,
+      aplicarFiltrosQuery,
     aplicarFiltroVendaRecusada,
     combinarMetricasEnvio,
     deduplicarIndicacoesEnvio,
     filtrosPermitemIndicacaoPendente,
     montarColecoesExcel,
-    montarColecaoCsv,
-    extrairCnpjsLinha,
+      montarColecaoCsv,
+      normalizarBuscaDocumento,
+      extrairCnpjsLinha,
     linhaPossuiVendaPorCnpj,
     obterErroReversaoFuturoCliente,
     montarPatchReversaoFuturoCliente,
-    deveNotificarNovoFuturoCliente
+    deveNotificarNovoFuturoCliente,
+    adicionarClassificacaoVendas,
+    selecionarVendaAntiga,
+    subtrairMesesUtc,
+    sqlEntradaEtapaFinal
   }
 };

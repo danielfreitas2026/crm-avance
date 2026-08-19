@@ -43,12 +43,13 @@ export function montarDestinoNotificacao(notificacao) {
 
   switch (notificacao?.tipo) {
     case 'futuro_cliente_distribuido':
+      return destino('/futuros-clientes', { ...comum, aba: 'recebidos', linha_id: linhaId }, PERMISSOES_FUTUROS_CLIENTES, 'acesso a Futuros Clientes', linhaId);
     case 'futuro_cliente_retorno_pre':
     case 'futuro_cliente_retorno_due':
-      return destino('/futuros-clientes', { ...comum, linha_id: linhaId }, PERMISSOES_FUTUROS_CLIENTES, 'acesso a Futuros Clientes', linhaId);
+      return destino('/futuros-clientes', { ...comum, aba: dados.fluxo === 'mailing' ? 'mailings' : 'meus', linha_id: linhaId }, PERMISSOES_FUTUROS_CLIENTES, 'acesso a Futuros Clientes', linhaId);
     case 'lead_retorno_pre':
     case 'lead_retorno_due':
-      return destino('/futuros-clientes', { ...comum, aba: 'leads', linha_id: linhaId }, PERMISSOES_FUTUROS_CLIENTES, 'acesso aos leads', linhaId);
+      return destino('/futuros-clientes', { ...comum, aba: 'mailings', linha_id: linhaId }, PERMISSOES_FUTUROS_CLIENTES, 'acesso aos leads', linhaId);
     case 'venda_problema_aberto':
     case 'venda_problema_resolvido':
     case 'venda_problema_correcao':

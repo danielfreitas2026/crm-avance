@@ -19,12 +19,16 @@ import {
   excluirFuturoCliente,
   excluirFuturoClienteDefinitivo,
   exportarMetricasFuturosClientesExcel,
+  listarEstatisticasFuturosClientes,
+  listarEstatisticasLinhasMailing,
+  listarEstatisticasMailingsUsuario,
   listarFuturosClientesLeads,
+  listarFuturosClientesRecebidos,
   listarFuturosClientesLixeira,
   listarVendasCandidatasLead,
   listarQuadroFuturosClientes,
   listarMetricasFuturosClientes,
-  listarMeusLeadEnvios,
+  listarMeusMailings,
   listarMinhasLeadLinhas,
   marcarClienteRecusouLead,
   marcarChamadaNaoAtendidaLead,
@@ -44,9 +48,31 @@ import {
   getClasseLinhaLead,
   isFuturoClienteAtivo,
   isFuturoClienteVendido,
-  isVendaRecusada
+  isVendaAntigaRegistrada,
+  isVendaRecusada,
+  resolverAbaFuturosClientes,
+  formatarDuracaoMinutos
 } from './lead-status';
+import { montarFiltrosLinhasMailingRecebido } from './mailing-recebido-search';
+import { ordenarMailingsMaisRecentes } from './mailing-order';
 import './FuturosClientesPage.css';
+
+function useDialogAcessivel(onClose, bloqueado = false) {
+  const dialogRef = useRef(null);
+  useEffect(() => {
+    const focoAnterior = document.activeElement;
+    dialogRef.current?.focus();
+    const aoPressionarTecla = event => {
+      if (event.key === 'Escape' && !bloqueado) onClose();
+    };
+    document.addEventListener('keydown', aoPressionarTecla);
+    return () => {
+      document.removeEventListener('keydown', aoPressionarTecla);
+      focoAnterior?.focus?.();
+    };
+  }, [onClose, bloqueado]);
+  return dialogRef;
+}
 
 // ─── Helpers de colunas de lead ──────────────────────────────────────────────
 
@@ -578,6 +604,7 @@ function isRetornoFuturoClienteVencido(valor, agora = Date.now()) {
 }
 
 function renderFuturoClienteSituacao(linha) {
+  const statusDistribuicao = linha?.distribuicao?.status;
   if (linha?.distribuicao?.status === 'aguardando_aceite') {
     return <span className="pill warn lead-status-pill"><span className="pill-dot"></span>Aguardando seu aceite</span>;
   }
@@ -591,7 +618,16 @@ function renderFuturoClienteSituacao(linha) {
   }
 
   if (isFuturoClienteVendido(linha)) {
-    return <span className="pill lead-status-pill sold"><span className="pill-dot"></span>Venda concluída</span>;
+    return <span className="pill lead-status-pill sold"><span className="pill-dot"></span>Venda registrada por futuro cliente</span>;
+  }
+
+  if (statusDistribuicao === 'recusado') return <span className="pill danger lead-status-pill"><span className="pill-dot"></span>Encaminhamento recusado</span>;
+  if (statusDistribuicao === 'expirado_sem_acao') return <span className="pill warn lead-status-pill"><span className="pill-dot"></span>Prazo expirado</span>;
+  if (statusDistribuicao === 'cancelado') return <span className="pill muted lead-status-pill"><span className="pill-dot"></span>Encaminhamento cancelado</span>;
+  if (statusDistribuicao === 'aceito' && linha?.distribuicao?.acao_registrada_em) return <span className="pill success lead-status-pill"><span className="pill-dot"></span>Encaminhamento encerrado</span>;
+
+  if (isVendaAntigaRegistrada(linha)) {
+    return <span className="pill lead-status-pill old-sale"><span className="pill-dot"></span>Venda antiga registrada</span>;
   }
 
   if (isFuturoClienteRecusado(linha)) {
@@ -686,13 +722,23 @@ function renderLeadStatus(linha, agora = Date.now()) {
     );
   }
 
+  if (isVendaAntigaRegistrada(linha) && !isFuturoClienteAtivo(linha)) {
+    return <span className="lead-status-cell"><span className="pill lead-status-pill old-sale" title="Venda concluída antes do recebimento deste mailing"><span className="pill-dot"></span>Venda antiga registrada</span></span>;
+  }
+
   if (isFuturoClienteAtivo(linha)) {
     return (
       <span className="lead-status-cell">
         {isFuturoClienteVendido(linha) && (
           <span className="pill lead-status-pill sold">
             <span className="pill-dot"></span>
-            Venda registrada
+            Venda registrada por futuro cliente
+          </span>
+        )}
+        {isVendaAntigaRegistrada(linha) && (
+          <span className="pill lead-status-pill old-sale" title="Venda concluída antes do recebimento deste mailing">
+            <span className="pill-dot"></span>
+            Venda antiga registrada
           </span>
         )}
         {isFuturoClienteRecusado(linha) && (
@@ -859,6 +905,7 @@ function ChipsItensSondagem({ itens, onChange, disabled }) {
  * Renderiza registrar venda lead modal.
  */
 function RegistrarVendaLeadModal({ linha, colunas, usuario, onClose, onConfirm }) {
+  const dialogRef = useDialogAcessivel(onClose);
   const opcoesColunas = useMemo(() => getColunasMapeaveisLead(linha, colunas), [linha, colunas]);
   const [mapeamento, setMapeamento] = useState(() => (
     CAMPOS_VENDA_LEAD.reduce((acc, campo) => ({
@@ -884,7 +931,7 @@ function RegistrarVendaLeadModal({ linha, colunas, usuario, onClose, onConfirm }
 
   return (
     <div className="modal-overlay">
-      <form className="modal lead-sale-modal" onSubmit={submit}>
+      <form ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Registrar venda" className="modal lead-sale-modal" onSubmit={submit}>
         <div className="modal-header">
           <div className="modal-header-row">
             <div>
@@ -940,6 +987,7 @@ function RegistrarVendaLeadModal({ linha, colunas, usuario, onClose, onConfirm }
  * Renderiza lead atualizacao modal.
  */
 function LeadAtualizacaoModal({ dados, salvando, erro, onClose, onSave }) {
+  const dialogRef = useDialogAcessivel(onClose, salvando);
   const [valor, setValor] = useState(dados?.valorAtualizado || '');
 
   if (!dados) return null;
@@ -954,7 +1002,7 @@ function LeadAtualizacaoModal({ dados, salvando, erro, onClose, onSave }) {
 
   return (
     <div className="modal-overlay">
-      <form className="modal lead-update-modal" onSubmit={submit}>
+      <form ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Atualizar informação" className="modal lead-update-modal" onSubmit={submit}>
         <div className="modal-header">
           <div className="modal-header-row">
             <div>
@@ -1004,6 +1052,7 @@ function LeadAtualizacaoModal({ dados, salvando, erro, onClose, onSave }) {
  */
 /** Permite pesquisar no Google Places usando os dados do lead selecionado. */
 function BuscarTelefoneGoogleModal({ linha, onClose }) {
+  const dialogRef = useDialogAcessivel(onClose);
   const dadosEmpresa = useMemo(() => getDadosEmpresaFuturoCliente(linha, linha.sondagem), [linha]);
   const [modo, setModo] = useState(dadosEmpresa.cnpj ? 'cnpj' : 'texto');
   const [texto, setTexto] = useState(dadosEmpresa.cnpj || dadosEmpresa.razao_social);
@@ -1055,7 +1104,7 @@ function BuscarTelefoneGoogleModal({ linha, onClose }) {
   const candidatos = resultado?.candidatos || (resultado?.place ? [resultado.place] : []);
   return (
     <div className="modal-overlay" style={{ zIndex: 1100 }}>
-      <form className="modal lead-update-modal" onSubmit={buscar}>
+      <form ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Buscar telefone no Google" className="modal lead-update-modal" onSubmit={buscar}>
         <div className="modal-header"><div className="modal-header-row"><div><div className="modal-client">Buscar telefone no Google</div><div className="modal-sub">Consulta do cliente selecionado</div></div><button type="button" className="btn btn-icon btn-ghost" title="Fechar" onClick={onClose} disabled={buscando}><I.Close size={14} /></button></div></div>
         <div className="modal-body">
           <div className="form-field"><label>Buscar por</label><select value={modo} onChange={event => mudarModo(event.target.value)} disabled={buscando}><option value="cnpj" disabled={!dadosEmpresa.cnpj}>CNPJ do cliente</option><option value="texto">Texto / razo social</option></select></div>
@@ -1135,7 +1184,8 @@ function EnriquecimentoAutomatico({ enriquecimento }) {
   );
 }
 
-function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda, onFuturoClienteSalvo, onLinhaAtualizada }) {
+export function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda, onFuturoClienteSalvo, onLinhaAtualizada }) {
+  const dialogRef = useDialogAcessivel(onClose);
   const vendaRegistrada = isFuturoClienteVendido(linha);
   const vendaRecusada = isVendaRecusada(linha);
   const clienteRecusou = Boolean(linha.cliente_recusou);
@@ -1158,6 +1208,8 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
   const [erro, setErro] = useState('');
   const [buscaGoogleAberta, setBuscaGoogleAberta] = useState(false);
   const [operadoras, setOperadoras] = useState([]);
+  const podeRegistrarVenda = temPermissao(usuario, 'vendas_criar');
+  const podeRegistrarFuturo = temPermissao(usuario, 'futuros_clientes_registrar');
   const podeBuscarGoogle = temPermissao(usuario, 'futuros_clientes_buscar_telefone_google');
   const podeAvaliarPrimeiraLigacao = linha.etapa_atual === 'venda'
     && Number(linha.atribuido_para_id) === Number(usuario?.id)
@@ -1196,7 +1248,7 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
     setErro('');
     try {
       const resultado = await marcarVendaRecusadaLead(linha.id, motivoRecusa);
-      onFuturoClienteSalvo(resultado.linha);
+      onFuturoClienteSalvo(resultado.linha, 'Venda recusada registrada com sucesso.');
     } catch (error) {
       setErro(error.message || 'Erro ao marcar venda recusada.');
       setSalvando(false);
@@ -1377,7 +1429,7 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
 
   return (
     <div className="modal-overlay">
-      <div className="modal adicionar-lead-modal">
+      <div ref={dialogRef} tabIndex={-1} className="modal adicionar-lead-modal" role="dialog" aria-modal="true" aria-label="Adicionar lead">
         <div className="modal-header">
           <div className="modal-header-row">
             <div>
@@ -1390,20 +1442,22 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
           </div>
         </div>
 
-        <div className="modal-body">
-          <div className={`adicionar-lead-dados${linha.enriquecimento ? ' adicionar-lead-dados--with-enriquecimento' : ''}`}>
-            {camposLead.map(({ label, valor }) => (
-              <div key={label} className="adicionar-lead-campo">
-                <span className="adicionar-lead-campo__label">{label}</span>
-                <span className="adicionar-lead-campo__valor">{formatarValorCampoLead(valor) || '-'}</span>
-              </div>
-            ))}
-            {camposLead.length === 0 ? (
-              <div className="muted" style={{ textAlign: 'center', padding: '16px 0' }}>Sem dados disponíveis.</div>
-            ) : null}
-          </div>
+        <div className={`modal-body${etapa === 'opcoes' ? ' adicionar-lead-modal__body--opcoes' : ''}`}>
+          <section className="adicionar-lead-informacoes" aria-label="Informações da planilha">
+            <div className={`adicionar-lead-dados${linha.enriquecimento ? ' adicionar-lead-dados--with-enriquecimento' : ''}`}>
+              {camposLead.map(({ label, valor }) => (
+                <div key={label} className="adicionar-lead-campo">
+                  <span className="adicionar-lead-campo__label">{label}</span>
+                  <span className="adicionar-lead-campo__valor">{formatarValorCampoLead(valor) || '-'}</span>
+                </div>
+              ))}
+              {camposLead.length === 0 ? (
+                <div className="muted" style={{ textAlign: 'center', padding: '16px 0' }}>Sem dados disponíveis.</div>
+              ) : null}
+            </div>
 
-          <EnriquecimentoAutomatico enriquecimento={linha.enriquecimento} />
+            <EnriquecimentoAutomatico enriquecimento={linha.enriquecimento} />
+          </section>
 
           {etapa === 'opcoes' && clienteRecusou && (
             <div className="adicionar-lead-acoes">
@@ -1477,7 +1531,7 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
                     </button>
                     {sucessoAvaliacao && <div className="alert-success">{sucessoAvaliacao}</div>}
                   </div>}
-                  {vendaRecusada ? (
+                  {podeRegistrarFuturo && (vendaRecusada ? (
                     <div className="futuro-cliente-recusa is-saved">
                       <strong>Venda recusada</strong>
                       <span>{linha.venda_recusada_motivo || 'Motivo nao informado.'}</span>
@@ -1490,21 +1544,21 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
                         Marcar venda recusada
                       </button>
                     </div>
-                  )}
+                  ))}
                 </>
               )}
-              {!vendaRegistrada && !vendaRecusada && (
+              {podeRegistrarVenda && !vendaRegistrada && !vendaRecusada && (
                 <button type="button" className="btn btn-primary" onClick={() => setEtapa('venda')}>
                   <I.Chart size={14} /> Registrar venda
                 </button>
               )}
-              {!linha.futuro_cliente && (
+              {podeRegistrarFuturo && !linha.futuro_cliente && (
                 <button type="button" className="btn" onClick={() => setEtapa('futuro')}>
                   <I.Calendar size={14} /> Registrar futuro cliente
                 </button>
               )}
 
-              {!linha.futuro_cliente && !vendaRegistrada && (
+              {podeRegistrarFuturo && !linha.futuro_cliente && !vendaRegistrada && (
                 linha.chamada_nao_atendida ? (
                   <div className="futuro-cliente-recusa is-saved">
                     <strong>Chamada não atendida em {formatarDataHora(linha.chamada_nao_atendida_em)}</strong>
@@ -1546,7 +1600,7 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
                 )
               )}
 
-              {!linha.futuro_cliente && !vendaRegistrada && (
+              {podeRegistrarFuturo && !linha.futuro_cliente && !vendaRegistrada && (
                 formRecusaAberto ? (
                   <div className="futuro-cliente-recusa">
                     <label>Motivo da recusa (opcional)</label>
@@ -1573,7 +1627,7 @@ function AdicionarLeadModal({ linha, colunas, usuario, onClose, onRegistrarVenda
                 )
               )}
 
-              {!vendaRegistrada && !vendaRecusada && (
+              {podeRegistrarFuturo && !vendaRegistrada && !vendaRecusada && (
                 <div className="lead-retorno">
                   <div className="lead-retorno__head">
                     <span className="lead-retorno__icone"><I.Bell size={15} /></span>
@@ -1750,7 +1804,12 @@ function LeadsRecebidosView({ agora }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [envios, setEnvios] = useState([]);
+  const [buscaMailing, setBuscaMailing] = useState('');
+  const [buscaMailingDebounced, setBuscaMailingDebounced] = useState('');
+  const [paginaMailing, setPaginaMailing] = useState(1);
+  const [totalMailings, setTotalMailings] = useState(0);
   const [selecionados, setSelecionados] = useState([]);
+  const [selecionadosDados, setSelecionadosDados] = useState({});
   const [linhas, setLinhas] = useState([]);
   const [totalLinhas, setTotalLinhas] = useState(0);
   const [pagina, setPagina] = useState(1);
@@ -1775,33 +1834,52 @@ function LeadsRecebidosView({ agora }) {
     return Number.isInteger(id) && id > 0 ? id : null;
   }, [searchParams]);
   const notificacaoId = getNotificacaoIdParam(searchParams);
-  const consultaLinhasAtiva = selecionados.length > 0 || Boolean(linhaNotificacaoId);
+  const buscaMailingAtiva = Boolean(buscaMailingDebounced.trim());
+  const consultaLinhasAtiva = buscaMailingAtiva || selecionados.length > 0 || Boolean(linhaNotificacaoId);
   const chaveConsultaLinhas = useMemo(() => JSON.stringify({
     selecionados,
     pagina,
     busca: buscaDeferred,
+    buscaGlobal: buscaMailingDebounced,
     status: filtroStatus,
     linhaId: linhaNotificacaoId
-  }), [selecionados, pagina, buscaDeferred, filtroStatus, linhaNotificacaoId]);
+  }), [selecionados, pagina, buscaDeferred, buscaMailingDebounced, filtroStatus, linhaNotificacaoId]);
   const carregando = carregandoEnvios
     || (consultaLinhasAtiva && consultaLinhasConcluida !== chaveConsultaLinhas);
 
   function aplicarEnviosAtualizados(data) {
     const enviosAtualizados = data || [];
-    const idsAtivos = new Set(enviosAtualizados.map(envio => Number(envio.id)));
-
     setEnvios(enviosAtualizados);
-    setSelecionados(prev => prev.filter(id => idsAtivos.has(Number(id))));
-    setLinhas(prev => prev.filter(linha => idsAtivos.has(Number(linha.envio_id))));
   }
+
+  function alterarBuscaMailing(valor) {
+    setBuscaMailing(valor);
+    if (!String(valor || '').trim() && selecionados.length === 0 && !linhaNotificacaoId) {
+      setLinhas([]);
+      setTotalLinhas(0);
+      setConsultaLinhasConcluida('');
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setBuscaMailingDebounced(buscaMailing);
+      setPaginaMailing(1);
+      setPagina(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [buscaMailing]);
 
   useEffect(() => {
     let cancelado = false;
     async function carregarEnvios(exibirCarregando = false) {
       if (exibirCarregando) setCarregandoEnvios(true);
       try {
-        const data = await listarMeusLeadEnvios();
-        if (!cancelado) aplicarEnviosAtualizados(data);
+        const resultado = await listarMeusMailings({ busca: buscaMailingDebounced, page: paginaMailing, page_size: 24 });
+        if (!cancelado) {
+          aplicarEnviosAtualizados(resultado.data || []);
+          setTotalMailings(Number(resultado.total || 0));
+        }
       } catch (error) {
         if (!cancelado) setErro(error.message || 'Erro ao carregar leads recebidos.');
       } finally {
@@ -1816,15 +1894,20 @@ function LeadsRecebidosView({ agora }) {
       cancelado = true;
       window.removeEventListener('pos-venda:mailing-atualizar', atualizarMailing);
     };
-  }, []);
+  }, [buscaMailingDebounced, paginaMailing]);
 
   useEffect(() => {
-    if (selecionados.length === 0 && !linhaNotificacaoId) {
-      return;
-    }
+    if (!consultaLinhasAtiva) return;
 
     let cancelado = false;
-    listarMinhasLeadLinhas({ envio_ids: selecionados, page: pagina, page_size: 200, busca: buscaDeferred, status: filtroStatus || undefined, linha_id: linhaNotificacaoId || undefined })
+    listarMinhasLeadLinhas(montarFiltrosLinhasMailingRecebido({
+      selecionados,
+      pagina,
+      busca: buscaDeferred,
+      buscaGlobal: buscaMailingDebounced,
+      status: filtroStatus,
+      linhaId: linhaNotificacaoId
+    }))
       .then(data => {
         if (!cancelado) {
           const linhasRecebidas = data.data || [];
@@ -1857,7 +1940,7 @@ function LeadsRecebidosView({ agora }) {
         if (!cancelado) setConsultaLinhasConcluida(chaveConsultaLinhas);
       });
     return () => { cancelado = true; };
-  }, [selecionados, pagina, buscaDeferred, filtroStatus, linhaNotificacaoId, chaveConsultaLinhas, notificacaoId]);
+  }, [selecionados, pagina, buscaDeferred, buscaMailingDebounced, buscaMailingAtiva, consultaLinhasAtiva, filtroStatus, linhaNotificacaoId, chaveConsultaLinhas, notificacaoId]);
   useEffect(() => {
     if (!erro) return undefined;
     const timer = setTimeout(() => setErro(''), 6000);
@@ -1870,20 +1953,19 @@ function LeadsRecebidosView({ agora }) {
     return () => clearTimeout(timer);
   }, [sucesso]);
 
-  const enviosSelecionados = useMemo(
-    () => envios.filter(envio => selecionados.includes(envio.id)),
-    [envios, selecionados]
-  );
+  const enviosSelecionados = useMemo(() => selecionados.map(id => selecionadosDados[id]).filter(Boolean), [selecionados, selecionadosDados]);
 
   const colunas = useMemo(() => {
     const mapa = new Map();
 
-    enviosSelecionados.forEach(envio => {
-      (envio.colunas_visiveis || []).forEach(coluna => {
-        if (getLabelColunaLeadRecebido(coluna).endsWith(' (atualizado)')) return;
-        adicionarColunaMapeadaLead(mapa, coluna, { envio, linhas });
+    if (!buscaMailingAtiva) {
+      enviosSelecionados.forEach(envio => {
+        (envio.colunas_visiveis || []).forEach(coluna => {
+          if (getLabelColunaLeadRecebido(coluna).endsWith(' (atualizado)')) return;
+          adicionarColunaMapeadaLead(mapa, coluna, { envio, linhas });
+        });
       });
-    });
+    }
 
     if (mapa.size === 0) {
       linhas.forEach(linha => {
@@ -1898,7 +1980,7 @@ function LeadsRecebidosView({ agora }) {
         ? [coluna, criarColunaAtualizadaLeadRecebido(coluna)]
         : [coluna]
     ));
-  }, [enviosSelecionados, linhas]);
+  }, [enviosSelecionados, linhas, buscaMailingAtiva]);
 
   const totalPaginas = Math.max(1, Math.ceil(totalLinhas / 200));
   const possuiIndicacaoPendente = linhas.some(linha => linha.detalhes_bloqueados);
@@ -1911,10 +1993,12 @@ function LeadsRecebidosView({ agora }) {
    * Alterna envio no estado atual.
    */
   function toggleEnvio(id) {
+    const envio = envios.find(item => Number(item.id) === Number(id));
     const proximos = selecionados.includes(id)
       ? selecionados.filter(item => item !== id)
       : [...selecionados, id];
     setSelecionados(proximos);
+    if (envio) setSelecionadosDados(prev => ({ ...prev, [id]: envio }));
     if (proximos.length === 0) {
       setLinhas([]);
       setTotalLinhas(0);
@@ -1993,8 +2077,9 @@ function LeadsRecebidosView({ agora }) {
    */
   async function recarregarEnvios() {
     try {
-      const data = await listarMeusLeadEnvios();
-      aplicarEnviosAtualizados(data);
+      const resultado = await listarMeusMailings({ busca: buscaMailingDebounced, page: paginaMailing, page_size: 24 });
+      aplicarEnviosAtualizados(resultado.data || []);
+      setTotalMailings(Number(resultado.total || 0));
     } catch (error) {
       setErro(error.message || 'Erro ao carregar leads recebidos.');
     }
@@ -2085,7 +2170,17 @@ function LeadsRecebidosView({ agora }) {
       )}
 
       <div className="clientes-leads-strip">
-        <div className="clientes-leads-strip__title">Planilhas recebidas</div>
+        <div className="clientes-leads-strip__header">
+          <div className="clientes-leads-strip__title">Mailings recebidos</div>
+          <label className="clientes-search clientes-mailing-search">
+            <I.Search size={14} />
+            <input
+              value={buscaMailing}
+              onChange={event => alterarBuscaMailing(event.target.value)}
+              placeholder="Procurar por mailing, razão social ou CNPJ"
+            />
+          </label>
+        </div>
         <div className="clientes-leads-docs">
           {envios.map(envio => {
             const progresso = calcularProgresso(envio.total_linhas, envio.total_trabalhados);
@@ -2126,6 +2221,14 @@ function LeadsRecebidosView({ agora }) {
             <div className="lead-doc-empty">Nenhum envio recebido.</div>
           )}
         </div>
+        {totalMailings > 24 && <div className="lead-pagination clientes-mailing-pagination">
+          <button className="btn btn-sm" type="button" disabled={paginaMailing <= 1} onClick={() => setPaginaMailing(value => value - 1)}>Anteriores</button>
+          <span>Página {paginaMailing} de {Math.max(1, Math.ceil(totalMailings / 24))}</span>
+          <button className="btn btn-sm" type="button" disabled={paginaMailing * 24 >= totalMailings} onClick={() => setPaginaMailing(value => value + 1)}>Próximos</button>
+        </div>}
+        {enviosSelecionados.length > 0 && <div className="clientes-mailing-chips" aria-label="Mailings selecionados">
+          {enviosSelecionados.map(envio => <button key={envio.id} type="button" onClick={() => toggleEnvio(envio.id)} title="Remover da busca">{envio.nome}<I.Close size={12} /></button>)}
+        </div>}
       </div>
 
       <div className="clientes-leads-toolbar">
@@ -2157,7 +2260,8 @@ function LeadsRecebidosView({ agora }) {
             <option value="cliente_recusou">Cancelados</option>
             <option value="retorno_agendado">Agendados</option>
             <option value="chamada_nao_atendida">Não atendidos</option>
-            <option value="venda_registrada">Vendas registradas</option>
+            <option value="venda_futuro_cliente">Venda registrada por futuro cliente</option>
+            <option value="venda_antiga_registrada">Venda antiga registrada</option>
             <option value="venda_recusada">Vendas recusadas</option>
             <option value="lixeira">Na lixeira</option>
           </select>
@@ -2182,7 +2286,7 @@ function LeadsRecebidosView({ agora }) {
               {carregando ? (
                 <tr><td colSpan={totalColunasTabela} className="muted" style={{ textAlign: 'center', padding: 40 }}>Carregando mailing...</td></tr>
               ) : linhas.length === 0 ? (
-                <tr><td colSpan={totalColunasTabela} className="muted" style={{ textAlign: 'center', padding: 40 }}>{selecionados.length ? 'Nenhum cliente disponivel neste mailing.' : 'Selecione uma planilha recebida.'}</td></tr>
+                <tr><td colSpan={totalColunasTabela} className="muted" style={{ textAlign: 'center', padding: 40 }}>{buscaMailingAtiva ? 'Nenhum cliente encontrado para esta busca.' : selecionados.length ? 'Nenhum cliente disponivel neste mailing.' : 'Selecione uma planilha recebida.'}</td></tr>
               ) : (
                 linhas.map(linha => (
                   <tr key={linha.id} className={getClasseLinhaLead(linha)}>
@@ -2287,6 +2391,7 @@ export function AvaliacaoPrimeiraLigacao({ linha }) {
 
 /** Permite ao gerente escolher e confirmar uma venda existente do mesmo CNPJ. */
 export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }) {
+  const dialogRef = useDialogAcessivel(onClose);
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [processando, setProcessando] = useState(false);
@@ -2326,7 +2431,7 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
   const vendaConfirmada = confirmacao?.venda || dados?.vinculo_atual?.venda;
   return (
     <div className="modal-overlay">
-      <div className="modal vincular-venda-modal" role="dialog" aria-modal="true" aria-label="Vincular venda">
+      <div ref={dialogRef} tabIndex={-1} className="modal vincular-venda-modal" role="dialog" aria-modal="true" aria-label="Vincular venda">
         <div className="modal-header">
           <div className="modal-header-row">
             <div>
@@ -2427,7 +2532,8 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
 /**
  * Renderiza futuro cliente detalhe modal.
  */
-function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVenda }) {
+function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVenda, somenteLeitura = false }) {
+  const dialogRef = useDialogAcessivel(onClose);
   const vendaRegistrada = isFuturoClienteVendido(linha);
   const vendaRecusada = isVendaRecusada(linha);
   const [etapa, setEtapa] = useState('ver'); // 'ver' | 'venda'
@@ -2464,6 +2570,9 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
 
   const usuario = useMemo(() => getUsuarioLocal(), []);
   const comoAdmin = useMemo(() => temPermissao(usuario, 'gerenciar_leads'), [usuario]);
+  const ehResponsavel = Number(linha.atribuido_para_id) === Number(usuario?.id);
+  const podeEditar = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'futuros_clientes_registrar')));
+  const podeRegistrarVenda = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'vendas_criar')));
 
   const camposLead = useMemo(() => {
     const dados = linha.dados_json || {};
@@ -2549,7 +2658,7 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
 
   return (
     <div className="modal-overlay">
-      <form className="modal adicionar-lead-modal" onSubmit={salvar}>
+      <form ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Detalhes do futuro cliente" className="modal adicionar-lead-modal" onSubmit={podeEditar ? salvar : event => event.preventDefault()}>
         <div className="modal-header">
           <div className="modal-header-row">
             <div>
@@ -2598,7 +2707,7 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
 
           <AvaliacaoPrimeiraLigacao linha={linha} />
 
-          <div className="futuro-cliente-form">
+          <fieldset className="futuro-cliente-form future-client-readonly" disabled={!podeEditar}>
             <div className="futuro-cliente-form__grid">
               <div className="form-field">
                 <label>CNPJ</label>
@@ -2684,7 +2793,7 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
                 <span>{linha.venda_recusada_motivo || 'Motivo nao informado.'}</span>
                 {linha.venda_recusada_em && <small>Marcada em {formatarDataHora(linha.venda_recusada_em)}</small>}
               </div>
-            ) : !vendaRegistrada && (
+            ) : !vendaRegistrada && podeEditar && (
               <div className="futuro-cliente-recusa">
                 <label>Venda recusada</label>
                 <textarea rows={3} value={motivoRecusa} onChange={event => setMotivoRecusa(event.target.value)} placeholder="Informe o motivo da recusa" disabled={salvando} />
@@ -2693,7 +2802,7 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
                 </button>
               </div>
             )}
-          </div>
+          </fieldset>
 
           {erro && <div className="alert-error" style={{ marginTop: 8 }}>{erro}</div>}
         </div>
@@ -2702,23 +2811,23 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
           {vendaRegistrada ? (
             <>
               <div className="lead-already-qualified-notice">Este futuro cliente ja possui uma venda registrada. Acesse a pagina de Vendas para visualizar a venda.</div>
-              {comoAdmin && <button type="button" className="btn" onClick={() => setVinculoAberto(true)}>Gerenciar vínculo</button>}
+              {comoAdmin && !somenteLeitura && <button type="button" className="btn" onClick={() => setVinculoAberto(true)}>Gerenciar vínculo</button>}
             </>
           ) : vendaRecusada ? (
             <div className="futuro-cliente-recusa is-saved">Venda recusada para este futuro cliente.</div>
           ) : (
             <>
-              <button type="button" className="btn" onClick={() => setEtapa('venda')} disabled={salvando}>
+              {podeRegistrarVenda && <button type="button" className="btn" onClick={() => setEtapa('venda')} disabled={salvando}>
                 <I.Chart size={14} /> Registrar venda
-              </button>
-              {comoAdmin && <button type="button" className="btn btn-primary" onClick={() => setVinculoAberto(true)} disabled={salvando}>Vincular venda</button>}
+              </button>}
+              {comoAdmin && !somenteLeitura && <button type="button" className="btn btn-primary" onClick={() => setVinculoAberto(true)} disabled={salvando}>Vincular venda</button>}
             </>
           )}
           <div style={{ flex: 1 }} />
           <button type="button" className="btn" onClick={onClose} disabled={salvando}>Cancelar</button>
-          <button type="submit" className="btn btn-primary" disabled={salvando}>
+          {podeEditar && <button type="submit" className="btn btn-primary" disabled={salvando}>
             {salvando ? 'Salvando...' : 'Salvar'}
-          </button>
+          </button>}
         </div>
       </form>
     </div>
@@ -2731,6 +2840,7 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
  * Renderiza confirmar futuro cliente lixeira modal.
  */
 function ConfirmarFuturoClienteLixeiraModal({ linha, tipo, processando, onClose, onConfirm }) {
+  const dialogRef = useDialogAcessivel(onClose, processando);
   if (!linha || !tipo) return null;
 
   const definitivo = tipo === 'definitivo';
@@ -2741,7 +2851,7 @@ function ConfirmarFuturoClienteLixeiraModal({ linha, tipo, processando, onClose,
 
   return (
     <div className="modal-overlay">
-      <div className="modal trash-confirm-modal">
+      <div ref={dialogRef} tabIndex={-1} role="alertdialog" aria-modal="true" aria-label={titulo} className="modal trash-confirm-modal">
         <div className="modal-header">
           <div className="modal-header-row">
             <div>
@@ -2791,6 +2901,7 @@ function formatarDataIso(data) {
 
 /** Permite escolher o período e baixar a produtividade de todos os consultores. */
 function ExportarProdutividadeModal({ onClose }) {
+  const dialogRef = useDialogAcessivel(onClose);
   const hoje = useMemo(() => dataLocalIso(), []);
   const [dataInicio, setDataInicio] = useState(`${hoje.slice(0, 7)}-01`);
   const [dataFim, setDataFim] = useState(hoje);
@@ -2823,7 +2934,7 @@ function ExportarProdutividadeModal({ onClose }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal exportar-produtividade-modal" role="dialog" aria-modal="true" aria-labelledby="exportar-produtividade-titulo">
+      <div ref={dialogRef} tabIndex={-1} className="modal exportar-produtividade-modal" role="dialog" aria-modal="true" aria-labelledby="exportar-produtividade-titulo">
         <div className="modal-header">
           <div className="modal-header-row">
             <div className="consultor-modal-title">
@@ -2883,6 +2994,7 @@ function ExportarProdutividadeModal({ onClose }) {
 
 /** Exibe a produtividade de primeira ligacao de um consultor por periodo. */
 function ConsultorPrimeiraLigacaoModal({ consultor, onClose }) {
+  const dialogRef = useDialogAcessivel(onClose);
   const hoje = useMemo(() => dataLocalIso(), []);
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -2938,7 +3050,7 @@ function ConsultorPrimeiraLigacaoModal({ consultor, onClose }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal consultor-produtividade-modal" role="dialog" aria-modal="true" aria-labelledby="consultor-produtividade-titulo">
+      <div ref={dialogRef} tabIndex={-1} className="modal consultor-produtividade-modal" role="dialog" aria-modal="true" aria-labelledby="consultor-produtividade-titulo">
         <div className="modal-header">
           <div className="modal-header-row">
             <div className="consultor-modal-title">
@@ -3024,7 +3136,7 @@ function ConsultorPrimeiraLigacaoModal({ consultor, onClose }) {
 /**
  * Renderiza futuros clientes main view com os dados informados.
  */
-function FuturosClientesMainView({ agora }) {
+function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const hojeMetricas = useMemo(() => dataLocalIso(new Date(agora)), [agora]);
@@ -3034,6 +3146,7 @@ function FuturosClientesMainView({ agora }) {
   const [busca, setBusca] = useState('');
   const [filtroSituacao, setFiltroSituacao] = useState('');
   const [filtroRetorno, setFiltroRetorno] = useState('');
+  const [filtroRecebidos, setFiltroRecebidos] = useState('acao');
   const buscaDeferred = useDeferredValue(busca);
   const [consultaConcluida, setConsultaConcluida] = useState('');
   const [erro, setErro] = useState('');
@@ -3053,7 +3166,8 @@ function FuturosClientesMainView({ agora }) {
 
   const usuario = useMemo(() => getUsuarioLocal(), []);
   const podeGerenciar = temPermissao(usuario, 'futuros_clientes_registrar');
-  const podeVerQuadroGeral = temPermissao(usuario, 'gerenciar_leads');
+  const modoRecebidos = tipo === 'recebidos';
+  const exibirMetricas = false;
   const linhaNotificacaoId = useMemo(() => {
     const id = Number(searchParams.get('linha_id'));
     return Number.isInteger(id) && id > 0 ? id : null;
@@ -3065,9 +3179,11 @@ function FuturosClientesMainView({ agora }) {
     filtroSituacao,
     filtroRetorno,
     modoLixeira,
+    modoRecebidos,
+    filtroRecebidos,
     linhaNotificacaoId,
-    podeVerQuadroGeral
-  }), [pagina, buscaDeferred, filtroSituacao, filtroRetorno, modoLixeira, linhaNotificacaoId, podeVerQuadroGeral]);
+    escopoTodos
+  }), [pagina, buscaDeferred, filtroSituacao, filtroRetorno, modoLixeira, modoRecebidos, filtroRecebidos, linhaNotificacaoId, escopoTodos]);
   const carregando = consultaConcluida !== chaveConsulta;
   const periodoMetricasInvalido = tipoPeriodoMetricas === 'periodo'
     && Boolean(dataInicioMetricas && dataFimMetricas && dataInicioMetricas > dataFimMetricas);
@@ -3087,13 +3203,16 @@ function FuturosClientesMainView({ agora }) {
     let cancelado = false;
     const listar = modoLixeira
       ? listarFuturosClientesLixeira
-      : (podeVerQuadroGeral ? listarQuadroFuturosClientes : listarFuturosClientesLeads);
+      : modoRecebidos
+        ? listarFuturosClientesRecebidos
+        : escopoTodos ? listarQuadroFuturosClientes : listarFuturosClientesLeads;
     listar({
       page: pagina,
       page_size: 50,
       busca: buscaDeferred,
       situacao: filtroSituacao || undefined,
       retorno: filtroRetorno || undefined,
+      status: modoRecebidos ? filtroRecebidos : undefined,
       linha_id: linhaNotificacaoId || undefined
     })
       .then(data => {
@@ -3132,14 +3251,14 @@ function FuturosClientesMainView({ agora }) {
         if (!cancelado) setConsultaConcluida(chaveConsulta);
       });
     return () => { cancelado = true; };
-  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, modoLixeira, linhaNotificacaoId, podeVerQuadroGeral, chaveConsulta, notificacaoId]);
+  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroRecebidos, modoLixeira, modoRecebidos, escopoTodos, linhaNotificacaoId, chaveConsulta, notificacaoId]);
 
   useEffect(() => {
-    if (!podeVerQuadroGeral || modoLixeira || periodoMetricasInvalido) return;
+    if (!exibirMetricas || modoLixeira || periodoMetricasInvalido) return;
     listarMetricasFuturosClientes(filtrosMetricas)
       .then(data => setMetricas(Array.isArray(data) ? data : []))
       .catch(() => setMetricas([]));
-  }, [podeVerQuadroGeral, modoLixeira, linhas, filtrosMetricas, periodoMetricasInvalido]);
+  }, [exibirMetricas, modoLixeira, linhas, filtrosMetricas, periodoMetricasInvalido]);
 
   const resumoMetricas = useMemo(() => metricas.reduce((acc, item) => ({
     ligacoes: acc.ligacoes + Number(item.ligacoes_realizadas || 0),
@@ -3175,7 +3294,8 @@ function FuturosClientesMainView({ agora }) {
   }, [linhas]);
 
   const totalPaginas = Math.max(1, Math.ceil(total / 50));
-  const totalColunasTabela = colunasDados.length + 5 + (modoLixeira ? 2 : 0) + (podeGerenciar ? 1 : 0);
+  const podeExcluir = podeGerenciar && !modoRecebidos && !escopoTodos;
+  const totalColunasTabela = colunasDados.length + 5 + (modoLixeira ? 2 : 0) + (podeExcluir ? 1 : 0);
 
   /**
    * Trata o evento de atualizado.
@@ -3186,14 +3306,21 @@ function FuturosClientesMainView({ agora }) {
   }
 
   function handleAceito(linhaAtualizada) {
-    setLinhas(prev => prev.map(l => l.id === linhaAtualizada.id ? linhaAtualizada : l));
-    setLinhaAtiva(linhaAtualizada);
+    const atualizada = { ...linhaAtualizada, atribuicao_id: linhaAtiva?.atribuicao_id || linhaAtualizada.atribuicao_id };
+    setLinhas(prev => prev.map(item => (item.atribuicao_id || item.id) === (atualizada.atribuicao_id || atualizada.id) ? atualizada : item));
+    setLinhaAtiva(atualizada);
     setSucesso('Indicacao aceita. O prazo de 30 minutos foi iniciado.');
   }
 
   function handleRecusado() {
-    setLinhas(prev => prev.filter(l => l.id !== linhaAtiva?.id));
-    setTotal(prev => Math.max(0, prev - 1));
+    if (modoRecebidos && filtroRecebidos === 'todos') {
+      setLinhas(prev => prev.map(item => item.atribuicao_id === linhaAtiva?.atribuicao_id
+        ? { ...item, distribuicao: { ...item.distribuicao, status: 'recusado' } }
+        : item));
+    } else {
+      setLinhas(prev => prev.filter(item => (item.atribuicao_id || item.id) !== (linhaAtiva?.atribuicao_id || linhaAtiva?.id)));
+      setTotal(prev => Math.max(0, prev - 1));
+    }
     fecharDetalhe();
     setSucesso('Indicacao recusada e devolvida para novo encaminhamento.');
   }
@@ -3218,6 +3345,7 @@ function FuturosClientesMainView({ agora }) {
     setBusca('');
     setFiltroSituacao('');
     setFiltroRetorno('');
+    setFiltroRecebidos('acao');
     setPagina(1);
   }
 
@@ -3328,6 +3456,7 @@ function FuturosClientesMainView({ agora }) {
           onClose={fecharDetalhe}
           onAtualizado={handleAtualizado}
           onRegistrarVenda={handleRegistrarVenda}
+          somenteLeitura={escopoTodos || (modoRecebidos && (linhaAtiva?.distribuicao?.status !== 'aceito' || Boolean(linhaAtiva?.distribuicao?.acao_registrada_em)))}
         />
       )}
 
@@ -3337,7 +3466,7 @@ function FuturosClientesMainView({ agora }) {
 
       {exportacaoAberta && <ExportarProdutividadeModal onClose={() => setExportacaoAberta(false)} />}
 
-      {podeVerQuadroGeral && !modoLixeira && (
+      {exibirMetricas && !modoLixeira && (
         <section className="conversao-sondagem-module">
           <div className="conversao-sondagem-header">
             <div>
@@ -3441,7 +3570,23 @@ function FuturosClientesMainView({ agora }) {
             placeholder={modoLixeira ? 'Buscar na lixeira...' : 'Buscar futuros clientes...'}
           />
         </form>
-        <select
+        {modoRecebidos ? (
+          <select
+            className="clientes-status-filter"
+            value={filtroRecebidos}
+            onChange={event => { setFiltroRecebidos(event.target.value); setPagina(1); }}
+            aria-label="Filtrar encaminhamentos recebidos"
+          >
+            <option value="acao">Exigem ação</option>
+            <option value="todos">Histórico completo</option>
+            <option value="aguardando_aceite">Aguardando aceite</option>
+            <option value="aceito">Aceitos</option>
+            <option value="recusado">Recusados</option>
+            <option value="expirado_sem_acao">Expirados</option>
+            <option value="cancelado">Cancelados</option>
+            <option value="encerrado">Com ação registrada</option>
+          </select>
+        ) : <select
           className="clientes-status-filter"
           value={filtroSituacao}
           onChange={event => { setFiltroSituacao(event.target.value); setPagina(1); }}
@@ -3451,8 +3596,8 @@ function FuturosClientesMainView({ agora }) {
           <option value="em_negociacao">Em negociacao</option>
           <option value="venda_concluida">Vendas concluidas</option>
           <option value="venda_recusada">Vendas recusadas</option>
-        </select>
-        <select
+        </select>}
+        {!modoRecebidos && <select
           className="clientes-status-filter"
           value={filtroRetorno}
           onChange={event => { setFiltroRetorno(event.target.value); setPagina(1); }}
@@ -3462,19 +3607,19 @@ function FuturosClientesMainView({ agora }) {
           <option value="com_retorno">Com retorno</option>
           <option value="vencido">Retornos vencidos</option>
           <option value="sem_retorno">Sem retorno</option>
-        </select>
-        {(busca || filtroSituacao || filtroRetorno) && (
+        </select>}
+        {(busca || filtroSituacao || filtroRetorno || (modoRecebidos && filtroRecebidos !== 'acao')) && (
           <button type="button" className="btn btn-sm" onClick={limparFiltros}>Limpar filtros</button>
         )}
         <div className="clientes-leads-actions">
           <div className="clientes-toolbar__meta">
-            {total} {modoLixeira ? 'na lixeira' : 'futuro(s) cliente(s)'}
+            {total} {modoLixeira ? 'na lixeira' : modoRecebidos ? 'encaminhamento(s)' : 'futuro(s) cliente(s)'}
           </div>
           {modoLixeira ? (
             <button type="button" className="btn" onClick={() => alternarModoLixeira(false)}>
               <I.Return size={14} /> Futuros clientes
             </button>
-          ) : podeGerenciar ? (
+          ) : podeExcluir ? (
             <button type="button" className="btn btn-danger" onClick={() => alternarModoLixeira(true)}>
               <I.Trash size={14} /> Lixeira
             </button>
@@ -3502,7 +3647,7 @@ function FuturosClientesMainView({ agora }) {
                   </>
                 )}
                 {colunasDados.map(chave => <th key={chave}><span className="th-label" title={chave}>{chave}</span></th>)}
-                {podeGerenciar && <th>{modoLixeira ? 'Acoes' : 'Excluir'}</th>}
+                {podeExcluir && <th>{modoLixeira ? 'Acoes' : 'Excluir'}</th>}
               </tr>
             </thead>
             <tbody>
@@ -3523,7 +3668,7 @@ function FuturosClientesMainView({ agora }) {
                   const dados = linha.dados_json || {};
                   return (
                     <tr
-                      key={linha.id}
+                      key={linha.atribuicao_id || linha.id}
                       style={{ cursor: modoLixeira ? 'default' : 'pointer' }}
                       onClick={() => !modoLixeira && setLinhaAtiva(linha)}
                     >
@@ -3592,7 +3737,7 @@ function FuturosClientesMainView({ agora }) {
                         const valor = dados[`${chave} (atualizado)`] ?? dados[chave] ?? '';
                         return <td key={chave} data-label={chave} data-mobile-hidden="true">{valor || '-'}</td>;
                       })}
-                      {podeGerenciar && (
+                      {podeExcluir && (
                         <td data-label={modoLixeira ? 'Acoes' : 'Excluir'} className="futuros-clientes-delete-col m-actions">
                           <div className="futuros-clientes-actions">
                             {modoLixeira ? (
@@ -3657,6 +3802,374 @@ function FuturosClientesMainView({ agora }) {
   );
 }
 
+function inicioDoMesAtual() {
+  const data = new Date();
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+function hojeLocal() {
+  const data = new Date();
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-${String(data.getDate()).padStart(2, '0')}`;
+}
+
+function obterPeriodoEstatisticas(preset, inicio, fim) {
+  if (preset === 'hoje') return { data_inicio: hojeLocal(), data_fim: hojeLocal() };
+  if (preset === 'mes') return { data_inicio: inicioDoMesAtual(), data_fim: hojeLocal() };
+  if (preset === 'personalizado') return { data_inicio: inicio || undefined, data_fim: fim || undefined };
+  return {};
+}
+
+const ATIVIDADE_ESTATISTICAS = [
+  ['tentativas_registradas', 'Tentativas registradas'],
+  ['retornos_agendados', 'Retornos'],
+  ['clientes_recusaram', 'Clientes que recusaram'],
+  ['chamadas_nao_atendidas', 'Não atendidas']
+];
+
+const FUNIL_ESTATISTICAS = [
+  ['enviados_telegram', 'Encaminhados pelo Telegram'],
+  ['aceitos_telegram', 'Aceites no Telegram'],
+  ['recusados_expirados_telegram', 'Recusas/expirações'],
+  ['vendas_futuro_cliente', 'Vendas por futuro cliente'],
+  ['vendas_antigas', 'Vendas antigas']
+];
+
+/** Painel administrativo progressivo: usuarios, mailings e linhas. */
+function EstatisticasFuturosClientesView() {
+  const [preset, setPreset] = useState('mes');
+  const [dataInicio, setDataInicio] = useState(inicioDoMesAtual);
+  const [dataFim, setDataFim] = useState(hojeLocal);
+  const [resumo, setResumo] = useState(null);
+  const [usuario, setUsuario] = useState(null);
+  const [mailing, setMailing] = useState(null);
+  const [mailings, setMailings] = useState([]);
+  const [linhas, setLinhas] = useState([]);
+  const [busca, setBusca] = useState('');
+  const buscaDeferred = useDeferredValue(busca);
+  const [pagina, setPagina] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const periodo = useMemo(
+    () => obterPeriodoEstatisticas(preset, dataInicio, dataFim),
+    [preset, dataInicio, dataFim]
+  );
+
+  useEffect(() => {
+    let ativo = true;
+    const requisicao = mailing
+      ? listarEstatisticasLinhasMailing(usuario.usuario_id, mailing.envio_id, { ...periodo, busca: buscaDeferred, page: pagina, page_size: 50 })
+      : usuario
+        ? listarEstatisticasMailingsUsuario(usuario.usuario_id, periodo)
+        : listarEstatisticasFuturosClientes(periodo);
+    requisicao
+      .then(resultado => {
+        if (!ativo) return;
+        if (mailing) {
+          setLinhas(resultado.data || []);
+          setTotal(Number(resultado.total || 0));
+        } else if (usuario) {
+          const mailingsRecebidos = Array.isArray(resultado) ? resultado : (resultado.data || []);
+          setMailings(ordenarMailingsMaisRecentes(mailingsRecebidos));
+        } else {
+          setResumo(resultado);
+        }
+      })
+      .catch(error => ativo && setErro(error.message || 'Não foi possível carregar as estatísticas.'))
+      .finally(() => ativo && setCarregando(false));
+    return () => { ativo = false; };
+  }, [periodo, usuario, mailing, buscaDeferred, pagina]);
+
+  function abrirUsuario(item) {
+    setCarregando(true);
+    setErro('');
+    setUsuario(item);
+    setMailing(null);
+    setPagina(1);
+    setBusca('');
+  }
+
+  function abrirMailing(item) {
+    setCarregando(true);
+    setErro('');
+    setMailing(item);
+    setPagina(1);
+    setBusca('');
+  }
+
+  async function exportar() {
+    await exportarMetricasFuturosClientesExcel(periodo);
+  }
+
+  function prepararNovaConsulta() {
+    setCarregando(true);
+    setErro('');
+  }
+
+  function voltarNivelEstatisticas() {
+    prepararNovaConsulta();
+    setPagina(1);
+    setBusca('');
+    if (mailing) {
+      setMailing(null);
+      return;
+    }
+    setUsuario(null);
+  }
+
+  function abrirTodosUsuarios() {
+    prepararNovaConsulta();
+    setUsuario(null);
+    setMailing(null);
+    setPagina(1);
+    setBusca('');
+  }
+
+  function voltarAoUsuario() {
+    prepararNovaConsulta();
+    setMailing(null);
+    setPagina(1);
+    setBusca('');
+  }
+
+  const titulo = mailing ? mailing.envio_nome : usuario ? usuario.usuario_nome : 'Todos os usuários';
+  const indicadores = usuario || resumo?.total || {};
+  const percentualPendente = Number(indicadores.recebidos || 0)
+    ? Math.round((Number(indicadores.pendentes || 0) / Number(indicadores.recebidos)) * 100)
+    : 0;
+  return (
+    <section className="future-stats" aria-busy={carregando}>
+      <header className="future-stats__header">
+        <div className="future-stats__heading">
+          <p className="future-stats__eyebrow">Estatísticas de qualificação</p>
+          <h2>{titulo}</h2>
+          <p className="muted">Recebidos e pendentes seguem a data de atribuição; produtividade e resultados seguem a primeira ação.</p>
+        </div>
+        <button type="button" className="btn future-stats__export" onClick={exportar}><I.Download size={16} /> Exportar Excel</button>
+      </header>
+
+      <div className="future-stats__filters">
+        <div className="future-stats__filter-title"><I.Calendar size={17} /><span>Período da análise</span></div>
+        <label><span className="sr-only">Período</span>
+          <select value={preset} onChange={event => { prepararNovaConsulta(); setPreset(event.target.value); }}>
+            <option value="hoje">Hoje</option>
+            <option value="mes">Este mês</option>
+            <option value="personalizado">Período específico</option>
+            <option value="todos">Todo o período</option>
+          </select>
+        </label>
+        {preset === 'personalizado' && <>
+          <label><span>De</span><input type="date" value={dataInicio} onChange={event => { prepararNovaConsulta(); setDataInicio(event.target.value); }} /></label>
+          <label><span>Até</span><input type="date" value={dataFim} onChange={event => { prepararNovaConsulta(); setDataFim(event.target.value); }} /></label>
+        </>}
+        <span className="future-stats__period-hint">Os indicadores são atualizados conforme o período selecionado.</span>
+      </div>
+
+      {(usuario || mailing) && (
+        <nav className="future-stats__breadcrumb" aria-label="Navegação das estatísticas">
+          <button type="button" className="future-stats__back" onClick={voltarNivelEstatisticas}><I.Return size={16} /> Voltar</button>
+          <span className="future-stats__breadcrumb-path">
+            <button type="button" onClick={abrirTodosUsuarios}><I.Users size={14} /> Todos os usuários</button>
+            <span className="future-stats__breadcrumb-separator" aria-hidden="true">›</span>
+            {mailing ? (
+              <>
+                <button type="button" onClick={voltarAoUsuario}>{usuario.usuario_nome}</button>
+                <span className="future-stats__breadcrumb-separator" aria-hidden="true">›</span>
+                <span className="future-stats__breadcrumb-current" aria-current="page">{mailing.envio_nome}</span>
+              </>
+            ) : <span className="future-stats__breadcrumb-current" aria-current="page">{usuario.usuario_nome}</span>}
+          </span>
+        </nav>
+      )}
+
+      {erro && <div className="alert alert-danger">{erro}</div>}
+      {carregando && <div className="future-stats__loading">Carregando indicadores...</div>}
+
+      {!carregando && !erro && !mailing && (
+        <>
+          <div className="future-stats__overview">
+            <article className="future-stats__kpi future-stats__kpi--received">
+              <div className="future-stats__kpi-icon"><I.Bell size={19} /></div>
+              <div><span>Recebidos</span><strong>{Number(indicadores.recebidos || 0).toLocaleString('pt-BR')}</strong><small>no período selecionado</small></div>
+            </article>
+            <article className="future-stats__kpi future-stats__kpi--worked">
+              <div className="future-stats__kpi-icon"><I.Check size={19} /></div>
+              <div><span>Trabalhados</span><strong>{Number(indicadores.trabalhados || 0).toLocaleString('pt-BR')}</strong><small>{Number(indicadores.produtividade_pct || 0).toLocaleString('pt-BR')}% de produtividade</small></div>
+              <i className="future-stats__kpi-progress"><b style={{ width: `${Math.min(100, indicadores.produtividade_pct || 0)}%` }} /></i>
+            </article>
+            <article className="future-stats__kpi future-stats__kpi--pending">
+              <div className="future-stats__kpi-icon"><I.History size={19} /></div>
+              <div><span>Pendentes</span><strong>{Number(indicadores.pendentes || 0).toLocaleString('pt-BR')}</strong><small>{percentualPendente}% ainda aguardam ação</small></div>
+            </article>
+            <article className="future-stats__kpi future-stats__kpi--qualified">
+              <div className="future-stats__kpi-icon"><I.Chart size={19} /></div>
+              <div><span>Qualificados</span><strong>{Number(indicadores.qualificados || 0).toLocaleString('pt-BR')}</strong><small>{Number(indicadores.qualificacao_pct || 0).toLocaleString('pt-BR')}% dos trabalhados</small></div>
+            </article>
+          </div>
+
+          <div className="future-stats__panels">
+            <section className="future-stats__panel">
+              <header><div><span className="future-stats__section-kicker">Operação</span><h3>Atividade registrada</h3></div><I.Bell size={18} /></header>
+              <div className="future-stats__metric-list">
+                {ATIVIDADE_ESTATISTICAS.map(([chave, rotulo]) => <div key={chave}><span>{rotulo}</span><strong>{Number(indicadores[chave] || 0).toLocaleString('pt-BR')}</strong></div>)}
+              </div>
+            </section>
+            <section className="future-stats__panel">
+              <header><div><span className="future-stats__section-kicker">Conversão</span><h3>Telegram e vendas</h3></div><I.Chart size={18} /></header>
+              <div className="future-stats__metric-list future-stats__metric-list--funnel">
+                {FUNIL_ESTATISTICAS.map(([chave, rotulo]) => <div key={chave}><span>{rotulo}</span><strong>{Number(indicadores[chave] || 0).toLocaleString('pt-BR')}</strong></div>)}
+              </div>
+            </section>
+          </div>
+
+          <div className="future-stats__business">
+            <article><span>Produtividade</span><strong>{Number(indicadores.produtividade_pct || 0).toLocaleString('pt-BR')}%</strong><small>trabalhados ÷ recebidos</small></article>
+            <article><span>Conversão</span><strong>{Number(indicadores.conversao_pct || 0).toLocaleString('pt-BR')}%</strong><small>vendas ÷ qualificados</small></article>
+            <article><span>Tempo médio da primeira ação</span><strong>{formatarDuracaoMinutos(indicadores.tempo_medio_primeira_acao_min)}</strong><small>desde o recebimento</small></article>
+            <article><span>Potencial mensal</span><strong>{formatarMoedaSondagem(indicadores.potencial_mensal)}</strong><small>estimado nos qualificados</small></article>
+            <article className="future-stats__business-sold"><span>Valor vendido</span><strong>{formatarMoedaSondagem(indicadores.valor_vendido)}</strong><small>vendas por futuro cliente</small></article>
+          </div>
+          <p className="muted future-stats__note">Históricos antigos de tentativas podem estar incompletos. Quando há primeira ação sem auditoria, é contabilizada ao menos uma tentativa.</p>
+        </>
+      )}
+
+      {!carregando && !erro && !usuario && (
+        <section className="future-stats__table-panel future-stats__team-panel">
+          <header>
+            <div>
+              <span className="future-stats__section-kicker">Equipe</span>
+              <h3>Desempenho por usuário</h3>
+              <p>Compare a operação e abra uma pessoa para analisar seus mailings e leads.</p>
+            </div>
+            <span className="future-stats__team-count"><I.Users size={14} /> {resumo?.usuarios?.length || 0} usuário(s)</span>
+          </header>
+          {(resumo?.usuarios || []).length > 0 ? (
+            <div className="future-stats__user-grid">
+              {resumo.usuarios.map(item => (
+                <button
+                  type="button"
+                  className="future-stats__user-card"
+                  key={item.usuario_id}
+                  onClick={() => abrirUsuario(item)}
+                  aria-label={`Analisar desempenho de ${item.usuario_nome}`}
+                >
+                  <span className="future-stats__user-card-head">
+                    <span className="future-stats__user-avatar">{String(item.usuario_nome || '?').trim().charAt(0).toUpperCase()}</span>
+                    <span className="future-stats__user-identity">
+                      <strong>{item.usuario_nome}</strong>
+                      <small>Ver mailings e leads</small>
+                    </span>
+                    <span className="future-stats__user-arrow"><I.ArrowRight size={17} /></span>
+                  </span>
+
+                  <span className="future-stats__user-numbers">
+                    <span><small>Recebidos</small><strong>{Number(item.recebidos || 0).toLocaleString('pt-BR')}</strong></span>
+                    <span><small>Trabalhados</small><strong>{Number(item.trabalhados || 0).toLocaleString('pt-BR')}</strong></span>
+                    <span className={item.pendentes ? 'is-pending' : ''}><small>Pendentes</small><strong>{Number(item.pendentes || 0).toLocaleString('pt-BR')}</strong></span>
+                  </span>
+
+                  <span className="future-stats__user-performance">
+                    <span>
+                      <span><small>Produtividade</small><strong>{Number(item.produtividade_pct || 0).toLocaleString('pt-BR')}%</strong></span>
+                      <i className="future-stats__user-progress"><b style={{ width: `${Math.min(100, item.produtividade_pct || 0)}%` }} /></i>
+                    </span>
+                    <span>
+                      <span><small>Conversão</small><strong>{Number(item.conversao_pct || 0).toLocaleString('pt-BR')}%</strong></span>
+                      <i className="future-stats__user-progress future-stats__user-progress--success"><b style={{ width: `${Math.min(100, item.conversao_pct || 0)}%` }} /></i>
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : <div className="empty-state">Nenhum usuário encontrado no período.</div>}
+        </section>
+      )}
+
+      {!carregando && !erro && usuario && !mailing && (
+        <section className="future-stats__table-panel future-stats__mailings-panel">
+          <header>
+            <div>
+              <span className="future-stats__section-kicker">Origem dos dados</span>
+              <h3>Mailings recebidos</h3>
+              <p>Compare os resultados e abra um mailing para analisar cada lead.</p>
+            </div>
+            <span className="future-stats__team-count"><I.TableSheet size={14} /> {mailings.length} mailing(s)</span>
+          </header>
+          {mailings.length > 0 ? (
+            <div className="table-wrap future-stats__mailing-list">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mailing</th>
+                    <th>Recebidos</th>
+                    <th>Trabalhados</th>
+                    <th>Qualificados</th>
+                    <th>Vendas</th>
+                    <th>Produtividade</th>
+                    <th>Conversão</th>
+                    <th><span className="sr-only">Ação</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mailings.map(item => (
+                    <tr key={item.envio_id}>
+                      <td>
+                        <button
+                          type="button"
+                          className="future-stats__mailing-list-link"
+                          onClick={() => abrirMailing(item)}
+                          aria-label={`Analisar leads do mailing ${item.envio_nome}`}
+                        >
+                          <span className="future-stats__mailing-icon"><I.TableSheet size={17} /></span>
+                          <span className="future-stats__mailing-identity">
+                            <strong>{item.envio_nome}</strong>
+                            <small>Mailing #{item.envio_id}</small>
+                          </span>
+                        </button>
+                      </td>
+                      <td><strong className="future-stats__mailing-value">{Number(item.recebidos || 0).toLocaleString('pt-BR')}</strong></td>
+                      <td><strong className="future-stats__mailing-value">{Number(item.trabalhados || 0).toLocaleString('pt-BR')}</strong></td>
+                      <td><strong className="future-stats__mailing-value">{Number(item.qualificados || 0).toLocaleString('pt-BR')}</strong></td>
+                      <td><strong className={`future-stats__mailing-value ${item.vendas_futuro_cliente ? 'has-sales' : ''}`}>{Number(item.vendas_futuro_cliente || 0).toLocaleString('pt-BR')}</strong></td>
+                      <td>
+                        <span className="future-stats__mailing-rate">
+                          <i className="future-stats__user-progress"><b style={{ width: `${Math.min(100, item.produtividade_pct || 0)}%` }} /></i>
+                          <strong>{Number(item.produtividade_pct || 0).toLocaleString('pt-BR')}%</strong>
+                        </span>
+                      </td>
+                      <td>
+                        <span className="future-stats__mailing-rate">
+                          <i className="future-stats__user-progress future-stats__user-progress--success"><b style={{ width: `${Math.min(100, item.conversao_pct || 0)}%` }} /></i>
+                          <strong>{Number(item.conversao_pct || 0).toLocaleString('pt-BR')}%</strong>
+                        </span>
+                      </td>
+                      <td><button type="button" className="future-stats__mailing-open" onClick={() => abrirMailing(item)} aria-label={`Abrir mailing ${item.envio_nome}`}><I.ArrowRight size={17} /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <div className="empty-state">Nenhum mailing encontrado no período.</div>}
+        </section>
+      )}
+
+      {!carregando && !erro && mailing && (
+        <>
+          <div className="future-stats__search"><I.Search size={16} /><input value={busca} onChange={event => { setBusca(event.target.value); setPagina(1); }} placeholder="Buscar lead neste mailing" /></div>
+          <div className="table-wrap"><table><thead><tr><th>Lead</th><th>Recebido</th><th>Primeira ação</th><th>Tentativas</th><th>Resultado</th></tr></thead>
+            <tbody>{linhas.map(linha => <tr key={linha.id}><td>{encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.razao_social) || encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.cnpj) || `Lead #${linha.id}`}</td><td>{formatarDataHora(linha.recebido_em)}</td><td>{formatarDataHora(primeiraAcaoVisual(linha))}</td><td>{linha.tentativas_conhecidas || 0}</td><td>{renderFuturoClienteSituacao(linha)}</td></tr>)}</tbody>
+          </table>{!linhas.length && <div className="empty-state">Nenhum lead encontrado.</div>}</div>
+          <div className="lead-pagination"><button className="btn" type="button" disabled={pagina <= 1} onClick={() => setPagina(value => value - 1)}>Anterior</button><span>Página {pagina} de {Math.max(1, Math.ceil(total / 50))}</span><button className="btn" type="button" disabled={pagina * 50 >= total} onClick={() => setPagina(value => value + 1)}>Próxima</button></div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function primeiraAcaoVisual(linha) {
+  return linha.primeira_ligacao_em || linha.futuro_cliente_marcado_em || linha.cliente_recusou_em || linha.chamada_nao_atendida_em || linha.retorno_agendado_em || linha.venda_recusada_em;
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 /**
@@ -3664,8 +4177,12 @@ function FuturosClientesMainView({ agora }) {
  */
 function FuturosClientesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const abaDaNotificacao = searchParams.get('aba') === 'leads' ? 'leads' : 'futuros';
-  const [abaSelecionada, setAbaSelecionada] = useState('futuros');
+  const usuario = getUsuarioLocal();
+  const podeVerTodos = temPermissao(usuario, 'futuros_clientes_ver_todos');
+  const podeVerEstatisticas = temPermissao(usuario, 'gerenciar_leads');
+  const abaDaNotificacao = resolverAbaFuturosClientes(searchParams.get('aba'), podeVerEstatisticas);
+  const [abaSelecionada, setAbaSelecionada] = useState('meus');
+  const [escopoTodos, setEscopoTodos] = useState(false);
   const abaAtiva = searchParams.has('aba') ? abaDaNotificacao : abaSelecionada;
   const [agora, setAgora] = useState(() => Date.now());
 
@@ -3687,25 +4204,29 @@ function FuturosClientesPage() {
         <div className="clientes-tabs">
           <button
             type="button"
-            className={`clientes-tab ${abaAtiva === 'futuros' ? 'active' : ''}`}
-            onClick={() => selecionarAba('futuros')}
+            className={`clientes-tab ${abaAtiva === 'meus' ? 'active' : ''}`}
+            onClick={() => selecionarAba('meus')}
           >
-            Futuros clientes
+            Meus Futuros Clientes
           </button>
           <button
             type="button"
-            className={`clientes-tab ${abaAtiva === 'leads' ? 'active' : ''}`}
-            onClick={() => selecionarAba('leads')}
+            className={`clientes-tab ${abaAtiva === 'recebidos' ? 'active' : ''}`}
+            onClick={() => selecionarAba('recebidos')}
           >
-            Mailing recebido
+            Futuros Clientes Recebidos
           </button>
+          <button type="button" className={`clientes-tab ${abaAtiva === 'mailings' ? 'active' : ''}`} onClick={() => selecionarAba('mailings')}>Mailings Recebidos</button>
+          {podeVerEstatisticas && <button type="button" className={`clientes-tab ${abaAtiva === 'estatisticas' ? 'active' : ''}`} onClick={() => selecionarAba('estatisticas')}>Estatísticas</button>}
         </div>
 
-        {abaAtiva === 'leads' ? (
-          <LeadsRecebidosView agora={agora} />
-        ) : (
-          <FuturosClientesMainView agora={agora} />
-        )}
+        {abaAtiva === 'meus' && <>
+          {podeVerTodos && <div className="future-scope-switch" role="group" aria-label="Escopo dos futuros clientes"><button type="button" className={!escopoTodos ? 'active' : ''} onClick={() => setEscopoTodos(false)}>Meus</button><button type="button" className={escopoTodos ? 'active' : ''} onClick={() => setEscopoTodos(true)}>Todos</button></div>}
+          <FuturosClientesMainView agora={agora} tipo="meus" escopoTodos={escopoTodos} />
+        </>}
+        {abaAtiva === 'recebidos' && <FuturosClientesMainView agora={agora} tipo="recebidos" />}
+        {abaAtiva === 'mailings' && <LeadsRecebidosView agora={agora} />}
+        {abaAtiva === 'estatisticas' && podeVerEstatisticas && <EstatisticasFuturosClientesView />}
       </div>
     </LayoutPrivado>
   );

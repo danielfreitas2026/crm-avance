@@ -11,8 +11,10 @@ describe('destinos das notificacoes', () => {
     ['nota de lead', { id: 6, tipo: 'nota_retorno_pre', entidade: 'clientes-secretos', entidade_id: 99, dados: { entidade_tipo: 'lead' } }, '/clientes-secretos?notificacao_id=6&cliente_id=99&aba=notas'],
     ['retorno', { id: 7, tipo: 'venda_retorno_registrado', dados: { venda_id: 101 } }, '/retornos?notificacao_id=7&venda_id=101'],
     ['fidelidade', { id: 8, tipo: 'cliente_fidelidade', entidade: 'clientes', entidade_id: 102 }, '/clientes?notificacao_id=8&cliente_id=102&aba=cliente'],
-    ['futuro cliente', { id: 9, tipo: 'futuro_cliente_retorno_due', entidade: 'lead_linhas', entidade_id: 103 }, '/futuros-clientes?notificacao_id=9&linha_id=103'],
-    ['lead', { id: 10, tipo: 'lead_retorno_due', entidade: 'lead_linhas', entidade_id: 104 }, '/futuros-clientes?notificacao_id=10&aba=leads&linha_id=104']
+    ['futuro cliente', { id: 9, tipo: 'futuro_cliente_retorno_due', entidade: 'lead_linhas', entidade_id: 103 }, '/futuros-clientes?notificacao_id=9&aba=meus&linha_id=103'],
+    ['lead', { id: 10, tipo: 'lead_retorno_due', entidade: 'lead_linhas', entidade_id: 104 }, '/futuros-clientes?notificacao_id=10&aba=mailings&linha_id=104'],
+    ['encaminhamento', { id: 11, tipo: 'futuro_cliente_distribuido', entidade: 'lead_linhas', entidade_id: 105 }, '/futuros-clientes?notificacao_id=11&aba=recebidos&linha_id=105'],
+    ['retorno de mailing', { id: 12, tipo: 'futuro_cliente_retorno_due', entidade: 'lead_linhas', entidade_id: 106, dados: { fluxo: 'mailing' } }, '/futuros-clientes?notificacao_id=12&aba=mailings&linha_id=106']
   ])('monta deep link exato para %s', (_nome, notificacao, rota) => {
     expect(montarDestinoNotificacao(notificacao).rota).toBe(rota);
   });
