@@ -2532,7 +2532,7 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
 /**
  * Renderiza futuro cliente detalhe modal.
  */
-function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVenda, somenteLeitura = false }) {
+export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVenda, somenteLeitura = false }) {
   const dialogRef = useDialogAcessivel(onClose);
   const vendaRegistrada = isFuturoClienteVendido(linha);
   const vendaRecusada = isVendaRecusada(linha);
@@ -2582,6 +2582,30 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
         label: chave,
         valor: dados[`${chave} (atualizado)`] ?? valor
       }));
+  }, [linha]);
+  const camposPrimeiraLigacao = useMemo(() => {
+    const sondagem = linha.sondagem;
+    if (!sondagem) return [];
+
+    return [
+      { label: 'Razão social', valor: sondagem.razao_social || '-' },
+      { label: 'CNPJ', valor: sondagem.cnpj || '-' },
+      { label: 'Primeira ligação', valor: sondagem.usuario?.nome || '-' },
+      { label: 'Data do contato', valor: formatarDataHora(sondagem.respondido_em || linha.futuro_cliente_marcado_em) },
+      { label: 'Pessoa contatada', valor: sondagem.contato_nome || '-' },
+      { label: 'Perfil do contato', valor: String(sondagem.contato_tipo || '-').toUpperCase() },
+      { label: 'Melhor número para contato', valor: formatarWhatsappInput(sondagem.melhor_numero_contato) || '-' },
+      { label: 'WhatsApp', valor: formatarWhatsappSondagem(sondagem) },
+      { label: 'Operadora atual', valor: sondagem.operadoraAtual?.nome || '-' },
+      { label: 'Operadora de interesse', valor: sondagem.operadoraInteresse?.nome || '-' },
+      { label: 'Telefone fixo', valor: formatarWhatsappInput(sondagem.telefone_fixo) || '-' },
+      { label: 'Terminal', valor: formatarWhatsappInput(sondagem.terminal) || '-' },
+      { label: 'Data da ativação', valor: formatarData(sondagem.data_ativacao) },
+      { label: 'Chips / preço', valor: formatarChipsSondagem(sondagem) },
+      { label: 'Média mensal', valor: formatarMoedaSondagem(sondagem.valor_mensal_estimado) },
+      { label: 'Retorno', valor: formatarDataHora(sondagem.retorno_em || linha.futuro_cliente_retorno) },
+      { label: 'Observações', valor: sondagem.observacoes || linha.futuro_cliente_notas || '-', largo: true }
+    ];
   }, [linha]);
   async function salvarVendaRecusada() {
     setSalvando(true);
@@ -2658,7 +2682,7 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
 
   return (
     <div className="modal-overlay">
-      <form ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Detalhes do futuro cliente" className="modal adicionar-lead-modal" onSubmit={podeEditar ? salvar : event => event.preventDefault()}>
+      <form ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Detalhes do futuro cliente" className="modal futuro-cliente-detalhe-modal" onSubmit={podeEditar ? salvar : event => event.preventDefault()}>
         <div className="modal-header">
           <div className="modal-header-row">
             <div>
@@ -2671,43 +2695,54 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
           </div>
         </div>
 
-        <div className="modal-body">
-          {camposLead.length > 0 && (
-            <div className="adicionar-lead-dados">
-              {camposLead.map(({ label, valor }) => (
-                <div key={label} className="adicionar-lead-campo">
-                  <span className="adicionar-lead-campo__label">{label}</span>
-                  <span className="adicionar-lead-campo__valor">{formatarValorCampoLead(valor) || '-'}</span>
+        <div className="modal-body futuro-cliente-detalhe__body">
+          <div className="futuro-cliente-detalhe__resumos">
+            <section className="futuro-cliente-detalhe__painel" aria-labelledby="futuro-cliente-dados-planilha">
+              <header className="futuro-cliente-detalhe__painel-header">
+                <h3 id="futuro-cliente-dados-planilha">Dados da planilha</h3>
+                <p>Informações recebidas no mailing de origem.</p>
+              </header>
+              {camposLead.length > 0 ? (
+                <div className="adicionar-lead-dados futuro-cliente-detalhe__dados">
+                  {camposLead.map(({ label, valor }) => (
+                    <div key={label} className={`adicionar-lead-campo${normalizarTextoLead(label).includes('observacao') ? ' futuro-cliente-detalhe__dado-largo' : ''}`}>
+                      <span className="adicionar-lead-campo__label">{label}</span>
+                      <span className="adicionar-lead-campo__valor">{formatarValorCampoLead(valor) || '-'}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
+              ) : (
+                <div className="futuro-cliente-detalhe__vazio">Nenhum dado disponível na planilha.</div>
+              )}
+            </section>
 
-          {linha.sondagem && (
-            <div className="adicionar-lead-dados">
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Razão social</span><span className="adicionar-lead-campo__valor">{linha.sondagem.razao_social || '-'}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">CNPJ</span><span className="adicionar-lead-campo__valor">{linha.sondagem.cnpj || '-'}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Primeira ligação</span><span className="adicionar-lead-campo__valor">{linha.sondagem.usuario?.nome || '-'}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Data do contato</span><span className="adicionar-lead-campo__valor">{formatarDataHora(linha.sondagem.respondido_em || linha.futuro_cliente_marcado_em)}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Pessoa contatada</span><span className="adicionar-lead-campo__valor">{linha.sondagem.contato_nome || '-'}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Perfil do contato</span><span className="adicionar-lead-campo__valor">{String(linha.sondagem.contato_tipo || '-').toUpperCase()}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Melhor número para contato</span><span className="adicionar-lead-campo__valor">{formatarWhatsappInput(linha.sondagem.melhor_numero_contato) || '-'}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">WhatsApp</span><span className="adicionar-lead-campo__valor">{formatarWhatsappSondagem(linha.sondagem)}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Operadora atual</span><span className="adicionar-lead-campo__valor">{linha.sondagem.operadoraAtual?.nome || '-'}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Operadora de interesse</span><span className="adicionar-lead-campo__valor">{linha.sondagem.operadoraInteresse?.nome || '-'}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Telefone fixo</span><span className="adicionar-lead-campo__valor">{formatarWhatsappInput(linha.sondagem.telefone_fixo) || '-'}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Terminal</span><span className="adicionar-lead-campo__valor">{formatarWhatsappInput(linha.sondagem.terminal) || '-'}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Data da ativação</span><span className="adicionar-lead-campo__valor">{formatarData(linha.sondagem.data_ativacao)}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Chips / preço</span><span className="adicionar-lead-campo__valor">{formatarChipsSondagem(linha.sondagem)}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Média mensal</span><span className="adicionar-lead-campo__valor">{formatarMoedaSondagem(linha.sondagem.valor_mensal_estimado)}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Retorno</span><span className="adicionar-lead-campo__valor">{formatarDataHora(linha.sondagem.retorno_em || linha.futuro_cliente_retorno)}</span></div>
-              <div className="adicionar-lead-campo"><span className="adicionar-lead-campo__label">Observações</span><span className="adicionar-lead-campo__valor">{linha.sondagem.observacoes || linha.futuro_cliente_notas || '-'}</span></div>
-            </div>
-          )}
+            <section className="futuro-cliente-detalhe__painel" aria-labelledby="futuro-cliente-dados-primeira-ligacao">
+              <header className="futuro-cliente-detalhe__painel-header">
+                <h3 id="futuro-cliente-dados-primeira-ligacao">Dados obtidos na 1ª ligação</h3>
+                <p>Informações registradas durante o primeiro contato.</p>
+              </header>
+              {camposPrimeiraLigacao.length > 0 ? (
+                <div className="adicionar-lead-dados futuro-cliente-detalhe__dados">
+                  {camposPrimeiraLigacao.map(({ label, valor, largo }) => (
+                    <div key={label} className={`adicionar-lead-campo${largo ? ' futuro-cliente-detalhe__dado-largo' : ''}`}>
+                      <span className="adicionar-lead-campo__label">{label}</span>
+                      <span className="adicionar-lead-campo__valor">{valor || '-'}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="futuro-cliente-detalhe__vazio">A primeira ligação ainda não possui dados registrados.</div>
+              )}
+              <AvaliacaoPrimeiraLigacao linha={linha} />
+            </section>
+          </div>
 
-          <AvaliacaoPrimeiraLigacao linha={linha} />
-
-          <fieldset className="futuro-cliente-form future-client-readonly" disabled={!podeEditar}>
+          <section className="futuro-cliente-detalhe__form-card" aria-labelledby="futuro-cliente-atualizar-dados">
+            <header className="futuro-cliente-detalhe__form-header">
+              <h3 id="futuro-cliente-atualizar-dados">Atualizar dados do futuro cliente</h3>
+              <p>Revise as informações comerciais e mantenha o próximo contato atualizado.</p>
+            </header>
+            <fieldset className="futuro-cliente-form future-client-readonly" disabled={!podeEditar}>
             <div className="futuro-cliente-form__grid">
               <div className="form-field">
                 <label>CNPJ</label>
@@ -2768,7 +2803,7 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
               <label>Data da ativacao</label>
               <input type="date" value={dataAtivacao} onChange={event => setDataAtivacao(event.target.value)} disabled={salvando} />
             </div>
-            <div className="form-field">
+            <div className="form-field futuro-cliente-detalhe__campo-largo">
               <label>Observações</label>
               <textarea
                 rows={3}
@@ -2802,32 +2837,36 @@ function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onRegistrarVe
                 </button>
               </div>
             )}
-          </fieldset>
+            </fieldset>
+          </section>
 
           {erro && <div className="alert-error" style={{ marginTop: 8 }}>{erro}</div>}
         </div>
 
-        <div className="modal-footer">
-          {vendaRegistrada ? (
-            <>
-              <div className="lead-already-qualified-notice">Este futuro cliente ja possui uma venda registrada. Acesse a pagina de Vendas para visualizar a venda.</div>
-              {comoAdmin && !somenteLeitura && <button type="button" className="btn" onClick={() => setVinculoAberto(true)}>Gerenciar vínculo</button>}
-            </>
-          ) : vendaRecusada ? (
-            <div className="futuro-cliente-recusa is-saved">Venda recusada para este futuro cliente.</div>
-          ) : (
-            <>
-              {podeRegistrarVenda && <button type="button" className="btn" onClick={() => setEtapa('venda')} disabled={salvando}>
-                <I.Chart size={14} /> Registrar venda
-              </button>}
-              {comoAdmin && !somenteLeitura && <button type="button" className="btn btn-primary" onClick={() => setVinculoAberto(true)} disabled={salvando}>Vincular venda</button>}
-            </>
-          )}
-          <div style={{ flex: 1 }} />
-          <button type="button" className="btn" onClick={onClose} disabled={salvando}>Cancelar</button>
-          {podeEditar && <button type="submit" className="btn btn-primary" disabled={salvando}>
-            {salvando ? 'Salvando...' : 'Salvar'}
-          </button>}
+        <div className="modal-footer futuro-cliente-detalhe__footer">
+          <div className="futuro-cliente-detalhe__acoes futuro-cliente-detalhe__acoes--principais">
+            {vendaRegistrada ? (
+              <>
+                <div className="lead-already-qualified-notice">Este futuro cliente ja possui uma venda registrada. Acesse a pagina de Vendas para visualizar a venda.</div>
+                {comoAdmin && !somenteLeitura && <button type="button" className="btn" onClick={() => setVinculoAberto(true)}>Gerenciar vínculo</button>}
+              </>
+            ) : vendaRecusada ? (
+              <div className="futuro-cliente-recusa is-saved">Venda recusada para este futuro cliente.</div>
+            ) : (
+              <>
+                {podeRegistrarVenda && <button type="button" className="btn" onClick={() => setEtapa('venda')} disabled={salvando}>
+                  <I.Chart size={14} /> Registrar venda
+                </button>}
+                {comoAdmin && !somenteLeitura && <button type="button" className="btn btn-primary" onClick={() => setVinculoAberto(true)} disabled={salvando}>Vincular venda</button>}
+              </>
+            )}
+          </div>
+          <div className="futuro-cliente-detalhe__acoes futuro-cliente-detalhe__acoes--confirmacao">
+            <button type="button" className="btn" onClick={onClose} disabled={salvando}>Cancelar</button>
+            {podeEditar && <button type="submit" className="btn btn-primary" disabled={salvando}>
+              {salvando ? 'Salvando...' : 'Salvar'}
+            </button>}
+          </div>
         </div>
       </form>
     </div>

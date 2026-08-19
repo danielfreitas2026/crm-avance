@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import {
   AdicionarLeadModal,
   AvaliacaoPrimeiraLigacao,
+  FuturoClienteDetalheModal,
   LeadStatusMailing
 } from './FuturosClientesPage';
 import { formatarDuracaoMinutos, getClasseLinhaLead, isVendaAntigaRegistrada, isFuturoClienteVendido, isVendaRecusada, resolverAbaFuturosClientes } from './lead-status';
@@ -143,5 +144,73 @@ describe('modal de adição de lead', () => {
     expect(modal.querySelector('.modal-body')).toHaveClass('adicionar-lead-modal__body--opcoes');
     expect(screen.getByRole('region', { name: 'Informações da planilha' })).toContainElement(screen.getByText('Empresa Exemplo'));
     expect(modal.querySelector('.adicionar-lead-acoes')).toContainElement(screen.getByRole('button', { name: /Registrar venda/i }));
+  });
+
+  it('mantém o modal do mailing separado dos painéis do detalhe de futuro cliente', () => {
+    const { unmount } = render(
+      <AdicionarLeadModal
+        linha={{ id: 10, dados_json: { 'Razão social': 'Empresa Mailing' }, envio: { nome: 'Envio teste' } }}
+        colunas={[]}
+        usuario={{ role: { nome: 'admin' } }}
+        onClose={() => {}}
+        onRegistrarVenda={() => {}}
+        onFuturoClienteSalvo={() => {}}
+        onLinhaAtualizada={() => {}}
+      />
+    );
+
+    expect(screen.getByRole('dialog', { name: 'Adicionar lead' })).not.toHaveClass('futuro-cliente-detalhe-modal');
+    unmount();
+
+    render(
+      <FuturoClienteDetalheModal
+        linha={{
+          id: 11,
+          dados_json: { 'Razão social': 'Empresa da Planilha', CNPJ: '11.111.111/1111-11' },
+          envio: { nome: 'Envio futuro' },
+          sondagem: {
+            razao_social: 'Empresa da Primeira Ligação',
+            cnpj: '22.222.222/2222-22',
+            contato_nome: 'Contato da ligação',
+            usuario: { nome: 'Consultora teste' }
+          }
+        }}
+        onClose={() => {}}
+        onAtualizado={() => {}}
+        onRegistrarVenda={() => {}}
+        somenteLeitura
+      />
+    );
+
+    const detalhe = screen.getByRole('dialog', { name: 'Detalhes do futuro cliente' });
+    const painelPlanilha = screen.getByRole('region', { name: 'Dados da planilha' });
+    const painelPrimeiraLigacao = screen.getByRole('region', { name: 'Dados obtidos na 1ª ligação' });
+    const formulario = screen.getByRole('region', { name: 'Atualizar dados do futuro cliente' });
+
+    expect(detalhe).toHaveClass('futuro-cliente-detalhe-modal');
+    expect(detalhe).not.toHaveClass('adicionar-lead-modal');
+    expect(within(painelPlanilha).getByText('Empresa da Planilha')).toBeVisible();
+    expect(within(painelPlanilha).queryByText('Empresa da Primeira Ligação')).not.toBeInTheDocument();
+    expect(within(painelPrimeiraLigacao).getByText('Empresa da Primeira Ligação')).toBeVisible();
+    expect(within(painelPrimeiraLigacao).getByText('Avaliação da primeira ligação')).toBeVisible();
+    expect(painelPlanilha.compareDocumentPosition(painelPrimeiraLigacao) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(painelPrimeiraLigacao.compareDocumentPosition(formulario) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(detalhe.querySelector('.futuro-cliente-detalhe__acoes--principais')).toBeInTheDocument();
+    expect(detalhe.querySelector('.futuro-cliente-detalhe__acoes--confirmacao')).toContainElement(screen.getByRole('button', { name: 'Cancelar' }));
+  });
+
+  it('exibe estados vazios quando as duas origens ainda não possuem dados', () => {
+    render(
+      <FuturoClienteDetalheModal
+        linha={{ id: 12, dados_json: {}, envio: { nome: 'Envio vazio' } }}
+        onClose={() => {}}
+        onAtualizado={() => {}}
+        onRegistrarVenda={() => {}}
+        somenteLeitura
+      />
+    );
+
+    expect(screen.getByText('Nenhum dado disponível na planilha.')).toBeVisible();
+    expect(screen.getByText('A primeira ligação ainda não possui dados registrados.')).toBeVisible();
   });
 });
