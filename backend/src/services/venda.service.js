@@ -3352,6 +3352,17 @@ async function reenviarVendaParaDashboard(id, usuarioId) {
 }
 
 /**
+ * Impede edicao comum de venda enviada ao pos-venda, preservando o fluxo auditado de reversao.
+ */
+function validarBloqueioEdicaoPosVenda(venda, usuarioPodeOperarPosVenda, reversao = false) {
+  if (!venda?.enviada_pos_venda_em || usuarioPodeOperarPosVenda || reversao) return;
+
+  const error = new Error('Venda já enviada ao pós-venda. Apenas usuários com permissão de pós-venda podem editar.');
+  error.statusCode = 403;
+  throw error;
+}
+
+/**
  * Atualiza venda com os dados informados.
  */
 async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
@@ -3392,12 +3403,7 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
   }
 
   const usuarioPodeOperarPosVenda = await usuarioTemPermissao(usuarioId, 'pos_venda');
-
-  if (vendaAtual.enviada_pos_venda_em && !usuarioPodeOperarPosVenda) {
-    const error = new Error('Venda já enviada ao pós-venda. Apenas usuários com permissão de pós-venda podem editar.');
-    error.statusCode = 403;
-    throw error;
-  }
+  validarBloqueioEdicaoPosVenda(vendaAtual, usuarioPodeOperarPosVenda, reversao);
 
   const agora = formatarDateTimeSQL();
   const vendedorasIds = Array.isArray(dados.vendedoras) ? normalizarIdsVendedoras(dados.vendedoras) : null;
@@ -4434,6 +4440,7 @@ module.exports = {
     montarAtribuicoesVendedorasVenda,
     montarPayload,
     montarAlteracoesReversao,
+    validarBloqueioEdicaoPosVenda,
     anexarReversoesVenda,
     aplicarFiltrosDataEfetivaVenda,
     aplicarOrdenacaoDataEfetivaVenda,

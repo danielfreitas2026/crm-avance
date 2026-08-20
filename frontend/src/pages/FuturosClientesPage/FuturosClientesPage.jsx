@@ -730,7 +730,7 @@ function renderLeadStatus(linha, agora = Date.now()) {
   if (isFuturoClienteAtivo(linha)) {
     return (
       <span className="lead-status-cell">
-        {isFuturoClienteVendido(linha) && (
+        {isFuturoClienteVendido(linha) && !linha.venda_registrada_oculta && (
           <span className="pill lead-status-pill sold">
             <span className="pill-dot"></span>
             Venda registrada por futuro cliente

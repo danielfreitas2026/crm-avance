@@ -31,6 +31,7 @@ class LeadLinha extends Model {
         status_operacional: { type: ['string', 'null'] },
         cliente_id: { type: ['integer', 'null'] },
         venda_id: { type: ['integer', 'null'] },
+        venda_registrada_oculta: { type: ['boolean', 'integer'] },
         venda_recusada_motivo: { type: ['string', 'null'] },
         venda_recusada_em: { type: ['string', 'object', 'null'] },
         venda_recusada_por_id: { type: ['integer', 'null'] },

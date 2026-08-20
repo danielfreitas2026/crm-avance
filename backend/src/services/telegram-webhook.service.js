@@ -41,8 +41,28 @@ function botoesCancelarVenda(linhaId, nomeConsultora) {
     callback_data: `fc:cancelar:${linhaId}`
   }]];
 }
+
+function montarAtribuicaoDistribuicao({ linhaId, envioId, vendedoraId, gerenteTelegramId, telegramContexto }, agora) {
+  return {
+    lead_linha_id: linhaId,
+    envio_id: envioId,
+    usuario_id: vendedoraId,
+    etapa: 'venda',
+    status: 'atribuido',
+    aceite_status: leadDistribuicaoService.ACEITE_AGUARDANDO,
+    atribuido_em: agora,
+    prazo_acao_em: leadDistribuicaoService.calcularPrazoAcao(agora),
+    telegram_chat_id: String(telegramContexto.chatId || ''),
+    telegram_message_id: String(telegramContexto.messageId || ''),
+    telegram_mensagem_texto: String(telegramContexto.mensagemTexto || ''),
+    gerente_telegram_id: String(gerenteTelegramId || ''),
+    criado_por_id: null
+  };
+}
+
 async function distribuir(linhaId, vendedoraId, gerenteTelegramId, telegramContexto = {}) {
   return db.transaction(async trx => {
+    const agora = new Date();
     const linha = await trx('lead_linhas')
       .where('id', linhaId)
       .where('futuro_cliente', true)
@@ -66,21 +86,15 @@ async function distribuir(linhaId, vendedoraId, gerenteTelegramId, telegramConte
     await trx('lead_envio_usuarios').insert({ envio_id: envioId, usuario_id: vendedoraId, quantidade: 1 });
     await trx('lead_linhas').where('id', linhaId).update({
       status_operacional: 'distribuido_venda',
-      updated_at: new Date()
+      updated_at: agora
     });
-    await trx('lead_atribuicoes').insert({
-      lead_linha_id: linhaId,
-      envio_id: envioId,
-      usuario_id: vendedoraId,
-      etapa: 'venda',
-      status: 'atribuido',
-      aceite_status: leadDistribuicaoService.ACEITE_AGUARDANDO,
-      telegram_chat_id: String(telegramContexto.chatId || ''),
-      telegram_message_id: String(telegramContexto.messageId || ''),
-      telegram_mensagem_texto: String(telegramContexto.mensagemTexto || ''),
-      gerente_telegram_id: String(gerenteTelegramId || ''),
-      criado_por_id: null
-    });
+    await trx('lead_atribuicoes').insert(montarAtribuicaoDistribuicao({
+      linhaId,
+      envioId,
+      vendedoraId,
+      gerenteTelegramId,
+      telegramContexto
+    }, agora));
     await notificacaoService.criarNotificacaoFuturoClienteDistribuido({ leadLinhaId: linhaId, vendedoraId, gerenteTelegramId, nomeEmpresa }, trx);
     return vendedora;
   });
@@ -135,5 +149,5 @@ module.exports = {
   processarCallback,
   distribuir,
   cancelarEnvio,
-  _internals: { botoesVendedoras, botoesCancelarVenda }
+  _internals: { botoesVendedoras, botoesCancelarVenda, montarAtribuicaoDistribuicao }
 };

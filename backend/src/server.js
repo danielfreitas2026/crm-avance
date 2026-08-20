@@ -7,6 +7,7 @@ const resumoVendasTelegramService = require('./services/resumo-vendas-telegram.s
 const notificacaoService = require('./services/notificacao.service');
 const dashboardIntegracaoService = require('./services/dashboard-integracao.service');
 const leadDistribuicaoService = require('./services/lead-distribuicao.service');
+const leadTelegramPublicacaoService = require('./services/lead-telegram-publicacao.service');
 const leadEnriquecimentoService = require('./services/lead-enriquecimento.service');
 
 const PORT = process.env.APP_PORT || 3000;
@@ -52,6 +53,10 @@ function processarPrazosDistribuicao() {
   leadDistribuicaoService.processarPrazosVencidos()
     .catch(error => {
       console.error('Erro ao processar prazos de contato dos futuros clientes:', error);
+    })
+    .then(() => leadTelegramPublicacaoService.processarRepublicacoesPendentes())
+    .catch(error => {
+      console.error('Erro ao processar republicacoes pendentes no Telegram:', error);
     })
     .finally(() => {
       processandoPrazosDistribuicao = false;

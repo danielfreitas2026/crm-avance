@@ -334,3 +334,17 @@ describe('modal de adição de lead', () => {
     localStorage.removeItem('usuario');
   });
 });
+
+describe('ocultação visual de venda registrada no mailing', () => {
+  it('mantem o futuro cliente e oculta somente o chip da venda', () => {
+    render(<LeadStatusMailing linha={{
+      futuro_cliente: 1,
+      venda_id: 72,
+      status_operacional: 'vendido',
+      venda_registrada_oculta: 1
+    }} />);
+
+    expect(screen.queryByText(/Venda registrada/)).not.toBeInTheDocument();
+    expect(screen.getByText('Futuro cliente')).toBeVisible();
+  });
+});

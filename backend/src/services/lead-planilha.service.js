@@ -793,10 +793,89 @@ const STATUS_REENVIO_PERMITIDOS = new Set([
   'retorno_agendado'
 ]);
 
+const GRUPOS_MAILING_PERMITIDOS = new Set([
+  'nao_enviado',
+  'enviado_sem_marcacao',
+  'chamada_nao_atendida',
+  'cliente_recusou',
+  'retorno_agendado',
+  'venda_registrada'
+]);
+
 /** Normaliza os estados que podem ser reabertos em um reenvio de sondagem. */
 function normalizarStatusReenvio(valor) {
   const valores = Array.isArray(valor) ? valor : String(valor || '').split(',');
   return [...new Set(valores.map(item => String(item).trim()).filter(item => STATUS_REENVIO_PERMITIDOS.has(item)))];
+}
+
+/** Normaliza os grupos elegiveis para uma nova divisao de mailing. */
+function normalizarGruposMailing(valor) {
+  const valores = Array.isArray(valor) ? valor : String(valor || '').split(',');
+  return [...new Set(valores.map(item => String(item).trim()).filter(item => GRUPOS_MAILING_PERMITIDOS.has(item)))];
+}
+
+function obterGruposMailingInformados(valor) {
+  const valores = Array.isArray(valor) ? valor : String(valor || '').split(',');
+  return [...new Set(valores.map(item => String(item).trim()).filter(Boolean))];
+}
+
+function gruposMailingForamInformados(dados = {}) {
+  return Object.prototype.hasOwnProperty.call(dados, 'grupos_mailing');
+}
+
+function aplicarCondicaoEnviado(query) {
+  query.where(builder => builder.whereNotNull('envio_id').orWhereNotNull('atribuido_para_id'));
+}
+
+function aplicarCondicaoSemMarcacao(query) {
+  query
+    .where(builder => builder.whereNull('cliente_recusou').orWhere('cliente_recusou', false))
+    .where(builder => builder.whereNull('chamada_nao_atendida').orWhere('chamada_nao_atendida', false))
+    .whereNull('retorno_agendado_em');
+}
+
+function aplicarCondicaoSondagemReenviavel(query) {
+  query
+    .where(builder => builder.whereNull('etapa_atual').orWhere('etapa_atual', 'sondagem'))
+    .where(builder => builder.whereNull('futuro_cliente').orWhere('futuro_cliente', false))
+    .whereNull('venda_id')
+    .whereNull('venda_recusada_em')
+    .whereNull('venda_recusada_motivo');
+}
+
+function aplicarCondicaoVendaRegistrada(query) {
+  query
+    .where(builder => builder.whereNotNull('venda_id').orWhere('status_operacional', 'vendido'))
+    .where(builder => builder.whereNull('venda_registrada_oculta').orWhere('venda_registrada_oculta', false));
+}
+
+/** Aplica a uniao dos grupos escolhidos, mantendo cada linha no resultado uma unica vez. */
+function aplicarGruposMailing(query, gruposMailing) {
+  if (!gruposMailing.length) return;
+  query.where(builder => {
+    gruposMailing.forEach((grupo, index) => {
+      const metodo = index === 0 ? 'where' : 'orWhere';
+      builder[metodo](grupoQuery => {
+        if (grupo === 'venda_registrada') {
+          aplicarCondicaoEnviado(grupoQuery);
+          aplicarCondicaoVendaRegistrada(grupoQuery);
+          return;
+        }
+
+        aplicarCondicaoSondagemReenviavel(grupoQuery);
+        if (grupo === 'nao_enviado') {
+          grupoQuery.whereNull('envio_id').whereNull('atribuido_para_id');
+          return;
+        }
+
+        aplicarCondicaoEnviado(grupoQuery);
+        if (grupo === 'enviado_sem_marcacao') aplicarCondicaoSemMarcacao(grupoQuery);
+        if (grupo === 'cliente_recusou') grupoQuery.where('cliente_recusou', true);
+        if (grupo === 'chamada_nao_atendida') grupoQuery.where('chamada_nao_atendida', true);
+        if (grupo === 'retorno_agendado') grupoQuery.whereNotNull('retorno_agendado_em');
+      });
+    });
+  });
 }
 
 /** Limita a consulta aos leads que possuem ao menos um dos estados escolhidos. */
@@ -843,6 +922,21 @@ function montarLimpezaStatusReenvio(statusReenvio) {
     retorno_agendado_por_id: null
   });
   return limpeza;
+}
+
+function montarPatchDivisao(usuarioAlvoId, envioId, etapa, historicoPrimeiraLigacao = {}, limpezaStatus = {}, opcoes = {}) {
+  const patch = {
+    atribuido_para_id: usuarioAlvoId,
+    envio_id: envioId,
+    etapa_atual: etapa,
+    ...historicoPrimeiraLigacao,
+    ...limpezaStatus,
+    updated_at: new Date()
+  };
+  if (!opcoes.preservarStatusOperacional) {
+    patch.status_operacional = etapa === 'venda' ? 'distribuido_venda' : 'pendente';
+  }
+  return patch;
 }
 
 function getJsonValueExpr(coluna) {
@@ -961,7 +1055,11 @@ function aplicarFiltrosQuery(query, filtros = {}, opcoes = {}) {
   if (Number.isInteger(linhaId) && linhaId > 0) query.where('id', linhaId);
   if (opcoes.usuarioId) query.where('atribuido_para_id', Number(opcoes.usuarioId));
   if (filtros.somente_enviados === true || filtros.somente_enviados === 'true') query.where(builder => builder.whereNotNull('envio_id').orWhereNotNull('atribuido_para_id'));
-  aplicarStatusReenvio(query, normalizarStatusReenvio(filtros.status_reenvio), filtros.status_reenvio_modo === 'excluir');
+  if (gruposMailingForamInformados(filtros)) {
+    aplicarGruposMailing(query, normalizarGruposMailing(filtros.grupos_mailing));
+  } else {
+    aplicarStatusReenvio(query, normalizarStatusReenvio(filtros.status_reenvio), filtros.status_reenvio_modo === 'excluir');
+  }
   if (filtros.etapa) query.where('etapa_atual', String(filtros.etapa));
   if (filtros.somente_qualificados === true || filtros.somente_qualificados === 'true') {
     query.where('futuro_cliente', true).whereNull('futuro_cliente_excluido_em');
@@ -1496,16 +1594,20 @@ async function buscarIdsPorCriterios(dados, quantidadeTotal) {
     return ids.filter(id => permitidos.has(Number(id)));
   }
 
+  const usaGruposMailing = gruposMailingForamInformados(dados);
+  const gruposMailing = normalizarGruposMailing(dados.grupos_mailing);
   const incluirEnviados = dados.incluir_enviados === true;
   const statusReenvio = normalizarStatusReenvio(dados.status_reenvio);
   const excluirStatusReenvio = dados.status_reenvio_modo === 'excluir';
   const query = LeadLinha.query().select('id');
   aplicarFiltrosQuery(query, dados.filtros || {});
 
-  if (!incluirEnviados) {
+  if (usaGruposMailing) {
+    aplicarGruposMailing(query, gruposMailing);
+  } else if (!incluirEnviados) {
     query.whereNull('envio_id');
   }
-  if (statusReenvio.length) {
+  if (!usaGruposMailing && statusReenvio.length) {
     if (!excluirStatusReenvio) query.where(builder => builder.whereNotNull('envio_id').orWhereNotNull('atribuido_para_id'));
     aplicarStatusReenvio(query, statusReenvio, excluirStatusReenvio);
   }
@@ -1542,26 +1644,32 @@ async function dividirLeads(dados, usuarioId) {
     : [];
   const quantidadeTotal = Number(dados.quantidade_total || 0);
   const etapa = dados.etapa === 'venda' ? 'venda' : 'sondagem';
+  const usaGruposMailing = gruposMailingForamInformados(dados);
+  const gruposMailingInformados = obterGruposMailingInformados(dados.grupos_mailing);
+  const gruposMailing = normalizarGruposMailing(dados.grupos_mailing);
   const statusReenvio = normalizarStatusReenvio(dados.status_reenvio);
   const excluirStatusReenvio = dados.status_reenvio_modo === 'excluir';
 
   if (!String(dados.nome || '').trim()) throw new Error('Informe um nome para o envio.');
   if (usuarioIds.length === 0) throw new Error('Selecione ao menos um vendedor.');
   if (quantidadeTotal <= 0) throw new Error('Quantidade de clientes invalida.');
-  if (statusReenvio.length && (!dados.incluir_enviados || etapa !== 'sondagem')) throw new Error('A selecao de status e permitida somente ao reenviar mailing de sondagem ja enviado.');
+  if (usaGruposMailing && etapa !== 'sondagem') throw new Error('A selecao de grupos de mailing e permitida somente em envios de sondagem.');
+  if (usaGruposMailing && gruposMailing.length === 0) throw new Error('Selecione ao menos um grupo de mailing.');
+  if (usaGruposMailing && gruposMailing.length !== gruposMailingInformados.length) throw new Error('A selecao contem um grupo de mailing invalido.');
+  if (!usaGruposMailing && statusReenvio.length && (!dados.incluir_enviados || etapa !== 'sondagem')) throw new Error('A selecao de status e permitida somente ao reenviar mailing de sondagem ja enviado.');
 
   const linhaIds = await buscarIdsPorCriterios(dados, quantidadeTotal);
   if (linhaIds.length < quantidadeTotal) {
     if (etapa === 'venda') {
       throw new Error(`Ha somente ${linhaIds.length} futuro(s) cliente(s) qualificado(s) e disponivel(is) para venda.`);
     }
-    if (dados.incluir_enviados === true) {
+    if (usaGruposMailing || dados.incluir_enviados === true) {
       throw new Error('NÃ£o hÃ¡ mailing suficiente para a quantidade solicitada.');
     }
     throw new Error('NÃ£o hÃ¡ mailing nÃ£o enviado suficiente. Ative incluir mailing jÃ¡ enviado para transferir linhas distribuÃ­das.');
   }
 
-  const totalJaEnviados = dados.incluir_enviados === true
+  const totalJaEnviados = (usaGruposMailing || dados.incluir_enviados === true)
     ? await LeadLinha.query()
       .whereIn('id', linhaIds)
       .where(builder => {
@@ -1590,7 +1698,10 @@ async function dividirLeads(dados, usuarioId) {
     });
 
     let cursor = 0;
-    const statusParaLimpar = excluirStatusReenvio ? [] : statusReenvio;
+    const statusParaLimpar = usaGruposMailing
+      ? gruposMailing.filter(grupo => STATUS_REENVIO_PERMITIDOS.has(grupo))
+      : (excluirStatusReenvio ? [] : statusReenvio);
+    const ocultarVendaRegistrada = usaGruposMailing && gruposMailing.includes('venda_registrada');
     const limpezaStatus = montarLimpezaStatusReenvio(statusParaLimpar);
     const historicoPrimeiraLigacao = montarHistoricoPrimeiraLigacao(statusParaLimpar);
     for (const usuarioAlvoId of usuarioIds) {
@@ -1605,17 +1716,46 @@ async function dividirLeads(dados, usuarioId) {
       });
 
       for (let i = 0; i < idsUsuario.length; i += SELECT_BATCH_SIZE) {
-        await LeadLinha.query(trx)
-          .whereIn('id', idsUsuario.slice(i, i + SELECT_BATCH_SIZE))
-          .patch({
-            atribuido_para_id: usuarioAlvoId,
-            envio_id: envio.id,
-            etapa_atual: etapa,
-            status_operacional: etapa === 'venda' ? 'distribuido_venda' : 'pendente',
-            ...historicoPrimeiraLigacao,
-            ...limpezaStatus,
-            updated_at: new Date()
-          });
+        const idsLote = idsUsuario.slice(i, i + SELECT_BATCH_SIZE);
+        let idsVendaRegistrada = [];
+        if (ocultarVendaRegistrada) {
+          const linhasVendaRegistrada = await LeadLinha.query(trx)
+            .whereIn('id', idsLote)
+            .where(builder => builder.whereNotNull('venda_id').orWhere('status_operacional', 'vendido'))
+            .select('id');
+          idsVendaRegistrada = linhasVendaRegistrada.map(linha => Number(linha.id));
+          if (idsVendaRegistrada.length) {
+            await LeadLinha.query(trx)
+              .whereIn('id', idsVendaRegistrada)
+              .patch({ venda_registrada_oculta: true });
+            await LeadLinha.query(trx)
+              .whereIn('id', idsVendaRegistrada)
+              .patch(montarPatchDivisao(
+                usuarioAlvoId,
+                envio.id,
+                etapa,
+                historicoPrimeiraLigacao,
+                limpezaStatus,
+                { preservarStatusOperacional: true }
+              ));
+          }
+        }
+
+        const idsVendaRegistradaSet = new Set(idsVendaRegistrada);
+        const idsRegulares = idsVendaRegistrada.length
+          ? idsLote.filter(id => !idsVendaRegistradaSet.has(Number(id)))
+          : idsLote;
+        if (idsRegulares.length) {
+          await LeadLinha.query(trx)
+            .whereIn('id', idsRegulares)
+            .patch(montarPatchDivisao(
+              usuarioAlvoId,
+              envio.id,
+              etapa,
+              historicoPrimeiraLigacao,
+              limpezaStatus
+            ));
+        }
       }
 
       if (idsUsuario.length) {
@@ -2394,10 +2534,12 @@ function obterStatusExportacao(linha) {
 
   if (linha.futuro_cliente && linha.futuro_cliente_excluido_em) status.push('Na lixeira');
   if (linha.futuro_cliente && !linha.futuro_cliente_excluido_em) status.push('Futuro cliente');
-  if (linha.venda_classificacao?.tipo === 'venda_futuro_cliente' || linha.venda_id || linha.status_operacional === 'vendido') {
-    status.push('Venda registrada por futuro cliente');
-  } else if (linha.venda_classificacao?.tipo === 'venda_antiga_registrada' || linha.possui_venda_cliente) {
-    status.push('Venda antiga registrada');
+  if (!linha.venda_registrada_oculta) {
+    if (linha.venda_classificacao?.tipo === 'venda_futuro_cliente' || linha.venda_id || linha.status_operacional === 'vendido') {
+      status.push('Venda registrada por futuro cliente');
+    } else if (linha.venda_classificacao?.tipo === 'venda_antiga_registrada' || linha.possui_venda_cliente) {
+      status.push('Venda antiga registrada');
+    }
   }
   if (linha.status_operacional === 'perdido' || linha.venda_recusada_em || linha.venda_recusada_motivo) status.push('Venda recusada');
   if (linha.cliente_recusou) status.push('Cliente recusou');
@@ -2650,6 +2792,7 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
     : null;
   const retornoFuturoAlterado = String(retorno || '') !== String(retornoAnterior || '');
 
+  let prazoRetornoDistribuicaoAtualizado = false;
   await LeadLinha.transaction(async trx => {
     let atribuicao = await LeadAtribuicao.query(trx)
       .where({ lead_linha_id: Number(linhaId), usuario_id: donoSondagemId, etapa: 'sondagem' })
@@ -2694,14 +2837,12 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
       status_operacional: atribuicaoVendaAceita ? 'distribuido_venda' : 'qualificado',
       updated_at: new Date()
     });
-    if (retorno) {
-      await leadDistribuicaoService.registrarAcaoValida(
-        linhaId,
-        donoId,
-        'retorno_agendado',
-        trx
-      );
-    }
+    prazoRetornoDistribuicaoAtualizado = Boolean(await leadDistribuicaoService.atualizarPrazoRetorno(
+      linhaId,
+      donoId,
+      retorno,
+      trx
+    ));
   });
 
   await sincronizarNotificacoesRetornoLeads();
@@ -2712,6 +2853,9 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
     .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'));
 
   const linhaFormatada = formatarLinha(atualizada);
+  if (prazoRetornoDistribuicaoAtualizado && retorno && retornoFuturoAlterado) {
+    await leadDistribuicaoService.notificarRetornoAgendadoTelegram(linhaId, retorno);
+  }
   if (deveNotificarTelegram) {
     await publicarFuturoClienteTelegram(linhaFormatada);
   }
@@ -4030,6 +4174,7 @@ async function marcarRetornoLead(linhaId, usuarioId, dados = {}, opcoes = {}) {
 
   await desativarAlertasObrigatoriosDaLinha(linha.id);
 
+  let prazoRetornoDistribuicaoAtualizado = false;
   await LeadLinha.transaction(async trx => {
     await LeadLinha.query(trx).patchAndFetchById(linha.id, {
       retorno_agendado_em: retorno,
@@ -4041,17 +4186,19 @@ async function marcarRetornoLead(linhaId, usuarioId, dados = {}, opcoes = {}) {
       } : {})
     });
 
-    if (retorno) {
-      await leadDistribuicaoService.registrarAcaoValida(
-        linha.id,
-        donoId,
-        'retorno_agendado',
-        trx
-      );
-    }
+    prazoRetornoDistribuicaoAtualizado = Boolean(await leadDistribuicaoService.atualizarPrazoRetorno(
+      linha.id,
+      donoId,
+      retorno,
+      trx
+    ));
   });
 
   await sincronizarNotificacaoRetornoLead(linha.id);
+
+  if (prazoRetornoDistribuicaoAtualizado && retorno && retornoAlterado) {
+    await leadDistribuicaoService.notificarRetornoAgendadoTelegram(linha.id, retorno);
+  }
 
   return buscarLinhaFormatada(linha.id);
 }
@@ -4301,22 +4448,25 @@ module.exports = {
   enviarFuturoClienteParaLixeira,
   restaurarFuturoCliente,
   excluirFuturoClienteDefinitivo,
-    _internals: {
-      aplicarBuscaDadosJson,
-      aplicarBuscaMailingsUsuario,
+  _internals: {
+    aplicarGruposMailing,
+    aplicarBuscaDadosJson,
+    aplicarBuscaMailingsUsuario,
     aplicarFiltrosFuturosClientes,
     aplicarEscopoCarteiraFuturosClientes,
-      aplicarFiltrosQuery,
+    aplicarFiltrosQuery,
     aplicarFiltroVendaRecusada,
     combinarMetricasEnvio,
     deduplicarIndicacoesEnvio,
     filtrosPermitemIndicacaoPendente,
     montarColecoesExcel,
-      montarColecaoCsv,
-      normalizarBuscaDocumento,
-      extrairCnpjsLinha,
+    montarColecaoCsv,
+    normalizarBuscaDocumento,
+    extrairCnpjsLinha,
     linhaPossuiVendaPorCnpj,
     obterErroReversaoFuturoCliente,
+    montarPatchDivisao,
+    montarLimpezaStatusReenvio,
     montarPatchReversaoFuturoCliente,
     deveNotificarNovoFuturoCliente,
     resolverDestinoNovoFuturoCliente,

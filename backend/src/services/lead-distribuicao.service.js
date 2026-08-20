@@ -1,12 +1,16 @@
 const db = require('../database/connection');
 const notificacaoService = require('./notificacao.service');
 const telegramService = require('./telegram.service');
+const leadTelegramPublicacaoService = require('./lead-telegram-publicacao.service');
+const { parseUtcDateTime } = require('../utils/datetime');
 
 const ACEITE_AGUARDANDO = 'aguardando_aceite';
 const ACEITE_ACEITO = 'aceito';
 const ACEITE_RECUSADO = 'recusado';
 const ACEITE_CANCELADO = 'cancelado';
 const ACEITE_EXPIRADO = 'expirado_sem_acao';
+const ACEITE_EXPIRADO_SEM_ACEITE = 'expirado_sem_aceite';
+const ACEITE_EXPIRADO_APOS_RETORNO = 'expirado_apos_retorno';
 
 function prazoAcaoMinutos() {
   const configurado = Number(process.env.FUTURO_CLIENTE_PRAZO_ACAO_MINUTOS || 30);
@@ -15,6 +19,57 @@ function prazoAcaoMinutos() {
 
 function adicionarMinutos(data, minutos) {
   return new Date(data.getTime() + minutos * 60 * 1000);
+}
+
+function calcularPrazoAcao(data = new Date()) {
+  return adicionarMinutos(data, prazoAcaoMinutos());
+}
+
+function prazoEfetivoAtribuicao(atribuicao) {
+  if (!atribuicao) return null;
+  const valor = atribuicao.prazo_acao_em || atribuicao.atribuido_em;
+  if (!valor) return null;
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return null;
+  return atribuicao.prazo_acao_em ? data : calcularPrazoAcao(data);
+}
+
+function prazoAtribuicaoVencido(atribuicao, agora = new Date()) {
+  const prazo = prazoEfetivoAtribuicao(atribuicao);
+  const referencia = new Date(agora);
+  return Boolean(
+    prazo
+    && !Number.isNaN(referencia.getTime())
+    && prazo.getTime() <= referencia.getTime()
+  );
+}
+
+function montarPatchAceite(linha, agora = new Date()) {
+  const retorno = parseUtcDateTime(linha?.retorno_agendado_em || linha?.futuro_cliente_retorno);
+  const prazoPadrao = calcularPrazoAcao(agora);
+  const prazoRetorno = retorno ? calcularPrazoAcao(retorno) : null;
+  const prazo = prazoRetorno && prazoRetorno.getTime() > prazoPadrao.getTime()
+    ? prazoRetorno
+    : prazoPadrao;
+
+  return {
+    aceite_status: ACEITE_ACEITO,
+    aceite_em: agora,
+    acao_registrada_em: retorno ? agora : null,
+    acao_registrada_tipo: retorno ? 'retorno_agendado' : null,
+    prazo_acao_em: prazo,
+    updated_at: agora
+  };
+}
+
+function retornoDistribuicaoVencido(linha, agora = new Date()) {
+  const retorno = parseUtcDateTime(linha?.retorno_agendado_em || linha?.futuro_cliente_retorno);
+  const referencia = new Date(agora);
+  return Boolean(
+    retorno
+    && !Number.isNaN(referencia.getTime())
+    && calcularPrazoAcao(retorno).getTime() <= referencia.getTime()
+  );
 }
 
 function parseJson(valor, fallback = {}) {
@@ -152,9 +207,12 @@ function ocultarDetalhesAntesDoAceite(linha, atribuicao) {
 
 async function aceitar(linhaId, usuarioId) {
   const agora = new Date();
-  const prazo = adicionarMinutos(agora, prazoAcaoMinutos());
 
   const resultado = await db.transaction(async trx => {
+    const linha = await trx('lead_linhas')
+      .where('id', Number(linhaId))
+      .forUpdate()
+      .first();
     const atribuicao = await trx('lead_atribuicoes')
       .where({
         lead_linha_id: Number(linhaId),
@@ -178,24 +236,23 @@ async function aceitar(linhaId, usuarioId) {
       throw error;
     }
 
-    const linha = await trx('lead_linhas')
-      .where('id', Number(linhaId))
-      .where('futuro_cliente', true)
-      .whereNull('futuro_cliente_excluido_em')
-      .forUpdate()
-      .first();
-    if (!linha || linha.status_operacional !== 'distribuido_venda') {
+    if (prazoAtribuicaoVencido(atribuicao, agora)) {
+      return { atribuicao, expirouSemAceite: true };
+    }
+
+    if (
+      !linha
+      || !linha.futuro_cliente
+      || linha.futuro_cliente_excluido_em
+      || linha.status_operacional !== 'distribuido_venda'
+    ) {
       const error = new Error('Esta indicacao nao esta mais disponivel para aceite.');
       error.statusCode = 409;
       throw error;
     }
 
-    await trx('lead_atribuicoes').where('id', atribuicao.id).update({
-      aceite_status: ACEITE_ACEITO,
-      aceite_em: agora,
-      prazo_acao_em: prazo,
-      updated_at: agora
-    });
+    const patchAceite = montarPatchAceite(linha, agora);
+    await trx('lead_atribuicoes').where('id', atribuicao.id).update(patchAceite);
     await trx('lead_linhas').where('id', linha.id).update({
       atribuido_para_id: Number(usuarioId),
       envio_id: atribuicao.envio_id,
@@ -211,14 +268,29 @@ async function aceitar(linhaId, usuarioId) {
     await notificacaoService.atualizarNotificacaoFuturoClienteAceito({
       leadLinhaId: linha.id,
       vendedoraId: usuarioId,
-      prazoAcaoEm: prazo
+      prazoAcaoEm: patchAceite.prazo_acao_em
     }, trx);
 
     return {
-      atribuicao: { ...atribuicao, aceite_status: ACEITE_ACEITO, aceite_em: agora, prazo_acao_em: prazo },
+      atribuicao: { ...atribuicao, ...patchAceite },
       linha: { ...linha, sondagem }
     };
   });
+
+  if (resultado.expirouSemAceite) {
+    await finalizarAtribuicao(linhaId, {
+      aceiteStatus: ACEITE_EXPIRADO_SEM_ACEITE,
+      aceiteStatusEsperado: ACEITE_AGUARDANDO,
+      atribuicaoIdEsperada: resultado.atribuicao.id,
+      motivo: 'Prazo para aceitar a indicacao expirado',
+      validarPrazoVencido: true,
+      republicar: true,
+      silencioso: true
+    });
+    const error = new Error('O prazo para aceitar esta indicacao expirou. Ela foi devolvida para novo encaminhamento.');
+    error.statusCode = 409;
+    throw error;
+  }
 
   if (!resultado.repetido) {
     await notificarAceiteTelegram(resultado.atribuicao, usuarioId, resultado.linha);
@@ -253,6 +325,40 @@ async function registrarAcaoValida(linhaId, usuarioId, tipo, trx = null) {
   return atualizadas;
 }
 
+function montarPatchPrazoRetorno(retorno, agora = new Date()) {
+  const dataRetorno = retorno ? parseUtcDateTime(retorno) : null;
+  if (retorno && !dataRetorno) throw new Error('Data de retorno invalida.');
+  return {
+    acao_registrada_em: dataRetorno ? agora : null,
+    acao_registrada_tipo: dataRetorno ? 'retorno_agendado' : null,
+    prazo_acao_em: calcularPrazoAcao(dataRetorno || agora),
+    updated_at: agora
+  };
+}
+
+async function atualizarPrazoRetorno(linhaId, usuarioId, retorno, trx = null) {
+  const knex = trx || db;
+  const agora = new Date();
+  const query = knex('lead_atribuicoes')
+    .where({
+      lead_linha_id: Number(linhaId),
+      etapa: 'venda',
+      aceite_status: ACEITE_ACEITO
+    })
+    .where(builder => builder
+      .whereNull('acao_registrada_tipo')
+      .orWhere('acao_registrada_tipo', 'retorno_agendado'));
+  if (usuarioId) query.where('usuario_id', Number(usuarioId));
+
+  const atualizadas = await query.orderBy('id', 'desc').limit(1)
+    .update(montarPatchPrazoRetorno(retorno, agora));
+
+  if (atualizadas) {
+    await notificacaoService.desativarAlertasObrigatoriosDaLinha(linhaId, trx);
+  }
+  return atualizadas;
+}
+
 async function carregarLinhaTelegram(linhaId) {
   const linha = await db('lead_linhas').where('id', Number(linhaId)).first();
   if (!linha) return null;
@@ -279,13 +385,22 @@ async function carregarLinhaTelegram(linhaId) {
 
 function montarMensagemAceiteTelegram(atribuicao, nomeConsultora, linha = {}) {
   const prazo = new Date(atribuicao.prazo_acao_em);
-  const horaPrazo = Number.isNaN(prazo.getTime())
+  const horaPrazoBase = Number.isNaN(prazo.getTime())
     ? 'Não informado'
     : prazo.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
       timeZone: 'America/Sao_Paulo'
     });
+  const retorno = parseUtcDateTime(linha.retorno_agendado_em || linha.futuro_cliente_retorno);
+  const retornoFormatado = retorno?.toLocaleString('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'America/Sao_Paulo'
+  });
+  const horaPrazo = atribuicao.acao_registrada_tipo === 'retorno_agendado' && retorno
+    ? `${horaPrazoBase} (retorno já agendado para ${retornoFormatado})`
+    : horaPrazoBase;
   const sondagem = linha.sondagem || {};
   const empresa = obterNomeEmpresa(linha.dados_json, linha.id, sondagem.razao_social);
   const cnpj = obterCnpjEmpresa(linha.dados_json, sondagem.cnpj);
@@ -307,7 +422,7 @@ function montarMensagemAceiteTelegram(atribuicao, nomeConsultora, linha = {}) {
   ].join('\n');
 }
 
-function montarMensagemEnvioExpiradoTelegram(atribuicao, linha = {}) {
+function montarMensagemEnvioExpiradoTelegram(atribuicao, linha = {}, aceiteStatusFinal = ACEITE_EXPIRADO) {
   const sondagem = linha.sondagem || {};
   const empresa = obterNomeEmpresa(linha.dados_json, linha.id, sondagem.razao_social);
   const cnpj = obterCnpjEmpresa(linha.dados_json, sondagem.cnpj);
@@ -322,9 +437,36 @@ function montarMensagemEnvioExpiradoTelegram(atribuicao, linha = {}) {
 
   return [
     '⛔ ENVIO CANCELADO',
+    aceiteStatusFinal === ACEITE_EXPIRADO_SEM_ACEITE
+      ? 'Motivo: prazo para aceitar a indicacao expirado.'
+      : aceiteStatusFinal === ACEITE_EXPIRADO_APOS_RETORNO
+        ? `Motivo: retorno vencido ha ${prazoAcaoMinutos()} minutos sem novo desfecho no CRM.`
+        : 'Motivo: prazo para registrar uma acao no CRM expirado.',
     `Razão social: ${empresa}`,
     `CNPJ: ${cnpj}`,
     `Data do envio: ${dataEnvio}`
+  ].join('\n');
+}
+
+function montarMensagemRetornoAgendadoTelegram(atribuicao, linha = {}, retorno) {
+  const sondagem = linha.sondagem || {};
+  const empresa = obterNomeEmpresa(linha.dados_json, linha.id, sondagem.razao_social);
+  const cnpj = obterCnpjEmpresa(linha.dados_json, sondagem.cnpj);
+  const dataRetorno = parseUtcDateTime(retorno);
+  const retornoFormatado = !dataRetorno
+    ? 'Nao informado'
+    : dataRetorno.toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: 'America/Sao_Paulo'
+    });
+
+  return [
+    '📅 RETORNO AGENDADO',
+    `Razão social: ${empresa}`,
+    `CNPJ: ${cnpj}`,
+    `Consultora: ${atribuicao.consultora_nome || 'Nao informada'}`,
+    `Retorno: ${retornoFormatado}`
   ].join('\n');
 }
 
@@ -437,6 +579,67 @@ async function enviarNotificacaoVendaFechada(venda, atribuicao, opcoes = {}) {
   return resultado;
 }
 
+async function enviarNotificacaoRetornoAgendado(atribuicao, linha, retorno, opcoes = {}) {
+  if (atribuicao?.aceite_status !== ACEITE_ACEITO) {
+    return { enviado: false, motivo: 'atribuicao_nao_aceita' };
+  }
+  const chatId = String(atribuicao.telegram_chat_id || '').trim();
+  if (!chatId) return { enviado: false, motivo: 'chat_telegram_nao_encontrado' };
+
+  const chamarApi = opcoes.chamarApi || telegramService.chamarApi;
+  const resultado = { enviado: false, botao_removido: false, erros: [] };
+  if (atribuicao.telegram_message_id) {
+    try {
+      await chamarApi('editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: String(atribuicao.telegram_message_id),
+        reply_markup: { inline_keyboard: [] }
+      });
+      resultado.botao_removido = true;
+    } catch (error) {
+      resultado.erros.push({ operacao: 'remover_botao', mensagem: error.message });
+      console.error('Erro ao remover botao de cancelamento do retorno agendado no Telegram:', error.message);
+    }
+  }
+
+  try {
+    const mensagem = await chamarApi('sendMessage', {
+      chat_id: chatId,
+      text: montarMensagemRetornoAgendadoTelegram(atribuicao, linha, retorno),
+      disable_web_page_preview: true
+    });
+    resultado.enviado = true;
+    resultado.message_id = mensagem?.message_id || null;
+  } catch (error) {
+    resultado.erros.push({ operacao: 'enviar_mensagem', mensagem: error.message });
+    console.error('Erro ao notificar retorno agendado no Telegram:', error.message);
+  }
+  return resultado;
+}
+
+async function notificarRetornoAgendadoTelegram(linhaId, retorno, opcoes = {}) {
+  try {
+    const [atribuicao, linha] = await Promise.all([
+      db('lead_atribuicoes as la')
+        .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
+        .where({
+          'la.lead_linha_id': Number(linhaId),
+          'la.etapa': 'venda',
+          'la.aceite_status': ACEITE_ACEITO
+        })
+        .orderBy('la.id', 'desc')
+        .select('la.*', 'u.nome as consultora_nome')
+        .first(),
+      carregarLinhaTelegram(linhaId)
+    ]);
+    if (!atribuicao || !linha) return { enviado: false, motivo: 'atribuicao_ou_linha_nao_encontrada' };
+    return enviarNotificacaoRetornoAgendado(atribuicao, linha, retorno, opcoes);
+  } catch (error) {
+    console.error('Erro ao preparar notificacao de retorno agendado no Telegram:', error.message);
+    return { enviado: false, motivo: 'erro_ao_preparar_notificacao', erro: error.message };
+  }
+}
+
 async function notificarVendaFechadaTelegram(vendaId, atribuicaoId, opcoes = {}) {
   const [venda, atribuicao, vendedoras] = await Promise.all([
     db('vendas').where('id', Number(vendaId)).first(),
@@ -496,11 +699,17 @@ async function encerrarMensagemTelegram(atribuicao, textoStatus, aceiteStatusFin
   if (!chatId || !atribuicao.telegram_message_id) return;
   const original = String(atribuicao.telegram_mensagem_texto || 'Futuro cliente encaminhado.');
   try {
-    const linha = aceiteStatusFinal === ACEITE_EXPIRADO
+    const expiradoAutomaticamente = [
+      ACEITE_EXPIRADO,
+      ACEITE_EXPIRADO_SEM_ACEITE,
+      ACEITE_EXPIRADO_APOS_RETORNO
+    ]
+      .includes(aceiteStatusFinal);
+    const linha = expiradoAutomaticamente
       ? await carregarLinhaTelegram(atribuicao.lead_linha_id)
       : null;
-    const texto = aceiteStatusFinal === ACEITE_EXPIRADO
-      ? montarMensagemEnvioExpiradoTelegram(atribuicao, linha || {})
+    const texto = expiradoAutomaticamente
+      ? montarMensagemEnvioExpiradoTelegram(atribuicao, linha || {}, aceiteStatusFinal)
       : `\u26D4 ENVIO CANCELADO - ${textoStatus}\n\n${original}`.slice(0, 4096);
     await telegramService.chamarApi('editMessageText', {
       chat_id: chatId,
@@ -514,15 +723,6 @@ async function encerrarMensagemTelegram(atribuicao, textoStatus, aceiteStatusFin
   }
 }
 
-async function republicarNoTelegram(linhaId) {
-  try {
-    const linha = await carregarLinhaTelegram(linhaId);
-    if (linha) await telegramService.enviarFuturoCliente(linha);
-  } catch (error) {
-    console.error('Erro ao republicar futuro cliente no Telegram:', error.message);
-  }
-}
-
 function deveRepublicarPendenteAntiga(linha, possuiEncaminhamentoDeVenda) {
   return Boolean(
     linha
@@ -532,23 +732,6 @@ function deveRepublicarPendenteAntiga(linha, possuiEncaminhamentoDeVenda) {
     && linha.futuro_cliente_destino !== 'carteira'
     && !possuiEncaminhamentoDeVenda
   );
-}
-
-async function reservarRepublicacaoPendente(linhaId) {
-  try {
-    await db('lead_telegram_republicacoes').insert({
-      lead_linha_id: Number(linhaId),
-      status: 'processando',
-      tentativas: 1
-    });
-    return true;
-  } catch (error) {
-    if (error.code !== 'ER_DUP_ENTRY') throw error;
-    const atualizada = await db('lead_telegram_republicacoes')
-      .where({ lead_linha_id: Number(linhaId), status: 'falhou' })
-      .update({ status: 'processando', tentativas: db.raw('tentativas + 1'), updated_at: new Date() });
-    return Boolean(atualizada);
-  }
 }
 
 async function republicarPendentesAntigosNoTelegram() {
@@ -568,28 +751,12 @@ async function republicarPendentesAntigosNoTelegram() {
   let falhas = 0;
   for (const pendente of pendentes) {
     const linhaId = Number(pendente.id);
-    if (!await reservarRepublicacaoPendente(linhaId)) continue;
-    try {
-      const linha = await carregarLinhaTelegram(linhaId);
-      if (!deveRepublicarPendenteAntiga(linha, false)) {
-        await db('lead_telegram_republicacoes').where('lead_linha_id', linhaId).update({ status: 'ignorado', updated_at: new Date() });
-        continue;
-      }
-      const resultado = await telegramService.enviarFuturoCliente(linha);
-      if (!resultado.enviado) throw new Error(resultado.motivo || 'Telegram nao configurado');
-      await db('lead_telegram_republicacoes').where('lead_linha_id', linhaId).update({
-        status: 'publicado',
-        telegram_chat_id: String(process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID || ''),
-        telegram_message_id: String(resultado.message_id || ''),
-        publicado_em: new Date(),
-        updated_at: new Date()
-      });
-      publicados += 1;
-    } catch (error) {
-      console.error(`Erro ao republicar futuro cliente pendente #${linhaId}:`, error.message);
-      await db('lead_telegram_republicacoes').where('lead_linha_id', linhaId).update({ status: 'falhou', updated_at: new Date() });
-      falhas += 1;
-    }
+    await leadTelegramPublicacaoService.enfileirarRepublicacao(linhaId);
+    const resultado = await leadTelegramPublicacaoService.processarRepublicacaoDaLinha(linhaId, {
+      carregarLinha: carregarLinhaTelegram
+    });
+    if (resultado.publicado) publicados += 1;
+    if (resultado.falhou) falhas += 1;
   }
   return { encontrados: pendentes.length, publicados, falhas };
 }
@@ -598,12 +765,20 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
   const aceiteStatusFinal = opcoes.aceiteStatus || ACEITE_CANCELADO;
   const agora = new Date();
   const resultado = await db.transaction(async trx => {
-    const atribuicao = await trx('lead_atribuicoes')
-      .where({ lead_linha_id: Number(linhaId), etapa: 'venda' })
-      .whereIn('aceite_status', [ACEITE_AGUARDANDO, ACEITE_ACEITO])
-      .orderBy('id', 'desc')
+    const linha = await trx('lead_linhas')
+      .where('id', Number(linhaId))
       .forUpdate()
       .first();
+    const queryAtribuicao = trx('lead_atribuicoes')
+      .where({ lead_linha_id: Number(linhaId), etapa: 'venda' })
+      .whereIn('aceite_status', [ACEITE_AGUARDANDO, ACEITE_ACEITO]);
+    if (opcoes.aceiteStatusEsperado) {
+      queryAtribuicao.where('aceite_status', opcoes.aceiteStatusEsperado);
+    }
+    if (opcoes.atribuicaoIdEsperada) {
+      queryAtribuicao.where('id', Number(opcoes.atribuicaoIdEsperada));
+    }
+    const atribuicao = await queryAtribuicao.orderBy('id', 'desc').forUpdate().first();
     if (!atribuicao) {
       if (opcoes.silencioso) return null;
       const error = new Error('Este futuro cliente nao possui um envio ativo.');
@@ -615,16 +790,21 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
       error.statusCode = 403;
       throw error;
     }
-    if (atribuicao.aceite_status === ACEITE_ACEITO && atribuicao.acao_registrada_em) {
+    if (!linha) return null;
+    const expirandoRetorno = opcoes.permitirRetornoVencido
+      && atribuicao.acao_registrada_tipo === 'retorno_agendado';
+    if ((opcoes.validarPrazoVencido || expirandoRetorno) && !prazoAtribuicaoVencido(atribuicao, agora)) {
+      return { prazoAtualizado: true };
+    }
+    if (atribuicao.aceite_status === ACEITE_ACEITO && atribuicao.acao_registrada_em && !expirandoRetorno) {
       return { acaoEncontrada: true };
     }
 
-    const linha = await trx('lead_linhas').where('id', Number(linhaId)).forUpdate().first();
-    if (!linha) return null;
-    if (atribuicao.aceite_status === ACEITE_ACEITO && linhaTemAcaoValida(linha, atribuicao.aceite_em)) {
+    const inicioJanelaAcao = atribuicao.aceite_em || atribuicao.atribuido_em;
+    if (linhaTemAcaoValida(linha, inicioJanelaAcao)) {
       await trx('lead_atribuicoes').where('id', atribuicao.id).update({
         acao_registrada_em: agora,
-        acao_registrada_tipo: tipoAcaoValida(linha, atribuicao.aceite_em),
+        acao_registrada_tipo: tipoAcaoValida(linha, inicioJanelaAcao),
         updated_at: agora
       });
       await trx('notificacoes')
@@ -661,6 +841,9 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
     await trx('notificacoes')
       .where('source_key', `futuro_cliente_distribuido:${Number(linhaId)}`)
       .update({ ativa: false, updated_at: agora });
+    if (opcoes.republicar !== false) {
+      await leadTelegramPublicacaoService.enfileirarRepublicacao(linhaId, trx, agora);
+    }
     return { atribuicao, linhaId: Number(linhaId) };
   });
 
@@ -673,14 +856,23 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
     }
     return resultado;
   }
+  if (resultado.prazoAtualizado) return resultado;
   const usuario = await db('usuarios').where('id', resultado.atribuicao.usuario_id).first('nome');
   const textoStatus = aceiteStatusFinal === ACEITE_RECUSADO
     ? `recusado por ${usuario?.nome || 'consultor(a)'}`
+    : aceiteStatusFinal === ACEITE_EXPIRADO_SEM_ACEITE
+      ? `prazo de ${prazoAcaoMinutos()} minutos expirado sem aceite de ${usuario?.nome || 'consultor(a)'}`
     : aceiteStatusFinal === ACEITE_EXPIRADO
       ? `prazo de ${prazoAcaoMinutos()} minutos expirado sem acao no CRM para ${usuario?.nome || 'consultor(a)'}`
+      : aceiteStatusFinal === ACEITE_EXPIRADO_APOS_RETORNO
+        ? `retorno vencido ha ${prazoAcaoMinutos()} minutos sem novo desfecho para ${usuario?.nome || 'consultor(a)'}`
       : `cancelado${usuario?.nome ? ` para ${usuario.nome}` : ''}`;
   await encerrarMensagemTelegram(resultado.atribuicao, textoStatus, aceiteStatusFinal);
-  if (opcoes.republicar !== false) await republicarNoTelegram(resultado.linhaId);
+  if (opcoes.republicar !== false) {
+    await leadTelegramPublicacaoService.processarRepublicacaoDaLinha(resultado.linhaId, {
+      carregarLinha: carregarLinhaTelegram
+    });
+  }
   return resultado;
 }
 
@@ -694,23 +886,61 @@ async function recusar(linhaId, usuarioId, motivo = '') {
   return { status: ACEITE_RECUSADO };
 }
 
-async function processarPrazosVencidos() {
-  const vencidas = await db('lead_atribuicoes')
-    .where({ etapa: 'venda', aceite_status: ACEITE_ACEITO })
-    .whereNull('acao_registrada_em')
-    .whereNotNull('prazo_acao_em')
-    .where('prazo_acao_em', '<=', new Date())
-    .select('lead_linha_id');
+function queryAtribuicoesVencidas(agora = new Date(), database = db) {
+  const limiteLegado = adicionarMinutos(new Date(agora), -prazoAcaoMinutos());
+  return database('lead_atribuicoes as la')
+    .join('lead_linhas as ll', 'll.id', 'la.lead_linha_id')
+    .where({ 'la.etapa': 'venda' })
+    .whereIn('la.aceite_status', [ACEITE_AGUARDANDO, ACEITE_ACEITO])
+    .where(function distribuicaoVencida() {
+      this.where(function prazoSemAcaoVencido() {
+        this.whereNull('la.acao_registrada_em')
+          .where(function prazoVencido() {
+            this.where('la.prazo_acao_em', '<=', agora)
+              .orWhere(function prazoLegadoVencido() {
+                this.whereNull('la.prazo_acao_em')
+                  .whereNotNull('la.atribuido_em')
+                  .where('la.atribuido_em', '<=', limiteLegado);
+              });
+          });
+      }).orWhere(function retornoVencido() {
+        this.where('la.aceite_status', ACEITE_ACEITO)
+          .where('la.acao_registrada_tipo', 'retorno_agendado')
+          .whereNotNull('la.prazo_acao_em')
+          .where('la.prazo_acao_em', '<=', agora);
+      });
+    })
+    .select('la.id', 'la.lead_linha_id', 'la.aceite_status', 'la.acao_registrada_tipo');
+}
+
+async function processarPrazosVencidos(opcoes = {}) {
+  const agora = opcoes.agora || new Date();
+  const finalizar = opcoes.finalizar || finalizarAtribuicao;
+  const vencidas = opcoes.vencidas || await queryAtribuicoesVencidas(agora);
   let expiradas = 0;
   for (const item of vencidas) {
     try {
-      const resultado = await finalizarAtribuicao(item.lead_linha_id, {
-        aceiteStatus: ACEITE_EXPIRADO,
-        motivo: 'Prazo de contato expirado sem acao registrada no CRM',
+      const aguardandoAceite = item.aceite_status === ACEITE_AGUARDANDO;
+      const retornoVencido = item.acao_registrada_tipo === 'retorno_agendado';
+      const resultado = await finalizar(item.lead_linha_id, {
+        aceiteStatus: aguardandoAceite
+          ? ACEITE_EXPIRADO_SEM_ACEITE
+          : retornoVencido
+            ? ACEITE_EXPIRADO_APOS_RETORNO
+            : ACEITE_EXPIRADO,
+        aceiteStatusEsperado: item.aceite_status,
+        atribuicaoIdEsperada: item.id,
+        permitirRetornoVencido: retornoVencido,
+        validarPrazoVencido: true,
+        motivo: aguardandoAceite
+            ? 'Prazo para aceitar a indicacao expirado'
+          : retornoVencido
+            ? `Retorno vencido ha ${prazoAcaoMinutos()} minutos sem novo desfecho registrado no CRM`
+            : 'Prazo de contato expirado sem acao registrada no CRM',
         republicar: true,
         silencioso: true
       });
-      if (resultado && !resultado.acaoEncontrada) expiradas += 1;
+      if (resultado && !resultado.acaoEncontrada && !resultado.prazoAtualizado) expiradas += 1;
     } catch (error) {
       console.error(`Erro ao expirar distribuicao do futuro cliente #${item.lead_linha_id}:`, error.message);
     }
@@ -724,11 +954,16 @@ module.exports = {
   ACEITE_RECUSADO,
   ACEITE_CANCELADO,
   ACEITE_EXPIRADO,
+  ACEITE_EXPIRADO_SEM_ACEITE,
+  ACEITE_EXPIRADO_APOS_RETORNO,
+  calcularPrazoAcao,
   aceitar,
   recusar,
   finalizarAtribuicao,
   notificarVendaFechadaTelegram,
+  notificarRetornoAgendadoTelegram,
   registrarAcaoValida,
+  atualizarPrazoRetorno,
   processarPrazosVencidos,
   republicarPendentesAntigosNoTelegram,
   buscarAtribuicaoAtiva,
@@ -737,15 +972,24 @@ module.exports = {
   ocultarDetalhesAntesDoAceite,
   _internals: {
     adicionarMinutos,
+    calcularPrazoAcao,
     dataEmOuDepois,
     linhaTemAcaoValida,
     prazoAcaoMinutos,
+    prazoAtribuicaoVencido,
+    prazoEfetivoAtribuicao,
+    retornoDistribuicaoVencido,
+    montarPatchAceite,
+    montarPatchPrazoRetorno,
+    queryAtribuicoesVencidas,
     tipoAcaoValida,
     deveRepublicarPendenteAntiga,
     montarMensagemAceiteTelegram,
     montarMensagemEnvioExpiradoTelegram,
+    montarMensagemRetornoAgendadoTelegram,
     montarMensagemVendaFechadaTelegram,
     enviarNotificacaoVendaFechada,
+    enviarNotificacaoRetornoAgendado,
     vendaCorrespondeAtribuicao,
     botaoCancelarEnvio
   }

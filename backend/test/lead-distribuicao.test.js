@@ -6,13 +6,22 @@ const { _internals: leadPlanilhaInternals } = require('../src/services/lead-plan
 
 const {
   adicionarMinutos,
+  calcularPrazoAcao,
   linhaTemAcaoValida,
   botaoCancelarEnvio,
   enviarNotificacaoVendaFechada,
+  enviarNotificacaoRetornoAgendado,
   montarMensagemAceiteTelegram,
   montarMensagemEnvioExpiradoTelegram,
+  montarMensagemRetornoAgendadoTelegram,
   montarMensagemVendaFechadaTelegram,
+  montarPatchAceite,
+  montarPatchPrazoRetorno,
   prazoAcaoMinutos,
+  prazoAtribuicaoVencido,
+  prazoEfetivoAtribuicao,
+  queryAtribuicoesVencidas,
+  retornoDistribuicaoVencido,
   tipoAcaoValida,
   vendaCorrespondeAtribuicao
 } = leadDistribuicaoService._internals;
@@ -28,6 +37,93 @@ test('inicia o prazo de acao 30 minutos depois do aceite por padrao', () => {
     if (anterior === undefined) delete process.env.FUTURO_CLIENTE_PRAZO_ACAO_MINUTOS;
     else process.env.FUTURO_CLIENTE_PRAZO_ACAO_MINUTOS = anterior;
   }
+});
+
+test('aplica o limite inclusivo e calcula o prazo legado desde o envio', () => {
+  const atribuicao = { atribuido_em: '2026-07-30T15:00:00.000Z' };
+
+  assert.equal(prazoEfetivoAtribuicao(atribuicao).toISOString(), '2026-07-30T15:30:00.000Z');
+  assert.equal(prazoAtribuicaoVencido(atribuicao, '2026-07-30T15:29:59.999Z'), false);
+  assert.equal(prazoAtribuicaoVencido(atribuicao, '2026-07-30T15:30:00.000Z'), true);
+  assert.equal(calcularPrazoAcao(new Date('2026-07-30T16:00:00.000Z')).toISOString(), '2026-07-30T16:30:00.000Z');
+});
+
+test('prioriza o prazo persistido em atribuicoes novas', () => {
+  const atribuicao = {
+    atribuido_em: '2026-07-30T15:00:00.000Z',
+    prazo_acao_em: '2026-07-30T15:45:00.000Z'
+  };
+
+  assert.equal(prazoEfetivoAtribuicao(atribuicao).toISOString(), '2026-07-30T15:45:00.000Z');
+  assert.equal(prazoAtribuicaoVencido(atribuicao, '2026-07-30T15:30:00.000Z'), false);
+});
+
+test('aceite sem retorno inicia uma janela completa a partir do aceite', () => {
+  const agora = new Date('2026-07-30T15:00:00.000Z');
+  const patch = montarPatchAceite({}, agora);
+
+  assert.equal(patch.acao_registrada_tipo, null);
+  assert.equal(patch.acao_registrada_em, null);
+  assert.equal(patch.prazo_acao_em.toISOString(), '2026-07-30T15:30:00.000Z');
+});
+
+test('aceite reconhece retorno futuro preexistente e usa retorno mais trinta minutos', () => {
+  const agora = new Date('2026-07-30T15:00:00.000Z');
+  const patch = montarPatchAceite({ retorno_agendado_em: '2026-07-30T16:00:00.000Z' }, agora);
+
+  assert.equal(patch.acao_registrada_tipo, 'retorno_agendado');
+  assert.equal(patch.acao_registrada_em, agora);
+  assert.equal(patch.prazo_acao_em.toISOString(), '2026-07-30T16:30:00.000Z');
+});
+
+test('aceite com retorno vencido concede trinta minutos a partir do aceite', () => {
+  const agora = new Date('2026-07-30T15:00:00.000Z');
+  const patch = montarPatchAceite({ futuro_cliente_retorno: '2026-07-30T14:00:00.000Z' }, agora);
+
+  assert.equal(patch.acao_registrada_tipo, 'retorno_agendado');
+  assert.equal(patch.prazo_acao_em.toISOString(), '2026-07-30T15:30:00.000Z');
+});
+
+test('agenda devolucao para 30 minutos apos o retorno e reinicia prazo ao remover', () => {
+  const agora = new Date('2026-07-30T15:00:00.000Z');
+  const agendado = montarPatchPrazoRetorno('2026-07-31 15:30:00', agora);
+  assert.equal(agendado.acao_registrada_tipo, 'retorno_agendado');
+  assert.equal(agendado.acao_registrada_em, agora);
+  assert.equal(agendado.prazo_acao_em.toISOString(), '2026-07-31T16:00:00.000Z');
+
+  const removido = montarPatchPrazoRetorno(null, agora);
+  assert.equal(removido.acao_registrada_tipo, null);
+  assert.equal(removido.acao_registrada_em, null);
+  assert.equal(removido.prazo_acao_em.toISOString(), '2026-07-30T15:30:00.000Z');
+});
+
+test('revalida o retorno no limite para respeitar remarcacao concorrente', () => {
+  assert.equal(retornoDistribuicaoVencido({
+    retorno_agendado_em: '2026-07-30 15:00:00'
+  }, '2026-07-30T15:29:59.999Z'), false);
+  assert.equal(retornoDistribuicaoVencido({
+    retorno_agendado_em: '2026-07-30 15:00:00'
+  }, '2026-07-30T15:30:00.000Z'), true);
+  assert.equal(retornoDistribuicaoVencido({
+    retorno_agendado_em: '2026-07-31 15:00:00',
+    futuro_cliente_retorno: '2026-07-30 15:00:00'
+  }, '2026-07-30T15:30:00.000Z'), false);
+});
+
+test('consulta prazos vencidos dos dois estados e inclui fallback legado', () => {
+  const consulta = queryAtribuicoesVencidas(new Date('2026-07-30T15:30:00.000Z')).toSQL();
+
+  assert.match(consulta.sql, /`aceite_status` in \(\?, \?\)/);
+  assert.match(consulta.sql, /`acao_registrada_em` is null/);
+  assert.match(consulta.sql, /`prazo_acao_em` <= \?/);
+  assert.match(consulta.sql, /`prazo_acao_em` is null/);
+  assert.match(consulta.sql, /`atribuido_em` <= \?/);
+  assert.match(consulta.sql, /`acao_registrada_tipo` = \? and `la`\.`prazo_acao_em` is not null and `la`\.`prazo_acao_em` <= \?/i);
+  assert.doesNotMatch(consulta.sql, /coalesce\(ll\.retorno_agendado_em, ll\.futuro_cliente_retorno\)/i);
+  assert.deepEqual(consulta.bindings.slice(1, 3), [
+    leadDistribuicaoService.ACEITE_AGUARDANDO,
+    leadDistribuicaoService.ACEITE_ACEITO
+  ]);
 });
 
 test('monta a notificacao de aceite com empresa, CNPJ, consultora e prazo', () => {
@@ -71,10 +167,172 @@ test('monta a mensagem de envio expirado apenas com cancelamento e dados essenci
 
   assert.equal(texto, [
     '⛔ ENVIO CANCELADO',
+    'Motivo: prazo para registrar uma acao no CRM expirado.',
     'Razão social: Empresa Teste LTDA',
     'CNPJ: 12.345.678/0001-90',
     'Data do envio: 30/07/2026, 12:00'
   ].join('\n'));
+});
+
+test('monta a notificacao de aceite exibindo o retorno preexistente', () => {
+  const texto = montarMensagemAceiteTelegram({
+    atribuido_em: '2026-07-30T15:00:00.000Z',
+    prazo_acao_em: '2026-07-31T16:00:00.000Z',
+    acao_registrada_tipo: 'retorno_agendado'
+  }, 'Ana Consultora', {
+    id: 42,
+    retorno_agendado_em: '2026-07-31T15:30:00.000Z',
+    sondagem: { razao_social: 'Empresa Teste LTDA', cnpj: '12.345.678/0001-90' }
+  });
+
+  assert.match(texto, /retorno já agendado para 31\/07\/2026, 12:30/i);
+  assert.match(texto, /Prazo para registrar o contato no CRM: 13:00/);
+});
+
+test('diferencia no Telegram a expiracao sem aceite', () => {
+  const texto = montarMensagemEnvioExpiradoTelegram({
+    atribuido_em: '2026-07-30T15:00:00.000Z'
+  }, {
+    id: 42,
+    sondagem: { razao_social: 'Empresa Teste LTDA', cnpj: '12.345.678/0001-90' }
+  }, leadDistribuicaoService.ACEITE_EXPIRADO_SEM_ACEITE);
+
+  assert.match(texto, /Motivo: prazo para aceitar a indicacao expirado\./);
+  assert.doesNotMatch(texto, /registrar uma acao/);
+});
+
+test('diferencia no Telegram a devolucao depois do retorno vencido', () => {
+  const texto = montarMensagemEnvioExpiradoTelegram({
+    atribuido_em: '2026-07-30T15:00:00.000Z'
+  }, {
+    id: 42,
+    sondagem: { razao_social: 'Empresa Teste LTDA', cnpj: '12.345.678/0001-90' }
+  }, leadDistribuicaoService.ACEITE_EXPIRADO_APOS_RETORNO);
+
+  assert.match(texto, /retorno vencido ha 30 minutos sem novo desfecho/);
+});
+
+test('monta mensagem de retorno com razao social, CNPJ, consultora e horario', () => {
+  const texto = montarMensagemRetornoAgendadoTelegram({
+    consultora_nome: 'Ana Consultora'
+  }, {
+    id: 42,
+    dados_json: { Empresa: 'Empresa de fallback' },
+    sondagem: { razao_social: 'Empresa Teste LTDA', cnpj: '12.345.678/0001-90' }
+  }, '2026-07-31 15:30:00');
+
+  assert.equal(texto, [
+    '📅 RETORNO AGENDADO',
+    'Razão social: Empresa Teste LTDA',
+    'CNPJ: 12.345.678/0001-90',
+    'Consultora: Ana Consultora',
+    'Retorno: 31/07/2026, 12:30'
+  ].join('\n'));
+});
+
+test('remove o cancelamento e envia o retorno ao grupo da atribuicao aceita', async () => {
+  const chamadas = [];
+  const resultado = await enviarNotificacaoRetornoAgendado({
+    aceite_status: leadDistribuicaoService.ACEITE_ACEITO,
+    telegram_chat_id: '-100123',
+    telegram_message_id: '777',
+    consultora_nome: 'Ana Consultora'
+  }, {
+    id: 42,
+    sondagem: { razao_social: 'Empresa Teste', cnpj: '12.345.678/0001-90' }
+  }, '2026-07-31 15:30:00', {
+    chamarApi: async (metodo, dados) => {
+      chamadas.push({ metodo, dados });
+      return metodo === 'sendMessage' ? { message_id: 889 } : {};
+    }
+  });
+
+  assert.equal(resultado.enviado, true);
+  assert.equal(resultado.botao_removido, true);
+  assert.equal(resultado.message_id, 889);
+  assert.deepEqual(chamadas.map(item => item.metodo), ['editMessageReplyMarkup', 'sendMessage']);
+  assert.match(chamadas[1].dados.text, /Consultora: Ana Consultora/);
+  assert.match(chamadas[1].dados.text, /Retorno: 31\/07\/2026, 12:30/);
+});
+
+test('nao envia retorno sem atribuicao aceita e isola falhas do Telegram', async () => {
+  assert.deepEqual(await enviarNotificacaoRetornoAgendado({
+    aceite_status: leadDistribuicaoService.ACEITE_AGUARDANDO,
+    telegram_chat_id: '-100123'
+  }, {}, '2026-07-31 15:30:00'), {
+    enviado: false,
+    motivo: 'atribuicao_nao_aceita'
+  });
+
+  const erroAnterior = console.error;
+  console.error = () => {};
+  try {
+    const resultado = await enviarNotificacaoRetornoAgendado({
+      aceite_status: leadDistribuicaoService.ACEITE_ACEITO,
+      telegram_chat_id: '-100123',
+      telegram_message_id: '777'
+    }, { id: 42 }, '2026-07-31 15:30:00', {
+      chamarApi: async () => { throw new Error('Telegram indisponivel'); }
+    });
+    assert.equal(resultado.enviado, false);
+    assert.equal(resultado.botao_removido, false);
+    assert.deepEqual(resultado.erros.map(item => item.operacao), ['remover_botao', 'enviar_mensagem']);
+  } finally {
+    console.error = erroAnterior;
+  }
+});
+
+test('worker separa expiracao sem aceite e sem acao e protege contra concorrencia', async () => {
+  const chamadas = [];
+  const expiradas = await leadDistribuicaoService.processarPrazosVencidos({
+    agora: new Date('2026-07-30T15:30:00.000Z'),
+    vencidas: [
+      { id: 11, lead_linha_id: 41, aceite_status: leadDistribuicaoService.ACEITE_AGUARDANDO },
+      { id: 12, lead_linha_id: 42, aceite_status: leadDistribuicaoService.ACEITE_ACEITO },
+      { id: 13, lead_linha_id: 43, aceite_status: leadDistribuicaoService.ACEITE_ACEITO },
+      {
+        id: 14,
+        lead_linha_id: 44,
+        aceite_status: leadDistribuicaoService.ACEITE_ACEITO,
+        acao_registrada_tipo: 'retorno_agendado'
+      }
+    ],
+    finalizar: async (linhaId, opcoes) => {
+      chamadas.push({ linhaId, opcoes });
+      if (linhaId === 43) return { acaoEncontrada: true };
+      return { linhaId };
+    }
+  });
+
+  assert.equal(expiradas, 3);
+  assert.deepEqual(chamadas.map(item => item.opcoes.aceiteStatus), [
+    leadDistribuicaoService.ACEITE_EXPIRADO_SEM_ACEITE,
+    leadDistribuicaoService.ACEITE_EXPIRADO,
+    leadDistribuicaoService.ACEITE_EXPIRADO,
+    leadDistribuicaoService.ACEITE_EXPIRADO_APOS_RETORNO
+  ]);
+  assert.deepEqual(chamadas.map(item => item.opcoes.aceiteStatusEsperado), [
+    leadDistribuicaoService.ACEITE_AGUARDANDO,
+    leadDistribuicaoService.ACEITE_ACEITO,
+    leadDistribuicaoService.ACEITE_ACEITO,
+    leadDistribuicaoService.ACEITE_ACEITO
+  ]);
+  assert.deepEqual(chamadas.map(item => item.opcoes.atribuicaoIdEsperada), [11, 12, 13, 14]);
+  assert.equal(chamadas.every(item => item.opcoes.validarPrazoVencido), true);
+  assert.equal(chamadas[3].opcoes.permitirRetornoVencido, true);
+});
+
+test('worker e idempotente quando a atribuicao ja foi encerrada por outra execucao', async () => {
+  const vencida = { id: 11, lead_linha_id: 41, aceite_status: leadDistribuicaoService.ACEITE_AGUARDANDO };
+  let ativa = true;
+  const finalizar = async () => {
+    if (!ativa) return null;
+    ativa = false;
+    return { linhaId: 41 };
+  };
+
+  assert.equal(await leadDistribuicaoService.processarPrazosVencidos({ vencidas: [vencida], finalizar }), 1);
+  assert.equal(await leadDistribuicaoService.processarPrazosVencidos({ vencidas: [vencida], finalizar }), 0);
 });
 
 test('monta o aviso de venda fechada com consultora, cliente, chips e valores', () => {
@@ -252,6 +510,20 @@ test('nao considera um retorno antigo como acao feita depois do aceite', () => {
     cliente_recusou: true,
     cliente_recusou_em: '2026-07-30T15:00:01.000Z'
   }, aceiteEm), true);
+});
+
+test('reconhece desfecho registrado enquanto ainda aguardava aceite', () => {
+  const enviadoEm = '2026-07-30T15:00:00.000Z';
+
+  assert.equal(linhaTemAcaoValida({ venda_id: 10 }, enviadoEm), true);
+  assert.equal(linhaTemAcaoValida({
+    cliente_recusou: true,
+    cliente_recusou_em: '2026-07-30T15:05:00.000Z'
+  }, enviadoEm), true);
+  assert.equal(linhaTemAcaoValida({
+    cliente_recusou: true,
+    cliente_recusou_em: '2026-07-30T14:59:59.000Z'
+  }, enviadoEm), false);
 });
 
 test('oculta todos os detalhes do registro enquanto aguarda aceite', () => {
