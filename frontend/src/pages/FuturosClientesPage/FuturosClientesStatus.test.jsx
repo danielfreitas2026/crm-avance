@@ -9,7 +9,7 @@ import {
   ResponsavelAtualCard,
   SeletorEscopoFuturosClientes
 } from './FuturosClientesPage';
-import { distribuicaoPermiteAtendimento, formatarDuracaoMinutos, getClasseLinhaLead, isVendaAntigaRegistrada, isFuturoClienteVendido, isVendaRecusada, resolverAbaFuturosClientes } from './lead-status';
+import { distribuicaoPermiteAtendimento, formatarDuracaoMinutos, getClasseLinhaLead, getClasseResultadoVenda, isVendaAntigaRegistrada, isFuturoClienteVendido, isVendaRecusada, resolverAbaFuturosClientes } from './lead-status';
 import { montarFiltrosLinhasMailingRecebido } from './mailing-recebido-search';
 import * as leadPlanilhaService from '../../services/lead-planilha.service';
 
@@ -82,10 +82,14 @@ describe('classificação canônica de vendas', () => {
     expect(getClasseLinhaLead(antiga)).toBe('lead-row-venda-antiga');
     expect(isFuturoClienteVendido(originada)).toBe(true);
     expect(getClasseLinhaLead(originada)).toBe('lead-row-vendido');
-    expect(getClasseLinhaLead({
+    expect(getClasseResultadoVenda(originada)).toBe('lead-row-vendido');
+    expect(getClasseResultadoVenda({
       ...originada,
       venda_recusada_em: '2026-08-19 10:00:00'
     })).toBe('lead-row-vendido');
+    expect(getClasseResultadoVenda(antiga)).toBe('');
+    expect(getClasseResultadoVenda({ futuro_cliente: 1, futuro_cliente_retorno: '2026-08-20 10:00:00' })).toBe('');
+    expect(getClasseResultadoVenda({ futuro_cliente: 1, venda_recusada_em: '2026-08-19 10:00:00' })).toBe('lead-row-recusado');
   });
 
   it('renderiza os dois novos estados sem usar o rótulo genérico', () => {

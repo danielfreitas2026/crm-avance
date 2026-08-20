@@ -54,3 +54,9 @@ export function getClasseLinhaLead(linha) {
   if (isFuturoClienteAtivo(linha)) return 'lead-row-futuro';
   return '';
 }
+
+export function getClasseResultadoVenda(linha) {
+  if (isFuturoClienteVendido(linha)) return 'lead-row-vendido';
+  if (isVendaRecusada(linha)) return 'lead-row-recusado';
+  return '';
+}

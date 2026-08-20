@@ -29,7 +29,7 @@ describe('layout responsivo dos futuros clientes', () => {
   });
 
   it('destaca a linha completa conforme o resultado da venda', () => {
-    expect(componente).toMatch(/<tr[\s\S]*?key=\{linha\.atribuicao_id \|\| linha\.id\}[\s\S]*?className=\{getClasseLinhaLead\(linha\)\}/);
+    expect(componente).toMatch(/<tr[\s\S]*?key=\{linha\.atribuicao_id \|\| linha\.id\}[\s\S]*?className=\{getClasseResultadoVenda\(linha\)\}/);
     expect(estilos).toMatch(/\.futuros-clientes-table tbody tr\.lead-row-vendido td\s*\{[\s\S]*?var\(--success\)/);
     expect(estilos).toMatch(/\.futuros-clientes-table tbody tr\.lead-row-recusado td\s*\{[\s\S]*?var\(--danger/);
   });
