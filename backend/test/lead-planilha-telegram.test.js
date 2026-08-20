@@ -3,12 +3,31 @@ const assert = require('node:assert/strict');
 const { _internals } = require('../src/services/lead-planilha.service');
 
 const {
+  aplicarFiltroAceiteRecebidos,
   aplicarEscopoCarteiraFuturosClientes,
   deveNotificarNovoFuturoCliente,
   deduplicarIndicacoesEnvio,
   obterErroEnvioFuturoClienteDistribuicao,
   resolverDestinoNovoFuturoCliente
 } = _internals;
+
+test('mantem retorno agendado na lista de acoes da consultora ate a devolucao', () => {
+  const pendentes = db('lead_atribuicoes as la').select('*');
+  aplicarFiltroAceiteRecebidos(pendentes, 'acao');
+  const consultaPendentes = pendentes.toSQL();
+
+  assert.match(consultaPendentes.sql, /`la`\.`acao_registrada_em` is null/);
+  assert.match(consultaPendentes.sql, /`la`\.`acao_registrada_tipo` =/);
+  assert.ok(consultaPendentes.bindings.includes('retorno_agendado'));
+
+  const encerrados = db('lead_atribuicoes as la').select('*');
+  aplicarFiltroAceiteRecebidos(encerrados, 'encerrado');
+  const consultaEncerrados = encerrados.toSQL();
+
+  assert.match(consultaEncerrados.sql, /`la`\.`acao_registrada_em` is not null/);
+  assert.match(consultaEncerrados.sql, /not `la`\.`acao_registrada_tipo` =/);
+  assert.ok(consultaEncerrados.bindings.includes('retorno_agendado'));
+});
 const db = require('../src/database/connection');
 const Usuario = require('../src/models/Usuario');
 const leadPlanilhaRoutes = require('../src/routes/lead-planilha.routes');

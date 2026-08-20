@@ -3407,9 +3407,14 @@ function aplicarFiltroAceiteRecebidos(query, status) {
       .where('la.aceite_status', leadDistribuicaoService.ACEITE_AGUARDANDO)
       .orWhere(subquery => subquery
         .where('la.aceite_status', leadDistribuicaoService.ACEITE_ACEITO)
-        .whereNull('la.acao_registrada_em')));
+        .where(acao => acao
+          .whereNull('la.acao_registrada_em')
+          .orWhere('la.acao_registrada_tipo', 'retorno_agendado'))));
   } else if (valor === 'encerrado') {
-    query.whereNotNull('la.acao_registrada_em');
+    query.whereNotNull('la.acao_registrada_em')
+      .where(builder => builder
+        .whereNull('la.acao_registrada_tipo')
+        .orWhereNot('la.acao_registrada_tipo', 'retorno_agendado'));
   } else if (valor && valor !== 'todos') {
     query.where('la.aceite_status', valor);
   }
@@ -4798,6 +4803,7 @@ module.exports = {
     aplicarBuscaDadosJson,
     aplicarBuscaMailingsUsuario,
     aplicarFiltrosFuturosClientes,
+    aplicarFiltroAceiteRecebidos,
     aplicarEscopoCarteiraFuturosClientes,
     aplicarFiltrosQuery,
     aplicarFiltroVendaRecusada,

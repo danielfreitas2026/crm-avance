@@ -2,6 +2,11 @@ export function isFuturoClienteAtivo(linha) {
   return Boolean(linha?.futuro_cliente && !linha?.futuro_cliente_excluido_em);
 }
 
+export function distribuicaoPermiteAtendimento(distribuicao) {
+  return distribuicao?.status === 'aceito'
+    && (!distribuicao.acao_registrada_em || distribuicao.acao_registrada_tipo === 'retorno_agendado');
+}
+
 export function getVendaClassificacaoTipo(linha) {
   if (linha?.venda_classificacao?.tipo) return linha.venda_classificacao.tipo;
   if (linha?.venda_id || linha?.status_operacional === 'vendido') return 'venda_futuro_cliente';

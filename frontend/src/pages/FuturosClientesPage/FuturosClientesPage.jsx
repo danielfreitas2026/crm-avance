@@ -47,6 +47,7 @@ import { listarOperadoras } from '../../services/config.service';
 import { buscarGooglePlacesFuturosClientes, consultarCnpj } from '../../services/cnpj.service';
 import FuturoClienteAceiteModal from './FuturoClienteAceiteModal';
 import {
+  distribuicaoPermiteAtendimento,
   getClasseLinhaLead,
   isFuturoClienteAtivo,
   isFuturoClienteVendido,
@@ -660,6 +661,15 @@ function renderFuturoClienteSituacao(linha) {
     return (
       <span className="pill warn lead-status-pill" title={`Prazo: ${formatarDataHora(linha.distribuicao.prazo_acao_em)}`}>
         <span className="pill-dot"></span>Contato pendente
+      </span>
+    );
+  }
+
+  if (distribuicaoPermiteAtendimento(linha?.distribuicao)
+    && linha.distribuicao.acao_registrada_tipo === 'retorno_agendado') {
+    return (
+      <span className="pill warn lead-status-pill" title={`Prazo: ${formatarDataHora(linha.distribuicao.prazo_acao_em)}`}>
+        <span className="pill-dot"></span>Retorno marcado
       </span>
     );
   }
@@ -3886,7 +3896,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
           onAtualizado={handleAtualizado}
           onDistribuido={handleDistribuido}
           onRegistrarVenda={handleRegistrarVenda}
-          somenteLeitura={escopoTodos || (modoRecebidos && (linhaAtiva?.distribuicao?.status !== 'aceito' || Boolean(linhaAtiva?.distribuicao?.acao_registrada_em)))}
+          somenteLeitura={escopoTodos || (modoRecebidos && !distribuicaoPermiteAtendimento(linhaAtiva?.distribuicao))}
           permitirReenvioTelegram={escopoTodos
             && temPermissao(usuario, 'futuros_clientes_ver_todos')}
           exibirHistorico={escopoTodos}

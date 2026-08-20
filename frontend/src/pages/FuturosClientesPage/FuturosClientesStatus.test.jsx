@@ -9,9 +9,26 @@ import {
   ResponsavelAtualCard,
   SeletorEscopoFuturosClientes
 } from './FuturosClientesPage';
-import { formatarDuracaoMinutos, getClasseLinhaLead, isVendaAntigaRegistrada, isFuturoClienteVendido, isVendaRecusada, resolverAbaFuturosClientes } from './lead-status';
+import { distribuicaoPermiteAtendimento, formatarDuracaoMinutos, getClasseLinhaLead, isVendaAntigaRegistrada, isFuturoClienteVendido, isVendaRecusada, resolverAbaFuturosClientes } from './lead-status';
 import { montarFiltrosLinhasMailingRecebido } from './mailing-recebido-search';
 import * as leadPlanilhaService from '../../services/lead-planilha.service';
+
+describe('atendimento de futuro cliente recebido com retorno', () => {
+  it('permanece editavel enquanto o retorno agendado pertence a atribuicao aceita', () => {
+    expect(distribuicaoPermiteAtendimento({
+      status: 'aceito',
+      acao_registrada_em: '2026-08-20T12:00:00.000Z',
+      acao_registrada_tipo: 'retorno_agendado',
+      prazo_acao_em: '2026-08-20T15:30:00.000Z'
+    })).toBe(true);
+
+    expect(distribuicaoPermiteAtendimento({
+      status: 'aceito',
+      acao_registrada_em: '2026-08-20T12:00:00.000Z',
+      acao_registrada_tipo: 'cliente_recusou'
+    })).toBe(false);
+  });
+});
 
 describe('status de venda recusada no mailing recebido', () => {
   const recusadaAposReversao = {
