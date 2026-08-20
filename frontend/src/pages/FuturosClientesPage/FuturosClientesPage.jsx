@@ -61,18 +61,29 @@ import './FuturosClientesPage.css';
 
 function useDialogAcessivel(onClose, bloqueado = false) {
   const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const bloqueadoRef = useRef(bloqueado);
+
   useEffect(() => {
+    onCloseRef.current = onClose;
+    bloqueadoRef.current = bloqueado;
+  });
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return undefined;
+
     const focoAnterior = document.activeElement;
-    dialogRef.current?.focus();
+    dialog.focus();
     const aoPressionarTecla = event => {
-      if (event.key === 'Escape' && !bloqueado) onClose();
+      if (event.key === 'Escape' && !bloqueadoRef.current) onCloseRef.current();
     };
     document.addEventListener('keydown', aoPressionarTecla);
     return () => {
       document.removeEventListener('keydown', aoPressionarTecla);
       focoAnterior?.focus?.();
     };
-  }, [onClose, bloqueado]);
+  }, []);
   return dialogRef;
 }
 

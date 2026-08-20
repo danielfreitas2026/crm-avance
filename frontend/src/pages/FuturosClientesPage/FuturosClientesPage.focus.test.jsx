@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -48,6 +48,9 @@ describe('busca de futuros clientes', () => {
     await user.click(campoBusca);
     await user.type(campoBusca, 'RPXasD');
 
+    await waitFor(() => expect(listarQuadroFuturosClientes).toHaveBeenLastCalledWith(
+      expect.objectContaining({ busca: 'RPXasD' })
+    ));
     expect(campoBusca).toHaveValue('RPXasD');
     expect(campoBusca).toHaveFocus();
     expect(botaoTodos).not.toHaveFocus();
