@@ -488,7 +488,7 @@ async function adminVincularVenda(req, res) {
       req.usuario.id,
       req.body?.cnpj
     );
-    const linha = await leadPlanilhaService.buscarLinhaFormatada(req.params.id);
+    const linha = await leadPlanilhaService.buscarLinhaFormatada(req.params.id, { incluirEstadoAtual: true });
     return res.json({ ...resultado, linha: linha.linha });
   } catch (error) {
     console.error(error);
@@ -499,7 +499,7 @@ async function adminVincularVenda(req, res) {
 async function adminDesvincularVenda(req, res) {
   try {
     const resultado = await leadVendaVinculoManualService.desvincularVenda(req.params.id, req.usuario.id);
-    const linha = await leadPlanilhaService.buscarLinhaFormatada(req.params.id);
+    const linha = await leadPlanilhaService.buscarLinhaFormatada(req.params.id, { incluirEstadoAtual: true });
     return res.json({ ...resultado, linha: linha.linha });
   } catch (error) {
     console.error(error);

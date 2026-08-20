@@ -4120,6 +4120,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
                   return (
                     <tr
                       key={linha.atribuicao_id || linha.id}
+                      className={getClasseLinhaLead(linha)}
                       style={{ cursor: modoLixeira ? 'default' : 'pointer' }}
                       onClick={() => !modoLixeira && setLinhaAtiva(linha)}
                     >

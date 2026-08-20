@@ -4328,13 +4328,32 @@ async function reverterVendaRecusadaLead(linhaId, usuarioId, opcoes = {}) {
 /**
  * Busca a linha e recarrega com os relacionamentos usados pelo frontend.
  */
-async function buscarLinhaFormatada(linhaId) {
+async function buscarLinhaFormatada(linhaId, opcoes = {}) {
   const atualizada = await LeadLinha.query()
     .findById(Number(linhaId))
     .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
     .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'));
 
-  return { linha: formatarLinha(atualizada) };
+  const formatada = formatarLinha(atualizada);
+  if (!opcoes.incluirEstadoAtual || !formatada?.futuro_cliente) {
+    return { linha: formatada };
+  }
+
+  const [classificada] = await adicionarClassificacaoVendas([formatada]);
+  const distribuicoes = await leadDistribuicaoService.obterDistribuicoesUsuario([classificada.id], null);
+  const distribuicao = leadDistribuicaoService.dadosDistribuicao(distribuicoes.get(Number(classificada.id)));
+  const linha = {
+    ...classificada,
+    distribuicao,
+    detalhes_bloqueados: false
+  };
+
+  return {
+    linha: {
+      ...linha,
+      estado_atual: resolverEstadoAtualFuturoCliente(linha, distribuicao)
+    }
+  };
 }
 
 /**

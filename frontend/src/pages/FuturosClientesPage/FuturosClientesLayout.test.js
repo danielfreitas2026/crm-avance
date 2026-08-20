@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const estilos = readFileSync(new URL('./FuturosClientesPage.css', import.meta.url), 'utf8');
+const componente = readFileSync(new URL('./FuturosClientesPage.jsx', import.meta.url), 'utf8');
 
 describe('layout responsivo dos futuros clientes', () => {
   it('faz a lista e a tabela ocuparem a altura útil em telas não móveis', () => {
@@ -25,5 +26,11 @@ describe('layout responsivo dos futuros clientes', () => {
 
   it('posiciona o responsável em uma linha completa no card mobile', () => {
     expect(estilos).toMatch(/@media \(max-width: 640px\)[\s\S]*?td\.futuro-cliente-responsavel-col\s*\{[\s\S]*?grid-column:\s*1 \/ -1[\s\S]*?grid-row:\s*3/);
+  });
+
+  it('destaca a linha completa conforme o resultado da venda', () => {
+    expect(componente).toMatch(/<tr[\s\S]*?key=\{linha\.atribuicao_id \|\| linha\.id\}[\s\S]*?className=\{getClasseLinhaLead\(linha\)\}/);
+    expect(estilos).toMatch(/\.futuros-clientes-table tbody tr\.lead-row-vendido td\s*\{[\s\S]*?var\(--success\)/);
+    expect(estilos).toMatch(/\.futuros-clientes-table tbody tr\.lead-row-recusado td\s*\{[\s\S]*?var\(--danger/);
   });
 });

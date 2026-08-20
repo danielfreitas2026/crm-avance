@@ -81,6 +81,11 @@ describe('classificação canônica de vendas', () => {
     expect(isFuturoClienteVendido(antiga)).toBe(false);
     expect(getClasseLinhaLead(antiga)).toBe('lead-row-venda-antiga');
     expect(isFuturoClienteVendido(originada)).toBe(true);
+    expect(getClasseLinhaLead(originada)).toBe('lead-row-vendido');
+    expect(getClasseLinhaLead({
+      ...originada,
+      venda_recusada_em: '2026-08-19 10:00:00'
+    })).toBe('lead-row-vendido');
   });
 
   it('renderiza os dois novos estados sem usar o rótulo genérico', () => {
