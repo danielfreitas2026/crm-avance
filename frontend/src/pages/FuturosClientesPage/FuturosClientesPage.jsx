@@ -3818,13 +3818,15 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
 
   return (
     <div className="futuros-clientes-view">
-      <ConfirmarFuturoClienteLixeiraModal
-        linha={confirmacaoLixeira?.linha}
-        tipo={confirmacaoLixeira?.tipo}
-        processando={processandoId === confirmacaoLixeira?.linha?.id}
-        onClose={() => setConfirmacaoLixeira(null)}
-        onConfirm={confirmacaoLixeira?.tipo === 'definitivo' ? confirmarExclusaoDefinitiva : confirmarMoverParaLixeira}
-      />
+      {confirmacaoLixeira && (
+        <ConfirmarFuturoClienteLixeiraModal
+          linha={confirmacaoLixeira.linha}
+          tipo={confirmacaoLixeira.tipo}
+          processando={processandoId === confirmacaoLixeira.linha?.id}
+          onClose={() => setConfirmacaoLixeira(null)}
+          onConfirm={confirmacaoLixeira.tipo === 'definitivo' ? confirmarExclusaoDefinitiva : confirmarMoverParaLixeira}
+        />
+      )}
 
       {linhaAtiva?.detalhes_bloqueados ? (
         <FuturoClienteAceiteModal
