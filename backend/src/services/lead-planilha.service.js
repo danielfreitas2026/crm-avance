@@ -2892,17 +2892,19 @@ async function enviarFuturoClienteParaDistribuicao(linhaId, usuarioId) {
 
   await LeadLinha.transaction(async trx => {
     const linha = await LeadLinha.query(trx).findById(id).forUpdate();
-    const atribuicaoAtiva = linha ? await trx('lead_atribuicoes')
+    const ultimaAtribuicao = linha ? await trx('lead_atribuicoes')
       .where({ lead_linha_id: id, etapa: 'venda' })
-      .whereIn('aceite_status', [
-        leadDistribuicaoService.ACEITE_AGUARDANDO,
-        leadDistribuicaoService.ACEITE_ACEITO
-      ])
       .forUpdate()
-      .first('id') : null;
+      .orderBy('id', 'desc')
+      .first('id', 'aceite_status') : null;
+    const possuiAtribuicaoAtiva = [
+      leadDistribuicaoService.ACEITE_AGUARDANDO,
+      leadDistribuicaoService.ACEITE_ACEITO
+    ].includes(ultimaAtribuicao?.aceite_status);
     const erro = obterErroEnvioFuturoClienteDistribuicao(linha, usuario, {
       podeReencaminharTodos,
-      possuiAtribuicaoAtiva: Boolean(atribuicaoAtiva)
+      possuiAtribuicaoAtiva,
+      possuiHistoricoDistribuicao: Boolean(ultimaAtribuicao)
     });
     if (erro) throw criarHttpError(erro.statusCode, erro.message);
     if (linha.futuro_cliente_destino !== DESTINO_FUTURO_CLIENTE_DISTRIBUICAO) {
@@ -2927,14 +2929,16 @@ function obterErroEnvioFuturoClienteDistribuicao(linha, usuarioId, opcoes = {}) 
     return { statusCode: 404, message: 'Futuro cliente nao encontrado.' };
   }
   const ehDono = Number(linha.futuro_cliente_marcado_por_id) === Number(usuarioId);
-  const jaFoiEnviado = linha.futuro_cliente_destino === DESTINO_FUTURO_CLIENTE_DISTRIBUICAO;
+  const jaFoiEnviado = linha.futuro_cliente_destino === DESTINO_FUTURO_CLIENTE_DISTRIBUICAO
+    || opcoes.possuiHistoricoDistribuicao;
   if ((!ehDono || jaFoiEnviado) && !opcoes.podeReencaminharTodos) {
     return { statusCode: 403, message: 'Voce nao pode distribuir este futuro cliente.' };
   }
-  if (![DESTINO_FUTURO_CLIENTE_CARTEIRA, DESTINO_FUTURO_CLIENTE_DISTRIBUICAO].includes(linha.futuro_cliente_destino)) {
+  if (![DESTINO_FUTURO_CLIENTE_CARTEIRA, DESTINO_FUTURO_CLIENTE_DISTRIBUICAO].includes(linha.futuro_cliente_destino)
+    && !opcoes.possuiHistoricoDistribuicao) {
     return { statusCode: 409, message: 'Futuros clientes antigos permanecem na carteira e nao podem ser republicados por esta acao.' };
   }
-  if (linha.venda_id || linha.cliente_id || linha.venda_recusada_em || linha.cliente_recusou
+  if (linha.venda_id || linha.venda_recusada_em || linha.cliente_recusou
     || linha.etapa_atual === 'venda' || linha.status_operacional !== 'qualificado'
     || opcoes.possuiAtribuicaoAtiva) {
     return { statusCode: 409, message: 'Este futuro cliente nao esta disponivel para distribuicao.' };

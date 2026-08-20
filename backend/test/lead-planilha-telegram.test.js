@@ -73,6 +73,10 @@ test('envio posterior preserva o primeiro envio do dono e exige acesso total par
     futuro_cliente_destino: 'distribuicao'
   }, 17, { podeReencaminharTodos: true }), null);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, futuro_cliente_destino: null }, 17)?.statusCode, 409);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({
+    ...disponivel,
+    futuro_cliente_destino: null
+  }, 18, { podeReencaminharTodos: true, possuiHistoricoDistribuicao: true }), null);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao(disponivel, 18)?.statusCode, 403);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao(disponivel, 18, { podeReencaminharTodos: true }), null);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, status_operacional: 'vendido' }, 17)?.statusCode, 409);
@@ -98,6 +102,10 @@ test('republicacao bloqueia recusas, vendas e atribuicoes ativas', () => {
     ...acessoTotal,
     possuiAtribuicaoAtiva: true
   })?.statusCode, 409);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({
+    ...disponivel,
+    cliente_id: 72
+  }, 18, acessoTotal), null);
 });
 
 test('rota de distribuicao aceita usuario com ver todos mesmo sem permissao de registrar', async () => {

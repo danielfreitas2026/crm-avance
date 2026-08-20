@@ -330,8 +330,16 @@ describe('modal de adição de lead', () => {
     expect(screen.getByRole('button', { name: /Enviar para distribuição/i })).toBeVisible();
     unmount();
 
-    render(<FuturoClienteDetalheModal linha={{ ...linha, futuro_cliente_destino: null }} {...props} />);
+    const legadoSemEnvio = render(<FuturoClienteDetalheModal linha={{ ...linha, futuro_cliente_destino: null }} {...props} />);
     expect(screen.queryByRole('button', { name: /Enviar para distribuição/i })).not.toBeInTheDocument();
+    legadoSemEnvio.unmount();
+
+    render(<FuturoClienteDetalheModal linha={{
+      ...linha,
+      futuro_cliente_destino: null,
+      distribuicao: { id: 91, status: 'expirado_apos_retorno' }
+    }} {...props} somenteLeitura permitirReenvioTelegram />);
+    expect(screen.getByRole('button', { name: /Reencaminhar ao Telegram/i })).toBeVisible();
     localStorage.removeItem('usuario');
   });
 
@@ -343,6 +351,7 @@ describe('modal de adição de lead', () => {
       futuro_cliente_destino: 'distribuicao',
       status_operacional: 'qualificado',
       etapa_atual: 'sondagem',
+      cliente_id: 72,
       dados_json: { 'Razão social': 'Empresa republicada' },
       envio: { nome: 'Envio futuro' },
       sondagem: { chips_itens: [], usuario: { nome: 'Consultora teste' } }

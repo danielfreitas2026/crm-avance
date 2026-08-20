@@ -2738,15 +2738,15 @@ export function FuturoClienteDetalheModal({
   const comoAdmin = useMemo(() => temPermissao(usuario, 'gerenciar_leads'), [usuario]);
   const ehResponsavel = Number(linha.atribuido_para_id) === Number(usuario?.id);
   const ehDono = Number(linha.futuro_cliente_marcado_por_id) === Number(usuario?.id);
-  const jaEnviadoTelegram = linha.futuro_cliente_destino === 'distribuicao';
-  const destinoDistribuivel = ['carteira', 'distribuicao'].includes(linha.futuro_cliente_destino);
+  const jaEnviadoTelegram = linha.futuro_cliente_destino === 'distribuicao' || Boolean(linha.distribuicao?.id);
+  const destinoDistribuivel = ['carteira', 'distribuicao'].includes(linha.futuro_cliente_destino)
+    || Boolean(linha.distribuicao?.id);
   const distribuicaoAtiva = ['aguardando_aceite', 'aceito'].includes(linha.distribuicao?.status);
   const temPermissoesReenvio = permitirReenvioTelegram
     && temPermissao(usuario, 'futuros_clientes_ver_todos');
   const estadoDistribuivel = (!linha.status_operacional || linha.status_operacional === 'qualificado')
     && linha.etapa_atual !== 'venda'
     && !linha.venda_id
-    && !linha.cliente_id
     && !linha.venda_recusada_em
     && !linha.cliente_recusou
     && !distribuicaoAtiva;
