@@ -1,5 +1,6 @@
 .futuros-clientes-page {
   flex: 1;
+  width: 100%;
   min-height: 0;
   height: 100%;
   display: flex;
@@ -12,6 +13,7 @@
 
 .futuros-clientes-view {
   flex: 0 0 auto;
+  width: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -22,11 +24,14 @@
 .clientes-tabs {
   display: inline-flex;
   align-self: flex-start;
+  max-width: 100%;
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .clientes-tab {
@@ -140,6 +145,46 @@
   flex-direction: column;
   height: clamp(320px, 52vh, 620px);
   min-height: 320px;
+}
+
+/* Nas listas, a tabela ocupa toda a altura útil restante. A rolagem fica
+   dentro dela, mantendo filtros, cabeçalho e paginação sempre acessíveis. */
+@media (min-width: 781px) {
+  .futuros-clientes-view {
+    flex: 1 1 0;
+    overflow: hidden;
+  }
+
+  .futuros-clientes-view > .futuros-clientes-table {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 200px;
+  }
+
+  .futuros-clientes-view > .lead-pagination {
+    flex: 0 0 auto;
+  }
+}
+
+/* Em notebooks e tablets horizontais, os filtros usam linhas adicionais sem
+   reduzir a busca ou empurrar ações para fora da tela. */
+@media (min-width: 781px) and (max-width: 1180px) {
+  .clientes-leads-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .clientes-search {
+    flex: 1 1 100%;
+  }
+
+  .clientes-status-filter {
+    flex: 1 1 180px;
+    max-width: none;
+  }
+
+  .clientes-leads-actions {
+    margin-left: auto;
+  }
 }
 
 .futuros-clientes-table .scroll {
