@@ -4,7 +4,12 @@ const router = express.Router();
 const leadPlanilhaController = require('../controllers/lead-planilha.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const { auditar } = require('../middlewares/audit.middleware');
-const { exigirUmaPermissao } = require('../middlewares/permissao.middleware');
+const { exigirPermissao, exigirUmaPermissao } = require('../middlewares/permissao.middleware');
+
+function marcarEscopoFuturosClientesTodos(req, res, next) {
+  req.futurosClientesEscopoTodos = true;
+  next();
+}
 
 router.use(authMiddleware);
 
@@ -35,7 +40,11 @@ router.post(
   }),
   leadPlanilhaController.recusarFuturoCliente
 );
-router.get('/me/futuros-clientes/lixeira', exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']), leadPlanilhaController.listarFuturosClientesLixeira);
+router.get(
+  '/me/futuros-clientes/lixeira',
+  exigirUmaPermissao(['futuros_clientes_enviar_lixeira', 'futuros_clientes_excluir_definitivamente']),
+  leadPlanilhaController.listarFuturosClientesLixeira
+);
 router.post(
   '/me/futuros-clientes/:id/distribuir',
   exigirUmaPermissao(['futuros_clientes_registrar', 'futuros_clientes_ver_todos']),
@@ -49,7 +58,7 @@ router.post(
 );
 router.delete(
   '/me/futuros-clientes/:id',
-  exigirUmaPermissao(['futuros_clientes_registrar']),
+  exigirPermissao('futuros_clientes_enviar_lixeira'),
   auditar({
     acao: 'lead_linha.futuro_cliente_enviado_lixeira',
     entidade: 'lead_linhas',
@@ -60,7 +69,7 @@ router.delete(
 );
 router.post(
   '/me/futuros-clientes/:id/restaurar',
-  exigirUmaPermissao(['futuros_clientes_registrar']),
+  exigirPermissao('futuros_clientes_enviar_lixeira'),
   auditar({
     acao: 'lead_linha.futuro_cliente_restaurado',
     entidade: 'lead_linhas',
@@ -71,7 +80,7 @@ router.post(
 );
 router.delete(
   '/me/futuros-clientes/:id/definitivo',
-  exigirUmaPermissao(['futuros_clientes_registrar']),
+  exigirPermissao('futuros_clientes_excluir_definitivamente'),
   auditar({
     acao: 'lead_linha.futuro_cliente_excluido_definitivamente',
     entidade: 'lead_linhas',
@@ -395,6 +404,56 @@ router.put(
 );
 router.post('/exportar', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.exportar);
 router.post('/exportar-xlsx/:id', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.exportarPlanilhaXlsx);
+router.get(
+  '/futuros-clientes/lixeira',
+  exigirPermissao('futuros_clientes_ver_todos'),
+  exigirPermissao('futuros_clientes_gerenciar_todos'),
+  exigirUmaPermissao(['futuros_clientes_enviar_lixeira', 'futuros_clientes_excluir_definitivamente']),
+  marcarEscopoFuturosClientesTodos,
+  leadPlanilhaController.listarFuturosClientesLixeira
+);
+router.delete(
+  '/futuros-clientes/:id',
+  exigirPermissao('futuros_clientes_ver_todos'),
+  exigirPermissao('futuros_clientes_gerenciar_todos'),
+  exigirPermissao('futuros_clientes_enviar_lixeira'),
+  marcarEscopoFuturosClientesTodos,
+  auditar({
+    acao: 'lead_linha.futuro_cliente_enviado_lixeira',
+    entidade: 'lead_linhas',
+    entidade_id: req => req.params.id,
+    dados: req => ({ linha_id: req.params.id, usuario_id: req.usuario?.id, escopo: 'todos' })
+  }),
+  leadPlanilhaController.excluirFuturoCliente
+);
+router.post(
+  '/futuros-clientes/:id/restaurar',
+  exigirPermissao('futuros_clientes_ver_todos'),
+  exigirPermissao('futuros_clientes_gerenciar_todos'),
+  exigirPermissao('futuros_clientes_enviar_lixeira'),
+  marcarEscopoFuturosClientesTodos,
+  auditar({
+    acao: 'lead_linha.futuro_cliente_restaurado',
+    entidade: 'lead_linhas',
+    entidade_id: req => req.params.id,
+    dados: req => ({ linha_id: req.params.id, usuario_id: req.usuario?.id, escopo: 'todos' })
+  }),
+  leadPlanilhaController.restaurarFuturoCliente
+);
+router.delete(
+  '/futuros-clientes/:id/definitivo',
+  exigirPermissao('futuros_clientes_ver_todos'),
+  exigirPermissao('futuros_clientes_gerenciar_todos'),
+  exigirPermissao('futuros_clientes_excluir_definitivamente'),
+  marcarEscopoFuturosClientesTodos,
+  auditar({
+    acao: 'lead_linha.futuro_cliente_excluido_definitivamente',
+    entidade: 'lead_linhas',
+    entidade_id: req => req.params.id,
+    dados: req => ({ linha_id: req.params.id, usuario_id: req.usuario?.id, escopo: 'todos' })
+  }),
+  leadPlanilhaController.excluirFuturoClienteDefinitivo
+);
 router.get('/futuros-clientes', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.listarTodosFuturosClientes);
 router.get('/futuros-clientes/:id/historico', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.historicoFuturoCliente);
 router.post(

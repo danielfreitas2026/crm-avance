@@ -13,8 +13,12 @@ import {
   adminDesvincularVendaLead,
   adminVincularVendaLead,
   enviarFuturoClienteParaDistribuicao,
+  excluirFuturoCliente,
+  excluirFuturoClienteDefinitivo,
+  listarFuturosClientesLixeira,
   obterHistoricoFuturoCliente,
-  listarVendasCandidatasLead
+  listarVendasCandidatasLead,
+  restaurarFuturoCliente
 } from './lead-planilha.service';
 
 describe('vinculo administrativo de venda com futuro cliente', () => {
@@ -55,5 +59,33 @@ describe('distribuicao de futuro cliente reservado', () => {
     await obterHistoricoFuturoCliente(81);
 
     expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/81/historico');
+  });
+});
+
+describe('lixeira de futuros clientes', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('usa os endpoints restritos a carteira propria por padrao', async () => {
+    await listarFuturosClientesLixeira({ page: 2 });
+    await excluirFuturoCliente(81);
+    await restaurarFuturoCliente(81);
+    await excluirFuturoClienteDefinitivo(81);
+
+    expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/me/futuros-clientes/lixeira?page=2');
+    expect(apiDelete).toHaveBeenNthCalledWith(1, '/lead-planilhas/me/futuros-clientes/81');
+    expect(apiPost).toHaveBeenCalledWith('/lead-planilhas/me/futuros-clientes/81/restaurar', {});
+    expect(apiDelete).toHaveBeenNthCalledWith(2, '/lead-planilhas/me/futuros-clientes/81/definitivo');
+  });
+
+  it('usa os endpoints protegidos da visao Todos quando solicitado', async () => {
+    await listarFuturosClientesLixeira({}, true);
+    await excluirFuturoCliente(81, true);
+    await restaurarFuturoCliente(81, true);
+    await excluirFuturoClienteDefinitivo(81, true);
+
+    expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/lixeira');
+    expect(apiDelete).toHaveBeenNthCalledWith(1, '/lead-planilhas/futuros-clientes/81');
+    expect(apiPost).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/81/restaurar', {});
+    expect(apiDelete).toHaveBeenNthCalledWith(2, '/lead-planilhas/futuros-clientes/81/definitivo');
   });
 });

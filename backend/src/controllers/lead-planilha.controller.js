@@ -566,7 +566,11 @@ async function marcarRetorno(req, res) {
  */
 async function listarFuturosClientesLixeira(req, res) {
   try {
-    return res.json(await leadPlanilhaService.listarFuturosClientesLixeira(req.query, req.usuario.id));
+    return res.json(await leadPlanilhaService.listarFuturosClientesLixeira(
+      req.query,
+      req.usuario.id,
+      { todos: Boolean(req.futurosClientesEscopoTodos) }
+    ));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: 'Erro ao listar lixeira de futuros clientes.' });
@@ -578,7 +582,11 @@ async function listarFuturosClientesLixeira(req, res) {
  */
 async function excluirFuturoCliente(req, res) {
   try {
-    const total = await leadPlanilhaService.enviarFuturoClienteParaLixeira(req.params.id, req.usuario.id);
+    const total = await leadPlanilhaService.enviarFuturoClienteParaLixeira(
+      req.params.id,
+      req.usuario.id,
+      { todos: Boolean(req.futurosClientesEscopoTodos) }
+    );
 
     if (!total) {
       return res.status(404).json({ message: 'Futuro cliente não encontrado.' });
@@ -597,7 +605,11 @@ async function excluirFuturoCliente(req, res) {
  */
 async function restaurarFuturoCliente(req, res) {
   try {
-    const linha = await leadPlanilhaService.restaurarFuturoCliente(req.params.id, req.usuario.id);
+    const linha = await leadPlanilhaService.restaurarFuturoCliente(
+      req.params.id,
+      req.usuario.id,
+      { todos: Boolean(req.futurosClientesEscopoTodos) }
+    );
 
     if (!linha) {
       return res.status(404).json({ message: 'Futuro cliente não encontrado na lixeira.' });
@@ -616,7 +628,11 @@ async function restaurarFuturoCliente(req, res) {
  */
 async function excluirFuturoClienteDefinitivo(req, res) {
   try {
-    const total = await leadPlanilhaService.excluirFuturoClienteDefinitivo(req.params.id, req.usuario.id);
+    const total = await leadPlanilhaService.excluirFuturoClienteDefinitivo(
+      req.params.id,
+      req.usuario.id,
+      { todos: Boolean(req.futurosClientesEscopoTodos) }
+    );
 
     if (!total) {
       return res.status(404).json({ message: 'Futuro cliente não encontrado na lixeira.' });

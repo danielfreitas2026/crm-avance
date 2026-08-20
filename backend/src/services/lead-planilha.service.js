@@ -4645,6 +4645,31 @@ async function desativarAlertasObrigatoriosDaLinha(linhaId) {
 /**
  * Limpa futuros clientes vencidos da lixeira e restaura o estado inicial.
  */
+function montarPatchExclusaoFuturoCliente(agora = new Date()) {
+  return {
+    futuro_cliente: false,
+    futuro_cliente_notas: null,
+    futuro_cliente_retorno: null,
+    futuro_cliente_retorno_realizado_em: null,
+    futuro_cliente_retorno_realizado_por_id: null,
+    futuro_cliente_marcado_em: null,
+    futuro_cliente_marcado_por_id: null,
+    futuro_cliente_destino: null,
+    futuro_cliente_excluido_em: null,
+    futuro_cliente_excluir_definitivo_em: null,
+    futuro_cliente_excluido_por_id: null,
+    updated_at: formatarDateTimeSQL(agora)
+  };
+}
+
+function obterResponsavelEscopoLixeira(usuarioId, { todos = false } = {}) {
+  return todos ? null : Number(usuarioId);
+}
+
+function calcularVencimentoLixeiraFuturoCliente(agora) {
+  return adicionarDias(agora, 30);
+}
+
 async function limparFuturosClientesVencidosDaLixeira(usuarioId = null) {
   const query = db('lead_linhas')
     .where('futuro_cliente', true)
@@ -4655,34 +4680,26 @@ async function limparFuturosClientesVencidosDaLixeira(usuarioId = null) {
     query.where('futuro_cliente_marcado_por_id', Number(usuarioId));
   }
 
-  return query.update({
-    futuro_cliente: false,
-    futuro_cliente_notas: null,
-    futuro_cliente_retorno: null,
-    futuro_cliente_marcado_em: null,
-    futuro_cliente_marcado_por_id: null,
-    futuro_cliente_excluido_em: null,
-    futuro_cliente_excluir_definitivo_em: null,
-    futuro_cliente_excluido_por_id: null,
-    updated_at: formatarDateTimeSQL()
-  });
+  return query.update(montarPatchExclusaoFuturoCliente());
 }
 
 /**
  * Lista futuros clientes lixeira conforme os filtros e parametros informados.
  */
-async function listarFuturosClientesLixeira(filtros = {}, usuarioId) {
-  await limparFuturosClientesVencidosDaLixeira(usuarioId);
+async function listarFuturosClientesLixeira(filtros = {}, usuarioId, { todos = false } = {}) {
+  const responsavelId = obterResponsavelEscopoLixeira(usuarioId, { todos });
+  await limparFuturosClientesVencidosDaLixeira(responsavelId);
 
   const page = Math.max(1, Number(filtros.page || 1));
   const pageSize = Math.min(500, Math.max(1, Number(filtros.page_size || 50)));
 
   let query = LeadLinha.query()
-    .withGraphFetched('[planilha, envio, futuroClienteExcluidoPor]')
+    .withGraphFetched('[planilha, envio, atribuidoPara, futuroClienteMarcadoPor, sondagem.usuario, futuroClienteExcluidoPor]')
     .modifyGraph('futuroClienteExcluidoPor', builder => builder.select('id', 'nome', 'email'))
-    .where('futuro_cliente_marcado_por_id', usuarioId)
     .where('futuro_cliente', true)
     .whereNotNull('futuro_cliente_excluido_em');
+
+  if (responsavelId !== null) query.where('futuro_cliente_marcado_por_id', responsavelId);
 
   query = aplicarBuscaFuturosClientes(query, filtros.busca);
   query = aplicarFiltrosFuturosClientes(query, filtros);
@@ -4694,8 +4711,23 @@ async function listarFuturosClientesLixeira(filtros = {}, usuarioId) {
     .offset((page - 1) * pageSize)
     .limit(pageSize);
 
+  let data = linhas.map(formatarLinha);
+  if (todos) {
+    const distribuicoes = await leadDistribuicaoService.obterDistribuicoesUsuario(
+      linhas.map(linha => linha.id),
+      null
+    );
+    data = data.map(linha => ({
+      ...linha,
+      estado_atual: resolverEstadoAtualFuturoCliente(
+        linha,
+        leadDistribuicaoService.dadosDistribuicao(distribuicoes.get(Number(linha.id)))
+      )
+    }));
+  }
+
   return {
-    data: linhas.map(formatarLinha),
+    data,
     total,
     page,
     page_size: pageSize
@@ -4705,17 +4737,20 @@ async function listarFuturosClientesLixeira(filtros = {}, usuarioId) {
 /**
  * Envia futuro cliente para lixeira para processamento.
  */
-async function enviarFuturoClienteParaLixeira(linhaId, usuarioId) {
+async function enviarFuturoClienteParaLixeira(linhaId, usuarioId, { todos = false } = {}) {
   const agora = new Date();
+  const responsavelId = obterResponsavelEscopoLixeira(usuarioId, { todos });
 
-  return db('lead_linhas')
+  const query = db('lead_linhas')
     .where('id', Number(linhaId))
-    .where('futuro_cliente_marcado_por_id', Number(usuarioId))
     .where('futuro_cliente', true)
-    .whereNull('futuro_cliente_excluido_em')
-    .update({
+    .whereNull('futuro_cliente_excluido_em');
+
+  if (responsavelId !== null) query.where('futuro_cliente_marcado_por_id', responsavelId);
+
+  return query.update({
       futuro_cliente_excluido_em: formatarDateTimeSQL(agora),
-      futuro_cliente_excluir_definitivo_em: formatarDateTimeSQL(adicionarDias(agora, 30)),
+      futuro_cliente_excluir_definitivo_em: formatarDateTimeSQL(calcularVencimentoLixeiraFuturoCliente(agora)),
       futuro_cliente_excluido_por_id: usuarioId,
       updated_at: formatarDateTimeSQL(agora)
     });
@@ -4724,13 +4759,16 @@ async function enviarFuturoClienteParaLixeira(linhaId, usuarioId) {
 /**
  * Restaura futuro cliente quando a regra de negocio permite.
  */
-async function restaurarFuturoCliente(linhaId, usuarioId) {
-  const atualizados = await db('lead_linhas')
+async function restaurarFuturoCliente(linhaId, usuarioId, { todos = false } = {}) {
+  const responsavelId = obterResponsavelEscopoLixeira(usuarioId, { todos });
+  const query = db('lead_linhas')
     .where('id', Number(linhaId))
-    .where('futuro_cliente_marcado_por_id', Number(usuarioId))
     .where('futuro_cliente', true)
-    .whereNotNull('futuro_cliente_excluido_em')
-    .update({
+    .whereNotNull('futuro_cliente_excluido_em');
+
+  if (responsavelId !== null) query.where('futuro_cliente_marcado_por_id', responsavelId);
+
+  const atualizados = await query.update({
       futuro_cliente_excluido_em: null,
       futuro_cliente_excluir_definitivo_em: null,
       futuro_cliente_excluido_por_id: null,
@@ -4749,23 +4787,16 @@ async function restaurarFuturoCliente(linhaId, usuarioId) {
 /**
  * Exclui futuro cliente definitivo conforme a regra de negocio.
  */
-async function excluirFuturoClienteDefinitivo(linhaId, usuarioId) {
-  return db('lead_linhas')
+async function excluirFuturoClienteDefinitivo(linhaId, usuarioId, { todos = false } = {}) {
+  const responsavelId = obterResponsavelEscopoLixeira(usuarioId, { todos });
+  const query = db('lead_linhas')
     .where('id', Number(linhaId))
-    .where('futuro_cliente_marcado_por_id', Number(usuarioId))
     .where('futuro_cliente', true)
-    .whereNotNull('futuro_cliente_excluido_em')
-    .update({
-      futuro_cliente: false,
-      futuro_cliente_notas: null,
-      futuro_cliente_retorno: null,
-      futuro_cliente_marcado_em: null,
-      futuro_cliente_marcado_por_id: null,
-      futuro_cliente_excluido_em: null,
-      futuro_cliente_excluir_definitivo_em: null,
-      futuro_cliente_excluido_por_id: null,
-      updated_at: formatarDateTimeSQL()
-    });
+    .whereNotNull('futuro_cliente_excluido_em');
+
+  if (responsavelId !== null) query.where('futuro_cliente_marcado_por_id', responsavelId);
+
+  return query.update(montarPatchExclusaoFuturoCliente());
 }
 
 module.exports = {
@@ -4838,6 +4869,9 @@ module.exports = {
     montarPatchDivisao,
     montarLimpezaStatusReenvio,
     montarPatchReversaoFuturoCliente,
+    montarPatchExclusaoFuturoCliente,
+    obterResponsavelEscopoLixeira,
+    calcularVencimentoLixeiraFuturoCliente,
     deveNotificarNovoFuturoCliente,
     resolverDestinoNovoFuturoCliente,
     obterErroEnvioFuturoClienteDistribuicao,

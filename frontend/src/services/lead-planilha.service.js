@@ -454,27 +454,31 @@ export function enviarFuturoClienteParaDistribuicao(linhaId) {
 /**
  * Lista futuros clientes lixeira conforme os filtros e parametros informados.
  */
-export function listarFuturosClientesLixeira(filtros = {}) {
-  return apiGet(`/lead-planilhas/me/futuros-clientes/lixeira${montarQuery(filtros)}`);
+export function listarFuturosClientesLixeira(filtros = {}, escopoTodos = false) {
+  const escopo = escopoTodos ? '' : '/me';
+  return apiGet(`/lead-planilhas${escopo}/futuros-clientes/lixeira${montarQuery(filtros)}`);
 }
 
 /**
  * Exclui futuro cliente conforme a regra de negocio.
  */
-export function excluirFuturoCliente(linhaId) {
-  return apiDelete(`/lead-planilhas/me/futuros-clientes/${linhaId}`);
+export function excluirFuturoCliente(linhaId, escopoTodos = false) {
+  const escopo = escopoTodos ? '' : '/me';
+  return apiDelete(`/lead-planilhas${escopo}/futuros-clientes/${linhaId}`);
 }
 
 /**
  * Restaura futuro cliente quando a regra de negocio permite.
  */
-export function restaurarFuturoCliente(linhaId) {
-  return apiPost(`/lead-planilhas/me/futuros-clientes/${linhaId}/restaurar`, {});
+export function restaurarFuturoCliente(linhaId, escopoTodos = false) {
+  const escopo = escopoTodos ? '' : '/me';
+  return apiPost(`/lead-planilhas${escopo}/futuros-clientes/${linhaId}/restaurar`, {});
 }
 
 /**
  * Exclui futuro cliente definitivo conforme a regra de negocio.
  */
-export function excluirFuturoClienteDefinitivo(linhaId) {
-  return apiDelete(`/lead-planilhas/me/futuros-clientes/${linhaId}/definitivo`);
+export function excluirFuturoClienteDefinitivo(linhaId, escopoTodos = false) {
+  const escopo = escopoTodos ? '' : '/me';
+  return apiDelete(`/lead-planilhas${escopo}/futuros-clientes/${linhaId}/definitivo`);
 }

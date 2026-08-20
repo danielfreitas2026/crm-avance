@@ -9,6 +9,7 @@ import {
   ResponsavelAtualCard,
   SeletorEscopoFuturosClientes
 } from './FuturosClientesPage';
+import { resolverAcessoLixeiraFuturosClientes } from './futuros-clientes-lixeira';
 import { distribuicaoPermiteAtendimento, formatarDuracaoMinutos, getClasseLinhaLead, getClasseResultadoVenda, isVendaAntigaRegistrada, isFuturoClienteVendido, isVendaRecusada, resolverAbaFuturosClientes } from './lead-status';
 import { montarFiltrosLinhasMailingRecebido } from './mailing-recebido-search';
 import * as leadPlanilhaService from '../../services/lead-planilha.service';
@@ -119,6 +120,49 @@ describe('abas de futuros clientes', () => {
     rerender(<SeletorEscopoFuturosClientes escopoTodos onChange={() => {}} />);
     expect(screen.getByRole('button', { name: 'Meus' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Todos' })).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+describe('permissoes da lixeira de futuros clientes', () => {
+  const usuario = permissoes => ({ ativo: true, role: { nome: 'usuario', permissoes } });
+
+  it('separa envio/restauracao de exclusao definitiva na carteira propria', () => {
+    expect(resolverAcessoLixeiraFuturosClientes(usuario({
+      futuros_clientes_enviar_lixeira: true
+    }))).toEqual({
+      podeEnviarLixeira: true,
+      podeExcluirDefinitivamente: false,
+      podeAcessarLixeira: true
+    });
+
+    expect(resolverAcessoLixeiraFuturosClientes(usuario({
+      futuros_clientes_excluir_definitivamente: true
+    }))).toEqual({
+      podeEnviarLixeira: false,
+      podeExcluirDefinitivamente: true,
+      podeAcessarLixeira: true
+    });
+  });
+
+  it('exige a permissao complementar para atuar na visao Todos', () => {
+    const somenteAcao = usuario({ futuros_clientes_enviar_lixeira: true });
+    const acessoGlobal = usuario({
+      futuros_clientes_enviar_lixeira: true,
+      futuros_clientes_gerenciar_todos: true
+    });
+
+    expect(resolverAcessoLixeiraFuturosClientes(somenteAcao, { escopoTodos: true }).podeAcessarLixeira).toBe(false);
+    expect(resolverAcessoLixeiraFuturosClientes(acessoGlobal, { escopoTodos: true }).podeEnviarLixeira).toBe(true);
+  });
+
+  it('nao oferece a lixeira na aba de encaminhamentos recebidos', () => {
+    const acessoCompleto = usuario({
+      futuros_clientes_enviar_lixeira: true,
+      futuros_clientes_excluir_definitivamente: true,
+      futuros_clientes_gerenciar_todos: true
+    });
+
+    expect(resolverAcessoLixeiraFuturosClientes(acessoCompleto, { modoRecebidos: true }).podeAcessarLixeira).toBe(false);
   });
 });
 

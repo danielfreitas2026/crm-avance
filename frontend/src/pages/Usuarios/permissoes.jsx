@@ -309,6 +309,21 @@ export const GRUPOS_PERMISSOES = [
             chave: 'futuros_clientes_ver_todos',
             nome: 'Visualizar todos os futuros clientes',
             descricao: 'Permite alternar entre a carteira própria e a carteira completa de futuros clientes.'
+          },
+          {
+            chave: 'futuros_clientes_enviar_lixeira',
+            nome: 'Enviar para a lixeira',
+            descricao: 'Permite enviar futuros clientes próprios para a lixeira e restaurá-los.'
+          },
+          {
+            chave: 'futuros_clientes_excluir_definitivamente',
+            nome: 'Excluir definitivamente',
+            descricao: 'Permite remover definitivamente futuros clientes próprios que estão na lixeira.'
+          },
+          {
+            chave: 'futuros_clientes_gerenciar_todos',
+            nome: 'Gerenciar todos os futuros clientes',
+            descricao: 'Amplia as ações autorizadas da lixeira para futuros clientes de qualquer responsável.'
           }
         ]
       }

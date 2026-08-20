@@ -46,6 +46,7 @@ import { calcularProgresso } from '../../utils/progresso';
 import { listarOperadoras } from '../../services/config.service';
 import { buscarGooglePlacesFuturosClientes, consultarCnpj } from '../../services/cnpj.service';
 import FuturoClienteAceiteModal from './FuturoClienteAceiteModal';
+import { resolverAcessoLixeiraFuturosClientes } from './futuros-clientes-lixeira';
 import {
   distribuicaoPermiteAtendimento,
   getClasseLinhaLead,
@@ -3581,8 +3582,11 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
   const notificacaoAbertaRef = useRef(null);
 
   const usuario = useMemo(() => getUsuarioLocal(), []);
-  const podeGerenciar = temPermissao(usuario, 'futuros_clientes_registrar');
   const modoRecebidos = tipo === 'recebidos';
+  const { podeEnviarLixeira, podeExcluirDefinitivamente, podeAcessarLixeira } = resolverAcessoLixeiraFuturosClientes(
+    usuario,
+    { escopoTodos, modoRecebidos }
+  );
   const exibirMetricas = false;
   const linhaNotificacaoId = useMemo(() => {
     const id = Number(searchParams.get('linha_id'));
@@ -3618,7 +3622,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
   useEffect(() => {
     let cancelado = false;
     const listar = modoLixeira
-      ? listarFuturosClientesLixeira
+      ? filtros => listarFuturosClientesLixeira(filtros, escopoTodos)
       : modoRecebidos
         ? listarFuturosClientesRecebidos
         : escopoTodos ? listarQuadroFuturosClientes : listarFuturosClientesLeads;
@@ -3710,8 +3714,8 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
   }, [linhas]);
 
   const totalPaginas = Math.max(1, Math.ceil(total / 50));
-  const podeExcluir = podeGerenciar && !modoRecebidos && !escopoTodos;
-  const totalColunasTabela = colunasDados.length + 5 + (escopoTodos ? 1 : 0) + (modoLixeira ? 2 : 0) + (podeExcluir ? 1 : 0);
+  const exibirColunaAcoes = modoLixeira ? podeAcessarLixeira : podeEnviarLixeira;
+  const totalColunasTabela = colunasDados.length + 5 + (escopoTodos ? 1 : 0) + (modoLixeira ? 2 : 0) + (exibirColunaAcoes ? 1 : 0);
 
   /**
    * Trata o evento de atualizado.
@@ -3801,7 +3805,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     setSucesso('');
 
     try {
-      await excluirFuturoCliente(linha.id);
+      await excluirFuturoCliente(linha.id, escopoTodos);
       setLinhas(prev => prev.filter(item => item.id !== linha.id));
       setTotal(prev => Math.max(0, prev - 1));
       setConfirmacaoLixeira(null);
@@ -3822,7 +3826,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     setSucesso('');
 
     try {
-      await restaurarFuturoCliente(linha.id);
+      await restaurarFuturoCliente(linha.id, escopoTodos);
       setLinhas(prev => prev.filter(item => item.id !== linha.id));
       setTotal(prev => Math.max(0, prev - 1));
       setSucesso('Futuro cliente restaurado.');
@@ -3845,7 +3849,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     setSucesso('');
 
     try {
-      await excluirFuturoClienteDefinitivo(linha.id);
+      await excluirFuturoClienteDefinitivo(linha.id, escopoTodos);
       setLinhas(prev => prev.filter(item => item.id !== linha.id));
       setTotal(prev => Math.max(0, prev - 1));
       setConfirmacaoLixeira(null);
@@ -4066,7 +4070,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
             <button type="button" className="btn" onClick={() => alternarModoLixeira(false)}>
               <I.Return size={14} /> Futuros clientes
             </button>
-          ) : podeExcluir ? (
+          ) : podeAcessarLixeira ? (
             <button type="button" className="btn btn-danger" onClick={() => alternarModoLixeira(true)}>
               <I.Trash size={14} /> Lixeira
             </button>
@@ -4099,7 +4103,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
                   </>
                 )}
                 {colunasDados.map(chave => <th key={chave}><span className="th-label" title={chave}>{chave}</span></th>)}
-                {podeExcluir && <th>{modoLixeira ? 'Acoes' : 'Excluir'}</th>}
+                {exibirColunaAcoes && <th>{modoLixeira ? 'Acoes' : 'Excluir'}</th>}
               </tr>
             </thead>
             <tbody>
@@ -4201,34 +4205,39 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
                         const valor = dados[`${chave} (atualizado)`] ?? dados[chave] ?? '';
                         return <td key={chave} data-label={chave} data-mobile-hidden="true">{valor || '-'}</td>;
                       })}
-                      {podeExcluir && (
+                      {exibirColunaAcoes && (
                         <td data-label={modoLixeira ? 'Acoes' : 'Excluir'} className="futuros-clientes-delete-col m-actions">
                           <div className="futuros-clientes-actions">
                             {modoLixeira ? (
                               <>
-                                <button
-                                  type="button"
-                                  className="btn btn-sm"
-                                  disabled={processandoId === linha.id}
-                                  onClick={event => {
-                                    event.stopPropagation();
-                                    handleRestaurar(linha);
-                                  }}
-                                >
-                                  <I.Return size={13} /> Restaurar
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-icon btn-ghost btn-danger-icon"
-                                  title="Excluir definitivamente"
-                                  disabled={processandoId === linha.id}
-                                  onClick={event => {
-                                    event.stopPropagation();
-                                    setConfirmacaoLixeira({ linha, tipo: 'definitivo' });
-                                  }}
-                                >
-                                  <I.Trash size={13} />
-                                </button>
+                                {podeEnviarLixeira && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm"
+                                    disabled={processandoId === linha.id}
+                                    onClick={event => {
+                                      event.stopPropagation();
+                                      handleRestaurar(linha);
+                                    }}
+                                  >
+                                    <I.Return size={13} /> Restaurar
+                                  </button>
+                                )}
+                                {podeExcluirDefinitivamente && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-icon btn-ghost btn-danger-icon"
+                                    title="Excluir definitivamente"
+                                    aria-label="Excluir definitivamente"
+                                    disabled={processandoId === linha.id}
+                                    onClick={event => {
+                                      event.stopPropagation();
+                                      setConfirmacaoLixeira({ linha, tipo: 'definitivo' });
+                                    }}
+                                  >
+                                    <I.Trash size={13} />
+                                  </button>
+                                )}
                               </>
                             ) : (
                               <button
@@ -4696,7 +4705,7 @@ function FuturosClientesPage() {
 
         {abaAtiva === 'meus' && <>
           {podeVerTodos && <SeletorEscopoFuturosClientes escopoTodos={escopoTodos} onChange={setEscopoTodos} />}
-          <FuturosClientesMainView agora={agora} tipo="meus" escopoTodos={escopoTodos} />
+          <FuturosClientesMainView key={escopoTodos ? 'todos' : 'meus'} agora={agora} tipo="meus" escopoTodos={escopoTodos} />
         </>}
         {abaAtiva === 'recebidos' && <FuturosClientesMainView agora={agora} tipo="recebidos" />}
         {abaAtiva === 'mailings' && <LeadsRecebidosView agora={agora} />}
