@@ -392,6 +392,57 @@ describe('modal de adição de lead', () => {
     enviar.mockRestore();
     localStorage.removeItem('usuario');
   });
+
+  it('carrega o historico sob demanda na visao Todos e mantem os dados bloqueados', async () => {
+    const buscarHistorico = vi.spyOn(leadPlanilhaService, 'obterHistoricoFuturoCliente').mockResolvedValue({
+      linha_id: 61,
+      estado_atual: { rotulo: 'Em atendimento', etapa: 'Negociação', responsavel: { nome: 'Consultora atual' } },
+      eventos: [{
+        tipo: 'registro', data: '2026-08-01 09:00:00', titulo: 'Futuro cliente registrado',
+        usuario: { nome: 'Consultora inicial' }, destinatario: null, motivo: null, detalhe: null
+      }]
+    });
+    render(<FuturoClienteDetalheModal
+      linha={{ id: 61, dados_json: {}, envio: { nome: 'Envio' }, estado_atual: { rotulo: 'Na carteira', etapa: 'Qualificação', responsavel: { nome: 'Consultora inicial' } } }}
+      onClose={() => {}}
+      onAtualizado={() => {}}
+      onRegistrarVenda={() => {}}
+      somenteLeitura
+      exibirHistorico
+    />);
+
+    expect(buscarHistorico).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('CNPJ')).toBeDisabled();
+    fireEvent.click(screen.getByRole('tab', { name: 'Histórico' }));
+
+    await waitFor(() => expect(buscarHistorico).toHaveBeenCalledWith(61));
+    expect(await screen.findByText('Futuro cliente registrado')).toBeVisible();
+    expect(screen.getByText('Por: Consultora inicial')).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Atualizar dados do futuro cliente' })).not.toBeInTheDocument();
+    expect(screen.getByText('Consultora atual')).toBeVisible();
+    buscarHistorico.mockRestore();
+  });
+
+  it('permite tentar novamente quando o historico falha', async () => {
+    const buscarHistorico = vi.spyOn(leadPlanilhaService, 'obterHistoricoFuturoCliente')
+      .mockRejectedValueOnce(new Error('Falha temporária'))
+      .mockResolvedValueOnce({ linha_id: 62, estado_atual: null, eventos: [] });
+    render(<FuturoClienteDetalheModal
+      linha={{ id: 62, dados_json: {}, envio: { nome: 'Envio' }, estado_atual: { rotulo: 'Na carteira' } }}
+      onClose={() => {}}
+      onAtualizado={() => {}}
+      onRegistrarVenda={() => {}}
+      somenteLeitura
+      exibirHistorico
+    />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Histórico' }));
+    expect(await screen.findByText('Falha temporária')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    expect(await screen.findByText('Nenhum evento comercial encontrado.')).toBeVisible();
+    expect(buscarHistorico).toHaveBeenCalledTimes(2);
+    buscarHistorico.mockRestore();
+  });
 });
 
 describe('ocultação visual de venda registrada no mailing', () => {

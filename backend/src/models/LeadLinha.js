@@ -122,6 +122,14 @@ class LeadLinha extends Model {
           from: 'lead_linhas.futuro_cliente_excluido_por_id',
           to: 'usuarios.id'
         }
+      },
+      futuroClienteMarcadoPor: {
+        relation: Model.BelongsToOneRelation,
+        modelClass: Usuario,
+        join: {
+          from: 'lead_linhas.futuro_cliente_marcado_por_id',
+          to: 'usuarios.id'
+        }
       }
     };
   }

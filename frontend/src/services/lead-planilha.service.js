@@ -419,6 +419,11 @@ export function listarFuturosClientesRecebidos(filtros = {}) {
   return apiGet(`/lead-planilhas/me/futuros-clientes/recebidos${montarQuery(filtros)}`);
 }
 
+/** Carrega a jornada comercial completa de um futuro cliente da visão Todos. */
+export function obterHistoricoFuturoCliente(linhaId) {
+  return apiGet(`/lead-planilhas/futuros-clientes/${linhaId}/historico`);
+}
+
 export function listarEstatisticasFuturosClientes(filtros = {}) {
   return apiGet(`/lead-planilhas/futuros-clientes/estatisticas/resumo${montarQuery(filtros)}`);
 }

@@ -396,6 +396,7 @@ router.put(
 router.post('/exportar', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.exportar);
 router.post('/exportar-xlsx/:id', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.exportarPlanilhaXlsx);
 router.get('/futuros-clientes', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.listarTodosFuturosClientes);
+router.get('/futuros-clientes/:id/historico', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.historicoFuturoCliente);
 router.post(
   '/futuros-clientes/republicar-pendentes-telegram',
   exigirUmaPermissao(['gerenciar_leads']),

@@ -26,6 +26,7 @@ import {
   listarFuturosClientesLeads,
   listarFuturosClientesRecebidos,
   listarFuturosClientesLixeira,
+  obterHistoricoFuturoCliente,
   listarVendasCandidatasLead,
   listarQuadroFuturosClientes,
   listarMetricasFuturosClientes,
@@ -2679,7 +2680,8 @@ export function FuturoClienteDetalheModal({
   onDistribuido,
   onRegistrarVenda,
   somenteLeitura = false,
-  permitirReenvioTelegram = false
+  permitirReenvioTelegram = false,
+  exibirHistorico = false
 }) {
   const dialogRef = useDialogAcessivel(onClose);
   const vendaRegistrada = isFuturoClienteVendido(linha);
@@ -2710,6 +2712,10 @@ export function FuturoClienteDetalheModal({
   const [terminal, setTerminal] = useState(() => formatarWhatsappInput(linha.sondagem?.terminal || ''));
   const [dataAtivacao, setDataAtivacao] = useState(() => String(linha.sondagem?.data_ativacao || '').slice(0, 10));
   const [distribuindo, setDistribuindo] = useState(false);
+  const [abaDetalhe, setAbaDetalhe] = useState('dados');
+  const [historico, setHistorico] = useState(null);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+  const [erroHistorico, setErroHistorico] = useState('');
   const valorMensalEstimado = chipsItens.reduce((total, item) => total
     + ((Number(item.quantidade) || 0) * moedaBRParaNumero(item.preco_por_chip)), 0);
 
@@ -2744,6 +2750,25 @@ export function FuturoClienteDetalheModal({
       (!somenteLeitura && ehDono && !jaEnviadoTelegram)
       || temPermissoesReenvio
     );
+
+  const estadoAtual = historico?.estado_atual || linha.estado_atual;
+
+  async function carregarHistorico() {
+    setCarregandoHistorico(true);
+    setErroHistorico('');
+    try {
+      setHistorico(await obterHistoricoFuturoCliente(linha.id));
+    } catch (error) {
+      setErroHistorico(error.message || 'Não foi possível carregar o histórico.');
+    } finally {
+      setCarregandoHistorico(false);
+    }
+  }
+
+  function abrirAbaDetalhe(aba) {
+    setAbaDetalhe(aba);
+    if (aba === 'historico' && !historico && !carregandoHistorico) carregarHistorico();
+  }
 
   const camposLead = useMemo(() => {
     const dados = linha.dados_json || {};
@@ -2882,6 +2907,50 @@ export function FuturoClienteDetalheModal({
         </div>
 
         <div className="modal-body futuro-cliente-detalhe__body">
+          {exibirHistorico && (
+            <>
+              <section className="futuro-cliente-estado-atual" aria-label="Resumo operacional atual">
+                <div><span>Situação</span><strong>{estadoAtual?.rotulo || 'Situação não informada'}</strong></div>
+                <div><span>Com quem está</span><strong>{estadoAtual?.responsavel?.nome || 'Sem responsável'}</strong></div>
+                <div><span>Etapa</span><strong>{estadoAtual?.etapa || '-'}</strong></div>
+                <div><span>Retorno ou prazo</span><strong>{formatarDataHora(estadoAtual?.retorno_em || estadoAtual?.prazo_em)}</strong></div>
+                {estadoAtual?.ultimo_retorno?.motivo && <div className="futuro-cliente-estado-atual__motivo"><span>Última devolução</span><strong>{estadoAtual.ultimo_retorno.motivo}</strong></div>}
+              </section>
+              <div className="futuro-cliente-detalhe__tabs" role="tablist" aria-label="Detalhes do futuro cliente">
+                <button type="button" role="tab" aria-selected={abaDetalhe === 'dados'} className={abaDetalhe === 'dados' ? 'is-active' : ''} onClick={() => abrirAbaDetalhe('dados')}>Dados atuais</button>
+                <button type="button" role="tab" aria-selected={abaDetalhe === 'historico'} className={abaDetalhe === 'historico' ? 'is-active' : ''} onClick={() => abrirAbaDetalhe('historico')}>Histórico</button>
+              </div>
+            </>
+          )}
+          {exibirHistorico && abaDetalhe === 'historico' ? (
+            <section className="futuro-cliente-historico" aria-label="Histórico comercial">
+              {carregandoHistorico ? <div className="futuro-cliente-detalhe__vazio">Carregando histórico...</div> : erroHistorico ? (
+                <div className="futuro-cliente-historico__erro">
+                  <span>{erroHistorico}</span>
+                  <button type="button" className="btn btn-sm" onClick={carregarHistorico}>Tentar novamente</button>
+                </div>
+              ) : historico?.eventos?.length ? (
+                <ol className="futuro-cliente-timeline">
+                  {historico.eventos.map((evento, indice) => (
+                    <li key={`${evento.tipo}-${evento.data}-${indice}`}>
+                      <span className="futuro-cliente-timeline__marcador" aria-hidden="true" />
+                      <div className="futuro-cliente-timeline__conteudo">
+                        <time>{formatarDataHora(evento.data)}</time>
+                        <strong>{evento.titulo}</strong>
+                        {evento.detalhe && <p>{evento.detalhe}</p>}
+                        <div className="futuro-cliente-timeline__meta">
+                          {evento.usuario?.nome && <span>Por: {evento.usuario.nome}</span>}
+                          {evento.destinatario?.nome && <span>Para: {evento.destinatario.nome}</span>}
+                        </div>
+                        {evento.motivo && <div className="futuro-cliente-timeline__motivo"><b>Motivo:</b> {evento.motivo}</div>}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : <div className="futuro-cliente-detalhe__vazio">Nenhum evento comercial encontrado.</div>}
+            </section>
+          ) : (
+          <>
           <div className="futuro-cliente-detalhe__resumos">
             <section className="futuro-cliente-detalhe__painel" aria-labelledby="futuro-cliente-dados-planilha">
               <header className="futuro-cliente-detalhe__painel-header">
@@ -3085,6 +3154,8 @@ export function FuturoClienteDetalheModal({
           </section>
 
           {erro && <div className="alert-error" style={{ marginTop: 8 }}>{erro}</div>}
+          </>
+          )}
         </div>
 
         <div className="modal-footer futuro-cliente-detalhe__footer">
@@ -3583,7 +3654,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
 
   const totalPaginas = Math.max(1, Math.ceil(total / 50));
   const podeExcluir = podeGerenciar && !modoRecebidos && !escopoTodos;
-  const totalColunasTabela = colunasDados.length + 5 + (modoLixeira ? 2 : 0) + (podeExcluir ? 1 : 0);
+  const totalColunasTabela = colunasDados.length + 5 + (escopoTodos ? 1 : 0) + (modoLixeira ? 2 : 0) + (podeExcluir ? 1 : 0);
 
   /**
    * Trata o evento de atualizado.
@@ -3595,7 +3666,18 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
 
   function handleDistribuido(linhaDistribuida, reencaminhado = false) {
     if (escopoTodos) {
-      setLinhas(prev => prev.map(item => item.id === linhaDistribuida.id ? { ...item, ...linhaDistribuida } : item));
+      setLinhas(prev => prev.map(item => item.id === linhaDistribuida.id ? {
+        ...item,
+        ...linhaDistribuida,
+        estado_atual: {
+          ...(item.estado_atual || {}),
+          codigo: 'disponivel_distribuicao',
+          rotulo: 'Disponível para distribuição',
+          etapa: 'Telegram',
+          responsavel: null,
+          prazo_em: null
+        }
+      } : item));
     } else {
       setLinhas(prev => prev.filter(item => item.id !== linhaDistribuida.id));
       setTotal(prev => Math.max(0, prev - 1));
@@ -3762,6 +3844,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
           permitirReenvioTelegram={escopoTodos
             && podeGerenciar
             && temPermissao(usuario, 'futuros_clientes_ver_todos')}
+          exibirHistorico={escopoTodos}
         />
       )}
 
@@ -3943,6 +4026,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
                 <th>Envio</th>
                 <th>Notas</th>
                 <th>Situação</th>
+                {escopoTodos && <th>Com quem está</th>}
                 <th>Retorno</th>
                 <th>{modoLixeira ? 'Enviado para lixeira' : 'Marcado em'}</th>
                 {modoLixeira && (
@@ -3985,7 +4069,13 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
                             <dt>Notas</dt>
                             <dd>{linha.futuro_cliente_notas || '-'}</dd>
                             <dt>Situação</dt>
-                            <dd>{renderFuturoClienteSituacao(linha)}</dd>
+                            <dd>{escopoTodos ? linha.estado_atual?.rotulo || '-' : renderFuturoClienteSituacao(linha)}</dd>
+                            {escopoTodos && (
+                              <>
+                                <dt>Com quem está</dt>
+                                <dd>{linha.estado_atual?.responsavel?.nome || 'Sem responsável'}</dd>
+                              </>
+                            )}
                             <dt>Retorno</dt>
                             <dd className={isRetornoFuturoClienteVencido(linha.futuro_cliente_retorno, agora) ? 'future-return-overdue' : ''}>
                               {linha.futuro_cliente_retorno ? formatarDataHora(linha.futuro_cliente_retorno) : '-'}
@@ -4021,8 +4111,16 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
                         </span>
                       </td>
                       <td data-label="Situação" className="m-meta">
-                        {renderFuturoClienteSituacao(linha)}
+                        {escopoTodos ? <span className={`pill futuro-cliente-estado futuro-cliente-estado--${linha.estado_atual?.codigo || 'indefinido'}`}><span className="pill-dot" />{linha.estado_atual?.rotulo || '-'}</span> : renderFuturoClienteSituacao(linha)}
                       </td>
+                      {escopoTodos && (
+                        <td data-label="Com quem está" className="m-meta futuro-cliente-responsavel-atual">
+                          <strong>{linha.estado_atual?.responsavel?.nome || 'Sem responsável'}</strong>
+                          <small>{linha.estado_atual?.etapa || '-'}</small>
+                          {(linha.estado_atual?.retorno_em || linha.estado_atual?.prazo_em) && <small>{formatarDataHora(linha.estado_atual.retorno_em || linha.estado_atual.prazo_em)}</small>}
+                          {linha.estado_atual?.ultimo_retorno?.motivo && <small title={linha.estado_atual.ultimo_retorno.motivo}>Última devolução: {linha.estado_atual.ultimo_retorno.motivo}</small>}
+                        </td>
+                      )}
                       <td data-label="Retorno" className="m-meta">
                         {linha.futuro_cliente_retorno ? (
                           <span className={`pill ${isRetornoFuturoClienteVencido(linha.futuro_cliente_retorno, agora) ? 'danger future-return-overdue' : 'success'}`}>

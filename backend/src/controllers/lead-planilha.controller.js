@@ -397,6 +397,15 @@ async function listarTodosFuturosClientes(req, res) {
   }
 }
 
+async function historicoFuturoCliente(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.obterHistoricoFuturoCliente(req.params.id));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Erro ao carregar o historico do futuro cliente.' });
+  }
+}
+
 /** Republica no Telegram somente futuros clientes antigos que nunca foram encaminhados. */
 async function republicarPendentesAntigosTelegram(req, res) {
   try {
@@ -764,6 +773,7 @@ module.exports = {
   reverterChamadaNaoAtendida,
   marcarRetorno,
   listarFuturosClientesLixeira,
+  historicoFuturoCliente,
   excluirFuturoCliente,
   restaurarFuturoCliente,
   excluirFuturoClienteDefinitivo,

@@ -157,12 +157,14 @@ async function obterDistribuicoesUsuario(linhaIds, usuarioId, trx = db) {
   const ids = Array.from(new Set((linhaIds || []).map(Number).filter(Boolean)));
   if (!ids.length) return new Map();
 
-  const query = trx('lead_atribuicoes')
-    .whereIn('lead_linha_id', ids)
-    .where({ etapa: 'venda' })
-    .whereNotNull('aceite_status')
-    .orderBy('id', 'desc');
-  if (usuarioId) query.where('usuario_id', Number(usuarioId));
+  const query = trx('lead_atribuicoes as la')
+    .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
+    .whereIn('la.lead_linha_id', ids)
+    .where('la.etapa', 'venda')
+    .whereNotNull('la.aceite_status')
+    .select('la.*', 'u.nome as usuario_nome')
+    .orderBy('la.id', 'desc');
+  if (usuarioId) query.where('la.usuario_id', Number(usuarioId));
   const atribuicoes = await query;
 
   const mapa = new Map();
@@ -182,7 +184,13 @@ function dadosDistribuicao(atribuicao) {
     aceite_em: atribuicao.aceite_em || null,
     prazo_acao_em: atribuicao.prazo_acao_em || null,
     acao_registrada_em: atribuicao.acao_registrada_em || null,
-    acao_registrada_tipo: atribuicao.acao_registrada_tipo || null
+    acao_registrada_tipo: atribuicao.acao_registrada_tipo || null,
+    usuario_id: Number(atribuicao.usuario_id) || null,
+    usuario_nome: atribuicao.usuario_nome || null,
+    atribuido_em: atribuicao.atribuido_em || null,
+    finalizado_em: atribuicao.finalizado_em || null,
+    motivo_resultado: atribuicao.motivo_resultado || null,
+    cancelamento_motivo: atribuicao.cancelamento_motivo || null
   };
 }
 

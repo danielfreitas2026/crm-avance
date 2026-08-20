@@ -3061,7 +3061,7 @@ async function listarFuturosClientes(filtros = {}, usuarioId) {
 
   const total = await query.clone().resultSize();
   const linhas = await query
-    .withGraphFetched('[planilha, envio, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
+    .withGraphFetched('[planilha, envio, atribuidoPara, futuroClienteMarcadoPor, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
     .orderBy('futuro_cliente_marcado_em', 'desc')
     .orderBy('id', 'desc')
     .offset((page - 1) * pageSize)
@@ -3083,7 +3083,11 @@ async function listarFuturosClientes(filtros = {}, usuarioId) {
           detalhes_bloqueados: false
         };
     });
-  const data = await adicionarClassificacaoVendas(formatadas);
+  const classificadas = await adicionarClassificacaoVendas(formatadas);
+  const data = usuarioId ? classificadas : classificadas.map(linha => ({
+    ...linha,
+    estado_atual: resolverEstadoAtualFuturoCliente(linha, linha.distribuicao)
+  }));
 
   return {
     data,
@@ -3492,6 +3496,208 @@ function primeiraAcaoLinha(linha) {
     || linha.chamada_nao_atendida_em
     || linha.venda_recusada_em
     || null;
+}
+
+const STATUS_ATRIBUICAO_ATIVOS = new Set([
+  leadDistribuicaoService.ACEITE_AGUARDANDO,
+  leadDistribuicaoService.ACEITE_ACEITO
+]);
+
+function usuarioResumo(id, nome, fallback = null) {
+  const usuarioId = Number(id) || null;
+  if (!usuarioId && !nome) return fallback;
+  return { id: nome ? usuarioId : null, nome: nome || 'Usuário removido' };
+}
+
+function motivoDevolucao(distribuicao) {
+  return distribuicao?.cancelamento_motivo || distribuicao?.motivo_resultado || null;
+}
+
+function resolverEstadoAtualFuturoCliente(linha, distribuicao = null) {
+  const responsavelCarteira = usuarioResumo(
+    linha?.atribuidoPara?.id || linha?.atribuido_para_id || linha?.futuroClienteMarcadoPor?.id || linha?.futuro_cliente_marcado_por_id,
+    linha?.atribuidoPara?.nome || linha?.futuroClienteMarcadoPor?.nome || linha?.sondagem?.usuario?.nome
+  );
+  const responsavelDistribuicao = usuarioResumo(distribuicao?.usuario_id, distribuicao?.usuario_nome);
+  const ultimoRetorno = distribuicao && !STATUS_ATRIBUICAO_ATIVOS.has(distribuicao.status) ? {
+    codigo: distribuicao.status,
+    motivo: motivoDevolucao(distribuicao),
+    em: distribuicao.finalizado_em || distribuicao.recusado_em || null,
+    responsavel: responsavelDistribuicao
+  } : null;
+  const base = {
+    responsavel: null,
+    desde_em: null,
+    prazo_em: null,
+    retorno_em: linha?.retorno_agendado_em || linha?.futuro_cliente_retorno || null,
+    ultimo_retorno: ultimoRetorno,
+    final: false
+  };
+
+  if (linha?.venda_id || linha?.status_operacional === 'vendido' || linha?.venda_classificacao?.tipo === 'venda_futuro_cliente') {
+    return { ...base, codigo: 'venda_registrada', rotulo: 'Venda registrada', etapa: 'Finalizado', responsavel: responsavelCarteira, final: true };
+  }
+  if (linha?.cliente_recusou) {
+    return { ...base, codigo: 'cliente_recusou', rotulo: 'Cliente recusou', etapa: 'Finalizado', responsavel: responsavelCarteira, final: true };
+  }
+  if (linha?.venda_recusada_em || linha?.status_operacional === 'perdido') {
+    return { ...base, codigo: 'venda_recusada', rotulo: 'Venda recusada', etapa: 'Finalizado', responsavel: responsavelCarteira, final: true };
+  }
+  if (distribuicao?.status === leadDistribuicaoService.ACEITE_AGUARDANDO) {
+    return { ...base, codigo: 'aguardando_aceite', rotulo: 'Aguardando aceite', etapa: 'Telegram', responsavel: responsavelDistribuicao, desde_em: distribuicao.atribuido_em, prazo_em: distribuicao.prazo_acao_em };
+  }
+  if (distribuicao?.status === leadDistribuicaoService.ACEITE_ACEITO) {
+    const retorno = base.retorno_em && !linha?.retorno_agendado_realizado_em && !linha?.futuro_cliente_retorno_realizado_em;
+    return { ...base, codigo: retorno ? 'retorno_marcado' : 'em_atendimento', rotulo: retorno ? 'Retorno marcado' : 'Em atendimento', etapa: 'Negociação', responsavel: responsavelDistribuicao, desde_em: distribuicao.aceite_em || distribuicao.atribuido_em, prazo_em: distribuicao.prazo_acao_em };
+  }
+  if (base.retorno_em && !linha?.retorno_agendado_realizado_em && !linha?.futuro_cliente_retorno_realizado_em) {
+    return { ...base, codigo: 'retorno_marcado', rotulo: 'Retorno marcado', etapa: 'Acompanhamento', responsavel: responsavelCarteira };
+  }
+  if (linha?.futuro_cliente_destino === 'distribuicao') {
+    return { ...base, codigo: ultimoRetorno ? 'devolvido' : 'disponivel_distribuicao', rotulo: ultimoRetorno ? 'Devolvido' : 'Disponível para distribuição', etapa: 'Telegram' };
+  }
+  return { ...base, codigo: 'na_carteira', rotulo: 'Na carteira', etapa: 'Qualificação', responsavel: responsavelCarteira, desde_em: linha?.futuro_cliente_marcado_em || null };
+}
+
+const AUDITORIAS_JORNADA = new Map([
+  ['lead_linha.futuro_cliente_marcado', ['registro', 'Futuro cliente registrado']],
+  ['lead_linha.futuro_cliente_marcado_admin', ['registro', 'Futuro cliente registrado']],
+  ['lead_linha.futuro_cliente_enviado_distribuicao', ['reencaminhamento', 'Encaminhado ao Telegram']],
+  ['lead_linha.retorno_marcado', ['retorno_marcado', 'Retorno marcado']],
+  ['lead_linha.retorno_marcado_admin', ['retorno_marcado', 'Retorno marcado']],
+  ['lead_linha.chamada_nao_atendida', ['chamada_nao_atendida', 'Chamada não atendida']],
+  ['lead_linha.chamada_nao_atendida_admin', ['chamada_nao_atendida', 'Chamada não atendida']],
+  ['lead_linha.chamada_nao_atendida_revertida', ['reversao', 'Chamada não atendida revertida']],
+  ['lead_linha.chamada_nao_atendida_revertida_admin', ['reversao', 'Chamada não atendida revertida']],
+  ['lead_linha.cliente_recusou', ['cliente_recusou', 'Cliente recusou']],
+  ['lead_linha.cliente_recusou_admin', ['cliente_recusou', 'Cliente recusou']],
+  ['lead_linha.cliente_recusou_revertido', ['reversao', 'Recusa do cliente revertida']],
+  ['lead_linha.cliente_recusou_revertido_admin', ['reversao', 'Recusa do cliente revertida']],
+  ['lead_linha.venda_recusada', ['venda_recusada', 'Venda recusada']],
+  ['lead_linha.venda_recusada_admin', ['venda_recusada', 'Venda recusada']],
+  ['lead_linha.venda_recusada_revertida', ['reversao', 'Recusa da venda revertida']],
+  ['lead_linha.venda_recusada_revertida_admin', ['reversao', 'Recusa da venda revertida']],
+  ['lead_linha.venda_vinculada_manual', ['venda_registrada', 'Venda registrada']],
+  ['lead_linha.venda_desvinculada_manual', ['reversao', 'Vínculo da venda removido']]
+]);
+
+function nomeUsuarioRegistro(registro, prefixo = 'usuario') {
+  const id = registro?.[`${prefixo}_id`];
+  const nome = registro?.[`${prefixo}_nome`];
+  if (!id && !nome) return null;
+  return usuarioResumo(id, nome);
+}
+
+function montarEventosHistoricoFuturoCliente(linha, atribuicoes = [], auditorias = [], venda = null) {
+  const eventos = [];
+  const tiposAuditoria = new Set();
+  for (const audit of auditorias) {
+    const configuracao = AUDITORIAS_JORNADA.get(audit.acao);
+    if (!configuracao) continue;
+    const dados = parseJson(audit.dados, {});
+    const [tipo, titulo] = configuracao;
+    tiposAuditoria.add(tipo);
+    eventos.push({
+      tipo,
+      data: audit.created_at,
+      titulo,
+      detalhe: dados.observacao || dados.detalhe || null,
+      motivo: dados.motivo || null,
+      usuario: nomeUsuarioRegistro(audit),
+      destinatario: null
+    });
+  }
+
+  for (const atribuicao of atribuicoes) {
+    const destinatario = nomeUsuarioRegistro(atribuicao);
+    const criador = nomeUsuarioRegistro(atribuicao, 'criador');
+    eventos.push({
+      tipo: 'atribuicao', data: atribuicao.atribuido_em || atribuicao.created_at,
+      titulo: atribuicao.etapa === 'sondagem' ? 'Recebido para qualificação' : 'Encaminhado para atendimento',
+      detalhe: atribuicao.etapa === 'venda' && !destinatario ? 'Distribuição gerenciada pelo Telegram' : null,
+      motivo: null, usuario: criador, destinatario: destinatario || (atribuicao.etapa === 'venda' ? { id: null, nome: 'Gerência via Telegram' } : null)
+    });
+    if (atribuicao.etapa === 'venda' && atribuicao.aceite_em) {
+      eventos.push({ tipo: 'aceite', data: atribuicao.aceite_em, titulo: 'Atendimento aceito', detalhe: null, motivo: null, usuario: destinatario, destinatario: null });
+    }
+    if (atribuicao.etapa === 'venda' && !STATUS_ATRIBUICAO_ATIVOS.has(atribuicao.aceite_status) && atribuicao.finalizado_em) {
+      eventos.push({
+        tipo: 'devolucao', data: atribuicao.finalizado_em, titulo: 'Devolvido para novo encaminhamento',
+        detalhe: null, motivo: motivoDevolucao(atribuicao), usuario: destinatario, destinatario: null
+      });
+    }
+  }
+
+  if (!tiposAuditoria.has('registro')) {
+    eventos.push({ tipo: 'registro', data: linha.futuro_cliente_marcado_em || linha.created_at, titulo: 'Futuro cliente registrado', detalhe: 'Registro recuperado de dados anteriores ao histórico.', motivo: null, usuario: usuarioResumo(linha.futuro_cliente_marcado_por_id, linha.futuroClienteMarcadoPor?.nome), destinatario: null });
+  }
+  const retornoMarcado = linha.retorno_agendado_em || linha.futuro_cliente_retorno;
+  if (retornoMarcado && !tiposAuditoria.has('retorno_marcado')) {
+    eventos.push({
+      tipo: 'retorno_marcado', data: linha.updated_at || linha.futuro_cliente_marcado_em,
+      titulo: 'Retorno marcado', detalhe: 'Retorno recuperado de um registro anterior ao histórico.',
+      motivo: linha.retorno_agendado_observacao || null,
+      usuario: usuarioResumo(linha.retorno_agendado_por_id || linha.futuro_cliente_marcado_por_id, null), destinatario: null
+    });
+  }
+  const retornoRealizadoEm = linha.retorno_agendado_realizado_em || linha.futuro_cliente_retorno_realizado_em;
+  if (retornoRealizadoEm) {
+    eventos.push({
+      tipo: 'retorno_realizado', data: retornoRealizadoEm, titulo: 'Retorno realizado', detalhe: null, motivo: null,
+      usuario: usuarioResumo(linha.retorno_agendado_realizado_por_id || linha.futuro_cliente_retorno_realizado_por_id, null), destinatario: null
+    });
+  }
+  if (linha.cliente_recusou && !tiposAuditoria.has('cliente_recusou')) {
+    eventos.push({ tipo: 'cliente_recusou', data: linha.cliente_recusou_em || linha.updated_at, titulo: 'Cliente recusou', detalhe: null, motivo: linha.cliente_recusou_motivo || null, usuario: usuarioResumo(linha.cliente_recusou_por_id, null), destinatario: null });
+  }
+  if ((linha.venda_recusada_em || linha.status_operacional === 'perdido') && !tiposAuditoria.has('venda_recusada')) {
+    eventos.push({ tipo: 'venda_recusada', data: linha.venda_recusada_em || linha.updated_at, titulo: 'Venda recusada', detalhe: null, motivo: linha.venda_recusada_motivo || null, usuario: usuarioResumo(linha.venda_recusada_por_id, null), destinatario: null });
+  }
+  if ((venda || linha.venda_id || linha.status_operacional === 'vendido') && !tiposAuditoria.has('venda_registrada')) {
+    eventos.push({ tipo: 'venda_registrada', data: venda?.created_at || venda?.data_venda || linha.updated_at, titulo: 'Venda registrada', detalhe: null, motivo: null, usuario: usuarioResumo(venda?.criado_por_id, venda?.usuario_nome), destinatario: null });
+  }
+  return eventos
+    .filter(evento => evento.data)
+    .sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
+}
+
+async function obterHistoricoFuturoCliente(linhaId) {
+  const id = Number(linhaId);
+  const linha = Number.isInteger(id) && id > 0 ? await LeadLinha.query()
+    .findById(id)
+    .where('futuro_cliente', true)
+    .whereNull('futuro_cliente_excluido_em')
+    .withGraphFetched('[atribuidoPara, futuroClienteMarcadoPor, sondagem.usuario]') : null;
+  if (!linha) {
+    const error = new Error('Futuro cliente não encontrado.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const atribuicoes = await db('lead_atribuicoes as la')
+    .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
+    .leftJoin('usuarios as uc', 'uc.id', 'la.criado_por_id')
+    .where('la.lead_linha_id', id)
+    .select('la.*', 'u.nome as usuario_nome', 'uc.nome as criador_nome')
+    .orderBy('la.id', 'asc');
+  const auditorias = await db('audit_logs as al')
+    .leftJoin('usuarios as u', 'u.id', 'al.usuario_id')
+    .where('al.entidade', 'lead_linhas')
+    .where('al.entidade_id', String(id))
+    .whereIn('al.acao', [...AUDITORIAS_JORNADA.keys()])
+    .select('al.*', 'u.nome as usuario_nome')
+    .orderBy('al.id', 'asc');
+  const venda = await db('vendas as v')
+    .leftJoin('usuarios as u', 'u.id', 'v.criado_por_id')
+    .where(builder => builder.where('v.id', Number(linha.venda_id) || 0).orWhere('v.origem_lead_linha_id', id))
+    .select('v.id', 'v.created_at', 'v.data_venda', 'v.criado_por_id', 'u.nome as usuario_nome')
+    .orderBy('v.id', 'desc').first();
+  const ultimaDistribuicao = atribuicoes.filter(item => item.etapa === 'venda').at(-1) || null;
+  const formatada = (await adicionarClassificacaoVendas([formatarLinha(linha)]))[0];
+  return {
+    linha_id: id,
+    estado_atual: resolverEstadoAtualFuturoCliente(formatada, ultimaDistribuicao),
+    eventos: montarEventosHistoricoFuturoCliente(formatada, atribuicoes, auditorias, venda)
+  };
 }
 
 function dataIsoEstatisticas(valor) {
@@ -4563,6 +4769,7 @@ module.exports = {
   enviarFuturoClienteParaDistribuicao,
   reverterFuturoClienteLead,
   listarFuturosClientes,
+  obterHistoricoFuturoCliente,
   listarFuturosClientesRecebidos,
   obterEstatisticasResumo,
   obterEstatisticasMailings,
@@ -4606,6 +4813,8 @@ module.exports = {
     deveNotificarNovoFuturoCliente,
     resolverDestinoNovoFuturoCliente,
     obterErroEnvioFuturoClienteDistribuicao,
+    resolverEstadoAtualFuturoCliente,
+    montarEventosHistoricoFuturoCliente,
     adicionarClassificacaoVendas,
     dataIsoEstatisticas,
     dataDentroPeriodo,

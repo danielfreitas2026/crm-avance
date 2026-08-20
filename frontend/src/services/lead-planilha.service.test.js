@@ -13,6 +13,7 @@ import {
   adminDesvincularVendaLead,
   adminVincularVendaLead,
   enviarFuturoClienteParaDistribuicao,
+  obterHistoricoFuturoCliente,
   listarVendasCandidatasLead
 } from './lead-planilha.service';
 
@@ -48,5 +49,11 @@ describe('distribuicao de futuro cliente reservado', () => {
     await enviarFuturoClienteParaDistribuicao(81);
 
     expect(apiPost).toHaveBeenCalledWith('/lead-planilhas/me/futuros-clientes/81/distribuir', {});
+  });
+
+  it('consulta o historico comercial no endpoint protegido da visao Todos', async () => {
+    await obterHistoricoFuturoCliente(81);
+
+    expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/81/historico');
   });
 });
