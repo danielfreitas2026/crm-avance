@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AdicionarLeadModal,
   AvaliacaoPrimeiraLigacao,
@@ -10,6 +10,7 @@ import {
 } from './FuturosClientesPage';
 import { formatarDuracaoMinutos, getClasseLinhaLead, isVendaAntigaRegistrada, isFuturoClienteVendido, isVendaRecusada, resolverAbaFuturosClientes } from './lead-status';
 import { montarFiltrosLinhasMailingRecebido } from './mailing-recebido-search';
+import * as leadPlanilhaService from '../../services/lead-planilha.service';
 
 describe('status de venda recusada no mailing recebido', () => {
   const recusadaAposReversao = {
@@ -331,6 +332,64 @@ describe('modal de adição de lead', () => {
 
     render(<FuturoClienteDetalheModal linha={{ ...linha, futuro_cliente_destino: null }} {...props} />);
     expect(screen.queryByRole('button', { name: /Enviar para distribuição/i })).not.toBeInTheDocument();
+    localStorage.removeItem('usuario');
+  });
+
+  it('permite republicar na visao completa somente com as duas permissoes e pede confirmacao', async () => {
+    const linha = {
+      id: 32,
+      atribuido_para_id: 9,
+      futuro_cliente_marcado_por_id: 9,
+      futuro_cliente_destino: 'distribuicao',
+      status_operacional: 'qualificado',
+      etapa_atual: 'sondagem',
+      dados_json: { 'Razão social': 'Empresa republicada' },
+      envio: { nome: 'Envio futuro' },
+      sondagem: { chips_itens: [], usuario: { nome: 'Consultora teste' } }
+    };
+    const props = {
+      linha,
+      onClose: () => {},
+      onAtualizado: () => {},
+      onRegistrarVenda: () => {},
+      somenteLeitura: true,
+      permitirReenvioTelegram: true
+    };
+
+    localStorage.setItem('usuario', JSON.stringify({
+      id: 7,
+      ativo: true,
+      permissoes: { futuros_clientes_ver_todos: true }
+    }));
+    const { unmount } = render(<FuturoClienteDetalheModal {...props} />);
+    expect(screen.queryByRole('button', { name: /Reencaminhar ao Telegram/i })).not.toBeInTheDocument();
+    unmount();
+
+    localStorage.setItem('usuario', JSON.stringify({
+      id: 7,
+      ativo: true,
+      permissoes: {
+        futuros_clientes_ver_todos: true,
+        futuros_clientes_registrar: true
+      }
+    }));
+    const onDistribuido = vi.fn();
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const enviar = vi.spyOn(leadPlanilhaService, 'enviarFuturoClienteParaDistribuicao').mockResolvedValue({ linha });
+    render(<FuturoClienteDetalheModal {...props} onDistribuido={onDistribuido} />);
+
+    const botao = screen.getByRole('button', { name: /Reencaminhar ao Telegram/i });
+    expect(screen.getByLabelText('CNPJ')).toBeDisabled();
+    fireEvent.click(botao);
+    expect(confirmar).toHaveBeenCalledTimes(1);
+    expect(enviar).not.toHaveBeenCalled();
+
+    fireEvent.click(botao);
+    await waitFor(() => expect(enviar).toHaveBeenCalledWith(32));
+    expect(onDistribuido).toHaveBeenCalledWith(linha, true);
+
+    confirmar.mockRestore();
+    enviar.mockRestore();
     localStorage.removeItem('usuario');
   });
 });

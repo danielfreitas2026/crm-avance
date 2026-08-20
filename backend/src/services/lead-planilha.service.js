@@ -13,8 +13,10 @@ const LeadEnvio = require('../models/LeadEnvio');
 const LeadEnvioUsuario = require('../models/LeadEnvioUsuario');
 const LeadAtribuicao = require('../models/LeadAtribuicao');
 const LeadSondagem = require('../models/LeadSondagem');
+const Usuario = require('../models/Usuario');
 const db = require('../database/connection');
 const { parseUtcDateTime } = require('../utils/datetime');
+const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
 const clienteAntigoService = require('./cliente-antigo.service');
 const { restaurarZerosCnpj } = require('./cnpj.service');
 const telegramService = require('./telegram.service');
@@ -2883,18 +2885,33 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
 async function enviarFuturoClienteParaDistribuicao(linhaId, usuarioId) {
   const id = Number(linhaId);
   const usuario = Number(usuarioId);
-  let devePublicar = false;
+  const usuarioSolicitante = await Usuario.query()
+    .findById(usuario)
+    .withGraphFetched('role');
+  const podeReencaminharTodos = usuarioTemPermissaoLocal(usuarioSolicitante, 'futuros_clientes_registrar')
+    && usuarioTemPermissaoLocal(usuarioSolicitante, 'futuros_clientes_ver_todos');
 
   await LeadLinha.transaction(async trx => {
     const linha = await LeadLinha.query(trx).findById(id).forUpdate();
-    const erro = obterErroEnvioFuturoClienteDistribuicao(linha, usuario);
-    if (erro) throw criarHttpError(erro.statusCode, erro.message);
-    if (linha.futuro_cliente_destino === DESTINO_FUTURO_CLIENTE_DISTRIBUICAO) return;
-    await LeadLinha.query(trx).patchAndFetchById(id, {
-      futuro_cliente_destino: DESTINO_FUTURO_CLIENTE_DISTRIBUICAO,
-      updated_at: new Date()
+    const atribuicaoAtiva = linha ? await trx('lead_atribuicoes')
+      .where({ lead_linha_id: id, etapa: 'venda' })
+      .whereIn('aceite_status', [
+        leadDistribuicaoService.ACEITE_AGUARDANDO,
+        leadDistribuicaoService.ACEITE_ACEITO
+      ])
+      .forUpdate()
+      .first('id') : null;
+    const erro = obterErroEnvioFuturoClienteDistribuicao(linha, usuario, {
+      podeReencaminharTodos,
+      possuiAtribuicaoAtiva: Boolean(atribuicaoAtiva)
     });
-    devePublicar = true;
+    if (erro) throw criarHttpError(erro.statusCode, erro.message);
+    if (linha.futuro_cliente_destino !== DESTINO_FUTURO_CLIENTE_DISTRIBUICAO) {
+      await LeadLinha.query(trx).patchAndFetchById(id, {
+        futuro_cliente_destino: DESTINO_FUTURO_CLIENTE_DISTRIBUICAO,
+        updated_at: new Date()
+      });
+    }
   });
 
   const atualizada = await LeadLinha.query()
@@ -2902,25 +2919,25 @@ async function enviarFuturoClienteParaDistribuicao(linhaId, usuarioId) {
     .withGraphFetched('[planilha, envio, atribuidoPara, sondagem.[operadoraAtual, operadoraInteresse, usuario], enriquecimento]')
     .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'));
   const linhaFormatada = formatarLinha(atualizada);
-  const publicacao = devePublicar
-    ? await publicarFuturoClienteTelegram(linhaFormatada)
-    : { enviado: false, motivo: 'ja_destinado_distribuicao' };
+  const publicacao = await publicarFuturoClienteTelegram(linhaFormatada);
   return { linha: linhaFormatada, publicacao };
 }
 
-function obterErroEnvioFuturoClienteDistribuicao(linha, usuarioId) {
+function obterErroEnvioFuturoClienteDistribuicao(linha, usuarioId, opcoes = {}) {
   if (!linha || !linha.futuro_cliente || linha.futuro_cliente_excluido_em) {
     return { statusCode: 404, message: 'Futuro cliente nao encontrado.' };
   }
-  if (Number(linha.futuro_cliente_marcado_por_id) !== Number(usuarioId)) {
+  const ehDono = Number(linha.futuro_cliente_marcado_por_id) === Number(usuarioId);
+  const jaFoiEnviado = linha.futuro_cliente_destino === DESTINO_FUTURO_CLIENTE_DISTRIBUICAO;
+  if ((!ehDono || jaFoiEnviado) && !opcoes.podeReencaminharTodos) {
     return { statusCode: 403, message: 'Voce nao pode distribuir este futuro cliente.' };
   }
-  if (linha.futuro_cliente_destino === DESTINO_FUTURO_CLIENTE_DISTRIBUICAO) return null;
-  if (linha.futuro_cliente_destino !== DESTINO_FUTURO_CLIENTE_CARTEIRA) {
+  if (![DESTINO_FUTURO_CLIENTE_CARTEIRA, DESTINO_FUTURO_CLIENTE_DISTRIBUICAO].includes(linha.futuro_cliente_destino)) {
     return { statusCode: 409, message: 'Futuros clientes antigos permanecem na carteira e nao podem ser republicados por esta acao.' };
   }
-  if (linha.venda_id || linha.etapa_atual === 'venda'
-    || ['distribuido_venda', 'vendido', 'perdido'].includes(linha.status_operacional)) {
+  if (linha.venda_id || linha.cliente_id || linha.venda_recusada_em || linha.cliente_recusou
+    || linha.etapa_atual === 'venda' || linha.status_operacional !== 'qualificado'
+    || opcoes.possuiAtribuicaoAtiva) {
     return { statusCode: 409, message: 'Este futuro cliente nao esta disponivel para distribuicao.' };
   }
   return null;

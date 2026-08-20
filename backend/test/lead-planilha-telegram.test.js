@@ -51,7 +51,7 @@ test('carteira propria preserva legados e exclui somente destino distribuicao', 
   assert.deepEqual(consulta.bindings, [17, 'distribuicao']);
 });
 
-test('envio posterior valida dono, legado e estados finais e aceita repeticao', () => {
+test('envio posterior preserva o primeiro envio do dono e exige acesso total para republicar', () => {
   const disponivel = {
     futuro_cliente: true,
     futuro_cliente_excluido_em: null,
@@ -62,11 +62,40 @@ test('envio posterior valida dono, legado e estados finais e aceita repeticao', 
     venda_id: null
   };
   assert.equal(obterErroEnvioFuturoClienteDistribuicao(disponivel, 17), null);
-  assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, futuro_cliente_destino: 'distribuicao' }, 17), null);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({
+    ...disponivel,
+    futuro_cliente_destino: 'distribuicao'
+  }, 17)?.statusCode, 403);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({
+    ...disponivel,
+    futuro_cliente_destino: 'distribuicao'
+  }, 17, { podeReencaminharTodos: true }), null);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, futuro_cliente_destino: null }, 17)?.statusCode, 409);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao(disponivel, 18)?.statusCode, 403);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao(disponivel, 18, { podeReencaminharTodos: true }), null);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, status_operacional: 'vendido' }, 17)?.statusCode, 409);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, futuro_cliente_excluido_em: new Date() }, 17)?.statusCode, 404);
+});
+
+test('republicacao bloqueia recusas, vendas e atribuicoes ativas', () => {
+  const disponivel = {
+    futuro_cliente: true,
+    futuro_cliente_excluido_em: null,
+    futuro_cliente_marcado_por_id: 17,
+    futuro_cliente_destino: 'distribuicao',
+    status_operacional: 'qualificado',
+    etapa_atual: 'sondagem',
+    venda_id: null
+  };
+  const acessoTotal = { podeReencaminharTodos: true };
+
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, venda_id: 91 }, 18, acessoTotal)?.statusCode, 409);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, venda_recusada_em: new Date() }, 18, acessoTotal)?.statusCode, 409);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, cliente_recusou: true }, 18, acessoTotal)?.statusCode, 409);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao(disponivel, 18, {
+    ...acessoTotal,
+    possuiAtribuicaoAtiva: true
+  })?.statusCode, 409);
 });
 
 test('exibe somente o encaminhamento mais recente de uma indicacao duplicada', () => {

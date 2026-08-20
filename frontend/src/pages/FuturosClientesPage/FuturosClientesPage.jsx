@@ -2672,7 +2672,15 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
 /**
  * Renderiza futuro cliente detalhe modal.
  */
-export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onDistribuido, onRegistrarVenda, somenteLeitura = false }) {
+export function FuturoClienteDetalheModal({
+  linha,
+  onClose,
+  onAtualizado,
+  onDistribuido,
+  onRegistrarVenda,
+  somenteLeitura = false,
+  permitirReenvioTelegram = false
+}) {
   const dialogRef = useDialogAcessivel(onClose);
   const vendaRegistrada = isFuturoClienteVendido(linha);
   const vendaRecusada = isVendaRecusada(linha);
@@ -2713,13 +2721,29 @@ export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onDist
   const comoAdmin = useMemo(() => temPermissao(usuario, 'gerenciar_leads'), [usuario]);
   const ehResponsavel = Number(linha.atribuido_para_id) === Number(usuario?.id);
   const ehDono = Number(linha.futuro_cliente_marcado_por_id) === Number(usuario?.id);
+  const jaEnviadoTelegram = linha.futuro_cliente_destino === 'distribuicao';
+  const destinoDistribuivel = ['carteira', 'distribuicao'].includes(linha.futuro_cliente_destino);
+  const distribuicaoAtiva = ['aguardando_aceite', 'aceito'].includes(linha.distribuicao?.status);
+  const temPermissoesReenvio = permitirReenvioTelegram
+    && temPermissao(usuario, 'futuros_clientes_registrar')
+    && temPermissao(usuario, 'futuros_clientes_ver_todos');
+  const estadoDistribuivel = (!linha.status_operacional || linha.status_operacional === 'qualificado')
+    && linha.etapa_atual !== 'venda'
+    && !linha.venda_id
+    && !linha.cliente_id
+    && !linha.venda_recusada_em
+    && !linha.cliente_recusou
+    && !distribuicaoAtiva;
   const podeEditar = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'futuros_clientes_registrar')));
   const podeRegistrarVenda = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'vendas_criar')));
-  const podeEnviarDistribuicao = !somenteLeitura
-    && ehDono
-    && linha.futuro_cliente_destino === 'carteira'
+  const podeEnviarDistribuicao = destinoDistribuivel
+    && estadoDistribuivel
     && !vendaRegistrada
-    && !vendaRecusada;
+    && !vendaRecusada
+    && (
+      (!somenteLeitura && ehDono && !jaEnviadoTelegram)
+      || temPermissoesReenvio
+    );
 
   const camposLead = useMemo(() => {
     const dados = linha.dados_json || {};
@@ -2767,11 +2791,14 @@ export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onDist
   }
 
   async function enviarParaDistribuicao() {
+    if (jaEnviadoTelegram && !window.confirm('Este futuro cliente já foi encaminhado. Deseja publicar uma nova mensagem no Telegram?')) {
+      return;
+    }
     setDistribuindo(true);
     setErro('');
     try {
       const resultado = await enviarFuturoClienteParaDistribuicao(linha.id);
-      onDistribuido?.(resultado.linha);
+      onDistribuido?.(resultado.linha, jaEnviadoTelegram);
     } catch (error) {
       setErro(error.message || 'Erro ao enviar futuro cliente para distribuicao.');
       setDistribuindo(false);
@@ -3064,7 +3091,7 @@ export function FuturoClienteDetalheModal({ linha, onClose, onAtualizado, onDist
           <div className="futuro-cliente-detalhe__acoes futuro-cliente-detalhe__acoes--principais">
             {podeEnviarDistribuicao && (
               <button type="button" className="btn" onClick={enviarParaDistribuicao} disabled={salvando || distribuindo}>
-                <I.Send size={14} /> {distribuindo ? 'Enviando...' : 'Enviar para distribuição'}
+                <I.Send size={14} /> {distribuindo ? 'Enviando...' : jaEnviadoTelegram ? 'Reencaminhar ao Telegram' : 'Enviar para distribuição'}
               </button>
             )}
             {vendaRegistrada ? (
@@ -3566,11 +3593,17 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     fecharDetalhe();
   }
 
-  function handleDistribuido(linhaDistribuida) {
-    setLinhas(prev => prev.filter(item => item.id !== linhaDistribuida.id));
-    setTotal(prev => Math.max(0, prev - 1));
+  function handleDistribuido(linhaDistribuida, reencaminhado = false) {
+    if (escopoTodos) {
+      setLinhas(prev => prev.map(item => item.id === linhaDistribuida.id ? { ...item, ...linhaDistribuida } : item));
+    } else {
+      setLinhas(prev => prev.filter(item => item.id !== linhaDistribuida.id));
+      setTotal(prev => Math.max(0, prev - 1));
+    }
     fecharDetalhe();
-    setSucesso('Futuro cliente enviado para a distribuição do Telegram.');
+    setSucesso(reencaminhado
+      ? 'Futuro cliente reencaminhado ao Telegram.'
+      : 'Futuro cliente enviado para a distribuição do Telegram.');
   }
 
   function handleAceito(linhaAtualizada) {
@@ -3726,6 +3759,9 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
           onDistribuido={handleDistribuido}
           onRegistrarVenda={handleRegistrarVenda}
           somenteLeitura={escopoTodos || (modoRecebidos && (linhaAtiva?.distribuicao?.status !== 'aceito' || Boolean(linhaAtiva?.distribuicao?.acao_registrada_em)))}
+          permitirReenvioTelegram={escopoTodos
+            && podeGerenciar
+            && temPermissao(usuario, 'futuros_clientes_ver_todos')}
         />
       )}
 
