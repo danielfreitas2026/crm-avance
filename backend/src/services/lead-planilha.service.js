@@ -35,6 +35,23 @@ const UPDATED_COLUMN_SUFFIX = ' (atualizado)';
 const EXCEL_IMPORT_BATCH_SIZE = 5000;
 const PALAVRAS_COLUNA_DOCUMENTO = ['cnpj', 'cpf', 'documento'];
 const EXCEL_IMPORT_MAX_BYTES = Number(process.env.LEAD_EXCEL_IMPORT_MAX_BYTES || 50 * 1024 * 1024);
+const FUSO_ESTATISTICAS = 'America/Sao_Paulo';
+const FORMATADOR_DATA_ESTATISTICAS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: FUSO_ESTATISTICAS,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+});
+const ACOES_PRIMEIRA_LIGACAO = [
+  'lead_linha.futuro_cliente_marcado',
+  'lead_linha.futuro_cliente_marcado_admin',
+  'lead_linha.cliente_recusou',
+  'lead_linha.cliente_recusou_admin',
+  'lead_linha.chamada_nao_atendida',
+  'lead_linha.chamada_nao_atendida_admin',
+  'lead_linha.retorno_marcado',
+  'lead_linha.retorno_marcado_admin'
+];
 const TERMOS_CABECALHO_MAILING = [
   'cnpj',
   'cpf/cnpj',
@@ -3449,23 +3466,94 @@ async function listarFuturosClientesRecebidos(filtros = {}, usuarioId) {
 }
 
 function primeiraAcaoLinha(linha) {
+  if (Object.prototype.hasOwnProperty.call(linha, 'estatistica_primeira_acao_em')) {
+    return linha.estatistica_primeira_acao_em;
+  }
   return linha.primeira_ligacao_em
     || linha.futuro_cliente_marcado_em
     || linha.cliente_recusou_em
     || linha.chamada_nao_atendida_em
-    || linha.retorno_agendado_em
     || linha.venda_recusada_em
     || null;
 }
 
-function dataDentroPeriodo(valor, filtros = {}) {
-  if (!valor) return false;
+function dataIsoEstatisticas(valor) {
   const data = parseUtcDateTime(valor);
-  if (!data) return false;
-  const iso = data.toISOString().slice(0, 10);
+  if (!data) return null;
+  const partes = Object.fromEntries(
+    FORMATADOR_DATA_ESTATISTICAS.formatToParts(data)
+      .filter(item => item.type !== 'literal')
+      .map(item => [item.type, item.value])
+  );
+  return `${partes.year}-${partes.month}-${partes.day}`;
+}
+
+function dataDentroPeriodo(valor, filtros = {}) {
+  const iso = dataIsoEstatisticas(valor);
+  if (!iso) return false;
   if (filtros.data_inicio && iso < filtros.data_inicio) return false;
   if (filtros.data_fim && iso > filtros.data_fim) return false;
   return true;
+}
+
+function dataNaJanelaAtribuicao(valor, inicio, fimExclusivo) {
+  const data = parseUtcDateTime(valor);
+  const dataInicio = parseUtcDateTime(inicio);
+  const dataFim = parseUtcDateTime(fimExclusivo);
+  if (!data || !dataInicio || data < dataInicio) return false;
+  return !dataFim || data < dataFim;
+}
+
+function primeiraAcaoDaAtribuicao(linha, auditorias = [], proximaAtribuicaoEm = null) {
+  const finalizacaoValida = ['atribuido', 'cancelado'].includes(linha.estatistica_atribuicao_status)
+    ? null
+    : linha.estatistica_finalizado_em;
+  const candidatos = [
+    ...auditorias.map(item => item.created_at),
+    finalizacaoValida,
+    linha.primeira_ligacao_em,
+    linha.estatistica_sondagem_respondido_em,
+    linha.futuro_cliente_marcado_em,
+    linha.cliente_recusou_em,
+    linha.chamada_nao_atendida_em,
+    linha.venda_recusada_em
+  ];
+  return candidatos
+    .filter(valor => dataNaJanelaAtribuicao(valor, linha.recebido_em, proximaAtribuicaoEm))
+    .sort((a, b) => parseUtcDateTime(a) - parseUtcDateTime(b))[0]
+    || null;
+}
+
+function avaliarLinhaEstatistica(linha, filtros = {}, referencia = new Date()) {
+  const primeiraAcao = parseUtcDateTime(primeiraAcaoLinha(linha));
+  const recebidaEm = parseUtcDateTime(linha.recebido_em);
+  const recebidaNoPeriodo = Boolean(
+    recebidaEm
+    && recebidaEm <= referencia
+    && dataDentroPeriodo(recebidaEm, filtros)
+  );
+  const dentroDoFechamento = primeiraAcao
+    && recebidaEm
+    && primeiraAcao >= recebidaEm
+    && primeiraAcao <= referencia
+    && (!filtros.data_fim || dataIsoEstatisticas(primeiraAcao) <= filtros.data_fim);
+  return {
+    recebidaNoPeriodo,
+    trabalhada: Boolean(recebidaNoPeriodo && dentroDoFechamento),
+    primeiraAcaoEm: dentroDoFechamento ? primeiraAcaoLinha(linha) : null
+  };
+}
+
+function linhasDaCoorte(linhas, filtros = {}, referencia = new Date()) {
+  return linhas.flatMap(linha => {
+    const avaliacao = avaliarLinhaEstatistica(linha, filtros, referencia);
+    if (!avaliacao.recebidaNoPeriodo) return [];
+    return [{
+      ...linha,
+      estatistica_primeira_acao_considerada_em: avaliacao.primeiraAcaoEm,
+      estatistica_trabalhada: avaliacao.trabalhada
+    }];
+  });
 }
 
 function novoResumoEstatistica(base = {}) {
@@ -3504,6 +3592,17 @@ function finalizarResumoEstatistica(resumo) {
   };
 }
 
+function somarResumosEstatistica(resumos) {
+  return finalizarResumoEstatistica(resumos.reduce((acc, item) => {
+    Object.keys(acc).forEach(chave => {
+      if (typeof acc[chave] === 'number' && !chave.endsWith('_pct') && chave !== 'tempo_medio_primeira_acao_min') {
+        acc[chave] += Number(item[chave] || 0);
+      }
+    });
+    return acc;
+  }, novoResumoEstatistica({ id: 'total' })));
+}
+
 async function carregarLinhasEstatisticas(filtros = {}) {
   const query = db('lead_atribuicoes as la')
     .join('lead_linhas as ll', 'll.id', 'la.lead_linha_id')
@@ -3515,13 +3614,17 @@ async function carregarLinhasEstatisticas(filtros = {}) {
     .where('le.origem', 'mailing')
     .select(
       'll.*',
+      'la.id as estatistica_atribuicao_id',
       'la.usuario_id as estatistica_usuario_id',
       'la.atribuido_em as recebido_em',
+      'la.finalizado_em as estatistica_finalizado_em',
+      'la.status as estatistica_atribuicao_status',
       'le.id as estatistica_envio_id',
       'le.nome as estatistica_envio_nome',
       'le.created_at as envio_created_at',
       'u.nome as estatistica_usuario_nome',
       'ls.valor_mensal_estimado',
+      'ls.respondido_em as estatistica_sondagem_respondido_em',
       'v.valor_total as venda_valor_total'
     );
   if (filtros.usuario_id) query.where('la.usuario_id', Number(filtros.usuario_id));
@@ -3539,18 +3642,31 @@ async function carregarLinhasEstatisticas(filtros = {}) {
   }));
   const classificadas = await adicionarClassificacaoVendas(preparadas);
   const ids = classificadas.map(linha => Number(linha.id));
+  const atribuicoes = ids.length ? await db('lead_atribuicoes')
+    .whereIn('lead_linha_id', ids)
+    .where('etapa', 'sondagem')
+    .orderBy('atribuido_em', 'asc')
+    .orderBy('id', 'asc')
+    .select('id', 'lead_linha_id', 'atribuido_em') : [];
   const auditorias = ids.length ? await db('audit_logs')
     .where('entidade', 'lead_linhas')
     .whereIn('entidade_id', ids.map(String))
-    .whereIn('acao', [
-      'lead_linha.futuro_cliente_marcado',
-      'lead_linha.cliente_recusou',
-      'lead_linha.chamada_nao_atendida',
-      'lead_linha.retorno_marcado'
-    ])
-    .select('entidade_id') : [];
-  const tentativas = new Map();
-  auditorias.forEach(item => tentativas.set(Number(item.entidade_id), (tentativas.get(Number(item.entidade_id)) || 0) + 1));
+    .whereIn('acao', ACOES_PRIMEIRA_LIGACAO)
+    .orderBy('created_at', 'asc')
+    .orderBy('id', 'asc')
+    .select('id', 'entidade_id', 'usuario_id', 'acao', 'created_at') : [];
+  const atribuicoesPorLinha = new Map();
+  atribuicoes.forEach(item => {
+    const linhaId = Number(item.lead_linha_id);
+    if (!atribuicoesPorLinha.has(linhaId)) atribuicoesPorLinha.set(linhaId, []);
+    atribuicoesPorLinha.get(linhaId).push(item);
+  });
+  const auditoriasPorLinha = new Map();
+  auditorias.forEach(item => {
+    const linhaId = Number(item.entidade_id);
+    if (!auditoriasPorLinha.has(linhaId)) auditoriasPorLinha.set(linhaId, []);
+    auditoriasPorLinha.get(linhaId).push(item);
+  });
   const distribuicoes = ids.length ? await db('lead_atribuicoes')
     .whereIn('lead_linha_id', ids)
     .where('etapa', 'venda')
@@ -3565,27 +3681,36 @@ async function carregarLinhasEstatisticas(filtros = {}) {
     if ([leadDistribuicaoService.ACEITE_RECUSADO, leadDistribuicaoService.ACEITE_EXPIRADO].includes(item.aceite_status)) resumo.recusados_expirados += 1;
     distribuicoesPorLinha.set(linhaId, resumo);
   });
-  return classificadas.map(linha => ({
-    ...linha,
-    tentativas_conhecidas: Math.max(tentativas.get(Number(linha.id)) || 0, primeiraAcaoLinha(linha) ? 1 : 0),
-    estatistica_distribuicao: distribuicoesPorLinha.get(Number(linha.id)) || { enviados: 0, aceitos: 0, recusados_expirados: 0 }
-  }));
+  return classificadas.map(linha => {
+    const atribuicoesLinha = atribuicoesPorLinha.get(Number(linha.id)) || [];
+    const indiceAtribuicao = atribuicoesLinha.findIndex(item => Number(item.id) === Number(linha.estatistica_atribuicao_id));
+    const proximaAtribuicaoEm = indiceAtribuicao >= 0 ? atribuicoesLinha[indiceAtribuicao + 1]?.atribuido_em : null;
+    const auditoriasAtribuicao = (auditoriasPorLinha.get(Number(linha.id)) || [])
+      .filter(item => dataNaJanelaAtribuicao(item.created_at, linha.recebido_em, proximaAtribuicaoEm));
+    const primeiraAcao = primeiraAcaoDaAtribuicao(linha, auditoriasAtribuicao, proximaAtribuicaoEm);
+    return {
+      ...linha,
+      estatistica_primeira_acao_em: primeiraAcao,
+      tentativas_conhecidas: Math.max(auditoriasAtribuicao.length, primeiraAcao ? 1 : 0),
+      estatistica_distribuicao: distribuicoesPorLinha.get(Number(linha.id)) || { enviados: 0, aceitos: 0, recusados_expirados: 0 }
+    };
+  });
 }
 
 function agregarEstatisticas(linhas, filtros = {}, chaveFn) {
   const grupos = new Map();
   linhas.forEach(linha => {
+    const avaliacao = avaliarLinhaEstatistica(linha, filtros);
+    if (!avaliacao.recebidaNoPeriodo) return;
     const chave = chaveFn(linha);
     if (!grupos.has(chave.id)) grupos.set(chave.id, novoResumoEstatistica(chave));
     const resumo = grupos.get(chave.id);
-    const recebidoNoPeriodo = dataDentroPeriodo(linha.recebido_em, filtros);
-    const primeiraAcao = primeiraAcaoLinha(linha);
-    const acaoNoPeriodo = dataDentroPeriodo(primeiraAcao, filtros);
-    if (recebidoNoPeriodo) {
-      resumo.recebidos += 1;
-      if (!primeiraAcao) resumo.pendentes += 1;
+    resumo.recebidos += 1;
+    if (!avaliacao.trabalhada) {
+      resumo.pendentes += 1;
+      return;
     }
-    if (!acaoNoPeriodo) return;
+    const primeiraAcao = avaliacao.primeiraAcaoEm;
     resumo.trabalhados += 1;
     resumo.tentativas_registradas += Number(linha.tentativas_conhecidas || 0);
     resumo.retornos_agendados += linha.retorno_agendado_em ? 1 : 0;
@@ -3618,14 +3743,7 @@ async function obterEstatisticasResumo(filtros = {}) {
     usuario_id: Number(linha.estatistica_usuario_id),
     usuario_nome: linha.estatistica_usuario_nome || 'Usuario removido'
   }));
-  const total = finalizarResumoEstatistica(usuarios.reduce((acc, item) => {
-    Object.keys(acc).forEach(chave => {
-      if (typeof acc[chave] === 'number' && !chave.endsWith('_pct') && chave !== 'tempo_medio_primeira_acao_min') {
-        acc[chave] += Number(item[chave] || 0);
-      }
-    });
-    return acc;
-  }, novoResumoEstatistica({ id: 'total' })));
+  const total = somarResumosEstatistica(usuarios);
   return { total, usuarios };
 }
 
@@ -3641,7 +3759,7 @@ async function obterEstatisticasMailings(filtros = {}) {
 async function obterEstatisticasLinhas(filtros = {}) {
   const page = Math.max(1, Number(filtros.page || 1));
   const pageSize = Math.min(200, Math.max(1, Number(filtros.page_size || 50)));
-  let linhas = await carregarLinhasEstatisticas(filtros);
+  let linhas = linhasDaCoorte(await carregarLinhasEstatisticas(filtros), filtros);
   const busca = String(filtros.busca || '').trim().toLowerCase();
   if (busca) linhas = linhas.filter(linha => JSON.stringify(linha.dados_json || {}).toLowerCase().includes(busca));
   return {
@@ -3656,7 +3774,7 @@ async function gerarXlsxEstatisticasFuturosClientes(filtros = {}) {
   if (filtros.data_inicio && filtros.data_fim && filtros.data_inicio > filtros.data_fim) {
     throw criarHttpError(400, 'A data inicial deve ser anterior ou igual a data final.');
   }
-  const linhas = await carregarLinhasEstatisticas(filtros);
+  const linhas = linhasDaCoorte(await carregarLinhasEstatisticas(filtros), filtros);
   const usuarios = agregarEstatisticas(linhas, filtros, linha => ({
     id: Number(linha.estatistica_usuario_id),
     usuario_nome: linha.estatistica_usuario_nome || 'Usuario removido'
@@ -3696,7 +3814,7 @@ async function gerarXlsxEstatisticasFuturosClientes(filtros = {}) {
     ['Venda ID', 'venda_id_exportacao'], ['Valor vendido', 'venda_valor_exportacao'], ['Dados', 'dados_exportacao']
   ], linhas.map(linha => ({
     ...linha,
-    primeira_acao_exportacao: primeiraAcaoLinha(linha),
+    primeira_acao_exportacao: linha.estatistica_primeira_acao_considerada_em,
     venda_tipo_exportacao: linha.venda_classificacao?.tipo || '',
     venda_id_exportacao: linha.venda_classificacao?.venda_id || '',
     venda_valor_exportacao: linha.venda_classificacao?.valor_total || '',
@@ -4472,6 +4590,15 @@ module.exports = {
     resolverDestinoNovoFuturoCliente,
     obterErroEnvioFuturoClienteDistribuicao,
     adicionarClassificacaoVendas,
+    dataIsoEstatisticas,
+    dataDentroPeriodo,
+    dataNaJanelaAtribuicao,
+    primeiraAcaoDaAtribuicao,
+    avaliarLinhaEstatistica,
+    linhasDaCoorte,
+    agregarEstatisticas,
+    finalizarResumoEstatistica,
+    somarResumosEstatistica,
     selecionarVendaAntiga,
     subtrairMesesUtc,
     sqlEntradaEtapaFinal

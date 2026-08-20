@@ -4212,7 +4212,7 @@ function EstatisticasFuturosClientesView() {
         <div className="future-stats__heading">
           <p className="future-stats__eyebrow">Estatísticas de qualificação</p>
           <h2>{titulo}</h2>
-          <p className="muted">Recebidos e pendentes seguem a data de atribuição; produtividade e resultados seguem a primeira ação.</p>
+          <p className="muted">Os indicadores consideram os leads recebidos no período e as ações realizadas até o encerramento dele.</p>
         </div>
         <button type="button" className="btn future-stats__export" onClick={exportar}><I.Download size={16} /> Exportar Excel</button>
       </header>
@@ -4264,7 +4264,7 @@ function EstatisticasFuturosClientesView() {
             <article className="future-stats__kpi future-stats__kpi--worked">
               <div className="future-stats__kpi-icon"><I.Check size={19} /></div>
               <div><span>Trabalhados</span><strong>{Number(indicadores.trabalhados || 0).toLocaleString('pt-BR')}</strong><small>{Number(indicadores.produtividade_pct || 0).toLocaleString('pt-BR')}% de produtividade</small></div>
-              <i className="future-stats__kpi-progress"><b style={{ width: `${Math.min(100, indicadores.produtividade_pct || 0)}%` }} /></i>
+              <i className="future-stats__kpi-progress"><b style={{ width: `${indicadores.produtividade_pct || 0}%` }} /></i>
             </article>
             <article className="future-stats__kpi future-stats__kpi--pending">
               <div className="future-stats__kpi-icon"><I.History size={19} /></div>
@@ -4340,7 +4340,7 @@ function EstatisticasFuturosClientesView() {
                   <span className="future-stats__user-performance">
                     <span>
                       <span><small>Produtividade</small><strong>{Number(item.produtividade_pct || 0).toLocaleString('pt-BR')}%</strong></span>
-                      <i className="future-stats__user-progress"><b style={{ width: `${Math.min(100, item.produtividade_pct || 0)}%` }} /></i>
+                      <i className="future-stats__user-progress"><b style={{ width: `${item.produtividade_pct || 0}%` }} /></i>
                     </span>
                     <span>
                       <span><small>Conversão</small><strong>{Number(item.conversao_pct || 0).toLocaleString('pt-BR')}%</strong></span>
@@ -4402,7 +4402,7 @@ function EstatisticasFuturosClientesView() {
                       <td><strong className={`future-stats__mailing-value ${item.vendas_futuro_cliente ? 'has-sales' : ''}`}>{Number(item.vendas_futuro_cliente || 0).toLocaleString('pt-BR')}</strong></td>
                       <td>
                         <span className="future-stats__mailing-rate">
-                          <i className="future-stats__user-progress"><b style={{ width: `${Math.min(100, item.produtividade_pct || 0)}%` }} /></i>
+                          <i className="future-stats__user-progress"><b style={{ width: `${item.produtividade_pct || 0}%` }} /></i>
                           <strong>{Number(item.produtividade_pct || 0).toLocaleString('pt-BR')}%</strong>
                         </span>
                       </td>
@@ -4436,7 +4436,7 @@ function EstatisticasFuturosClientesView() {
 }
 
 function primeiraAcaoVisual(linha) {
-  return linha.primeira_ligacao_em || linha.futuro_cliente_marcado_em || linha.cliente_recusou_em || linha.chamada_nao_atendida_em || linha.retorno_agendado_em || linha.venda_recusada_em;
+  return linha.estatistica_primeira_acao_considerada_em || null;
 }
 
 // ─── Página principal ─────────────────────────────────────────────────────────
