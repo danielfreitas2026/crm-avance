@@ -397,6 +397,15 @@ async function listarTodosFuturosClientes(req, res) {
   }
 }
 
+async function listarResponsaveisFuturosClientes(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.listarResponsaveisFuturosClientes());
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Erro ao listar responsáveis dos futuros clientes.' });
+  }
+}
+
 async function historicoFuturoCliente(req, res) {
   try {
     return res.json(await leadPlanilhaService.obterHistoricoFuturoCliente(req.params.id));
@@ -773,6 +782,7 @@ module.exports = {
   aceitarFuturoCliente,
   recusarFuturoCliente,
   listarTodosFuturosClientes,
+  listarResponsaveisFuturosClientes,
   republicarPendentesAntigosTelegram,
   metricasFuturosClientes,
   estatisticasResumo,

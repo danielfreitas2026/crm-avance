@@ -29,6 +29,7 @@ import {
   obterHistoricoFuturoCliente,
   listarVendasCandidatasLead,
   listarQuadroFuturosClientes,
+  listarResponsaveisFuturosClientes,
   listarMetricasFuturosClientes,
   listarMeusMailings,
   listarMinhasLeadLinhas,
@@ -3563,6 +3564,12 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
   const [busca, setBusca] = useState('');
   const [filtroSituacao, setFiltroSituacao] = useState('');
   const [filtroRetorno, setFiltroRetorno] = useState('');
+  const [filtroResponsavel, setFiltroResponsavel] = useState('');
+  const [filtroDestino, setFiltroDestino] = useState('');
+  const [marcadoDe, setMarcadoDe] = useState('');
+  const [marcadoAte, setMarcadoAte] = useState('');
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const [responsaveis, setResponsaveis] = useState([]);
   const [filtroRecebidos, setFiltroRecebidos] = useState('acao');
   const buscaDeferred = useDeferredValue(busca);
   const [consultaConcluida, setConsultaConcluida] = useState('');
@@ -3598,15 +3605,25 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     busca: buscaDeferred,
     filtroSituacao,
     filtroRetorno,
+    filtroResponsavel,
+    filtroDestino,
+    marcadoDe,
+    marcadoAte,
     modoLixeira,
     modoRecebidos,
     filtroRecebidos,
     linhaNotificacaoId,
     escopoTodos
-  }), [pagina, buscaDeferred, filtroSituacao, filtroRetorno, modoLixeira, modoRecebidos, filtroRecebidos, linhaNotificacaoId, escopoTodos]);
+  }), [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroResponsavel, filtroDestino, marcadoDe, marcadoAte, modoLixeira, modoRecebidos, filtroRecebidos, linhaNotificacaoId, escopoTodos]);
   const carregando = consultaConcluida !== chaveConsulta;
   const periodoMetricasInvalido = tipoPeriodoMetricas === 'periodo'
     && Boolean(dataInicioMetricas && dataFimMetricas && dataInicioMetricas > dataFimMetricas);
+  const quantidadeFiltrosAvancados = [
+    escopoTodos && filtroResponsavel,
+    filtroDestino,
+    marcadoDe,
+    marcadoAte
+  ].filter(Boolean).length;
   const filtrosMetricas = useMemo(() => {
     if (tipoPeriodoMetricas === 'hoje') {
       return { data_inicio: hojeMetricas, data_fim: hojeMetricas };
@@ -3618,6 +3635,15 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     }
     return { data_inicio: dataInicioMetricas, data_fim: dataFimMetricas };
   }, [tipoPeriodoMetricas, hojeMetricas, mesMetricas, dataInicioMetricas, dataFimMetricas]);
+
+  useEffect(() => {
+    if (!escopoTodos || modoRecebidos) return undefined;
+    let cancelado = false;
+    listarResponsaveisFuturosClientes()
+      .then(data => { if (!cancelado) setResponsaveis(Array.isArray(data) ? data : []); })
+      .catch(() => { if (!cancelado) setResponsaveis([]); });
+    return () => { cancelado = true; };
+  }, [escopoTodos, modoRecebidos]);
 
   useEffect(() => {
     let cancelado = false;
@@ -3632,6 +3658,10 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
       busca: buscaDeferred,
       situacao: filtroSituacao || undefined,
       retorno: filtroRetorno || undefined,
+      responsavel_id: escopoTodos ? filtroResponsavel || undefined : undefined,
+      destino: filtroDestino || undefined,
+      marcado_de: marcadoDe || undefined,
+      marcado_ate: marcadoAte || undefined,
       status: modoRecebidos ? filtroRecebidos : undefined,
       linha_id: linhaNotificacaoId || undefined
     })
@@ -3671,7 +3701,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
         if (!cancelado) setConsultaConcluida(chaveConsulta);
       });
     return () => { cancelado = true; };
-  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroRecebidos, modoLixeira, modoRecebidos, escopoTodos, linhaNotificacaoId, chaveConsulta, notificacaoId]);
+  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroResponsavel, filtroDestino, marcadoDe, marcadoAte, filtroRecebidos, modoLixeira, modoRecebidos, escopoTodos, linhaNotificacaoId, chaveConsulta, notificacaoId]);
 
   useEffect(() => {
     if (!exibirMetricas || modoLixeira || periodoMetricasInvalido) return;
@@ -3789,6 +3819,10 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     setBusca('');
     setFiltroSituacao('');
     setFiltroRetorno('');
+    setFiltroResponsavel('');
+    setFiltroDestino('');
+    setMarcadoDe('');
+    setMarcadoAte('');
     setFiltroRecebidos('acao');
     setPagina(1);
   }
@@ -4012,7 +4046,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
           </div>
         </section>
       )}
-      <div className="clientes-leads-toolbar">
+      <div className="clientes-leads-toolbar futuros-clientes-toolbar">
         <form className="clientes-search" onSubmit={event => event.preventDefault()}>
           <I.Search size={14} />
           <input
@@ -4057,9 +4091,22 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
           <option value="">Todos os retornos</option>
           <option value="com_retorno">Com retorno</option>
           <option value="vencido">Retornos vencidos</option>
+          <option value="futuro">Retornos futuros</option>
           <option value="sem_retorno">Sem retorno</option>
+          <option value="realizado">Retornos realizados</option>
         </select>}
-        {(busca || filtroSituacao || filtroRetorno || (modoRecebidos && filtroRecebidos !== 'acao')) && (
+        {!modoRecebidos && (
+          <button
+            type="button"
+            className={`btn btn-sm clientes-filtros-toggle${filtrosAbertos ? ' is-active' : ''}`}
+            onClick={() => setFiltrosAbertos(aberto => !aberto)}
+            aria-expanded={filtrosAbertos}
+            aria-controls="futuros-clientes-filtros-avancados"
+          >
+            <I.Filter size={14} /> Mais filtros{quantidadeFiltrosAvancados ? ` (${quantidadeFiltrosAvancados})` : ''}
+          </button>
+        )}
+        {(busca || filtroSituacao || filtroRetorno || filtroResponsavel || filtroDestino || marcadoDe || marcadoAte || (modoRecebidos && filtroRecebidos !== 'acao')) && (
           <button type="button" className="btn btn-sm" onClick={limparFiltros}>Limpar filtros</button>
         )}
         <div className="clientes-leads-actions">
@@ -4076,6 +4123,56 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
             </button>
           ) : null}
         </div>
+        {!modoRecebidos && filtrosAbertos && (
+          <div className="clientes-filtros-avancados" id="futuros-clientes-filtros-avancados">
+            {escopoTodos && (
+              <label>
+                <span>Com quem está</span>
+                <select
+                  value={filtroResponsavel}
+                  onChange={event => { setFiltroResponsavel(event.target.value); setPagina(1); }}
+                  aria-label="Filtrar pelo usuário responsável atual"
+                >
+                  <option value="">Todos os responsáveis</option>
+                  <option value="sem_responsavel">Sem responsável</option>
+                  {responsaveis.map(item => (
+                    <option key={item.id} value={item.id}>{item.nome}{item.ativo ? '' : ' (inativo)'}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label>
+              <span>Destino</span>
+              <select
+                value={filtroDestino}
+                onChange={event => { setFiltroDestino(event.target.value); setPagina(1); }}
+                aria-label="Filtrar destino dos futuros clientes"
+              >
+                <option value="">Todos os destinos</option>
+                <option value="carteira">Carteira</option>
+                <option value="distribuicao">Distribuição / Telegram</option>
+              </select>
+            </label>
+            <label>
+              <span>Marcado a partir de</span>
+              <input
+                type="date"
+                value={marcadoDe}
+                max={marcadoAte || undefined}
+                onChange={event => { setMarcadoDe(event.target.value); setPagina(1); }}
+              />
+            </label>
+            <label>
+              <span>Marcado até</span>
+              <input
+                type="date"
+                value={marcadoAte}
+                min={marcadoDe || undefined}
+                onChange={event => { setMarcadoAte(event.target.value); setPagina(1); }}
+              />
+            </label>
+          </div>
+        )}
       </div>
 
       {sucesso && <div className="alert-success alert-timed alert-timed--success" style={{ marginBottom: 4 }}>{sucesso}</div>}

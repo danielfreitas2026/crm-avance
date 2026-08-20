@@ -361,8 +361,96 @@ function aplicarBuscaFuturosClientes(query, busca) {
 
   return query.where(builder => {
     builder
-      .whereRaw('LOWER(dados_json) LIKE ?', [`%${termo}%`])
-      .orWhereRaw('LOWER(COALESCE(futuro_cliente_notas, "")) LIKE ?', [`%${termo}%`]);
+      .whereRaw('LOWER(CAST(lead_linhas.dados_json AS CHAR)) LIKE ?', [`%${termo}%`])
+      .orWhereRaw('LOWER(COALESCE(lead_linhas.futuro_cliente_notas, "")) LIKE ?', [`%${termo}%`])
+      .orWhereExists(
+        db('lead_envios as le_busca')
+          .select(db.raw('1'))
+          .whereRaw('le_busca.id = lead_linhas.envio_id')
+          .whereRaw('LOWER(COALESCE(le_busca.nome, "")) LIKE ?', [`%${termo}%`])
+      )
+      .orWhereExists(
+        db('usuarios as u_busca')
+          .select(db.raw('1'))
+          .whereRaw('u_busca.id IN (lead_linhas.atribuido_para_id, lead_linhas.futuro_cliente_marcado_por_id)')
+          .whereRaw('LOWER(COALESCE(u_busca.nome, "")) LIKE ?', [`%${termo}%`])
+      )
+      .orWhereExists(
+        db('lead_atribuicoes as la_busca')
+          .join('usuarios as u_atribuicao_busca', 'u_atribuicao_busca.id', 'la_busca.usuario_id')
+          .select(db.raw('1'))
+          .whereRaw('la_busca.lead_linha_id = lead_linhas.id')
+          .where('la_busca.etapa', 'venda')
+          .whereRaw('LOWER(COALESCE(u_atribuicao_busca.nome, "")) LIKE ?', [`%${termo}%`])
+      );
+  });
+}
+
+const STATUS_DISTRIBUICAO_RESPONSAVEL = [
+  leadDistribuicaoService.ACEITE_AGUARDANDO,
+  leadDistribuicaoService.ACEITE_ACEITO
+];
+
+function aplicarCondicaoFuturoClienteFinal(query) {
+  return query.where(builder => builder
+    .whereNotNull('lead_linhas.venda_id')
+    .orWhereIn('lead_linhas.status_operacional', ['vendido', 'perdido'])
+    .orWhere('lead_linhas.cliente_recusou', true)
+    .orWhereNotNull('lead_linhas.venda_recusada_em'));
+}
+
+function consultaUltimaDistribuicaoAtiva(usuarioId = null) {
+  const consulta = db('lead_atribuicoes as la_responsavel')
+    .select(db.raw('1'))
+    .whereRaw('la_responsavel.lead_linha_id = lead_linhas.id')
+    .where('la_responsavel.etapa', 'venda')
+    .whereNotNull('la_responsavel.aceite_status')
+    .whereIn('la_responsavel.aceite_status', STATUS_DISTRIBUICAO_RESPONSAVEL)
+    .whereNotExists(
+      db('lead_atribuicoes as la_responsavel_nova')
+        .select(db.raw('1'))
+        .whereRaw('la_responsavel_nova.lead_linha_id = la_responsavel.lead_linha_id')
+        .where('la_responsavel_nova.etapa', 'venda')
+        .whereNotNull('la_responsavel_nova.aceite_status')
+        .whereRaw('la_responsavel_nova.id > la_responsavel.id')
+    );
+  if (usuarioId !== null) consulta.where('la_responsavel.usuario_id', Number(usuarioId));
+  return consulta;
+}
+
+/** Filtra pelo mesmo responsavel exibido na coluna "Com quem esta". */
+function aplicarFiltroResponsavelAtual(query, responsavelId) {
+  const valor = String(responsavelId || '').trim();
+  if (!valor) return query;
+
+  const semResponsavel = valor === 'sem_responsavel';
+  const usuarioId = Number(valor);
+  if (!semResponsavel && (!Number.isInteger(usuarioId) || usuarioId <= 0)) return query;
+
+  return query.where(escopo => {
+    if (semResponsavel) {
+      escopo
+        .whereNot(subquery => aplicarCondicaoFuturoClienteFinal(subquery))
+        .whereNotExists(consultaUltimaDistribuicaoAtiva())
+        .where(builder => builder
+          .where('lead_linhas.futuro_cliente_destino', DESTINO_FUTURO_CLIENTE_DISTRIBUICAO)
+          .orWhereRaw('COALESCE(lead_linhas.atribuido_para_id, lead_linhas.futuro_cliente_marcado_por_id) IS NULL'));
+      return;
+    }
+
+    escopo
+      .where(builder => aplicarCondicaoFuturoClienteFinal(builder)
+        .whereRaw('COALESCE(lead_linhas.atribuido_para_id, lead_linhas.futuro_cliente_marcado_por_id) = ?', [usuarioId]))
+      .orWhere(builder => builder
+        .whereNot(subquery => aplicarCondicaoFuturoClienteFinal(subquery))
+        .whereExists(consultaUltimaDistribuicaoAtiva(usuarioId)))
+      .orWhere(builder => builder
+        .whereNot(subquery => aplicarCondicaoFuturoClienteFinal(subquery))
+        .whereNotExists(consultaUltimaDistribuicaoAtiva())
+        .where(builderDestino => builderDestino
+          .whereNull('lead_linhas.futuro_cliente_destino')
+          .orWhereNot('lead_linhas.futuro_cliente_destino', DESTINO_FUTURO_CLIENTE_DISTRIBUICAO))
+        .whereRaw('COALESCE(lead_linhas.atribuido_para_id, lead_linhas.futuro_cliente_marcado_por_id) = ?', [usuarioId]));
   });
 }
 /**
@@ -371,6 +459,7 @@ function aplicarBuscaFuturosClientes(query, busca) {
 function aplicarFiltrosFuturosClientes(query, filtros = {}) {
   const situacao = String(filtros.situacao || '').trim();
   const retorno = String(filtros.retorno || '').trim();
+  const destino = String(filtros.destino || '').trim();
 
   if (situacao === 'em_negociacao') {
     query.whereNull('venda_id')
@@ -386,18 +475,64 @@ function aplicarFiltrosFuturosClientes(query, filtros = {}) {
   }
 
   if (retorno === 'com_retorno') {
-    query.whereNotNull('futuro_cliente_retorno')
-      .whereNull('futuro_cliente_retorno_realizado_em');
+    query.where(builder => builder
+      .where(subquery => subquery
+        .whereNotNull('retorno_agendado_em')
+        .whereNull('retorno_agendado_realizado_em'))
+      .orWhere(subquery => subquery
+        .whereNotNull('futuro_cliente_retorno')
+        .whereNull('futuro_cliente_retorno_realizado_em')));
   } else if (retorno === 'sem_retorno') {
-    query.whereNull('futuro_cliente_retorno');
+    query.whereNull('retorno_agendado_em')
+      .whereNull('futuro_cliente_retorno');
   } else if (retorno === 'vencido') {
-    query.whereNotNull('futuro_cliente_retorno')
-      .whereNull('futuro_cliente_retorno_realizado_em')
-      .where('futuro_cliente_retorno', '<', formatarDateTimeSQL());
+    const agora = formatarDateTimeSQL();
+    query.where(builder => builder
+      .where(subquery => subquery
+        .whereNotNull('retorno_agendado_em')
+        .whereNull('retorno_agendado_realizado_em')
+        .where('retorno_agendado_em', '<', agora))
+      .orWhere(subquery => subquery
+        .whereNotNull('futuro_cliente_retorno')
+        .whereNull('futuro_cliente_retorno_realizado_em')
+        .where('futuro_cliente_retorno', '<', agora)));
   } else if (retorno === 'realizado') {
-    query.whereNotNull('futuro_cliente_retorno')
-      .whereNotNull('futuro_cliente_retorno_realizado_em');
+    query.where(builder => builder
+      .where(subquery => subquery
+        .whereNotNull('retorno_agendado_em')
+        .whereNotNull('retorno_agendado_realizado_em'))
+      .orWhere(subquery => subquery
+        .whereNotNull('futuro_cliente_retorno')
+        .whereNotNull('futuro_cliente_retorno_realizado_em')));
+  } else if (retorno === 'futuro') {
+    const agora = formatarDateTimeSQL();
+    query.where(builder => builder
+      .where(subquery => subquery
+        .whereNotNull('retorno_agendado_em')
+        .whereNull('retorno_agendado_realizado_em')
+        .where('retorno_agendado_em', '>=', agora))
+      .orWhere(subquery => subquery
+        .whereNotNull('futuro_cliente_retorno')
+        .whereNull('futuro_cliente_retorno_realizado_em')
+        .where('futuro_cliente_retorno', '>=', agora)));
   }
+
+  if (destino === DESTINO_FUTURO_CLIENTE_CARTEIRA) {
+    query.where(builder => builder
+      .whereNull('futuro_cliente_destino')
+      .orWhere('futuro_cliente_destino', DESTINO_FUTURO_CLIENTE_CARTEIRA));
+  } else if (destino === DESTINO_FUTURO_CLIENTE_DISTRIBUICAO) {
+    query.where('futuro_cliente_destino', DESTINO_FUTURO_CLIENTE_DISTRIBUICAO);
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(filtros.marcado_de || ''))) {
+    query.where('futuro_cliente_marcado_em', '>=', `${filtros.marcado_de} 00:00:00`);
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(filtros.marcado_ate || ''))) {
+    query.where('futuro_cliente_marcado_em', '<', db.raw('DATE_ADD(?, INTERVAL 1 DAY)', [filtros.marcado_ate]));
+  }
+
+  aplicarFiltroResponsavelAtual(query, filtros.responsavel_id);
 
   return query;
 }
@@ -3708,6 +3843,29 @@ async function obterHistoricoFuturoCliente(linhaId) {
   };
 }
 
+/** Lista usuarios que podem aparecer como responsaveis atuais ou historicos. */
+async function listarResponsaveisFuturosClientes() {
+  return Usuario.query()
+    .select('usuarios.id', 'usuarios.nome', 'usuarios.ativo')
+    .where(builder => builder
+      .whereExists(
+        LeadLinha.query()
+          .select(1)
+          .whereRaw('lead_linhas.futuro_cliente = true')
+          .whereRaw('(lead_linhas.atribuido_para_id = usuarios.id OR lead_linhas.futuro_cliente_marcado_por_id = usuarios.id)')
+      )
+      .orWhereExists(
+        db('lead_atribuicoes as la_responsaveis')
+          .join('lead_linhas as ll_responsaveis', 'll_responsaveis.id', 'la_responsaveis.lead_linha_id')
+          .select(db.raw('1'))
+          .whereRaw('la_responsaveis.usuario_id = usuarios.id')
+          .where('la_responsaveis.etapa', 'venda')
+          .where('ll_responsaveis.futuro_cliente', true)
+      ))
+    .orderBy('usuarios.ativo', 'desc')
+    .orderBy('usuarios.nome', 'asc');
+}
+
 function dataIsoEstatisticas(valor) {
   const data = parseUtcDateTime(valor);
   if (!data) return null;
@@ -4827,6 +4985,7 @@ module.exports = {
   enviarFuturoClienteParaDistribuicao,
   reverterFuturoClienteLead,
   listarFuturosClientes,
+  listarResponsaveisFuturosClientes,
   obterHistoricoFuturoCliente,
   listarFuturosClientesRecebidos,
   obterEstatisticasResumo,
@@ -4851,8 +5010,10 @@ module.exports = {
   _internals: {
     aplicarGruposMailing,
     aplicarBuscaDadosJson,
+    aplicarBuscaFuturosClientes,
     aplicarBuscaMailingsUsuario,
     aplicarFiltrosFuturosClientes,
+    aplicarFiltroResponsavelAtual,
     aplicarFiltroAceiteRecebidos,
     aplicarEscopoCarteiraFuturosClientes,
     aplicarFiltrosQuery,

@@ -139,6 +139,63 @@
 .clientes-status-filter:focus {
   border-color: var(--border-strong);
 }
+
+.futuros-clientes-toolbar {
+  flex-wrap: wrap;
+}
+
+.clientes-filtros-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.clientes-filtros-toggle.is-active {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.clientes-filtros-avancados {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  flex: 1 1 100%;
+  gap: 10px;
+  width: 100%;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.clientes-filtros-avancados label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.clientes-filtros-avancados select,
+.clientes-filtros-avancados input {
+  width: 100%;
+  height: 38px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  outline: 0;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.clientes-filtros-avancados select:focus,
+.clientes-filtros-avancados input:focus {
+  border-color: var(--border-strong);
+}
 .futuros-clientes-table {
   flex: 0 0 auto;
   display: flex;
@@ -184,6 +241,10 @@
 
   .clientes-leads-actions {
     margin-left: auto;
+  }
+
+  .clientes-filtros-avancados {
+    grid-template-columns: repeat(2, minmax(170px, 1fr));
   }
 }
 
@@ -747,6 +808,14 @@
   }
 
   .adicionar-lead-dados {
+    grid-template-columns: 1fr;
+  }
+
+  .clientes-filtros-toggle {
+    width: 100%;
+  }
+
+  .clientes-filtros-avancados {
     grid-template-columns: 1fr;
   }
 }

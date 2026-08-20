@@ -16,6 +16,7 @@ import {
   excluirFuturoCliente,
   excluirFuturoClienteDefinitivo,
   listarFuturosClientesLixeira,
+  listarResponsaveisFuturosClientes,
   obterHistoricoFuturoCliente,
   listarVendasCandidatasLead,
   restaurarFuturoCliente
@@ -87,5 +88,13 @@ describe('lixeira de futuros clientes', () => {
     expect(apiDelete).toHaveBeenNthCalledWith(1, '/lead-planilhas/futuros-clientes/81');
     expect(apiPost).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/81/restaurar', {});
     expect(apiDelete).toHaveBeenNthCalledWith(2, '/lead-planilhas/futuros-clientes/81/definitivo');
+  });
+});
+
+describe('filtros de futuros clientes', () => {
+  it('consulta as opcoes de responsavel no escopo Todos', async () => {
+    await listarResponsaveisFuturosClientes();
+
+    expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/responsaveis');
   });
 });

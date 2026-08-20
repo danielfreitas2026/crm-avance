@@ -386,6 +386,10 @@ export function listarQuadroFuturosClientes(filtros = {}) {
   return apiGet(`/lead-planilhas/futuros-clientes${montarQuery(filtros)}`);
 }
 
+export function listarResponsaveisFuturosClientes() {
+  return apiGet('/lead-planilhas/futuros-clientes/responsaveis');
+}
+
 export function listarMetricasFuturosClientes(filtros = {}) {
   return apiGet(`/lead-planilhas/futuros-clientes/metricas${montarQuery(filtros)}`);
 }
