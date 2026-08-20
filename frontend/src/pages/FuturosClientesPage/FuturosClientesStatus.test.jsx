@@ -358,6 +358,73 @@ describe('modal de adição de lead', () => {
     expect(screen.getByText('A primeira ligação ainda não possui dados registrados.')).toBeVisible();
   });
 
+  it('permite ao gerente vincular venda na visao Todos sem liberar a edicao dos dados', () => {
+    localStorage.setItem('usuario', JSON.stringify({
+      id: 7,
+      permissoes: {
+        futuros_clientes_ver_todos: true,
+        gerenciar_leads: true
+      }
+    }));
+
+    render(
+      <FuturoClienteDetalheModal
+        linha={{ id: 13, futuro_cliente: 1, dados_json: {}, sondagem: { chips_itens: [] } }}
+        onClose={() => {}}
+        onAtualizado={() => {}}
+        somenteLeitura
+        permitirGerenciarVinculo
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Vincular venda' })).toBeVisible();
+    expect(screen.getByLabelText('CNPJ')).toBeDisabled();
+    localStorage.removeItem('usuario');
+  });
+
+  it('nao permite vincular na visao Todos com permissao apenas de visualizacao', () => {
+    localStorage.setItem('usuario', JSON.stringify({
+      id: 7,
+      permissoes: { futuros_clientes_ver_todos: true }
+    }));
+
+    render(
+      <FuturoClienteDetalheModal
+        linha={{ id: 14, futuro_cliente: 1, dados_json: {}, sondagem: { chips_itens: [] } }}
+        onClose={() => {}}
+        onAtualizado={() => {}}
+        somenteLeitura
+        permitirGerenciarVinculo
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: 'Vincular venda' })).not.toBeInTheDocument();
+    localStorage.removeItem('usuario');
+  });
+
+  it('permite ao gerente administrar um vinculo existente na visao Todos', () => {
+    localStorage.setItem('usuario', JSON.stringify({
+      id: 7,
+      permissoes: {
+        futuros_clientes_ver_todos: true,
+        gerenciar_leads: true
+      }
+    }));
+
+    render(
+      <FuturoClienteDetalheModal
+        linha={{ id: 15, futuro_cliente: 1, venda_id: 21, dados_json: {}, sondagem: { chips_itens: [] } }}
+        onClose={() => {}}
+        onAtualizado={() => {}}
+        somenteLeitura
+        permitirGerenciarVinculo
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Gerenciar vínculo' })).toBeVisible();
+    localStorage.removeItem('usuario');
+  });
+
   it('oferece envio posterior somente para futuro cliente novo mantido na carteira', () => {
     localStorage.setItem('usuario', JSON.stringify({ id: 7, role: { nome: 'admin' } }));
     const linha = {

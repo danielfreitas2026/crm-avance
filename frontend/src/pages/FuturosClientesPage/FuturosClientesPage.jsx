@@ -2735,6 +2735,7 @@ export function FuturoClienteDetalheModal({
   onDistribuido,
   onRegistrarVenda,
   somenteLeitura = false,
+  permitirGerenciarVinculo = false,
   permitirReenvioTelegram = false,
   exibirHistorico = false
 }) {
@@ -2796,6 +2797,7 @@ export function FuturoClienteDetalheModal({
     && !distribuicaoAtiva;
   const podeEditar = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'futuros_clientes_registrar')));
   const podeRegistrarVenda = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'vendas_criar')));
+  const podeGerenciarVinculo = comoAdmin && (!somenteLeitura || permitirGerenciarVinculo);
   const podeEnviarDistribuicao = destinoDistribuivel
     && estadoDistribuivel
     && !vendaRegistrada
@@ -3222,7 +3224,7 @@ export function FuturoClienteDetalheModal({
             {vendaRegistrada ? (
               <>
                 <div className="lead-already-qualified-notice">Este futuro cliente ja possui uma venda registrada. Acesse a pagina de Vendas para visualizar a venda.</div>
-                {comoAdmin && !somenteLeitura && <button type="button" className="btn" onClick={() => setVinculoAberto(true)}>Gerenciar vínculo</button>}
+                {podeGerenciarVinculo && <button type="button" className="btn" onClick={() => setVinculoAberto(true)}>Gerenciar vínculo</button>}
               </>
             ) : vendaRecusada ? (
               <div className="futuro-cliente-recusa is-saved">Venda recusada para este futuro cliente.</div>
@@ -3231,7 +3233,7 @@ export function FuturoClienteDetalheModal({
                 {podeRegistrarVenda && <button type="button" className="btn" onClick={() => setEtapa('venda')} disabled={salvando}>
                   <I.Chart size={14} /> Registrar venda
                 </button>}
-                {comoAdmin && !somenteLeitura && <button type="button" className="btn btn-primary" onClick={() => setVinculoAberto(true)} disabled={salvando}>Vincular venda</button>}
+                {podeGerenciarVinculo && <button type="button" className="btn btn-primary" onClick={() => setVinculoAberto(true)} disabled={salvando}>Vincular venda</button>}
               </>
             )}
           </div>
@@ -3897,6 +3899,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
           onDistribuido={handleDistribuido}
           onRegistrarVenda={handleRegistrarVenda}
           somenteLeitura={escopoTodos || (modoRecebidos && !distribuicaoPermiteAtendimento(linhaAtiva?.distribuicao))}
+          permitirGerenciarVinculo={escopoTodos}
           permitirReenvioTelegram={escopoTodos
             && temPermissao(usuario, 'futuros_clientes_ver_todos')}
           exibirHistorico={escopoTodos}
