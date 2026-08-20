@@ -558,6 +558,40 @@ function formatarDataHora(valor) {
   }, '-');
 }
 
+export function ResponsavelAtualCard({ estadoAtual }) {
+  const nomeResponsavel = estadoAtual?.responsavel?.nome?.trim();
+  const semResponsavel = !nomeResponsavel;
+  const retornoEm = estadoAtual?.retorno_em;
+  const prazoEm = estadoAtual?.prazo_em;
+  const dataReferencia = retornoEm || prazoEm;
+  const motivoDevolucao = estadoAtual?.ultimo_retorno?.motivo;
+
+  return (
+    <div className={`futuro-cliente-responsavel-card${semResponsavel ? ' futuro-cliente-responsavel-card--sem-responsavel' : ''}`}>
+      <span className="futuro-cliente-responsavel-card__icone" aria-hidden="true">
+        {semResponsavel ? <I.AlertTriangle size={16} /> : <I.User size={16} />}
+      </span>
+      <div className="futuro-cliente-responsavel-card__conteudo">
+        <strong>{nomeResponsavel || 'Sem responsável'}</strong>
+        <div className="futuro-cliente-responsavel-card__meta">
+          <span className="futuro-cliente-responsavel-card__etapa">{estadoAtual?.etapa || '-'}</span>
+          {dataReferencia && (
+            <span className="futuro-cliente-responsavel-card__data">
+              <I.Calendar size={12} aria-hidden="true" />
+              {retornoEm ? 'Retorno' : 'Prazo'}: {formatarDataHora(dataReferencia)}
+            </span>
+          )}
+        </div>
+        {motivoDevolucao && (
+          <small className="futuro-cliente-responsavel-card__devolucao" title={motivoDevolucao}>
+            Última devolução: {motivoDevolucao}
+          </small>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Formata data para exibicao ou envio.
  */
@@ -4037,7 +4071,11 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
                 <th>Envio</th>
                 <th>Notas</th>
                 <th>Situação</th>
-                {escopoTodos && <th>Com quem está</th>}
+                {escopoTodos && (
+                  <th className="futuro-cliente-responsavel-col">
+                    <span className="futuro-cliente-responsavel-header"><I.User size={14} aria-hidden="true" />Com quem está</span>
+                  </th>
+                )}
                 <th>Retorno</th>
                 <th>{modoLixeira ? 'Enviado para lixeira' : 'Marcado em'}</th>
                 {modoLixeira && (
@@ -4125,11 +4163,8 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
                         {escopoTodos ? <span className={`pill futuro-cliente-estado futuro-cliente-estado--${linha.estado_atual?.codigo || 'indefinido'}`}><span className="pill-dot" />{linha.estado_atual?.rotulo || '-'}</span> : renderFuturoClienteSituacao(linha)}
                       </td>
                       {escopoTodos && (
-                        <td data-label="Com quem está" className="m-meta futuro-cliente-responsavel-atual">
-                          <strong>{linha.estado_atual?.responsavel?.nome || 'Sem responsável'}</strong>
-                          <small>{linha.estado_atual?.etapa || '-'}</small>
-                          {(linha.estado_atual?.retorno_em || linha.estado_atual?.prazo_em) && <small>{formatarDataHora(linha.estado_atual.retorno_em || linha.estado_atual.prazo_em)}</small>}
-                          {linha.estado_atual?.ultimo_retorno?.motivo && <small title={linha.estado_atual.ultimo_retorno.motivo}>Última devolução: {linha.estado_atual.ultimo_retorno.motivo}</small>}
+                        <td data-label="Com quem está" className="m-meta futuro-cliente-responsavel-col">
+                          <ResponsavelAtualCard estadoAtual={linha.estado_atual} />
                         </td>
                       )}
                       <td data-label="Retorno" className="m-meta">

@@ -6,6 +6,7 @@ import {
   EscolherDestinoFuturoClienteModal,
   FuturoClienteDetalheModal,
   LeadStatusMailing,
+  ResponsavelAtualCard,
   SeletorEscopoFuturosClientes
 } from './FuturosClientesPage';
 import { formatarDuracaoMinutos, getClasseLinhaLead, isVendaAntigaRegistrada, isFuturoClienteVendido, isVendaRecusada, resolverAbaFuturosClientes } from './lead-status';
@@ -92,6 +93,38 @@ describe('abas de futuros clientes', () => {
     rerender(<SeletorEscopoFuturosClientes escopoTodos onChange={() => {}} />);
     expect(screen.getByRole('button', { name: 'Meus' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Todos' })).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+describe('responsável atual do futuro cliente', () => {
+  it('destaca o responsável e identifica etapa, retorno e última devolução', () => {
+    render(<ResponsavelAtualCard estadoAtual={{
+      responsavel: { nome: 'Natália Rodrigues' },
+      etapa: 'Negociação',
+      retorno_em: '2026-08-20 15:30:00',
+      prazo_em: '2026-08-21 16:00:00',
+      ultimo_retorno: { motivo: 'Cliente pediu novo contato.' }
+    }} />);
+
+    const nome = screen.getByText('Natália Rodrigues');
+    expect(nome.closest('.futuro-cliente-responsavel-card')).not.toHaveClass('futuro-cliente-responsavel-card--sem-responsavel');
+    expect(screen.getByText('Negociação')).toBeVisible();
+    expect(screen.getByText(/^Retorno:/)).toBeVisible();
+    expect(screen.queryByText(/^Prazo:/)).not.toBeInTheDocument();
+    expect(screen.getByTitle('Cliente pediu novo contato.')).toHaveTextContent('Última devolução: Cliente pediu novo contato.');
+  });
+
+  it('usa alerta âmbar e identifica o prazo quando não há responsável', () => {
+    render(<ResponsavelAtualCard estadoAtual={{
+      responsavel: null,
+      etapa: 'Telegram',
+      prazo_em: '2026-08-20 18:00:00'
+    }} />);
+
+    const card = screen.getByText('Sem responsável').closest('.futuro-cliente-responsavel-card');
+    expect(card).toHaveClass('futuro-cliente-responsavel-card--sem-responsavel');
+    expect(screen.getByText('Telegram')).toBeVisible();
+    expect(screen.getByText(/^Prazo:/)).toBeVisible();
   });
 });
 

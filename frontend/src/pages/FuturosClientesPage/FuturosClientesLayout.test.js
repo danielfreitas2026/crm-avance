@@ -16,4 +16,14 @@ describe('layout responsivo dos futuros clientes', () => {
     expect(estilos).toMatch(/\.clientes-leads-toolbar\s*\{\s*flex-wrap:\s*wrap/);
     expect(estilos).toMatch(/\.clientes-search\s*\{\s*flex:\s*1 1 100%/);
   });
+
+  it('reserva espaço para o card interno do responsável sem alterar o display da célula', () => {
+    expect(estilos).toMatch(/\.futuros-clientes-table \.futuro-cliente-responsavel-col\s*\{[\s\S]*?min-width:\s*210px[\s\S]*?max-width:\s*240px/);
+    expect(estilos).toMatch(/\.futuro-cliente-responsavel-card\s*\{[\s\S]*?display:\s*flex/);
+    expect(estilos).not.toMatch(/\.futuro-cliente-responsavel-col\s*\{[^}]*display:\s*flex/);
+  });
+
+  it('posiciona o responsável em uma linha completa no card mobile', () => {
+    expect(estilos).toMatch(/@media \(max-width: 640px\)[\s\S]*?td\.futuro-cliente-responsavel-col\s*\{[\s\S]*?grid-column:\s*1 \/ -1[\s\S]*?grid-row:\s*3/);
+  });
 });
