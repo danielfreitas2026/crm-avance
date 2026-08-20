@@ -335,7 +335,7 @@ describe('modal de adição de lead', () => {
     localStorage.removeItem('usuario');
   });
 
-  it('permite republicar na visao completa somente com as duas permissoes e pede confirmacao', async () => {
+  it('permite republicar na visao completa com a permissao de ver todos e pede confirmacao', async () => {
     const linha = {
       id: 32,
       atribuido_para_id: 9,
@@ -362,7 +362,7 @@ describe('modal de adição de lead', () => {
       permissoes: { futuros_clientes_ver_todos: true }
     }));
     const { unmount } = render(<FuturoClienteDetalheModal {...props} />);
-    expect(screen.queryByRole('button', { name: /Reencaminhar ao Telegram/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Reencaminhar ao Telegram/i })).toBeVisible();
     unmount();
 
     localStorage.setItem('usuario', JSON.stringify({

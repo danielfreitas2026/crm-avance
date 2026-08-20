@@ -2888,8 +2888,7 @@ async function enviarFuturoClienteParaDistribuicao(linhaId, usuarioId) {
   const usuarioSolicitante = await Usuario.query()
     .findById(usuario)
     .withGraphFetched('role');
-  const podeReencaminharTodos = usuarioTemPermissaoLocal(usuarioSolicitante, 'futuros_clientes_registrar')
-    && usuarioTemPermissaoLocal(usuarioSolicitante, 'futuros_clientes_ver_todos');
+  const podeReencaminharTodos = usuarioTemPermissaoLocal(usuarioSolicitante, 'futuros_clientes_ver_todos');
 
   await LeadLinha.transaction(async trx => {
     const linha = await LeadLinha.query(trx).findById(id).forUpdate();

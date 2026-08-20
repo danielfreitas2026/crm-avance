@@ -2742,7 +2742,6 @@ export function FuturoClienteDetalheModal({
   const destinoDistribuivel = ['carteira', 'distribuicao'].includes(linha.futuro_cliente_destino);
   const distribuicaoAtiva = ['aguardando_aceite', 'aceito'].includes(linha.distribuicao?.status);
   const temPermissoesReenvio = permitirReenvioTelegram
-    && temPermissao(usuario, 'futuros_clientes_registrar')
     && temPermissao(usuario, 'futuros_clientes_ver_todos');
   const estadoDistribuivel = (!linha.status_operacional || linha.status_operacional === 'qualificado')
     && linha.etapa_atual !== 'venda'
@@ -3855,7 +3854,6 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
           onRegistrarVenda={handleRegistrarVenda}
           somenteLeitura={escopoTodos || (modoRecebidos && (linhaAtiva?.distribuicao?.status !== 'aceito' || Boolean(linhaAtiva?.distribuicao?.acao_registrada_em)))}
           permitirReenvioTelegram={escopoTodos
-            && podeGerenciar
             && temPermissao(usuario, 'futuros_clientes_ver_todos')}
           exibirHistorico={escopoTodos}
         />

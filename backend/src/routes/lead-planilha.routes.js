@@ -38,7 +38,7 @@ router.post(
 router.get('/me/futuros-clientes/lixeira', exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']), leadPlanilhaController.listarFuturosClientesLixeira);
 router.post(
   '/me/futuros-clientes/:id/distribuir',
-  exigirUmaPermissao(['futuros_clientes_registrar']),
+  exigirUmaPermissao(['futuros_clientes_registrar', 'futuros_clientes_ver_todos']),
   auditar({
     acao: 'lead_linha.futuro_cliente_enviado_distribuicao',
     entidade: 'lead_linhas',

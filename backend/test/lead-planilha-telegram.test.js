@@ -10,6 +10,8 @@ const {
   resolverDestinoNovoFuturoCliente
 } = _internals;
 const db = require('../src/database/connection');
+const Usuario = require('../src/models/Usuario');
+const leadPlanilhaRoutes = require('../src/routes/lead-planilha.routes');
 
 test('notifica o Telegram somente ao qualificar um futuro cliente pela primeira vez', () => {
   assert.equal(deveNotificarNovoFuturoCliente({
@@ -96,6 +98,34 @@ test('republicacao bloqueia recusas, vendas e atribuicoes ativas', () => {
     ...acessoTotal,
     possuiAtribuicaoAtiva: true
   })?.statusCode, 409);
+});
+
+test('rota de distribuicao aceita usuario com ver todos mesmo sem permissao de registrar', async () => {
+  const camada = leadPlanilhaRoutes.stack.find(item => item.route?.path === '/me/futuros-clientes/:id/distribuir');
+  const middlewarePermissao = camada.route.stack[0].handle;
+  const originalQuery = Usuario.query;
+  Usuario.query = () => ({
+    findById() { return this; },
+    withGraphFetched: async () => ({
+      id: 22,
+      ativo: true,
+      permissoes: { futuros_clientes_registrar: false, futuros_clientes_ver_todos: true },
+      role: { nome: 'usuario', permissoes: {} }
+    })
+  });
+  let avancou = false;
+  const resposta = {
+    statusCode: 200,
+    status(code) { this.statusCode = code; return this; },
+    json() { return this; }
+  };
+  try {
+    await middlewarePermissao({ usuario: { id: 22 } }, resposta, () => { avancou = true; });
+  } finally {
+    Usuario.query = originalQuery;
+  }
+  assert.equal(avancou, true);
+  assert.equal(resposta.statusCode, 200);
 });
 
 test('exibe somente o encaminhamento mais recente de uma indicacao duplicada', () => {
