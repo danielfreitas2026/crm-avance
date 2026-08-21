@@ -679,30 +679,49 @@ async function encerrarMensagemTelegram(atribuicao, textoStatus, aceiteStatusFin
   const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
   if (!chatId || !atribuicao.telegram_message_id) return;
   const original = String(atribuicao.telegram_mensagem_texto || 'Futuro cliente encaminhado.');
+  const chamarApi = opcoes.chamarApi || telegramService.chamarApi;
+  const carregarLinha = opcoes.carregarLinha || carregarLinhaTelegram;
+  const expiradoAutomaticamente = [
+    ACEITE_EXPIRADO,
+    ACEITE_EXPIRADO_SEM_ACEITE,
+    ACEITE_EXPIRADO_APOS_RETORNO
+  ].includes(aceiteStatusFinal);
+
+  if (expiradoAutomaticamente) {
+    try {
+      await chamarApi('deleteMessage', {
+        chat_id: chatId,
+        message_id: atribuicao.telegram_message_id
+      });
+      return { excluida: true };
+    } catch (error) {
+      if (/message to delete not found/i.test(String(error?.message || ''))) {
+        return { ausente: true };
+      }
+    }
+  }
+
   try {
-    const expiradoAutomaticamente = [
-      ACEITE_EXPIRADO,
-      ACEITE_EXPIRADO_SEM_ACEITE,
-      ACEITE_EXPIRADO_APOS_RETORNO
-    ]
-      .includes(aceiteStatusFinal);
     const linha = expiradoAutomaticamente
-      ? await carregarLinhaTelegram(atribuicao.lead_linha_id)
+      ? await carregarLinha(atribuicao.lead_linha_id)
       : null;
     const texto = expiradoAutomaticamente
       ? montarMensagemEnvioExpiradoTelegram(atribuicao, linha || {}, aceiteStatusFinal)
       : `\u26D4 ENVIO CANCELADO - ${textoStatus}\n\n${original}`.slice(0, 4096);
-    await telegramService.chamarApi('editMessageText', {
+    await chamarApi('editMessageText', {
       chat_id: chatId,
       message_id: atribuicao.telegram_message_id,
       text: texto,
       disable_web_page_preview: true,
       reply_markup: { inline_keyboard: [] }
     });
+    return { atualizada: true };
   } catch (error) {
     if (/message is not modified/i.test(String(error?.message || ''))) return;
+    if (/message to edit not found/i.test(String(error?.message || ''))) return { ausente: true };
     console.error('Erro ao marcar envio cancelado no Telegram:', error.message);
     if (opcoes.propagarErro) throw error;
+    return { atualizada: false };
   }
 }
 
@@ -1038,6 +1057,7 @@ module.exports = {
     enviarNotificacaoVendaFechada,
     enviarNotificacaoRetornoAgendado,
     vendaCorrespondeAtribuicao,
-    botaoCancelarEnvio
+    botaoCancelarEnvio,
+    encerrarMensagemTelegram
   }
 };

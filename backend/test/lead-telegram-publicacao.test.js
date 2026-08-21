@@ -22,6 +22,7 @@ test('falha do Telegram conserva a republicacao para sucesso posterior', async (
   try {
     const falhou = await processarItem(item, {
       validarLinha: async () => true,
+      reconciliacaoPendente: async () => false,
       carregarLinha: async id => ({ id }),
       enviar: async () => ({ enviado: false, motivo: 'Telegram indisponivel' }),
       marcarFalha: async (tarefa, error) => falhas.push({ tarefa, error }),
@@ -33,6 +34,7 @@ test('falha do Telegram conserva a republicacao para sucesso posterior', async (
 
     const recuperou = await processarItem({ ...item, tentativas: 2 }, {
       validarLinha: async () => true,
+      reconciliacaoPendente: async () => false,
       carregarLinha: async id => ({ id }),
       enviar: async () => ({ enviado: true, message_id: 777 }),
       marcarFalha: async () => assert.fail('nao deveria registrar nova falha'),
@@ -59,6 +61,7 @@ test('claim atomico impede envio duplicado entre dois workers e em ciclos repeti
   const opcoes = {
     reivindicar,
     validarLinha: async () => true,
+    reconciliacaoPendente: async () => false,
     carregarLinha: async id => ({ id }),
     enviar: async () => { envios += 1; return { enviado: true, message_id: 777 }; },
     registrar: async () => true
@@ -88,6 +91,43 @@ test('tarefa deixa de publicar quando o lead foi reatribuido antes do envio', as
   assert.equal(resultado.ignorado, true);
   assert.equal(ignorou, true);
   assert.equal(enviou, false);
+});
+
+test('republicacao aguarda o encerramento da mensagem anterior e envia uma unica vez apos recuperar', async () => {
+  const item = { id: 9, lead_linha_id: 42, tentativas: 1 };
+  const falhas = [];
+  let pendente = true;
+  let envios = 0;
+  const erroAnterior = console.error;
+  console.error = () => {};
+  try {
+    const bloqueado = await processarItem(item, {
+      validarLinha: async () => true,
+      reconciliacaoPendente: async () => pendente,
+      carregarLinha: async () => assert.fail('nao deve carregar antes da reconciliacao'),
+      enviar: async () => { envios += 1; },
+      marcarFalha: async (tarefa, error) => falhas.push({ tarefa, error })
+    });
+
+    assert.equal(bloqueado.falhou, true);
+    assert.equal(envios, 0);
+    assert.equal(falhas.length, 1);
+
+    pendente = false;
+    const recuperado = await processarItem({ ...item, tentativas: 2 }, {
+      validarLinha: async () => true,
+      reconciliacaoPendente: async () => pendente,
+      carregarLinha: async id => ({ id }),
+      enviar: async () => { envios += 1; return { enviado: true, message_id: 777 }; },
+      registrar: async () => true,
+      marcarFalha: async () => assert.fail('nao deveria falhar apos a reconciliacao')
+    });
+
+    assert.equal(recuperado.publicado, true);
+    assert.equal(envios, 1);
+  } finally {
+    console.error = erroAnterior;
+  }
 });
 
 test('migration protege atribuicoes atuais e adiciona metadados duraveis da fila', () => {

@@ -59,6 +59,15 @@ async function linhaAindaPublicavel(linhaId) {
   return !atribuicaoAtiva;
 }
 
+async function possuiReconciliacaoPendente(linhaId) {
+  const atualizacao = await db('lead_telegram_atualizacoes as lta')
+    .join('lead_atribuicoes as la', 'la.id', 'lta.lead_atribuicao_id')
+    .where('la.lead_linha_id', Number(linhaId))
+    .whereIn('lta.status', ['pendente', 'processando', 'falhou'])
+    .first('lta.id');
+  return Boolean(atualizacao);
+}
+
 async function enfileirarRepublicacao(linhaId, database = db, agora = new Date()) {
   const id = Number(linhaId);
   if (!id) return false;
@@ -172,6 +181,7 @@ async function marcarIgnorado(item, agora = new Date()) {
 async function processarItem(item, opcoes = {}) {
   const carregarLinha = opcoes.carregarLinha || carregarLinhaPublicacao;
   const validarLinha = opcoes.validarLinha || linhaAindaPublicavel;
+  const reconciliacaoPendente = opcoes.reconciliacaoPendente || possuiReconciliacaoPendente;
   const enviar = opcoes.enviar || telegramService.enviarFuturoCliente;
   const salvarSucesso = opcoes.registrar || registrar;
   const salvarFalha = opcoes.marcarFalha || marcarFalha;
@@ -181,6 +191,9 @@ async function processarItem(item, opcoes = {}) {
     if (!await validarLinha(item.lead_linha_id)) {
       await salvarIgnorado(item, agora);
       return { publicado: false, ignorado: true };
+    }
+    if (await reconciliacaoPendente(item.lead_linha_id)) {
+      throw new Error('A mensagem anterior do Telegram ainda nao foi encerrada');
     }
     const linha = await carregarLinha(item.lead_linha_id);
     if (!linha) throw new Error('Linha do futuro cliente nao encontrada');
@@ -250,6 +263,7 @@ module.exports = {
     calcularAtrasoRetentativa,
     carregarLinhaPublicacao,
     linhaAindaPublicavel,
+    possuiReconciliacaoPendente,
     reivindicarRepublicacao,
     processarItem
   }

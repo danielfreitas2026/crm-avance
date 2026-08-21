@@ -7,6 +7,7 @@ const { _internals: leadPlanilhaInternals } = require('../src/services/lead-plan
 const {
   adicionarMinutos,
   calcularPrazoAcao,
+  encerrarMensagemTelegram,
   linhaTemAcaoValida,
   botaoCancelarEnvio,
   enviarNotificacaoVendaFechada,
@@ -210,6 +211,83 @@ test('diferencia no Telegram a devolucao depois do retorno vencido', () => {
   }, leadDistribuicaoService.ACEITE_EXPIRADO_APOS_RETORNO);
 
   assert.match(texto, /retorno vencido ha 30 minutos sem novo desfecho/);
+});
+
+test('exclui a mensagem anterior quando a distribuicao expira automaticamente', async () => {
+  const chamadas = [];
+  const resultado = await encerrarMensagemTelegram({
+    lead_linha_id: 42,
+    telegram_chat_id: '-100123',
+    telegram_message_id: '777'
+  }, 'prazo expirado', leadDistribuicaoService.ACEITE_EXPIRADO, {
+    carregarLinha: async id => ({ id, sondagem: { razao_social: 'Empresa Teste' } }),
+    chamarApi: async (metodo, dados) => {
+      chamadas.push({ metodo, dados });
+      return true;
+    },
+    propagarErro: true
+  });
+
+  assert.deepEqual(resultado, { excluida: true });
+  assert.deepEqual(chamadas, [{
+    metodo: 'deleteMessage',
+    dados: { chat_id: '-100123', message_id: '777' }
+  }]);
+});
+
+test('neutraliza a mensagem sem botoes quando o Telegram nao permite exclui-la', async () => {
+  const chamadas = [];
+  const resultado = await encerrarMensagemTelegram({
+    lead_linha_id: 42,
+    telegram_chat_id: '-100123',
+    telegram_message_id: '777'
+  }, 'prazo expirado', leadDistribuicaoService.ACEITE_EXPIRADO, {
+    carregarLinha: async id => ({ id, sondagem: { razao_social: 'Empresa Teste' } }),
+    chamarApi: async (metodo, dados) => {
+      chamadas.push({ metodo, dados });
+      if (metodo === 'deleteMessage') throw new Error('not enough rights to delete messages');
+      return true;
+    },
+    propagarErro: true
+  });
+
+  assert.deepEqual(resultado, { atualizada: true });
+  assert.deepEqual(chamadas.map(item => item.metodo), ['deleteMessage', 'editMessageText']);
+  assert.deepEqual(chamadas[1].dados.reply_markup, { inline_keyboard: [] });
+  assert.match(chamadas[1].dados.text, /ENVIO CANCELADO/);
+});
+
+test('considera encerrada uma mensagem que ja nao existe no Telegram', async () => {
+  const resultado = await encerrarMensagemTelegram({
+    lead_linha_id: 42,
+    telegram_chat_id: '-100123',
+    telegram_message_id: '777'
+  }, 'prazo expirado', leadDistribuicaoService.ACEITE_EXPIRADO, {
+    chamarApi: async () => { throw new Error('Bad Request: message to delete not found'); },
+    propagarErro: true
+  });
+
+  assert.deepEqual(resultado, { ausente: true });
+});
+
+test('propaga a falha quando nao consegue excluir nem neutralizar a mensagem antiga', async () => {
+  const erroAnterior = console.error;
+  console.error = () => {};
+  try {
+    await assert.rejects(() => encerrarMensagemTelegram({
+      lead_linha_id: 42,
+      telegram_chat_id: '-100123',
+      telegram_message_id: '777'
+    }, 'prazo expirado', leadDistribuicaoService.ACEITE_EXPIRADO, {
+      carregarLinha: async id => ({ id, sondagem: { razao_social: 'Empresa Teste' } }),
+      chamarApi: async metodo => {
+        throw new Error(metodo === 'deleteMessage' ? 'falha ao excluir' : 'falha ao editar');
+      },
+      propagarErro: true
+    }), /falha ao editar/);
+  } finally {
+    console.error = erroAnterior;
+  }
 });
 
 test('monta mensagem de retorno com razao social, CNPJ, consultora e horario', () => {
