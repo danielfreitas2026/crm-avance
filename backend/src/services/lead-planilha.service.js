@@ -2824,7 +2824,8 @@ function resolverDestinoNovoFuturoCliente(linha, dados = {}) {
 
 async function publicarFuturoClienteTelegram(linhaFormatada) {
   try {
-    const publicacao = await telegramService.enviarFuturoCliente(linhaFormatada);
+    const linhaPublicacao = await leadTelegramPublicacaoService.prepararLinhaPublicacao(linhaFormatada);
+    const publicacao = await telegramService.enviarFuturoCliente(linhaPublicacao);
     if (publicacao.enviado && publicacao.message_id) {
       await leadTelegramPublicacaoService.registrar(linhaFormatada.id, publicacao);
     } else {

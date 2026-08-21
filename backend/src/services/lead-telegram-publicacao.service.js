@@ -5,6 +5,14 @@ const RETENTATIVA_INICIAL_MS = 30 * 1000;
 const RETENTATIVA_MAXIMA_MS = 30 * 60 * 1000;
 const LEASE_MS = 5 * 60 * 1000;
 
+const MOTIVOS_RETORNO_POR_STATUS = {
+  recusado: 'Recusado pela consultora anterior',
+  cancelado: 'Envio anterior cancelado',
+  expirado_sem_aceite: 'Prazo para aceitar a indicação expirado',
+  expirado_sem_acao: 'Prazo de contato expirado sem ação registrada no CRM',
+  expirado_apos_retorno: 'Retorno agendado venceu sem novo desfecho registrado no CRM'
+};
+
 function parseJson(valor, fallback = {}) {
   if (valor && typeof valor === 'object') return valor;
   try {
@@ -19,6 +27,47 @@ function calcularAtrasoRetentativa(tentativas) {
   return Math.min(RETENTATIVA_INICIAL_MS * (2 ** expoente), RETENTATIVA_MAXIMA_MS);
 }
 
+function montarContextoPublicacao(atribuicao) {
+  if (!atribuicao) return { tipo: 'novo' };
+  const motivoPersistido = String(
+    atribuicao.cancelamento_motivo || atribuicao.motivo_resultado || ''
+  ).trim();
+  return {
+    tipo: 'retorno',
+    aceite_status_anterior: atribuicao.aceite_status || null,
+    motivo_retorno: motivoPersistido
+      || MOTIVOS_RETORNO_POR_STATUS[atribuicao.aceite_status]
+      || 'Envio anterior encerrado sem motivo informado',
+    responsavel_anterior: String(atribuicao.usuario_nome || '').trim()
+      || 'Usuário removido ou não informado'
+  };
+}
+
+async function carregarContextoPublicacao(linhaId, database = db) {
+  const ultimaAtribuicao = await database('lead_atribuicoes as la')
+    .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
+    .where({ 'la.lead_linha_id': Number(linhaId), 'la.etapa': 'venda' })
+    .whereNotNull('la.aceite_status')
+    .whereNotNull('la.finalizado_em')
+    .select(
+      'la.aceite_status',
+      'la.cancelamento_motivo',
+      'la.motivo_resultado',
+      'u.nome as usuario_nome'
+    )
+    .orderBy('la.id', 'desc')
+    .first();
+  return montarContextoPublicacao(ultimaAtribuicao);
+}
+
+async function prepararLinhaPublicacao(linha, database = db) {
+  if (!linha?.id) return linha;
+  return {
+    ...linha,
+    contexto_publicacao_telegram: await carregarContextoPublicacao(linha.id, database)
+  };
+}
+
 async function carregarLinhaPublicacao(linhaId) {
   const linha = await db('lead_linhas').where('id', Number(linhaId)).first();
   if (!linha) return null;
@@ -30,7 +79,7 @@ async function carregarLinhaPublicacao(linhaId) {
     .select('ls.*', 'u.nome as usuario_nome', 'oa.nome as operadora_atual_nome', 'oi.nome as operadora_interesse_nome')
     .first();
 
-  return {
+  return prepararLinhaPublicacao({
     ...linha,
     dados_json: parseJson(linha.dados_json),
     sondagem: sondagem ? {
@@ -40,7 +89,7 @@ async function carregarLinhaPublicacao(linhaId) {
       operadoraAtual: { nome: sondagem.operadora_atual_nome },
       operadoraInteresse: { nome: sondagem.operadora_interesse_nome }
     } : null
-  };
+  });
 }
 
 async function linhaAindaPublicavel(linhaId) {
@@ -256,11 +305,14 @@ module.exports = {
   registrar,
   registrarFalha,
   marcarRevertido,
+  prepararLinhaPublicacao,
   enfileirarRepublicacao,
   processarRepublicacaoDaLinha,
   processarRepublicacoesPendentes,
   _internals: {
     calcularAtrasoRetentativa,
+    montarContextoPublicacao,
+    carregarContextoPublicacao,
     carregarLinhaPublicacao,
     linhaAindaPublicavel,
     possuiReconciliacaoPendente,

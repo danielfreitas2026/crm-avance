@@ -248,12 +248,26 @@ function montarMensagensVenda(venda = {}) {
 
 function montarMensagemFuturoCliente(linha = {}) {
   const sondagem = linha.sondagem || {};
+  const contextoPublicacao = linha.contexto_publicacao_telegram || { tipo: 'novo' };
+  const ehRetorno = contextoPublicacao.tipo === 'retorno';
   const telefone = [sondagem.whatsapp_ddd, sondagem.whatsapp_numero].filter(Boolean).join('');
   const itensChips = Array.isArray(sondagem.chips_itens) ? sondagem.chips_itens : [];
   const descricaoChips = itensChips.length ? itensChips.map(item => `${item.quantidade}x ${formatarMoeda(item.preco_por_chip)}`).join(', ') : `${sondagem.quantidade_chips || 0} chip(s)`;
   const tipoContato = sondagem.contato_tipo === 'adm' ? 'ADM' : (sondagem.contato_tipo === 'rl' ? 'RL' : 'Não informado');
+  const contextoDisponibilizacao = ehRetorno
+    ? [
+      'Motivo da disponibilização: Retorno para novo encaminhamento',
+      `Motivo do retorno: ${contextoPublicacao.motivo_retorno || 'Não informado'}`,
+      `Responsável anterior: ${contextoPublicacao.responsavel_anterior || 'Usuário removido ou não informado'}`
+    ]
+    : ['Motivo da disponibilização: Primeira publicação após a qualificação'];
   return [
-    '📌 NOVO FUTURO CLIENTE', '', `Cadastro feito por: ${sondagem.usuario?.nome || 'Não informado'}`, '',
+    ehRetorno ? '🔄 FUTURO CLIENTE DE RETORNO' : '📌 NOVO FUTURO CLIENTE',
+    '',
+    ...contextoDisponibilizacao,
+    '',
+    `Cadastro feito por: ${sondagem.usuario?.nome || 'Não informado'}`,
+    '',
     `Empresa: ${sondagem.razao_social || 'Não informada'}`, `CNPJ: ${sondagem.cnpj || 'Não informado'}`,
     `Contato: ${sondagem.contato_nome || 'Não informado'} (${tipoContato})`, `Melhor número para contato: ${formatarTelefone(sondagem.melhor_numero_contato)}`,
     `WhatsApp: ${formatarTelefone(telefone)}`, `Operadora atual: ${sondagem.operadoraAtual?.nome || 'Não informada'}`,
@@ -271,10 +285,11 @@ function montarMensagemFuturoClienteRevertido(linha = {}) {
   return `❌ FUTURO CLIENTE REVERTIDO\n\nEste contato foi revertido no CRM e não está mais disponível para encaminhamento.\n\n${montarMensagemFuturoCliente(linha)}`.slice(0, 4096);
 }
 
-async function enviarFuturoCliente(linha) {
+async function enviarFuturoCliente(linha, opcoes = {}) {
   const chatId = obterChatId('TELEGRAM_FUTUROS_CLIENTES_CHAT_ID');
   if (!tokenConfigurado() || !chatId) return { enviado: false, motivo: 'telegram_nao_configurado' };
-  const resultado = await chamarApi('sendMessage', {
+  const chamar = opcoes.chamarApi || chamarApi;
+  const resultado = await chamar('sendMessage', {
     chat_id: chatId,
     text: montarMensagemFuturoCliente(linha),
     parse_mode: 'Markdown',

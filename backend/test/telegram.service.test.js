@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { enviarVenda, atualizarMensagemFuturoClienteRevertido, _internals } = require('../src/services/telegram.service');
+const { enviarFuturoCliente, enviarVenda, atualizarMensagemFuturoClienteRevertido, _internals } = require('../src/services/telegram.service');
 
 test('monta notificacao de futuro cliente com dados da sondagem e responsavel pelo cadastro', () => {
   const texto = _internals.montarMensagemFuturoCliente({
@@ -24,6 +24,69 @@ test('monta notificacao de futuro cliente com dados da sondagem e responsavel pe
   assert.match(texto, /Valor mensal estimado: R\$\s?99,80/);
   assert.match(texto, /Data do contato: 15\/07\/2026/);
   assert.match(texto, /Cadastro feito por: Consultor Teste/);
+  assert.match(texto, /^📌 NOVO FUTURO CLIENTE/);
+  assert.match(texto, /Motivo da disponibilização: Primeira publicação após a qualificação/);
+  assert.doesNotMatch(texto, /Responsável anterior:/);
+});
+
+test('monta retorno com motivo e responsavel anterior na mesma mensagem do encaminhamento', () => {
+  const texto = _internals.montarMensagemFuturoCliente({
+    contexto_publicacao_telegram: {
+      tipo: 'retorno',
+      motivo_retorno: 'Consultora recusou por indisponibilidade',
+      responsavel_anterior: 'Ana Consultora'
+    },
+    sondagem: {
+      razao_social: 'Empresa Retorno LTDA',
+      usuario: { nome: 'Carlos Sondador' }
+    }
+  });
+
+  assert.match(texto, /^🔄 FUTURO CLIENTE DE RETORNO/);
+  assert.match(texto, /Motivo da disponibilização: Retorno para novo encaminhamento/);
+  assert.match(texto, /Motivo do retorno: Consultora recusou por indisponibilidade/);
+  assert.match(texto, /Responsável anterior: Ana Consultora/);
+  assert.match(texto, /Empresa: Empresa Retorno LTDA/);
+});
+
+test('envia contexto de retorno e botao de encaminhar juntos em uma unica mensagem', async () => {
+  const tokenAnterior = process.env.TELEGRAM_BOT_TOKEN;
+  const chatAnterior = process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
+  process.env.TELEGRAM_BOT_TOKEN = 'token-de-teste';
+  process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID = '-1001';
+  const chamadas = [];
+
+  try {
+    const resultado = await enviarFuturoCliente({
+      id: 42,
+      contexto_publicacao_telegram: {
+        tipo: 'retorno',
+        motivo_retorno: 'Prazo expirado',
+        responsavel_anterior: 'Ana Consultora'
+      },
+      sondagem: { razao_social: 'Empresa Retorno LTDA' }
+    }, {
+      chamarApi: async (metodo, dados) => {
+        chamadas.push({ metodo, dados });
+        return { message_id: 777 };
+      }
+    });
+
+    assert.deepEqual(resultado, { enviado: true, message_id: 777 });
+    assert.equal(chamadas.length, 1);
+    assert.equal(chamadas[0].metodo, 'sendMessage');
+    assert.match(chamadas[0].dados.text, /FUTURO CLIENTE DE RETORNO/);
+    assert.match(chamadas[0].dados.text, /Motivo do retorno: Prazo expirado/);
+    assert.match(chamadas[0].dados.text, /Responsável anterior: Ana Consultora/);
+    assert.deepEqual(chamadas[0].dados.reply_markup, {
+      inline_keyboard: [[{ text: 'Encaminhar', callback_data: 'fc:selecionar:42' }]]
+    });
+  } finally {
+    if (tokenAnterior === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = tokenAnterior;
+    if (chatAnterior === undefined) delete process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
+    else process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID = chatAnterior;
+  }
 });
 
 test('marca a mensagem do futuro cliente como revertida e remove o botao de encaminhar', async () => {

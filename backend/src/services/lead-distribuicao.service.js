@@ -820,9 +820,7 @@ async function republicarPendentesAntigosNoTelegram() {
   for (const pendente of pendentes) {
     const linhaId = Number(pendente.id);
     await leadTelegramPublicacaoService.enfileirarRepublicacao(linhaId);
-    const resultado = await leadTelegramPublicacaoService.processarRepublicacaoDaLinha(linhaId, {
-      carregarLinha: carregarLinhaTelegram
-    });
+    const resultado = await leadTelegramPublicacaoService.processarRepublicacaoDaLinha(linhaId);
     if (resultado.publicado) publicados += 1;
     if (resultado.falhou) falhas += 1;
   }
@@ -933,9 +931,7 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
     );
   }
   if (opcoes.republicar !== false && opcoes.processarTelegram !== false) {
-    await leadTelegramPublicacaoService.processarRepublicacaoDaLinha(resultado.linhaId, {
-      carregarLinha: carregarLinhaTelegram
-    });
+    await leadTelegramPublicacaoService.processarRepublicacaoDaLinha(resultado.linhaId);
   }
   return resultado;
 }

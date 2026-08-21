@@ -4,7 +4,46 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const service = require('../src/services/lead-telegram-publicacao.service');
-const { calcularAtrasoRetentativa, processarItem } = service._internals;
+const { calcularAtrasoRetentativa, montarContextoPublicacao, processarItem } = service._internals;
+
+test('classifica como novo somente quando nao existe atribuicao de venda encerrada', () => {
+  assert.deepEqual(montarContextoPublicacao(null), { tipo: 'novo' });
+});
+
+test('monta os motivos de retorno para todos os encerramentos da distribuicao', () => {
+  const cenarios = [
+    ['recusado', 'Recusado pela consultora anterior'],
+    ['cancelado', 'Envio anterior cancelado'],
+    ['expirado_sem_aceite', 'Prazo para aceitar a indicação expirado'],
+    ['expirado_sem_acao', 'Prazo de contato expirado sem ação registrada no CRM'],
+    ['expirado_apos_retorno', 'Retorno agendado venceu sem novo desfecho registrado no CRM']
+  ];
+
+  for (const [aceiteStatus, motivo] of cenarios) {
+    assert.deepEqual(montarContextoPublicacao({
+      aceite_status: aceiteStatus,
+      usuario_nome: 'Beatriz Consultora'
+    }), {
+      tipo: 'retorno',
+      aceite_status_anterior: aceiteStatus,
+      motivo_retorno: motivo,
+      responsavel_anterior: 'Beatriz Consultora'
+    });
+  }
+});
+
+test('prioriza motivo persistido e identifica usuario anterior removido', () => {
+  assert.deepEqual(montarContextoPublicacao({
+    aceite_status: 'recusado',
+    cancelamento_motivo: 'Sem disponibilidade para assumir o contato',
+    usuario_nome: null
+  }), {
+    tipo: 'retorno',
+    aceite_status_anterior: 'recusado',
+    motivo_retorno: 'Sem disponibilidade para assumir o contato',
+    responsavel_anterior: 'Usuário removido ou não informado'
+  });
+});
 
 test('retentativa do Telegram cresce exponencialmente de 30 segundos ate 30 minutos', () => {
   assert.equal(calcularAtrasoRetentativa(1), 30 * 1000);
@@ -91,6 +130,29 @@ test('tarefa deixa de publicar quando o lead foi reatribuido antes do envio', as
   assert.equal(resultado.ignorado, true);
   assert.equal(ignorou, true);
   assert.equal(enviou, false);
+});
+
+test('republicacao preserva o contexto de retorno ao enviar a mensagem', async () => {
+  const contexto = {
+    tipo: 'retorno',
+    motivo_retorno: 'Envio anterior cancelado',
+    responsavel_anterior: 'Ana Consultora'
+  };
+  let linhaEnviada = null;
+
+  const resultado = await processarItem({ id: 9, lead_linha_id: 42, tentativas: 1 }, {
+    validarLinha: async () => true,
+    reconciliacaoPendente: async () => false,
+    carregarLinha: async id => ({ id, contexto_publicacao_telegram: contexto }),
+    enviar: async linha => {
+      linhaEnviada = linha;
+      return { enviado: true, message_id: 777 };
+    },
+    registrar: async () => true
+  });
+
+  assert.equal(resultado.publicado, true);
+  assert.deepEqual(linhaEnviada.contexto_publicacao_telegram, contexto);
 });
 
 test('republicacao aguarda o encerramento da mensagem anterior e envia uma unica vez apos recuperar', async () => {
