@@ -3241,6 +3241,132 @@ async function listarFuturosClientes(filtros = {}, usuarioId) {
   };
 }
 
+function normalizarCampoAcompanhamento(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function obterValorDadosAcompanhamento(dadosJson, termos = []) {
+  const dados = parseJson(dadosJson, {});
+  const entradas = Object.entries(dados || {});
+  for (const termo of termos) {
+    const encontrado = entradas.find(([chave, valor]) => valor && normalizarCampoAcompanhamento(chave).includes(termo));
+    if (encontrado) return String(encontrado[1]).trim();
+  }
+  return '';
+}
+
+function montarQueryFuturosClientesComConsultoras(filtros = {}) {
+  const query = db('lead_atribuicoes as la')
+    .join('lead_linhas as ll', 'll.id', 'la.lead_linha_id')
+    .leftJoin('lead_sondagens as ls', 'ls.lead_linha_id', 'll.id')
+    .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
+    .where('ll.futuro_cliente', true)
+    .whereNull('ll.futuro_cliente_excluido_em')
+    .where('la.etapa', 'venda')
+    .whereIn('la.aceite_status', STATUS_DISTRIBUICAO_RESPONSAVEL)
+    .whereNotExists(
+      db('lead_atribuicoes as la_nova')
+        .select(db.raw('1'))
+        .whereRaw('la_nova.lead_linha_id = la.lead_linha_id')
+        .where('la_nova.etapa', 'venda')
+        .whereNotNull('la_nova.aceite_status')
+        .whereRaw('la_nova.id > la.id')
+    )
+    .whereNull('ll.venda_id')
+    .whereNull('ll.venda_recusada_em')
+    .whereNull('ll.venda_recusada_motivo')
+    .where(builder => builder.whereNull('ll.status_operacional').orWhereNotIn('ll.status_operacional', ['vendido', 'perdido']))
+    .where(builder => builder.whereNull('ll.cliente_recusou').orWhere('ll.cliente_recusou', false))
+    .where(builder => builder
+      .whereNull('la.acao_registrada_em')
+      .orWhere('la.acao_registrada_tipo', 'retorno_agendado'));
+
+  const busca = String(filtros.busca || '').trim().toLowerCase();
+  if (busca) {
+    const digitos = normalizarBuscaDocumento(busca);
+    query.where(builder => {
+      builder
+        .whereRaw('LOWER(COALESCE(ls.razao_social, "")) LIKE ?', [`%${busca}%`])
+        .orWhereRaw('LOWER(COALESCE(ls.cnpj, "")) LIKE ?', [`%${busca}%`])
+        .orWhereRaw('LOWER(COALESCE(u.nome, "")) LIKE ?', [`%${busca}%`])
+        .orWhereRaw('LOWER(CAST(ll.dados_json AS CHAR)) LIKE ?', [`%${busca}%`]);
+      if (digitos) {
+        builder.orWhereRaw(
+          'REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(ls.cnpj, ""), ".", ""), "/", ""), "-", ""), " ", "") LIKE ?',
+          [`%${digitos}%`]
+        ).orWhereRaw(
+          'REPLACE(REPLACE(REPLACE(REPLACE(CAST(ll.dados_json AS CHAR), ".", ""), "/", ""), "-", ""), " ", "") LIKE ?',
+          [`%${digitos}%`]
+        );
+      }
+    });
+  }
+  return query;
+}
+
+function formatarFuturoClienteComConsultora(item) {
+  const atribuidoEm = parseUtcDateTime(item.atribuido_em);
+  const retornoPrevisto = item.prazo_acao_em
+    || (atribuidoEm ? leadDistribuicaoService.calcularPrazoAcao(atribuidoEm) : null);
+  const retornoMarcado = item.acao_registrada_tipo === 'retorno_agendado';
+  const situacao = item.aceite_status === leadDistribuicaoService.ACEITE_AGUARDANDO
+    ? 'aguardando_aceite'
+    : retornoMarcado ? 'retorno_marcado' : 'em_atendimento';
+
+  return {
+    id: Number(item.id),
+    razao_social: String(item.razao_social || '').trim()
+      || obterValorDadosAcompanhamento(item.dados_json, ['razao social', 'empresa', 'nome fantasia', 'nome'])
+      || `Futuro cliente #${item.id}`,
+    cnpj: String(item.cnpj || '').trim()
+      || obterValorDadosAcompanhamento(item.dados_json, ['cnpj'])
+      || 'Não informado',
+    consultora: {
+      id: Number(item.consultora_id) || null,
+      nome: item.consultora_nome || 'Usuário removido'
+    },
+    situacao,
+    retorno_previsto_em: retornoPrevisto
+  };
+}
+
+/** Lista futuros clientes ainda sob responsabilidade de uma consultora. */
+async function listarFuturosClientesComConsultoras(filtros = {}) {
+  const page = Math.max(1, Number(filtros.page || 1));
+  const pageSize = Math.min(100, Math.max(1, Number(filtros.page_size || 30)));
+  const prazoMinutos = leadDistribuicaoService.prazoAcaoMinutos();
+  const base = montarQueryFuturosClientesComConsultoras(filtros);
+  const totalResultado = await base.clone().countDistinct({ total: 'la.id' }).first();
+  const itens = await base.clone()
+    .select(
+      'll.id',
+      'll.dados_json',
+      'ls.razao_social',
+      'ls.cnpj',
+      'la.aceite_status',
+      'la.atribuido_em',
+      'la.prazo_acao_em',
+      'la.acao_registrada_tipo',
+      'u.id as consultora_id',
+      'u.nome as consultora_nome'
+    )
+    .orderByRaw('COALESCE(la.prazo_acao_em, DATE_ADD(la.atribuido_em, INTERVAL ? MINUTE)) ASC', [prazoMinutos])
+    .orderBy('la.id', 'asc')
+    .offset((page - 1) * pageSize)
+    .limit(pageSize);
+
+  return {
+    data: itens.map(formatarFuturoClienteComConsultora),
+    total: Number(totalResultado?.total || 0),
+    page,
+    page_size: pageSize
+  };
+}
+
 async function obterMetricasFuturosClientes(filtros = {}) {
   const usuarioResponsavel = 'COALESCE(ll.primeira_ligacao_usuario_id, ll.futuro_cliente_marcado_por_id, ll.retorno_agendado_por_id, ll.cliente_recusou_por_id, ll.chamada_nao_atendida_por_id)';
   // O histórico é preenchido no reenvio para que a métrica continue refletindo a
@@ -5012,6 +5138,7 @@ module.exports = {
   enviarFuturoClienteParaDistribuicao,
   reverterFuturoClienteLead,
   listarFuturosClientes,
+  listarFuturosClientesComConsultoras,
   listarResponsaveisFuturosClientes,
   obterHistoricoFuturoCliente,
   listarFuturosClientesRecebidos,
@@ -5040,6 +5167,8 @@ module.exports = {
     aplicarBuscaFuturosClientes,
     aplicarBuscaMailingsUsuario,
     aplicarFiltrosFuturosClientes,
+    montarQueryFuturosClientesComConsultoras,
+    formatarFuturoClienteComConsultora,
     aplicarFiltroResponsavelAtual,
     aplicarFiltroAceiteRecebidos,
     aplicarEscopoCarteiraFuturosClientes,

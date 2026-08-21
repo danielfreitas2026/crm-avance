@@ -261,6 +261,34 @@
   min-width: 100%;
 }
 
+.consultoras-table table {
+  width: 100%;
+  min-width: 760px;
+}
+
+.consultoras-table__empty {
+  padding: 40px !important;
+  text-align: center !important;
+}
+
+.consultoras-countdown {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--success-bg);
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.consultoras-countdown.is-overdue {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
 .futuros-clientes-table thead th {
   position: sticky;
   top: 0;
@@ -764,6 +792,10 @@
   .clientes-leads-table table,
   .futuros-clientes-table table {
     width: auto;
+    min-width: 0;
+  }
+
+  .consultoras-table table {
     min-width: 0;
   }
 

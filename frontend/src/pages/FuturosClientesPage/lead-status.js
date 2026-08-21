@@ -1,3 +1,5 @@
+import { parseUtcDateTime } from '../../utils/datetime';
+
 export function isFuturoClienteAtivo(linha) {
   return Boolean(linha?.futuro_cliente && !linha?.futuro_cliente_excluido_em);
 }
@@ -13,9 +15,15 @@ export function getVendaClassificacaoTipo(linha) {
   return linha?.possui_venda_cliente ? 'venda_antiga_registrada' : null;
 }
 
-export function resolverAbaFuturosClientes(valor, podeVerEstatisticas = false) {
+export function resolverAbaFuturosClientes(valor, podeVerEstatisticas = false, podeVerTodos = false) {
   const normalizada = ({ futuros: 'meus', leads: 'mailings' })[valor] || valor;
-  const permitidas = ['meus', 'recebidos', 'mailings', ...(podeVerEstatisticas ? ['estatisticas'] : [])];
+  const permitidas = [
+    'meus',
+    'recebidos',
+    'mailings',
+    ...(podeVerTodos ? ['consultoras'] : []),
+    ...(podeVerEstatisticas ? ['estatisticas'] : [])
+  ];
   return permitidas.includes(normalizada) ? normalizada : 'meus';
 }
 
@@ -28,6 +36,14 @@ export function formatarDuracaoMinutos(valor) {
   const minutos = total % 60;
   if (dias > 0) return [dias && `${dias}d`, horas && `${horas}h`, minutos && `${minutos}min`].filter(Boolean).join(' ');
   return [horas && `${horas}h`, minutos && `${minutos}min`].filter(Boolean).join(' ');
+}
+
+export function formatarTempoRetornoConsultora(valor, agora = Date.now()) {
+  const prazo = parseUtcDateTime(valor);
+  if (!prazo) return '-';
+  const restante = prazo.getTime() - Number(agora);
+  if (restante <= 0) return 'Prazo vencido';
+  return formatarDuracaoMinutos(Math.ceil(restante / 60000));
 }
 
 export function isVendaAntigaRegistrada(linha) {

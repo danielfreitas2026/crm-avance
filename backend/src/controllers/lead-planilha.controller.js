@@ -404,6 +404,15 @@ async function listarTodosFuturosClientes(req, res) {
   }
 }
 
+async function listarFuturosClientesComConsultoras(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.listarFuturosClientesComConsultoras(req.query));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Erro ao listar futuros clientes com consultoras.' });
+  }
+}
+
 async function listarResponsaveisFuturosClientes(req, res) {
   try {
     return res.json(await leadPlanilhaService.listarResponsaveisFuturosClientes());
@@ -790,6 +799,7 @@ module.exports = {
   aceitarFuturoCliente,
   recusarFuturoCliente,
   listarTodosFuturosClientes,
+  listarFuturosClientesComConsultoras,
   listarResponsaveisFuturosClientes,
   republicarPendentesAntigosTelegram,
   metricasFuturosClientes,

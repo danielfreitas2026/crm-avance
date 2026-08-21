@@ -1021,6 +1021,7 @@ module.exports = {
   ACEITE_EXPIRADO,
   ACEITE_EXPIRADO_SEM_ACEITE,
   ACEITE_EXPIRADO_APOS_RETORNO,
+  prazoAcaoMinutos,
   calcularPrazoAcao,
   aceitar,
   recusar,

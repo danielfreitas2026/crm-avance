@@ -24,6 +24,7 @@ import {
   listarEstatisticasLinhasMailing,
   listarEstatisticasMailingsUsuario,
   listarFuturosClientesLeads,
+  listarFuturosClientesComConsultoras,
   listarFuturosClientesRecebidos,
   listarFuturosClientesLixeira,
   obterHistoricoFuturoCliente,
@@ -57,7 +58,8 @@ import {
   isVendaAntigaRegistrada,
   isVendaRecusada,
   resolverAbaFuturosClientes,
-  formatarDuracaoMinutos
+  formatarDuracaoMinutos,
+  formatarTempoRetornoConsultora
 } from './lead-status';
 import { montarFiltrosLinhasMailingRecebido } from './mailing-recebido-search';
 import { ordenarMailingsMaisRecentes } from './mailing-order';
@@ -3551,6 +3553,119 @@ function ConsultorPrimeiraLigacaoModal({ consultor, onClose }) {
   );
 }
 
+const ROTULOS_SITUACAO_CONSULTORA = {
+  aguardando_aceite: 'Aguardando aceite',
+  em_atendimento: 'Em atendimento',
+  retorno_marcado: 'Retorno marcado'
+};
+
+/** Exibe para gestores os futuros clientes que ainda estao com consultoras. */
+function FuturosClientesComConsultorasView({ agora }) {
+  const [linhas, setLinhas] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [pagina, setPagina] = useState(1);
+  const [busca, setBusca] = useState('');
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const buscaDeferred = useDeferredValue(busca);
+  const consultaIniciada = useRef(false);
+  const totalPaginas = Math.max(1, Math.ceil(total / 30));
+
+  useEffect(() => {
+    let cancelado = false;
+    if (!consultaIniciada.current) setCarregando(true);
+    listarFuturosClientesComConsultoras({
+      page: pagina,
+      page_size: 30,
+      busca: buscaDeferred || undefined
+    }).then(resultado => {
+      if (cancelado) return;
+      const dados = Array.isArray(resultado) ? resultado : (resultado.data || []);
+      const totalResultado = Number(resultado?.total || 0);
+      const paginasResultado = Math.max(1, Math.ceil(totalResultado / 30));
+      if (pagina > paginasResultado) {
+        setPagina(paginasResultado);
+        return;
+      }
+      setLinhas(dados);
+      setTotal(totalResultado);
+      setErro('');
+    }).catch(error => {
+      if (!cancelado) setErro(error.message || 'Erro ao carregar futuros clientes com consultoras.');
+    }).finally(() => {
+      if (!cancelado) {
+        consultaIniciada.current = true;
+        setCarregando(false);
+      }
+    });
+    return () => { cancelado = true; };
+  }, [pagina, buscaDeferred, agora]);
+
+  return (
+    <div className="futuros-clientes-view futuros-clientes-consultoras-view">
+      <div className="clientes-leads-toolbar futuros-clientes-toolbar">
+        <form className="clientes-search" onSubmit={event => event.preventDefault()}>
+          <I.Search size={14} />
+          <input
+            value={busca}
+            onChange={event => { setBusca(event.target.value); setPagina(1); }}
+            placeholder="Buscar por razão social, CNPJ ou consultora..."
+            aria-label="Buscar futuros clientes com consultoras"
+          />
+        </form>
+        <div className="clientes-toolbar__meta">{total} em acompanhamento</div>
+      </div>
+
+      {erro && <div className="alert-error alert-timed alert-timed--error">{erro}</div>}
+
+      <div className="list-table futuros-clientes-table consultoras-table" style={{ margin: 0 }}>
+        <div className="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Razão Social</th>
+                <th>CNPJ</th>
+                <th>Vendedor/Consultora atual</th>
+                <th>Situação</th>
+                <th>Tempo para retornar</th>
+              </tr>
+            </thead>
+            <tbody>
+              {carregando ? (
+                <tr><td colSpan="5" className="muted consultoras-table__empty">Carregando futuros clientes...</td></tr>
+              ) : linhas.length === 0 ? (
+                <tr><td colSpan="5" className="muted consultoras-table__empty">Nenhum futuro cliente está com consultoras no momento.</td></tr>
+              ) : linhas.map(linha => {
+                const tempo = formatarTempoRetornoConsultora(linha.retorno_previsto_em, agora);
+                const vencido = tempo === 'Prazo vencido';
+                return (
+                  <tr key={linha.id}>
+                    <td data-label="Razão Social" className="m-primary"><strong>{linha.razao_social || '-'}</strong></td>
+                    <td data-label="CNPJ" className="m-secondary">{formatarCnpj(linha.cnpj) || linha.cnpj || '-'}</td>
+                    <td data-label="Vendedor/Consultora atual" className="m-meta">{linha.consultora?.nome || 'Usuário removido'}</td>
+                    <td data-label="Situação" className="m-meta">
+                      <span className="pill info"><span className="pill-dot" />{ROTULOS_SITUACAO_CONSULTORA[linha.situacao] || '-'}</span>
+                    </td>
+                    <td data-label="Tempo para retornar" className="m-meta">
+                      <span className={`consultoras-countdown${vencido ? ' is-overdue' : ''}`}>{tempo}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="lead-pagination">
+        <button className="btn" type="button" disabled={pagina <= 1} onClick={() => setPagina(valor => Math.max(1, valor - 1))}>Anterior</button>
+        <span>Página {pagina} de {totalPaginas}</span>
+        <button className="btn" type="button" disabled={pagina >= totalPaginas} onClick={() => setPagina(valor => Math.min(totalPaginas, valor + 1))}>Próxima</button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Renderiza futuros clientes main view com os dados informados.
  */
@@ -4779,7 +4894,7 @@ function FuturosClientesPage() {
   const usuario = getUsuarioLocal();
   const podeVerTodos = temPermissao(usuario, 'futuros_clientes_ver_todos');
   const podeVerEstatisticas = temPermissao(usuario, 'gerenciar_leads');
-  const abaDaNotificacao = resolverAbaFuturosClientes(searchParams.get('aba'), podeVerEstatisticas);
+  const abaDaNotificacao = resolverAbaFuturosClientes(searchParams.get('aba'), podeVerEstatisticas, podeVerTodos);
   const [abaSelecionada, setAbaSelecionada] = useState('meus');
   const [escopoTodos, setEscopoTodos] = useState(false);
   const abaAtiva = searchParams.has('aba') ? abaDaNotificacao : abaSelecionada;
@@ -4816,6 +4931,7 @@ function FuturosClientesPage() {
             Futuros Clientes Recebidos
           </button>
           <button type="button" className={`clientes-tab ${abaAtiva === 'mailings' ? 'active' : ''}`} onClick={() => selecionarAba('mailings')}>Mailings Recebidos</button>
+          {podeVerTodos && <button type="button" className={`clientes-tab ${abaAtiva === 'consultoras' ? 'active' : ''}`} onClick={() => selecionarAba('consultoras')}>Com consultoras</button>}
           {podeVerEstatisticas && <button type="button" className={`clientes-tab ${abaAtiva === 'estatisticas' ? 'active' : ''}`} onClick={() => selecionarAba('estatisticas')}>Estatísticas</button>}
         </div>
 
@@ -4825,6 +4941,7 @@ function FuturosClientesPage() {
         </>}
         {abaAtiva === 'recebidos' && <FuturosClientesMainView agora={agora} tipo="recebidos" />}
         {abaAtiva === 'mailings' && <LeadsRecebidosView agora={agora} />}
+        {abaAtiva === 'consultoras' && podeVerTodos && <FuturosClientesComConsultorasView agora={agora} />}
         {abaAtiva === 'estatisticas' && podeVerEstatisticas && <EstatisticasFuturosClientesView />}
       </div>
     </LayoutPrivado>

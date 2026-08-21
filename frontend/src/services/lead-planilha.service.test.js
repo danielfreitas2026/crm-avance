@@ -16,6 +16,7 @@ import {
   excluirFuturoCliente,
   excluirFuturoClienteDefinitivo,
   listarFuturosClientesLixeira,
+  listarFuturosClientesComConsultoras,
   listarResponsaveisFuturosClientes,
   obterHistoricoFuturoCliente,
   listarVendasCandidatasLead,
@@ -92,9 +93,17 @@ describe('lixeira de futuros clientes', () => {
 });
 
 describe('filtros de futuros clientes', () => {
+  beforeEach(() => vi.clearAllMocks());
+
   it('consulta as opcoes de responsavel no escopo Todos', async () => {
     await listarResponsaveisFuturosClientes();
 
     expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/responsaveis');
+  });
+
+  it('consulta o acompanhamento de consultoras com busca e paginacao', async () => {
+    await listarFuturosClientesComConsultoras({ page: 2, page_size: 30, busca: 'Ana Souza' });
+
+    expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/em-acompanhamento?page=2&page_size=30&busca=Ana+Souza');
   });
 });

@@ -470,6 +470,7 @@ router.delete(
   leadPlanilhaController.excluirFuturoClienteDefinitivo
 );
 router.get('/futuros-clientes', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.listarTodosFuturosClientes);
+router.get('/futuros-clientes/em-acompanhamento', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.listarFuturosClientesComConsultoras);
 router.get('/futuros-clientes/responsaveis', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.listarResponsaveisFuturosClientes);
 router.get('/futuros-clientes/:id/historico', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.historicoFuturoCliente);
 router.post(
