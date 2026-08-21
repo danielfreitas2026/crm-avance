@@ -3573,6 +3573,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
   const [filtroRecebidos, setFiltroRecebidos] = useState('acao');
   const buscaDeferred = useDeferredValue(busca);
   const [consultaConcluida, setConsultaConcluida] = useState('');
+  const [revalidacao, setRevalidacao] = useState(0);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [linhaAtiva, setLinhaAtiva] = useState(null);
@@ -3646,6 +3647,19 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
   }, [escopoTodos, modoRecebidos]);
 
   useEffect(() => {
+    const revalidar = () => setRevalidacao(valor => valor + 1);
+    const revalidarAoExibir = () => {
+      if (document.visibilityState === 'visible') revalidar();
+    };
+    window.addEventListener('focus', revalidar);
+    document.addEventListener('visibilitychange', revalidarAoExibir);
+    return () => {
+      window.removeEventListener('focus', revalidar);
+      document.removeEventListener('visibilitychange', revalidarAoExibir);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelado = false;
     const listar = modoLixeira
       ? filtros => listarFuturosClientesLixeira(filtros, escopoTodos)
@@ -3671,6 +3685,11 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
           const totalRecebido = data.total || 0;
           setLinhas(linhasRecebidas);
           setTotal(totalRecebido);
+          setLinhaAtiva(atual => {
+            if (!atual) return atual;
+            const chaveAtual = Number(atual.atribuicao_id || atual.id);
+            return linhasRecebidas.find(item => Number(item.atribuicao_id || item.id) === chaveAtual) || null;
+          });
           if (linhaNotificacaoId) {
             const deveProcessarNotificacao = notificacaoId && notificacaoAbertaRef.current !== notificacaoId;
             const linha = linhasRecebidas.find(item => Number(item.id) === linhaNotificacaoId);
@@ -3701,7 +3720,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
         if (!cancelado) setConsultaConcluida(chaveConsulta);
       });
     return () => { cancelado = true; };
-  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroResponsavel, filtroDestino, marcadoDe, marcadoAte, filtroRecebidos, modoLixeira, modoRecebidos, escopoTodos, linhaNotificacaoId, chaveConsulta, notificacaoId]);
+  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroResponsavel, filtroDestino, marcadoDe, marcadoAte, filtroRecebidos, modoLixeira, modoRecebidos, escopoTodos, linhaNotificacaoId, chaveConsulta, notificacaoId, revalidacao, agora]);
 
   useEffect(() => {
     if (!exibirMetricas || modoLixeira || periodoMetricasInvalido) return;

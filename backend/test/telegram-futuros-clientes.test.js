@@ -12,20 +12,6 @@ test('inclui Josilaine entre os destinos ativos de encaminhamento', () => {
   assert.deepEqual(botoes[1], [{ text: 'Josilaine', callback_data: 'fc:atribuir:123:9' }]);
 });
 
-test('identifica a consultora no botao de cancelar envio encaminhado', () => {
-  assert.deepEqual(telegramInternals.botoesCancelarVenda(123, 'Ana Consultora'), [[{
-    text: 'Cancelar envio Ana Consultora',
-    callback_data: 'fc:cancelar:123'
-  }]]);
-});
-
-test('mantem o botao de cancelar envio sem nome quando a consultora nao estiver disponivel', () => {
-  assert.deepEqual(telegramInternals.botoesCancelarVenda(123), [[{
-    text: 'Cancelar envio',
-    callback_data: 'fc:cancelar:123'
-  }]]);
-});
-
 test('inicia o primeiro prazo no momento do encaminhamento', () => {
   const enviadoEm = new Date('2026-07-30T15:00:00.000Z');
   const atribuicao = telegramInternals.montarAtribuicaoDistribuicao({
@@ -39,6 +25,29 @@ test('inicia o primeiro prazo no momento do encaminhamento', () => {
   assert.equal(atribuicao.aceite_status, 'aguardando_aceite');
   assert.equal(atribuicao.atribuido_em, enviadoEm);
   assert.equal(atribuicao.prazo_acao_em.toISOString(), '2026-07-30T15:30:00.000Z');
+});
+
+test('callback repetido so e idempotente para a mesma consultora e mensagem', () => {
+  const atribuicao = {
+    usuario_id: 9,
+    telegram_chat_id: '-1001',
+    telegram_message_id: '88'
+  };
+  assert.equal(telegramInternals.atribuicaoRepetidaValida(
+    atribuicao,
+    9,
+    { chatId: -1001, messageId: 88 }
+  ), true);
+  assert.equal(telegramInternals.atribuicaoRepetidaValida(
+    atribuicao,
+    10,
+    { chatId: -1001, messageId: 88 }
+  ), false);
+  assert.equal(telegramInternals.atribuicaoRepetidaValida(
+    atribuicao,
+    9,
+    { chatId: -1001, messageId: 99 }
+  ), false);
 });
 
 test('republica somente futuro cliente antigo qualificado e nunca encaminhado', () => {

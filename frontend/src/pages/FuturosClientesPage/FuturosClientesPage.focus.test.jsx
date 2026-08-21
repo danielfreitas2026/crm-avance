@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -87,5 +87,63 @@ describe('busca de futuros clientes', () => {
       })
     ));
     expect(screen.getByRole('button', { name: 'Mais filtros (4)' })).toBeVisible();
+  });
+
+  it('revalida silenciosamente a lista a cada 30 segundos', async () => {
+    const callbacks = [];
+    const intervalSpy = vi.spyOn(window, 'setInterval').mockImplementation((callback, atraso) => {
+      if (atraso === 30000) callbacks.push(callback);
+      return callbacks.length;
+    });
+    const clearSpy = vi.spyOn(window, 'clearInterval').mockImplementation(() => {});
+    try {
+      render(
+        <MemoryRouter initialEntries={['/futuros-clientes']}>
+          <FuturosClientesPage />
+        </MemoryRouter>
+      );
+      await waitFor(() => expect(listarFuturosClientesLeads).toHaveBeenCalledTimes(1));
+
+      act(() => callbacks.forEach(callback => callback()));
+
+      await waitFor(() => expect(listarFuturosClientesLeads.mock.calls.length).toBeGreaterThan(1));
+      expect(screen.queryByText('Carregando futuros clientes...')).not.toBeInTheDocument();
+    } finally {
+      intervalSpy.mockRestore();
+      clearSpy.mockRestore();
+    }
+  });
+
+  it('atualiza ao voltar para a aba e fecha o detalhe que deixou de estar disponivel', async () => {
+    listarFuturosClientesLeads
+      .mockResolvedValueOnce({
+        data: [{
+          id: 42,
+          futuro_cliente: true,
+          futuro_cliente_destino: 'carteira',
+          futuro_cliente_marcado_por_id: 1,
+          futuro_cliente_marcado_em: '2026-08-20T15:00:00.000Z',
+          status_operacional: 'qualificado',
+          dados_json: { Empresa: 'Cliente em atendimento' },
+          envio: { nome: 'Carteira Teste' },
+          estado_atual: { codigo: 'na_carteira', rotulo: 'Na carteira' }
+        }],
+        total: 1
+      })
+      .mockResolvedValue({ data: [], total: 0 });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/futuros-clientes']}>
+        <FuturosClientesPage />
+      </MemoryRouter>
+    );
+
+    await user.click(await screen.findByText('Carteira Teste'));
+    expect(screen.getByRole('dialog')).toBeVisible();
+
+    act(() => window.dispatchEvent(new Event('focus')));
+
+    await waitFor(() => expect(listarFuturosClientesLeads).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 });

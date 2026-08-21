@@ -2,6 +2,7 @@ const db = require('../database/connection');
 const notificacaoService = require('./notificacao.service');
 const telegramService = require('./telegram.service');
 const leadTelegramPublicacaoService = require('./lead-telegram-publicacao.service');
+const leadTelegramReconciliacaoService = require('./lead-telegram-reconciliacao.service');
 const { parseUtcDateTime } = require('../utils/datetime');
 
 const ACEITE_AGUARDANDO = 'aguardando_aceite';
@@ -261,6 +262,7 @@ async function aceitar(linhaId, usuarioId) {
 
     const patchAceite = montarPatchAceite(linha, agora);
     await trx('lead_atribuicoes').where('id', atribuicao.id).update(patchAceite);
+    await leadTelegramReconciliacaoService.enfileirar(atribuicao.id, trx, agora);
     await trx('lead_linhas').where('id', linha.id).update({
       atribuido_para_id: Number(usuarioId),
       envio_id: atribuicao.envio_id,
@@ -300,9 +302,13 @@ async function aceitar(linhaId, usuarioId) {
     throw error;
   }
 
-  if (!resultado.repetido) {
-    await notificarAceiteTelegram(resultado.atribuicao, usuarioId, resultado.linha);
+  if (resultado.repetido) {
+    await leadTelegramReconciliacaoService.enfileirar(resultado.atribuicao.id);
   }
+  await leadTelegramReconciliacaoService.processarDaAtribuicao(
+    resultado.atribuicao.id,
+    reconciliarMensagemTelegram
+  );
   return {
     status: ACEITE_ACEITO,
     prazo_acao_em: resultado.atribuicao.prazo_acao_em
@@ -358,11 +364,15 @@ async function atualizarPrazoRetorno(linhaId, usuarioId, retorno, trx = null) {
       .orWhere('acao_registrada_tipo', 'retorno_agendado'));
   if (usuarioId) query.where('usuario_id', Number(usuarioId));
 
-  const atualizadas = await query.orderBy('id', 'desc').limit(1)
-    .update(montarPatchPrazoRetorno(retorno, agora));
+  const atribuicao = await query.clone().orderBy('id', 'desc').first('id');
+  const atualizadas = atribuicao
+    ? await knex('lead_atribuicoes').where('id', atribuicao.id)
+      .update(montarPatchPrazoRetorno(retorno, agora))
+    : 0;
 
   if (atualizadas) {
     await notificacaoService.desativarAlertasObrigatoriosDaLinha(linhaId, trx);
+    await leadTelegramReconciliacaoService.enfileirar(atribuicao.id, knex, agora);
   }
   return atualizadas;
 }
@@ -665,44 +675,7 @@ async function notificarVendaFechadaTelegram(vendaId, atribuicaoId, opcoes = {})
   }, atribuicao, opcoes);
 }
 
-async function notificarAceiteTelegram(atribuicao, usuarioId, linha) {
-  const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
-  if (!chatId) return;
-  const usuario = await db('usuarios').where('id', Number(usuarioId)).first('nome');
-  try {
-    // Recarrega os dados completos: a atribuicao e criada com os detalhes do lead
-    // ocultos ate o aceite, portanto nunca deve depender de uma versao parcial da linha.
-    const linhaCompleta = await carregarLinhaTelegram(atribuicao.lead_linha_id) || linha;
-    const textoAceite = montarMensagemAceiteTelegram(atribuicao, usuario?.nome, linhaCompleta);
-    const mensagemAceite = await telegramService.chamarApi('sendMessage', {
-      chat_id: chatId,
-      text: textoAceite,
-      reply_markup: {
-        inline_keyboard: [[botaoCancelarEnvio(atribuicao.lead_linha_id, usuario?.nome)]]
-      }
-    });
-    const novoMessageId = mensagemAceite?.message_id;
-    if (novoMessageId) {
-      await db('lead_atribuicoes').where('id', atribuicao.id).update({
-        telegram_chat_id: String(chatId),
-        telegram_message_id: String(novoMessageId),
-        telegram_mensagem_texto: textoAceite,
-        updated_at: new Date()
-      });
-    }
-    if (atribuicao.telegram_message_id && novoMessageId) {
-      await telegramService.chamarApi('editMessageReplyMarkup', {
-        chat_id: chatId,
-        message_id: atribuicao.telegram_message_id,
-        reply_markup: { inline_keyboard: [] }
-      });
-    }
-  } catch (error) {
-    console.error('Erro ao notificar aceite no Telegram:', error.message);
-  }
-}
-
-async function encerrarMensagemTelegram(atribuicao, textoStatus, aceiteStatusFinal) {
+async function encerrarMensagemTelegram(atribuicao, textoStatus, aceiteStatusFinal, opcoes = {}) {
   const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
   if (!chatId || !atribuicao.telegram_message_id) return;
   const original = String(atribuicao.telegram_mensagem_texto || 'Futuro cliente encaminhado.');
@@ -727,8 +700,76 @@ async function encerrarMensagemTelegram(atribuicao, textoStatus, aceiteStatusFin
       reply_markup: { inline_keyboard: [] }
     });
   } catch (error) {
+    if (/message is not modified/i.test(String(error?.message || ''))) return;
     console.error('Erro ao marcar envio cancelado no Telegram:', error.message);
+    if (opcoes.propagarErro) throw error;
   }
+}
+
+function textoStatusAtribuicao(atribuicao) {
+  const nome = atribuicao.consultora_nome || 'consultor(a)';
+  if (atribuicao.aceite_status === ACEITE_RECUSADO) return `recusado por ${nome}`;
+  if (atribuicao.aceite_status === ACEITE_EXPIRADO_SEM_ACEITE) return `prazo de ${prazoAcaoMinutos()} minutos expirado sem aceite de ${nome}`;
+  if (atribuicao.aceite_status === ACEITE_EXPIRADO) return `prazo de ${prazoAcaoMinutos()} minutos expirado sem acao no CRM para ${nome}`;
+  if (atribuicao.aceite_status === ACEITE_EXPIRADO_APOS_RETORNO) return `retorno vencido ha ${prazoAcaoMinutos()} minutos sem novo desfecho para ${nome}`;
+  return `cancelado${atribuicao.consultora_nome ? ` para ${atribuicao.consultora_nome}` : ''}`;
+}
+
+async function editarMensagemTelegram(metodo, dados) {
+  try {
+    return await telegramService.chamarApi(metodo, dados);
+  } catch (error) {
+    if (/message is not modified/i.test(String(error?.message || ''))) return null;
+    throw error;
+  }
+}
+
+async function reconciliarMensagemTelegram(atribuicaoId) {
+  const atribuicao = await db('lead_atribuicoes as la')
+    .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
+    .where('la.id', Number(atribuicaoId))
+    .select('la.*', 'u.nome as consultora_nome')
+    .first();
+  if (!atribuicao) return { ignorado: true };
+  const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
+  if (!chatId || !atribuicao.telegram_message_id) return { ignorado: true };
+
+  if (atribuicao.aceite_status === ACEITE_AGUARDANDO) {
+    await editarMensagemTelegram('editMessageReplyMarkup', {
+      chat_id: chatId,
+      message_id: atribuicao.telegram_message_id,
+      reply_markup: { inline_keyboard: [[botaoCancelarEnvio(atribuicao.lead_linha_id, atribuicao.consultora_nome)]] }
+    });
+    return { sincronizado: true };
+  }
+
+  if (atribuicao.aceite_status === ACEITE_ACEITO) {
+    if (atribuicao.acao_registrada_tipo === 'retorno_agendado') {
+      await editarMensagemTelegram('editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: atribuicao.telegram_message_id,
+        reply_markup: { inline_keyboard: [] }
+      });
+      return { sincronizado: true };
+    }
+    const linha = await carregarLinhaTelegram(atribuicao.lead_linha_id);
+    await editarMensagemTelegram('editMessageText', {
+      chat_id: chatId,
+      message_id: atribuicao.telegram_message_id,
+      text: montarMensagemAceiteTelegram(atribuicao, atribuicao.consultora_nome, linha || {}),
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [[botaoCancelarEnvio(atribuicao.lead_linha_id, atribuicao.consultora_nome)]] }
+    });
+    return { sincronizado: true };
+  }
+
+  await encerrarMensagemTelegram(
+    atribuicao,
+    textoStatusAtribuicao(atribuicao),
+    atribuicao.aceite_status,
+    { propagarErro: true }
+  );
+  return { sincronizado: true };
 }
 
 function deveRepublicarPendenteAntiga(linha, possuiEncaminhamentoDeVenda) {
@@ -852,6 +893,7 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
     if (opcoes.republicar !== false) {
       await leadTelegramPublicacaoService.enfileirarRepublicacao(linhaId, trx, agora);
     }
+    await leadTelegramReconciliacaoService.enfileirar(atribuicao.id, trx, agora);
     return { atribuicao, linhaId: Number(linhaId) };
   });
 
@@ -865,18 +907,13 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
     return resultado;
   }
   if (resultado.prazoAtualizado) return resultado;
-  const usuario = await db('usuarios').where('id', resultado.atribuicao.usuario_id).first('nome');
-  const textoStatus = aceiteStatusFinal === ACEITE_RECUSADO
-    ? `recusado por ${usuario?.nome || 'consultor(a)'}`
-    : aceiteStatusFinal === ACEITE_EXPIRADO_SEM_ACEITE
-      ? `prazo de ${prazoAcaoMinutos()} minutos expirado sem aceite de ${usuario?.nome || 'consultor(a)'}`
-    : aceiteStatusFinal === ACEITE_EXPIRADO
-      ? `prazo de ${prazoAcaoMinutos()} minutos expirado sem acao no CRM para ${usuario?.nome || 'consultor(a)'}`
-      : aceiteStatusFinal === ACEITE_EXPIRADO_APOS_RETORNO
-        ? `retorno vencido ha ${prazoAcaoMinutos()} minutos sem novo desfecho para ${usuario?.nome || 'consultor(a)'}`
-      : `cancelado${usuario?.nome ? ` para ${usuario.nome}` : ''}`;
-  await encerrarMensagemTelegram(resultado.atribuicao, textoStatus, aceiteStatusFinal);
-  if (opcoes.republicar !== false) {
+  if (opcoes.processarTelegram !== false) {
+    await leadTelegramReconciliacaoService.processarDaAtribuicao(
+      resultado.atribuicao.id,
+      reconciliarMensagemTelegram
+    );
+  }
+  if (opcoes.republicar !== false && opcoes.processarTelegram !== false) {
     await leadTelegramPublicacaoService.processarRepublicacaoDaLinha(resultado.linhaId, {
       carregarLinha: carregarLinhaTelegram
     });
@@ -946,6 +983,7 @@ async function processarPrazosVencidos(opcoes = {}) {
             ? `Retorno vencido ha ${prazoAcaoMinutos()} minutos sem novo desfecho registrado no CRM`
             : 'Prazo de contato expirado sem acao registrada no CRM',
         republicar: true,
+        processarTelegram: false,
         silencioso: true
       });
       if (resultado && !resultado.acaoEncontrada && !resultado.prazoAtualizado) expiradas += 1;
@@ -973,6 +1011,7 @@ module.exports = {
   registrarAcaoValida,
   atualizarPrazoRetorno,
   processarPrazosVencidos,
+  reconciliarMensagemTelegram,
   republicarPendentesAntigosNoTelegram,
   buscarAtribuicaoAtiva,
   obterDistribuicoesUsuario,

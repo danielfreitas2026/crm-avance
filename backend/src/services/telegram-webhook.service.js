@@ -4,6 +4,7 @@ const notificacaoService = require('./notificacao.service');
 const telegramService = require('./telegram.service');
 const leadDistribuicaoService = require('./lead-distribuicao.service');
 const leadTelegramPublicacaoService = require('./lead-telegram-publicacao.service');
+const leadTelegramReconciliacaoService = require('./lead-telegram-reconciliacao.service');
 
 function grupoAutorizado(chatId) {
   return String(chatId || '') === String(process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID || '').trim();
@@ -34,14 +35,6 @@ function botoesVendedoras(vendedoras, linhaId) {
   }]));
 }
 
-function botoesCancelarVenda(linhaId, nomeConsultora) {
-  const nome = String(nomeConsultora || '').trim();
-  return [[{
-    text: nome ? `Cancelar envio ${nome}` : 'Cancelar envio',
-    callback_data: `fc:cancelar:${linhaId}`
-  }]];
-}
-
 function montarAtribuicaoDistribuicao({ linhaId, envioId, vendedoraId, gerenteTelegramId, telegramContexto }, agora) {
   return {
     lead_linha_id: linhaId,
@@ -60,8 +53,15 @@ function montarAtribuicaoDistribuicao({ linhaId, envioId, vendedoraId, gerenteTe
   };
 }
 
+function atribuicaoRepetidaValida(atribuicao, vendedoraId, telegramContexto = {}) {
+  if (!atribuicao) return false;
+  const mesmaMensagem = String(atribuicao.telegram_chat_id || '') === String(telegramContexto.chatId || '')
+    && String(atribuicao.telegram_message_id || '') === String(telegramContexto.messageId || '');
+  return Number(atribuicao.usuario_id) === Number(vendedoraId) && mesmaMensagem;
+}
+
 async function distribuir(linhaId, vendedoraId, gerenteTelegramId, telegramContexto = {}) {
-  return db.transaction(async trx => {
+  const resultado = await db.transaction(async trx => {
     const agora = new Date();
     const linha = await trx('lead_linhas')
       .where('id', linhaId)
@@ -70,6 +70,25 @@ async function distribuir(linhaId, vendedoraId, gerenteTelegramId, telegramConte
       .forUpdate()
       .first();
     if (!linha) throw new Error('Este futuro cliente nao esta mais disponivel.');
+    const atribuicaoAtiva = await trx('lead_atribuicoes as la')
+      .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
+      .where({ 'la.lead_linha_id': linhaId, 'la.etapa': 'venda' })
+      .whereIn('la.aceite_status', [
+        leadDistribuicaoService.ACEITE_AGUARDANDO,
+        leadDistribuicaoService.ACEITE_ACEITO
+      ])
+      .orderBy('la.id', 'desc')
+      .select('la.*', 'u.nome')
+      .first();
+    if (atribuicaoAtiva) {
+      if (atribuicaoRepetidaValida(atribuicaoAtiva, vendedoraId, telegramContexto)) {
+        await leadTelegramReconciliacaoService.enfileirar(atribuicaoAtiva.id, trx, agora);
+        return { ...atribuicaoAtiva, atribuicao_id: Number(atribuicaoAtiva.id), repetido: true };
+      }
+      const error = new Error(`Este futuro cliente ja foi encaminhado para ${atribuicaoAtiva.nome || 'outra consultora'}.`);
+      error.statusCode = 409;
+      throw error;
+    }
     if (linha.status_operacional === 'distribuido_venda' || linha.status_operacional === 'vendido' || linha.status_operacional === 'perdido') throw new Error('Este futuro cliente ja foi encaminhado.');
     const vendedora = await trx('usuarios').where({ id: vendedoraId, ativo: true }).first();
     if (!vendedora) throw new Error('Vendedora indisponivel.');
@@ -88,16 +107,23 @@ async function distribuir(linhaId, vendedoraId, gerenteTelegramId, telegramConte
       status_operacional: 'distribuido_venda',
       updated_at: agora
     });
-    await trx('lead_atribuicoes').insert(montarAtribuicaoDistribuicao({
+    const resultadoAtribuicao = await trx('lead_atribuicoes').insert(montarAtribuicaoDistribuicao({
       linhaId,
       envioId,
       vendedoraId,
       gerenteTelegramId,
       telegramContexto
     }, agora));
+    const atribuicaoId = Number(Array.isArray(resultadoAtribuicao) ? resultadoAtribuicao[0] : resultadoAtribuicao);
+    await leadTelegramReconciliacaoService.enfileirar(atribuicaoId, trx, agora);
     await notificacaoService.criarNotificacaoFuturoClienteDistribuido({ leadLinhaId: linhaId, vendedoraId, gerenteTelegramId, nomeEmpresa }, trx);
-    return vendedora;
+    return { ...vendedora, atribuicao_id: atribuicaoId, repetido: false };
   });
+  await leadTelegramReconciliacaoService.processarDaAtribuicao(
+    resultado.atribuicao_id,
+    leadDistribuicaoService.reconciliarMensagemTelegram
+  );
+  return resultado;
 }
 async function cancelarEnvio(linhaId) {
   return leadDistribuicaoService.finalizarAtribuicao(linhaId, {
@@ -120,17 +146,20 @@ async function processarCallback(query) {
     return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: 'Selecione a vendedora.' });
   }
   if (acao === 'atribuir') {
-    const vendedora = await distribuir(Number(linhaId), Number(vendedoraId), telegramId, {
-      chatId: query.message.chat.id,
-      messageId: query.message.message_id,
-      mensagemTexto: query.message.text || query.message.caption || ''
-    });
-    await telegramService.chamarApi('editMessageReplyMarkup', {
-      chat_id: query.message.chat.id,
-      message_id: query.message.message_id,
-      reply_markup: { inline_keyboard: botoesCancelarVenda(linhaId, vendedora.nome) }
-    });
-    return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: `Encaminhado para ${vendedora.nome}.` });
+    try {
+      const vendedora = await distribuir(Number(linhaId), Number(vendedoraId), telegramId, {
+        chatId: query.message.chat.id,
+        messageId: query.message.message_id,
+        mensagemTexto: query.message.text || query.message.caption || ''
+      });
+      return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: `Encaminhado para ${vendedora.nome}.` });
+    } catch (error) {
+      return telegramService.chamarApi('answerCallbackQuery', {
+        callback_query_id: query.id,
+        text: error.message || 'Este futuro cliente ja foi encaminhado.',
+        show_alert: true
+      });
+    }
   }
   if (acao === 'cancelar') {
     await cancelarEnvio(Number(linhaId));
@@ -149,5 +178,5 @@ module.exports = {
   processarCallback,
   distribuir,
   cancelarEnvio,
-  _internals: { botoesVendedoras, botoesCancelarVenda, montarAtribuicaoDistribuicao }
+  _internals: { atribuicaoRepetidaValida, botoesVendedoras, montarAtribuicaoDistribuicao }
 };

@@ -319,6 +319,7 @@ test('worker separa expiracao sem aceite e sem acao e protege contra concorrenci
   ]);
   assert.deepEqual(chamadas.map(item => item.opcoes.atribuicaoIdEsperada), [11, 12, 13, 14]);
   assert.equal(chamadas.every(item => item.opcoes.validarPrazoVencido), true);
+  assert.equal(chamadas.every(item => item.opcoes.processarTelegram === false), true);
   assert.equal(chamadas[3].opcoes.permitirRetornoVencido, true);
 });
 
