@@ -11,6 +11,16 @@ function marcarEscopoFuturosClientesTodos(req, res, next) {
   next();
 }
 
+function acaoAuditoriaFuturoCliente(req, comoAdmin = false) {
+  const atualizacao = req.contextoAuditoriaFuturoCliente?.operacao === 'atualizacao';
+  if (atualizacao) return comoAdmin
+    ? 'lead_linha.futuro_cliente_atualizado_admin'
+    : 'lead_linha.futuro_cliente_atualizado';
+  return comoAdmin
+    ? 'lead_linha.futuro_cliente_marcado_admin'
+    : 'lead_linha.futuro_cliente_marcado';
+}
+
 router.use(authMiddleware);
 
 router.get('/me/envios', leadPlanilhaController.meusEnvios);
@@ -94,7 +104,7 @@ router.post(
   '/me/linhas/:id/futuro-cliente',
   exigirUmaPermissao(['futuros_clientes_registrar']),
   auditar({
-    acao: 'lead_linha.futuro_cliente_marcado',
+    acao: req => acaoAuditoriaFuturoCliente(req),
     entidade: 'lead_linhas',
     entidade_id: (req, resultado) => resultado?.linha?.id || req.params.id,
     dados: (req, resultado) => ({
@@ -102,6 +112,7 @@ router.post(
       notas: req.body?.notas,
       retorno: req.body?.retorno,
       destino: req.body?.destino,
+      ocorrido_em: req.contextoAuditoriaFuturoCliente?.ocorrido_em,
       usuario_id: req.usuario?.id
     })
   }),
@@ -252,10 +263,14 @@ router.post(
   '/linhas/:id/futuro-cliente',
   exigirUmaPermissao(['gerenciar_leads']),
   auditar({
-    acao: 'lead_linha.futuro_cliente_marcado_admin',
+    acao: req => acaoAuditoriaFuturoCliente(req, true),
     entidade: 'lead_linhas',
     entidade_id: (req, resultado) => resultado?.linha?.id || req.params.id,
-    dados: req => ({ linha_id: req.params.id, usuario_id: req.usuario?.id })
+    dados: req => ({
+      linha_id: req.params.id,
+      ocorrido_em: req.contextoAuditoriaFuturoCliente?.ocorrido_em,
+      usuario_id: req.usuario?.id
+    })
   }),
   leadPlanilhaController.adminMarcarFuturoCliente
 );
@@ -483,5 +498,7 @@ router.post(
   }),
   leadPlanilhaController.dividir
 );
+
+router._internals = { acaoAuditoriaFuturoCliente };
 
 module.exports = router;

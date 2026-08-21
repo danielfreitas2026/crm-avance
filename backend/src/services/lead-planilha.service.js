@@ -2879,8 +2879,6 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
   const destinoFuturoCliente = resolverDestinoNovoFuturoCliente(linha, dados);
   const deveNotificarTelegram = novoFuturoCliente
     && destinoFuturoCliente === DESTINO_FUTURO_CLIENTE_DISTRIBUICAO;
-  const marcadoEm = linha.futuro_cliente_marcado_em || formatarDateTimeSQL();
-
   const razaoSocial = String(dados.razao_social || '').trim().slice(0, 240) || null;
   const cnpj = String(dados.cnpj || '').trim().slice(0, 20) || null;
   const contatoNome = String(dados.contato_nome || '').trim();
@@ -2945,6 +2943,8 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
     ? formatarDateTimeSQL(parseUtcDateTime(linha.futuro_cliente_retorno))
     : null;
   const retornoFuturoAlterado = String(retorno || '') !== String(retornoAnterior || '');
+  const ocorridoEm = formatarDateTimeSQL();
+  const marcadoEm = linha.futuro_cliente_marcado_em || ocorridoEm;
 
   let prazoRetornoDistribuicaoAtualizado = false;
   await LeadLinha.transaction(async trx => {
@@ -3014,7 +3014,13 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
     await publicarFuturoClienteTelegram(linhaFormatada);
   }
 
-  return { linha: linhaFormatada };
+  return {
+    linha: linhaFormatada,
+    contexto_auditoria: {
+      operacao: novoFuturoCliente ? 'registro' : 'atualizacao',
+      ocorrido_em: novoFuturoCliente ? marcadoEm : ocorridoEm
+    }
+  };
 }
 
 async function enviarFuturoClienteParaDistribuicao(linhaId, usuarioId) {
@@ -3703,8 +3709,10 @@ function resolverEstadoAtualFuturoCliente(linha, distribuicao = null) {
 }
 
 const AUDITORIAS_JORNADA = new Map([
-  ['lead_linha.futuro_cliente_marcado', ['registro', 'Futuro cliente registrado']],
-  ['lead_linha.futuro_cliente_marcado_admin', ['registro', 'Futuro cliente registrado']],
+  ['lead_linha.futuro_cliente_marcado', null],
+  ['lead_linha.futuro_cliente_marcado_admin', null],
+  ['lead_linha.futuro_cliente_atualizado', ['atualizacao', 'Dados do futuro cliente atualizados']],
+  ['lead_linha.futuro_cliente_atualizado_admin', ['atualizacao', 'Dados do futuro cliente atualizados']],
   ['lead_linha.futuro_cliente_enviado_distribuicao', ['reencaminhamento', 'Encaminhado ao Telegram']],
   ['lead_linha.retorno_marcado', ['retorno_marcado', 'Retorno marcado']],
   ['lead_linha.retorno_marcado_admin', ['retorno_marcado', 'Retorno marcado']],
@@ -3724,6 +3732,11 @@ const AUDITORIAS_JORNADA = new Map([
   ['lead_linha.venda_desvinculada_manual', ['reversao', 'Vínculo da venda removido']]
 ]);
 
+const AUDITORIAS_REGISTRO_FUTURO_CLIENTE = new Set([
+  'lead_linha.futuro_cliente_marcado',
+  'lead_linha.futuro_cliente_marcado_admin'
+]);
+
 function nomeUsuarioRegistro(registro, prefixo = 'usuario') {
   const id = registro?.[`${prefixo}_id`];
   const nome = registro?.[`${prefixo}_nome`];
@@ -3734,15 +3747,23 @@ function nomeUsuarioRegistro(registro, prefixo = 'usuario') {
 function montarEventosHistoricoFuturoCliente(linha, atribuicoes = [], auditorias = [], venda = null) {
   const eventos = [];
   const tiposAuditoria = new Set();
+  let encontrouAuditoriaRegistro = false;
   for (const audit of auditorias) {
-    const configuracao = AUDITORIAS_JORNADA.get(audit.acao);
-    if (!configuracao) continue;
     const dados = parseJson(audit.dados, {});
+    let configuracao = AUDITORIAS_JORNADA.get(audit.acao);
+    if (AUDITORIAS_REGISTRO_FUTURO_CLIENTE.has(audit.acao)) {
+      if (!encontrouAuditoriaRegistro) {
+        encontrouAuditoriaRegistro = true;
+        continue;
+      }
+      configuracao = ['atualizacao', 'Dados do futuro cliente atualizados'];
+    }
+    if (!configuracao) continue;
     const [tipo, titulo] = configuracao;
     tiposAuditoria.add(tipo);
     eventos.push({
       tipo,
-      data: audit.created_at,
+      data: dados.ocorrido_em || audit.created_at,
       titulo,
       detalhe: dados.observacao || dados.detalhe || null,
       motivo: dados.motivo || null,
@@ -3771,9 +3792,15 @@ function montarEventosHistoricoFuturoCliente(linha, atribuicoes = [], auditorias
     }
   }
 
-  if (!tiposAuditoria.has('registro')) {
-    eventos.push({ tipo: 'registro', data: linha.futuro_cliente_marcado_em || linha.created_at, titulo: 'Futuro cliente registrado', detalhe: 'Registro recuperado de dados anteriores ao histórico.', motivo: null, usuario: usuarioResumo(linha.futuro_cliente_marcado_por_id, linha.futuroClienteMarcadoPor?.nome), destinatario: null });
-  }
+  eventos.push({
+    tipo: 'registro',
+    data: linha.futuro_cliente_marcado_em || linha.created_at,
+    titulo: 'Futuro cliente registrado',
+    detalhe: encontrouAuditoriaRegistro ? null : 'Registro recuperado de dados anteriores ao histórico.',
+    motivo: null,
+    usuario: usuarioResumo(linha.futuro_cliente_marcado_por_id, linha.futuroClienteMarcadoPor?.nome),
+    destinatario: null
+  });
   const retornoMarcado = linha.retorno_agendado_em || linha.futuro_cliente_retorno;
   if (retornoMarcado && !tiposAuditoria.has('retorno_marcado')) {
     eventos.push({

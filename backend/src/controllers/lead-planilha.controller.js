@@ -304,9 +304,16 @@ async function exportarMinhas(req, res) {
 /**
  * Marca futuro cliente conforme a acao solicitada.
  */
+function responderMarcacaoFuturoCliente(req, res, resultado) {
+  const { contexto_auditoria: contextoAuditoria, ...resposta } = resultado;
+  req.contextoAuditoriaFuturoCliente = contextoAuditoria || null;
+  return res.json(resposta);
+}
+
 async function marcarFuturoCliente(req, res) {
   try {
-    return res.json(await leadPlanilhaService.marcarComoFuturoCliente(req.params.id, req.usuario.id, req.body || {}));
+    const resultado = await leadPlanilhaService.marcarComoFuturoCliente(req.params.id, req.usuario.id, req.body || {});
+    return responderMarcacaoFuturoCliente(req, res, resultado);
   } catch (error) {
     console.error(error);
     const statusCode = error.statusCode || 400;
@@ -670,7 +677,8 @@ async function adminAtualizarCampoLead(req, res) {
 
 async function adminMarcarFuturoCliente(req, res) {
   try {
-    return res.json(await leadPlanilhaService.marcarComoFuturoCliente(req.params.id, req.usuario.id, req.body || {}, { comoAdmin: true }));
+    const resultado = await leadPlanilhaService.marcarComoFuturoCliente(req.params.id, req.usuario.id, req.body || {}, { comoAdmin: true });
+    return responderMarcacaoFuturoCliente(req, res, resultado);
   } catch (error) {
     console.error(error);
     return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao qualificar futuro cliente.' });

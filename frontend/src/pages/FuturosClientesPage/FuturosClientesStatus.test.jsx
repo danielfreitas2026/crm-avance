@@ -579,6 +579,9 @@ describe('modal de adição de lead', () => {
       eventos: [{
         tipo: 'registro', data: '2026-08-01 09:00:00', titulo: 'Futuro cliente registrado',
         usuario: { nome: 'Consultora inicial' }, destinatario: null, motivo: null, detalhe: null
+      }, {
+        tipo: 'atualizacao', data: '2026-08-01 09:30:00', titulo: 'Dados do futuro cliente atualizados',
+        usuario: { nome: 'Consultora atual' }, destinatario: null, motivo: null, detalhe: null
       }]
     });
     render(<FuturoClienteDetalheModal
@@ -596,6 +599,7 @@ describe('modal de adição de lead', () => {
 
     await waitFor(() => expect(buscarHistorico).toHaveBeenCalledWith(61));
     expect(await screen.findByText('Futuro cliente registrado')).toBeVisible();
+    expect(screen.getByText('Dados do futuro cliente atualizados')).toBeVisible();
     expect(screen.getByText('Por: Consultora inicial')).toBeVisible();
     expect(screen.queryByRole('region', { name: 'Atualizar dados do futuro cliente' })).not.toBeInTheDocument();
     expect(screen.getByText('Consultora atual')).toBeVisible();

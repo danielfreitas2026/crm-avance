@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { _internals } = require('../src/services/lead-planilha.service');
 const leadPlanilhaService = require('../src/services/lead-planilha.service');
 const leadPlanilhaController = require('../src/controllers/lead-planilha.controller');
+const leadPlanilhaRoutes = require('../src/routes/lead-planilha.routes');
 
 const { resolverEstadoAtualFuturoCliente, montarEventosHistoricoFuturoCliente } = _internals;
 
@@ -61,6 +62,66 @@ test('monta a jornada em ordem cronologica com varios responsaveis e motivo da d
   assert.equal(eventos.at(-1).destinatario.nome, 'Caio');
 });
 
+test('mantem o cadastro antes do aceite quando a auditoria inicial foi gravada com atraso', () => {
+  const eventos = montarEventosHistoricoFuturoCliente({
+    ...linhaBase,
+    futuro_cliente_marcado_em: '2026-08-21 11:20:00'
+  }, [{
+    id: 2,
+    etapa: 'venda',
+    usuario_id: 1,
+    usuario_nome: 'Ana',
+    atribuido_em: '2026-08-21 11:25:00',
+    aceite_em: '2026-08-21 11:27:00',
+    aceite_status: 'aceito'
+  }], [{
+    acao: 'lead_linha.futuro_cliente_marcado',
+    created_at: '2026-08-21 11:30:00',
+    usuario_id: 1,
+    usuario_nome: 'Ana',
+    dados: '{}'
+  }]);
+
+  assert.deepEqual(eventos.map(evento => [evento.tipo, evento.data]), [
+    ['registro', '2026-08-21 11:20:00'],
+    ['atribuicao', '2026-08-21 11:25:00'],
+    ['aceite', '2026-08-21 11:27:00']
+  ]);
+});
+
+test('distingue atualizacao explicita e usa o horario efetivo da operacao', () => {
+  const eventos = montarEventosHistoricoFuturoCliente(linhaBase, [], [{
+    acao: 'lead_linha.futuro_cliente_atualizado',
+    created_at: '2026-08-01 09:35:00',
+    usuario_id: 2,
+    usuario_nome: 'Bia',
+    dados: JSON.stringify({ ocorrido_em: '2026-08-01 09:30:00' })
+  }]);
+
+  assert.deepEqual(eventos.map(evento => [evento.tipo, evento.data, evento.titulo]), [
+    ['registro', '2026-08-01 09:00:00', 'Futuro cliente registrado'],
+    ['atualizacao', '2026-08-01 09:30:00', 'Dados do futuro cliente atualizados']
+  ]);
+  assert.equal(eventos[1].usuario.nome, 'Bia');
+});
+
+test('deduplica a primeira auditoria legada e exibe as seguintes como atualizacao', () => {
+  const eventos = montarEventosHistoricoFuturoCliente(linhaBase, [], [
+    {
+      acao: 'lead_linha.futuro_cliente_marcado', created_at: '2026-08-01 09:01:00',
+      usuario_id: 1, usuario_nome: 'Ana', dados: '{}'
+    },
+    {
+      acao: 'lead_linha.futuro_cliente_marcado', created_at: '2026-08-01 10:00:00',
+      usuario_id: 2, usuario_nome: 'Bia', dados: JSON.stringify({ notas: 'Dados revisados' })
+    }
+  ]);
+
+  assert.deepEqual(eventos.map(evento => evento.tipo), ['registro', 'atualizacao']);
+  assert.equal(eventos[1].data, '2026-08-01 10:00:00');
+  assert.equal(eventos[1].titulo, 'Dados do futuro cliente atualizados');
+});
+
 test('usa fallback para registro antigo e identifica usuario removido sem expor id', () => {
   const eventos = montarEventosHistoricoFuturoCliente(
     { ...linhaBase, futuroClienteMarcadoPor: null, futuro_cliente_marcado_por_id: 44 },
@@ -109,4 +170,50 @@ test('cria eventos sinteticos de retorno para registros antigos sem auditoria', 
 
   assert.ok(eventos.some(evento => evento.tipo === 'retorno_marcado'));
   assert.ok(eventos.some(evento => evento.tipo === 'retorno_realizado'));
+});
+
+test('controllers preservam o contrato publico e repassam o contexto interno de auditoria', async () => {
+  const original = leadPlanilhaService.marcarComoFuturoCliente;
+  const chamadas = [];
+  leadPlanilhaService.marcarComoFuturoCliente = async (...args) => {
+    chamadas.push(args);
+    return {
+      linha: { id: Number(args[0]), futuro_cliente: true },
+      contexto_auditoria: { operacao: 'atualizacao', ocorrido_em: '2026-08-21 11:30:00' }
+    };
+  };
+  const criarResposta = () => ({
+    body: null,
+    json(body) { this.body = body; return this; },
+    status() { return this; }
+  });
+  const reqComum = { params: { id: '10' }, usuario: { id: 2 }, body: { notas: 'Nova nota' } };
+  const reqAdmin = { params: { id: '11' }, usuario: { id: 3 }, body: {} };
+  const resComum = criarResposta();
+  const resAdmin = criarResposta();
+
+  try {
+    await leadPlanilhaController.marcarFuturoCliente(reqComum, resComum);
+    await leadPlanilhaController.adminMarcarFuturoCliente(reqAdmin, resAdmin);
+  } finally {
+    leadPlanilhaService.marcarComoFuturoCliente = original;
+  }
+
+  assert.deepEqual(resComum.body, { linha: { id: 10, futuro_cliente: true } });
+  assert.deepEqual(resAdmin.body, { linha: { id: 11, futuro_cliente: true } });
+  assert.equal(reqComum.contextoAuditoriaFuturoCliente.operacao, 'atualizacao');
+  assert.equal(reqAdmin.contextoAuditoriaFuturoCliente.ocorrido_em, '2026-08-21 11:30:00');
+  assert.equal(chamadas[0][3], undefined);
+  assert.deepEqual(chamadas[1][3], { comoAdmin: true });
+});
+
+test('auditoria usa a acao correta para cadastro e atualizacao nos dois fluxos', () => {
+  const { acaoAuditoriaFuturoCliente } = leadPlanilhaRoutes._internals;
+  const cadastro = { contextoAuditoriaFuturoCliente: { operacao: 'registro' } };
+  const atualizacao = { contextoAuditoriaFuturoCliente: { operacao: 'atualizacao' } };
+
+  assert.equal(acaoAuditoriaFuturoCliente(cadastro), 'lead_linha.futuro_cliente_marcado');
+  assert.equal(acaoAuditoriaFuturoCliente(cadastro, true), 'lead_linha.futuro_cliente_marcado_admin');
+  assert.equal(acaoAuditoriaFuturoCliente(atualizacao), 'lead_linha.futuro_cliente_atualizado');
+  assert.equal(acaoAuditoriaFuturoCliente(atualizacao, true), 'lead_linha.futuro_cliente_atualizado_admin');
 });
