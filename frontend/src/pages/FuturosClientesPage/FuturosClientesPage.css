@@ -23,6 +23,7 @@
 
 .clientes-tabs {
   display: inline-flex;
+  flex: 0 0 auto;
   align-self: flex-start;
   max-width: 100%;
   gap: 4px;

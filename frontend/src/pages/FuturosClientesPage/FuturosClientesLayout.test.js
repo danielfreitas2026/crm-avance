@@ -7,6 +7,10 @@ const estilos = readFileSync(new URL('./FuturosClientesPage.css', import.meta.ur
 const componente = readFileSync(new URL('./FuturosClientesPage.jsx', import.meta.url), 'utf8');
 
 describe('layout responsivo dos futuros clientes', () => {
+  it('impede que as abas sejam comprimidas pela altura do conteúdo de estatísticas', () => {
+    expect(estilos).toMatch(/\.clientes-tabs\s*\{[^}]*flex:\s*0 0 auto/);
+  });
+
   it('faz a lista e a tabela ocuparem a altura útil em telas não móveis', () => {
     expect(estilos).toMatch(/@media \(min-width: 781px\)[\s\S]*?\.futuros-clientes-view\s*\{[\s\S]*?flex:\s*1 1 0/);
     expect(estilos).toMatch(/\.futuros-clientes-view > \.futuros-clientes-table\s*\{[\s\S]*?height:\s*auto/);
