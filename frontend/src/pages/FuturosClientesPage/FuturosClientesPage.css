@@ -3315,7 +3315,7 @@
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--primary);
+  background: var(--accent, #171717);
 }
 
 .future-stats__user-progress--success b {

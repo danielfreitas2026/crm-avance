@@ -11,6 +11,10 @@ describe('layout responsivo dos futuros clientes', () => {
     expect(estilos).toMatch(/\.clientes-tabs\s*\{[^}]*flex:\s*0 0 auto/);
   });
 
+  it('usa uma cor definida pelo tema no progresso de produtividade', () => {
+    expect(estilos).toMatch(/\.future-stats__user-progress b\s*\{[^}]*background:\s*var\(--accent,\s*#171717\)/);
+  });
+
   it('faz a lista e a tabela ocuparem a altura útil em telas não móveis', () => {
     expect(estilos).toMatch(/@media \(min-width: 781px\)[\s\S]*?\.futuros-clientes-view\s*\{[\s\S]*?flex:\s*1 1 0/);
     expect(estilos).toMatch(/\.futuros-clientes-view > \.futuros-clientes-table\s*\{[\s\S]*?height:\s*auto/);
