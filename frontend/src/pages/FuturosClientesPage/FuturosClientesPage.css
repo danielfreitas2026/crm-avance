@@ -695,14 +695,14 @@
 .clientes-leads-table th:nth-child(2),
 .clientes-leads-table td:nth-child(2) {
   left: 160px;
-  width: 170px;
-  min-width: 170px;
-  max-width: 170px;
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
 }
 
 .clientes-leads-table--acoes th:nth-child(3),
 .clientes-leads-table--acoes td:nth-child(3) {
-  left: 330px;
+  left: 380px;
   width: 140px;
   min-width: 140px;
   max-width: 140px;

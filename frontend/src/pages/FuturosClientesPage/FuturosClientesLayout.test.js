@@ -32,6 +32,11 @@ describe('layout responsivo dos futuros clientes', () => {
     expect(estilos).not.toMatch(/\.futuro-cliente-responsavel-col\s*\{[^}]*display:\s*flex/);
   });
 
+  it('reserva largura para o maior status sem sobreposição da coluna de ações', () => {
+    expect(estilos).toMatch(/\.clientes-leads-table th:nth-child\(2\),[\s\S]*?width:\s*220px;[\s\S]*?min-width:\s*220px;[\s\S]*?max-width:\s*220px/);
+    expect(estilos).toMatch(/\.clientes-leads-table--acoes th:nth-child\(3\),[\s\S]*?left:\s*380px/);
+  });
+
   it('posiciona o responsável em uma linha completa no card mobile', () => {
     expect(estilos).toMatch(/@media \(max-width: 640px\)[\s\S]*?td\.futuro-cliente-responsavel-col\s*\{[\s\S]*?grid-column:\s*1 \/ -1[\s\S]*?grid-row:\s*3/);
   });
