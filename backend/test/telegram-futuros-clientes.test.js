@@ -1,6 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { _internals: telegramInternals } = require('../src/services/telegram-webhook.service');
+const telegramService = require('../src/services/telegram.service');
+const {
+  processarCallback,
+  _internals: telegramInternals
+} = require('../src/services/telegram-webhook.service');
 const { _internals: distribuicaoInternals } = require('../src/services/lead-distribuicao.service');
 
 test('inclui Josilaine entre os destinos ativos de encaminhamento', () => {
@@ -10,6 +14,54 @@ test('inclui Josilaine entre os destinos ativos de encaminhamento', () => {
   ], 123);
 
   assert.deepEqual(botoes[1], [{ text: 'Josilaine', callback_data: 'fc:atribuir:123:9' }]);
+});
+
+test('inclui Fechar ao final dos destinos de encaminhamento', () => {
+  const botoes = telegramInternals.botoesVendedoras([
+    { id: 4, nome: 'Ana' },
+    { id: 9, nome: 'Josilaine' }
+  ], 123);
+
+  assert.deepEqual(botoes.at(-1), [{ text: 'Fechar', callback_data: 'fc:fechar:123' }]);
+});
+
+test('fecha a selecao de vendedoras e disponibiliza Encaminhar novamente', async t => {
+  const chatIdAnterior = process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
+  process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID = '-1001';
+  t.after(() => {
+    if (chatIdAnterior === undefined) delete process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
+    else process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID = chatIdAnterior;
+  });
+
+  const chamadas = [];
+  t.mock.method(telegramService, 'chamarApi', async (metodo, dados) => {
+    chamadas.push({ metodo, dados });
+    return { ok: true };
+  });
+
+  await processarCallback({
+    id: 'callback-1',
+    data: 'fc:fechar:123',
+    from: { id: 77 },
+    message: { chat: { id: -1001 }, message_id: 88 }
+  });
+
+  assert.deepEqual(chamadas, [
+    {
+      metodo: 'editMessageReplyMarkup',
+      dados: {
+        chat_id: -1001,
+        message_id: 88,
+        reply_markup: {
+          inline_keyboard: [[{ text: 'Encaminhar', callback_data: 'fc:selecionar:123' }]]
+        }
+      }
+    },
+    {
+      metodo: 'answerCallbackQuery',
+      dados: { callback_query_id: 'callback-1', text: 'Selecao fechada.' }
+    }
+  ]);
 });
 
 test('inicia o primeiro prazo no momento do encaminhamento', () => {

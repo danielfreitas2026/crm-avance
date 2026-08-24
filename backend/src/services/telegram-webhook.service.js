@@ -29,10 +29,14 @@ async function listarVendedoras() {
 }
 
 function botoesVendedoras(vendedoras, linhaId) {
-  return vendedoras.map(vendedora => ([{
+  return [...vendedoras.map(vendedora => ([{
     text: vendedora.nome,
     callback_data: `fc:atribuir:${linhaId}:${vendedora.id}`
-  }]));
+  }])), [{ text: 'Fechar', callback_data: `fc:fechar:${linhaId}` }]];
+}
+
+function botaoEncaminhar(linhaId) {
+  return [[{ text: 'Encaminhar', callback_data: `fc:selecionar:${linhaId}` }]];
 }
 
 function montarAtribuicaoDistribuicao({ linhaId, envioId, vendedoraId, gerenteTelegramId, telegramContexto }, agora) {
@@ -145,6 +149,17 @@ async function processarCallback(query) {
     await telegramService.chamarApi('editMessageReplyMarkup', { chat_id: query.message.chat.id, message_id: query.message.message_id, reply_markup: { inline_keyboard: botoesVendedoras(vendedoras, linhaId) } });
     return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: 'Selecione a vendedora.' });
   }
+  if (acao === 'fechar') {
+    await telegramService.chamarApi('editMessageReplyMarkup', {
+      chat_id: query.message.chat.id,
+      message_id: query.message.message_id,
+      reply_markup: { inline_keyboard: botaoEncaminhar(linhaId) }
+    });
+    return telegramService.chamarApi('answerCallbackQuery', {
+      callback_query_id: query.id,
+      text: 'Selecao fechada.'
+    });
+  }
   if (acao === 'atribuir') {
     try {
       const vendedora = await distribuir(Number(linhaId), Number(vendedoraId), telegramId, {
@@ -178,5 +193,5 @@ module.exports = {
   processarCallback,
   distribuir,
   cancelarEnvio,
-  _internals: { atribuicaoRepetidaValida, botoesVendedoras, montarAtribuicaoDistribuicao }
+  _internals: { atribuicaoRepetidaValida, botaoEncaminhar, botoesVendedoras, montarAtribuicaoDistribuicao }
 };
