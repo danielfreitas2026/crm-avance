@@ -3100,16 +3100,95 @@ async function gerarEmailTemplateVenda(id, usuarioId) {
   return renderEmailVenda(venda);
 }
 
-/** Busca e bloqueia a origem escolhida explicitamente no fluxo de cadastro. */
-async function buscarLeadOrigemExplicita({ origemLeadLinhaId, usuarioId, trx }) {
-  return trx('lead_linhas')
-    .where({ id: origemLeadLinhaId, atribuido_para_id: Number(usuarioId) })
-    .where('futuro_cliente', true)
-    .whereNull('futuro_cliente_excluido_em')
-    .whereNull('venda_id')
-    .where(builder => builder.whereNull('status_operacional').orWhereNot('status_operacional', 'vendido'))
-    .forUpdate()
-    .first();
+function leadOrigemExplicitaElegivel(linha) {
+  return Boolean(
+    linha
+    && (linha.futuro_cliente_excluido_em === null || linha.futuro_cliente_excluido_em === undefined)
+    && (linha.venda_id === null || linha.venda_id === undefined)
+    && linha.status_operacional !== 'vendido'
+  );
+}
+
+async function usuarioPossuiMailingDaLinha({ linha, usuarioId, trx }) {
+  if (!Number(linha?.envio_id)) return false;
+
+  const vinculo = await trx('lead_envio_usuarios as leu')
+    .join('lead_envios as le', 'le.id', 'leu.envio_id')
+    .where({
+      'leu.envio_id': Number(linha.envio_id),
+      'leu.usuario_id': Number(usuarioId),
+      'le.origem': 'mailing'
+    })
+    .whereNull('le.cancelado_em')
+    .first('leu.id');
+
+  return Boolean(vinculo);
+}
+
+async function garantirAtribuicaoVendaLeadOrigem({ linha, usuarioId, trx }) {
+  const existente = await trx('lead_atribuicoes')
+    .where({
+      lead_linha_id: Number(linha.id),
+      usuario_id: Number(usuarioId),
+      etapa: 'venda'
+    })
+    .whereNull('finalizado_em')
+    .orderBy('id', 'desc')
+    .first('id');
+  if (existente) return existente;
+
+  await trx('lead_atribuicoes').insert({
+    lead_linha_id: Number(linha.id),
+    envio_id: Number(linha.envio_id),
+    usuario_id: Number(usuarioId),
+    etapa: 'venda',
+    status: 'atribuido',
+    criado_por_id: Number(usuarioId)
+  });
+  return null;
+}
+
+async function atribuirLeadOrigemAoUsuario({
+  linha,
+  usuarioId,
+  trx,
+  garantirAtribuicaoVenda = garantirAtribuicaoVendaLeadOrigem
+}) {
+  const atualizadas = await trx('lead_linhas')
+    .where({ id: Number(linha.id), atribuido_para_id: null })
+    .update({ atribuido_para_id: Number(usuarioId), updated_at: new Date() });
+  if (Number(atualizadas) !== 1) return null;
+
+  const linhaAtribuida = { ...linha, atribuido_para_id: Number(usuarioId) };
+  await garantirAtribuicaoVenda({ linha: linhaAtribuida, usuarioId, trx });
+
+  return linhaAtribuida;
+}
+
+/** Busca, bloqueia e, quando permitido, assume a origem escolhida no cadastro. */
+async function buscarLeadOrigemExplicita({
+  origemLeadLinhaId,
+  usuarioId,
+  trx,
+  buscarLinha = async () => trx('lead_linhas').where('id', origemLeadLinhaId).forUpdate().first(),
+  verificarPosseMailing = usuarioPossuiMailingDaLinha,
+  atribuirAoUsuario = atribuirLeadOrigemAoUsuario,
+  garantirAtribuicaoVenda = garantirAtribuicaoVendaLeadOrigem
+}) {
+  const linha = await buscarLinha({ origemLeadLinhaId, trx });
+  if (!leadOrigemExplicitaElegivel(linha)) return null;
+
+  const responsavelId = Number(linha.atribuido_para_id) || null;
+  if (responsavelId) {
+    if (responsavelId !== Number(usuarioId)) return null;
+    await garantirAtribuicaoVenda({ linha, usuarioId, trx });
+    return linha;
+  }
+
+  const possuiMailing = await verificarPosseMailing({ linha, usuarioId, trx });
+  if (!possuiMailing) return null;
+
+  return atribuirAoUsuario({ linha, usuarioId, trx });
 }
 
 /** Prioriza a origem explicita e usa a correspondencia prospectiva como fallback. */
@@ -3125,7 +3204,7 @@ async function resolverLeadOrigemCadastro({
 }) {
   if (origemLeadLinhaId) {
     const linha = await buscarExplicita({ origemLeadLinhaId, usuarioId, trx });
-    if (!linha) throw new Error('Futuro cliente nao encontrado, ja vendido ou atribuido a outro consultor.');
+    if (!linha) throw new Error('Lead nao encontrado, ja vendido ou atribuido a outro consultor.');
     return { linha, tipo: 'explicita' };
   }
 
@@ -4467,7 +4546,12 @@ module.exports = {
     obterQuantidadeChipsVenda,
     obterUltimaAtividadeFunil,
     parseValorMonetario,
+    atribuirLeadOrigemAoUsuario,
+    buscarLeadOrigemExplicita,
+    garantirAtribuicaoVendaLeadOrigem,
+    leadOrigemExplicitaElegivel,
     resolverLeadOrigemCadastro,
+    usuarioPossuiMailingDaLinha,
     filtrarVendasRelatorioPorVendedora,
     resumirGigasItensChips,
     somarQuantidadeItensChips,

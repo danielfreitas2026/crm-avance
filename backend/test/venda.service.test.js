@@ -30,10 +30,260 @@ const {
   obterQuantidadeChipsVenda,
   obterUltimaAtividadeFunil,
   parseValorMonetario,
+  atribuirLeadOrigemAoUsuario,
+  buscarLeadOrigemExplicita,
+  garantirAtribuicaoVendaLeadOrigem,
+  leadOrigemExplicitaElegivel,
   resolverLeadOrigemCadastro,
+  usuarioPossuiMailingDaLinha,
   validarVendedorasNosChips,
   vendaDeveAparecerNoFunil
 } = vendaService._internals;
+
+test('mantem lead que ja pertence ao usuario e garante sua atribuicao de venda', async () => {
+  let verificouMailing = false;
+  let atribuiu = false;
+  let garantiuAtribuicaoVenda = false;
+  const linha = { id: 15, futuro_cliente: true, atribuido_para_id: 7 };
+
+  const resultado = await buscarLeadOrigemExplicita({
+    origemLeadLinhaId: 15,
+    usuarioId: 7,
+    trx: {},
+    buscarLinha: async () => linha,
+    verificarPosseMailing: async () => {
+      verificouMailing = true;
+      return true;
+    },
+    atribuirAoUsuario: async () => {
+      atribuiu = true;
+      return linha;
+    },
+    garantirAtribuicaoVenda: async parametros => {
+      garantiuAtribuicaoVenda = true;
+      assert.equal(parametros.linha, linha);
+      assert.equal(parametros.usuarioId, 7);
+    }
+  });
+
+  assert.equal(resultado, linha);
+  assert.equal(verificouMailing, false);
+  assert.equal(atribuiu, false);
+  assert.equal(garantiuAtribuicaoVenda, true);
+});
+
+test('usuario que possui o mailing assume futuro cliente sem responsavel', async () => {
+  const linha = { id: 15, envio_id: 81, futuro_cliente: true, atribuido_para_id: null };
+  let parametrosAtribuicao = null;
+
+  const resultado = await buscarLeadOrigemExplicita({
+    origemLeadLinhaId: 15,
+    usuarioId: 7,
+    trx: { nome: 'transacao' },
+    buscarLinha: async () => linha,
+    verificarPosseMailing: async parametros => {
+      assert.equal(parametros.linha, linha);
+      assert.equal(parametros.usuarioId, 7);
+      return true;
+    },
+    atribuirAoUsuario: async parametros => {
+      parametrosAtribuicao = parametros;
+      return { ...linha, atribuido_para_id: parametros.usuarioId };
+    }
+  });
+
+  assert.equal(resultado.atribuido_para_id, 7);
+  assert.equal(parametrosAtribuicao.linha, linha);
+  assert.equal(parametrosAtribuicao.usuarioId, 7);
+  assert.deepEqual(parametrosAtribuicao.trx, { nome: 'transacao' });
+});
+
+test('nao permite assumir futuro cliente sem possuir o mailing', async () => {
+  let atribuiu = false;
+  const resultado = await buscarLeadOrigemExplicita({
+    origemLeadLinhaId: 15,
+    usuarioId: 7,
+    trx: {},
+    buscarLinha: async () => ({ id: 15, envio_id: 81, futuro_cliente: true, atribuido_para_id: null }),
+    verificarPosseMailing: async () => false,
+    atribuirAoUsuario: async () => {
+      atribuiu = true;
+      return {};
+    }
+  });
+
+  assert.equal(resultado, null);
+  assert.equal(atribuiu, false);
+});
+
+test('nao permite assumir futuro cliente atribuido a outro usuario', async () => {
+  const resultado = await buscarLeadOrigemExplicita({
+    origemLeadLinhaId: 15,
+    usuarioId: 7,
+    trx: {},
+    buscarLinha: async () => ({ id: 15, futuro_cliente: true, atribuido_para_id: 9 }),
+    verificarPosseMailing: async () => assert.fail('nao deve consultar o mailing')
+  });
+
+  assert.equal(resultado, null);
+});
+
+test('aceita lead comum do mailing e rejeita origem explicita excluida ou vendida', () => {
+  assert.equal(leadOrigemExplicitaElegivel(null), false);
+  assert.equal(leadOrigemExplicitaElegivel({ futuro_cliente: false }), true);
+  assert.equal(leadOrigemExplicitaElegivel({ futuro_cliente: '0' }), true);
+  assert.equal(leadOrigemExplicitaElegivel({ futuro_cliente: true, futuro_cliente_excluido_em: '2026-08-24 10:00:00' }), false);
+  assert.equal(leadOrigemExplicitaElegivel({ futuro_cliente: true, venda_id: 91 }), false);
+  assert.equal(leadOrigemExplicitaElegivel({ futuro_cliente: true, status_operacional: 'vendido' }), false);
+  assert.equal(leadOrigemExplicitaElegivel({ futuro_cliente: true, atribuido_para_id: null }), true);
+});
+
+test('valida posse somente em mailing ativo associado ao usuario', async () => {
+  const consulta = { joins: [], filtros: null, nulos: [], campo: null };
+  const query = {
+    join(...args) {
+      consulta.joins.push(args);
+      return this;
+    },
+    where(filtros) {
+      consulta.filtros = filtros;
+      return this;
+    },
+    whereNull(campo) {
+      consulta.nulos.push(campo);
+      return this;
+    },
+    first(campo) {
+      consulta.campo = campo;
+      return { id: 91 };
+    }
+  };
+
+  const possui = await usuarioPossuiMailingDaLinha({
+    linha: { envio_id: 81 },
+    usuarioId: 7,
+    trx: tabela => {
+      assert.equal(tabela, 'lead_envio_usuarios as leu');
+      return query;
+    }
+  });
+
+  assert.equal(possui, true);
+  assert.deepEqual(consulta.joins, [['lead_envios as le', 'le.id', 'leu.envio_id']]);
+  assert.deepEqual(consulta.filtros, {
+    'leu.envio_id': 81,
+    'leu.usuario_id': 7,
+    'le.origem': 'mailing'
+  });
+  assert.deepEqual(consulta.nulos, ['le.cancelado_em']);
+  assert.equal(consulta.campo, 'leu.id');
+});
+
+test('atribui a linha e registra historico da etapa de venda', async () => {
+  const gravacoes = [];
+  const trx = tabela => {
+    if (tabela === 'lead_linhas') {
+      return {
+        where(filtros) {
+          gravacoes.push({ tabela, operacao: 'where', dados: filtros });
+          return this;
+        },
+        update(patch) {
+          gravacoes.push({ tabela, operacao: 'update', dados: patch });
+          return 1;
+        }
+      };
+    }
+    assert.equal(tabela, 'lead_atribuicoes');
+    return {
+      insert(dados) {
+        gravacoes.push({ tabela, operacao: 'insert', dados });
+        return [101];
+      }
+    };
+  };
+
+  const resultado = await atribuirLeadOrigemAoUsuario({
+    linha: { id: 15, envio_id: 81, atribuido_para_id: null },
+    usuarioId: 7,
+    trx,
+    garantirAtribuicaoVenda: async ({ linha, usuarioId }) => {
+      gravacoes.push({
+        tabela: 'lead_atribuicoes',
+        operacao: 'insert',
+        dados: {
+          lead_linha_id: linha.id,
+          envio_id: linha.envio_id,
+          usuario_id: usuarioId,
+          etapa: 'venda',
+          status: 'atribuido',
+          criado_por_id: usuarioId
+        }
+      });
+    }
+  });
+
+  assert.equal(resultado.atribuido_para_id, 7);
+  assert.deepEqual(gravacoes[0].dados, { id: 15, atribuido_para_id: null });
+  assert.equal(gravacoes[1].dados.atribuido_para_id, 7);
+  assert.ok(gravacoes[1].dados.updated_at instanceof Date);
+  assert.deepEqual(gravacoes[2], {
+    tabela: 'lead_atribuicoes',
+    operacao: 'insert',
+    dados: {
+      lead_linha_id: 15,
+      envio_id: 81,
+      usuario_id: 7,
+      etapa: 'venda',
+      status: 'atribuido',
+      criado_por_id: 7
+    }
+  });
+});
+
+test('reutiliza atribuicao de venda ativa e cria somente quando ela nao existe', async () => {
+  let insercoes = 0;
+  function criarTrx(existente) {
+    return tabela => {
+      assert.equal(tabela, 'lead_atribuicoes');
+      return {
+        where() { return this; },
+        whereNull() { return this; },
+        orderBy() { return this; },
+        first() { return existente ? { id: 91 } : null; },
+        insert() { insercoes += 1; return [101]; }
+      };
+    };
+  }
+
+  const parametros = { linha: { id: 15, envio_id: 81 }, usuarioId: 7 };
+  const existente = await garantirAtribuicaoVendaLeadOrigem({ ...parametros, trx: criarTrx(true) });
+  await garantirAtribuicaoVendaLeadOrigem({ ...parametros, trx: criarTrx(false) });
+
+  assert.deepEqual(existente, { id: 91 });
+  assert.equal(insercoes, 1);
+});
+
+test('nao registra atribuicao se outra transacao assumir a linha primeiro', async () => {
+  let inseriu = false;
+  const resultado = await atribuirLeadOrigemAoUsuario({
+    linha: { id: 15, envio_id: 81, atribuido_para_id: null },
+    usuarioId: 7,
+    trx: tabela => {
+      if (tabela === 'lead_linhas') {
+        return {
+          where() { return this; },
+          update() { return 0; }
+        };
+      }
+      inseriu = true;
+      return { insert() { return [101]; } };
+    }
+  });
+
+  assert.equal(resultado, null);
+  assert.equal(inseriu, false);
+});
 
 test('origem explicita tem prioridade e impede a busca automatica', async () => {
   const explicita = { id: 15 };

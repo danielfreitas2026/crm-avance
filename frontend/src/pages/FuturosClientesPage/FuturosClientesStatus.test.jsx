@@ -279,6 +279,92 @@ describe('modal de adição de lead', () => {
     expect(modal.querySelector('.adicionar-lead-acoes')).toContainElement(screen.getByRole('button', { name: /Registrar venda/i }));
   });
 
+  it('leva os dados mapeados do cliente para os campos reais da venda', () => {
+    const onRegistrarVenda = vi.fn();
+    render(
+      <AdicionarLeadModal
+        linha={{
+          id: 20,
+          atribuido_para_id: 7,
+          dados_json: {
+            Nome: 'Loja Exemplo',
+            'Razão social': 'Loja Exemplo LTDA',
+            CNPJ: '12.345.678/0001-95',
+            Telefone: '11999998888',
+            'E-mail': 'contato@exemplo.com',
+            Responsável: 'Maria Silva'
+          },
+          envio: { nome: 'Envio teste' }
+        }}
+        colunas={[]}
+        usuario={{ id: 7, role: { nome: 'admin' } }}
+        onClose={() => {}}
+        onRegistrarVenda={onRegistrarVenda}
+        onFuturoClienteSalvo={() => {}}
+        onLinhaAtualizada={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Registrar venda/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Continuar na nova venda/i }));
+
+    expect(onRegistrarVenda).toHaveBeenCalledWith(expect.objectContaining({
+      nome: 'Loja Exemplo',
+      razao_social: 'Loja Exemplo LTDA',
+      cnpj: '12.345.678/0001-95',
+      telefone: '11999998888',
+      email: 'contato@exemplo.com',
+      responsavel_nome: 'Maria Silva',
+      nome_representante_legal: 'Maria Silva',
+      telefone_representante_legal: '11999998888',
+      email_representante_legal: 'contato@exemplo.com',
+      nome_fechou_venda: 'RL',
+      vendedoras: ['7']
+    }));
+  });
+
+  it('preenche o administrador com os dados prioritarios da sondagem', () => {
+    const onRegistrarVenda = vi.fn();
+    render(
+      <AdicionarLeadModal
+        linha={{
+          id: 21,
+          futuro_cliente: true,
+          atribuido_para_id: 7,
+          dados_json: { Responsável: 'Contato do mailing' },
+          sondagem: {
+            razao_social: 'Empresa da Sondagem',
+            cnpj: '12.345.678/0001-95',
+            contato_nome: 'Administrador da Sondagem',
+            contato_tipo: 'adm',
+            whatsapp_ddd: '11',
+            whatsapp_numero: '988887777'
+          },
+          envio: { nome: 'Envio teste' }
+        }}
+        colunas={[]}
+        usuario={{ id: 7, role: { nome: 'admin' } }}
+        onClose={() => {}}
+        onRegistrarVenda={onRegistrarVenda}
+        onFuturoClienteSalvo={() => {}}
+        onLinhaAtualizada={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Registrar venda/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Continuar na nova venda/i }));
+
+    expect(onRegistrarVenda).toHaveBeenCalledWith(expect.objectContaining({
+      razao_social: 'Empresa da Sondagem',
+      cnpj: '12.345.678/0001-95',
+      responsavel_nome: 'Administrador da Sondagem',
+      responsavel_tipo: 'adm',
+      nome_administrador: 'Administrador da Sondagem',
+      telefone_administrador: '11988887777',
+      nome_fechou_venda: 'ADM'
+    }));
+  });
+
   it('mantém os dados e o formulário lado a lado ao registrar futuro cliente', () => {
     render(
       <AdicionarLeadModal

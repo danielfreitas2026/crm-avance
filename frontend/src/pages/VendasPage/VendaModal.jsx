@@ -3743,7 +3743,9 @@ function VendaModal({
         }
       })();
       
-      const baseComDraft = { ...base, ...(savedDraft || initialDraft || {}) };
+      const baseComDraft = initialValues
+        ? base
+        : { ...base, ...(savedDraft || initialDraft || {}) };
       baseComDraft.venda_antiga = normalizarIndicadorVendaAntiga(baseComDraft.venda_antiga);
       if (!baseComDraft.venda_antiga) baseComDraft.data_venda = '';
       if (!venda && usuarioLogado?.id && vendedoras?.some(v => String(v.id) === String(usuarioLogado.id))) {
@@ -3763,6 +3765,10 @@ function VendaModal({
   
   // Usar hook para persistência de rascunhos
   const { clearDraft } = useFormDraft(editando ? null : draftKey, form, editando);
+
+  useEffect(() => {
+    if (!editando && initialValues) clearDraft();
+  }, [clearDraft, editando, initialValues]);
   const [salvando, setSalvando] = useState(false);
   const [modoReversao, setModoReversao] = useState(false);
   const [observacaoReversao, setObservacaoReversao] = useState('');

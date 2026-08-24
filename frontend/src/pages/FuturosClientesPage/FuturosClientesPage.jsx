@@ -453,7 +453,7 @@ function sugerirColunaVenda(campo, opcoes) {
   const encontrada = opcoes.find(opcao => {
     const label = normalizarTextoLead(opcao.label);
     const nome = normalizarTextoLead(opcao.nome);
-    return aliases.some(alias => alias && (label.includes(alias) || nome.includes(alias) || alias.includes(label)));
+    return aliases.some(alias => alias && (label.includes(alias) || nome.includes(alias)));
   });
   return encontrada?.nome || '';
 }
@@ -525,7 +525,7 @@ function montarClientePreenchido(vendaPreenchida) {
 /**
  * Monta venda preenchida do lead a partir dos dados informados.
  */
-function montarVendaPreenchidaDoLead(linha, mapeamento, usuario) {
+function montarVendaPreenchidaDoLead(linha, mapeamento, usuario, camposAlterados = new Set()) {
   const sondagem = linha?.sondagem || {};
   const vendedoraId = Number(linha?.atribuido_para_id || usuario?.id || 0);
   const payload = {
@@ -546,10 +546,20 @@ function montarVendaPreenchidaDoLead(linha, mapeamento, usuario) {
   CAMPOS_VENDA_LEAD.forEach(campo => {
     const coluna = mapeamento?.[campo.name];
     const valor = getValorLeadPorNome(linha, coluna);
-    if (String(valor || '').trim()) {
+    if (String(valor || '').trim() && (!String(payload[campo.name] || '').trim() || camposAlterados.has(campo.name))) {
       payload[campo.name] = valor;
     }
   });
+
+  const responsavelNome = String(payload.responsavel_nome || '').trim();
+  if (responsavelNome) {
+    const responsavelTipo = payload.responsavel_tipo === 'adm' ? 'adm' : 'rl';
+    const sufixo = responsavelTipo === 'adm' ? 'administrador' : 'representante_legal';
+    payload.nome_fechou_venda = responsavelTipo.toUpperCase();
+    payload[`nome_${sufixo}`] = responsavelNome;
+    payload[`telefone_${sufixo}`] = payload.telefone || '';
+    payload[`email_${sufixo}`] = payload.email || '';
+  }
 
   return payload;
 }
@@ -983,12 +993,14 @@ function RegistrarVendaLeadModal({ linha, colunas, usuario, onClose, onConfirm }
       [campo.name]: sugerirColunaVenda(campo, opcoesColunas)
     }), {})
   ));
+  const [camposAlterados, setCamposAlterados] = useState(() => new Set());
 
   /**
    * Atualiza mapeamento com os dados informados.
    */
   function atualizarMapeamento(campo, valor) {
     setMapeamento(prev => ({ ...prev, [campo]: valor }));
+    setCamposAlterados(prev => new Set(prev).add(campo));
   }
 
   /**
@@ -996,7 +1008,7 @@ function RegistrarVendaLeadModal({ linha, colunas, usuario, onClose, onConfirm }
    */
   function submit(event) {
     event.preventDefault();
-    onConfirm(montarVendaPreenchidaDoLead(linha, mapeamento, usuario));
+    onConfirm(montarVendaPreenchidaDoLead(linha, mapeamento, usuario, camposAlterados));
   }
 
   return (

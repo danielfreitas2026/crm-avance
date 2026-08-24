@@ -13,7 +13,8 @@ const api = vi.hoisted(() => ({
   listarServicos: vi.fn(),
   listarTiposVenda: vi.fn(),
   listarEtapasFunil: vi.fn(),
-  listarClientesSelect: vi.fn()
+  listarClientesSelect: vi.fn(),
+  criarVenda: vi.fn()
 }));
 
 vi.mock('../../utils/useDebounce', () => ({ useDebounce: value => value }));
@@ -23,9 +24,11 @@ vi.mock('../../layouts/LayoutPrivado/LayoutPrivado', () => ({
 }));
 
 vi.mock('./VendaModal', () => ({
-  default: ({ initialValues }) => (
+  default: ({ initialValues, clientePreenchido, onSave }) => (
     <section role="dialog" aria-label="modal venda">
       {initialValues?.nome || 'Nova venda'}
+      <span>{clientePreenchido?.nome || ''}</span>
+      <button type="button" onClick={() => onSave(initialValues)}>Salvar venda simulada</button>
     </section>
   )
 }));
@@ -41,7 +44,7 @@ vi.mock('../../services/venda.service', () => ({
   atualizarVenda: vi.fn(),
   baixarXlsxClaro: vi.fn(),
   buscarVendaPorId: api.buscarVendaPorId,
-  criarVenda: vi.fn(),
+  criarVenda: api.criarVenda,
   deletarVenda: vi.fn(),
   enviarVendaParaPosVenda: vi.fn(),
   excluirReversaoVenda: vi.fn(),
@@ -114,6 +117,7 @@ describe('VendasPage - carregamento e abertura do modal', () => {
     api.listarTiposVenda.mockResolvedValue([]);
     api.listarEtapasFunil.mockResolvedValue([]);
     api.listarClientesSelect.mockResolvedValue([]);
+    api.criarVenda.mockResolvedValue({ id: 99 });
   });
 
   it('ignora uma resposta antiga quando o filtro já disparou uma busca mais recente', async () => {
@@ -150,11 +154,21 @@ describe('VendasPage - carregamento e abertura do modal', () => {
     renderPage({
       pathname: '/vendas',
       search: '?nova=1',
-      state: { vendaPreenchida: { nome: 'Lead convertido' } }
+      state: {
+        vendaPreenchida: { nome: 'Lead convertido' },
+        clientePreenchido: { nome: 'Cliente do lead' },
+        origemLead: { linha_id: 42 }
+      }
     });
 
     expect(await screen.findByRole('dialog', { name: 'modal venda' })).toHaveTextContent('Lead convertido');
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/vendas'));
+    expect(screen.getByRole('dialog', { name: 'modal venda' })).toHaveTextContent('Cliente do lead');
     expect(screen.getAllByRole('dialog', { name: 'modal venda' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar venda simulada' }));
+    await waitFor(() => expect(api.criarVenda).toHaveBeenCalledWith(expect.objectContaining({
+      nome: 'Lead convertido',
+      origem_lead_linha_id: 42
+    })));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/vendas'));
   });
 });
