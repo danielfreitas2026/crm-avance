@@ -177,6 +177,7 @@ function ChatFlutuante({ usuario, naoLidas = 0 }) {
 
   function abrirNovaConversa() {
     limparCompositor();
+    setAberto(true);
     setContatoSelecionado(null);
     setBusca('');
     setDestinatariosSelecionados([]);
@@ -356,7 +357,7 @@ function ChatFlutuante({ usuario, naoLidas = 0 }) {
                 {naoLidas > 99 ? '99+' : naoLidas}
               </span>
             )}
-            <button type="button" className="chat-flutuante__icone" onClick={fecharPainel} aria-label="Minimizar mensagens" title="Minimizar"><span aria-hidden="true">—</span></button>
+            <button type="button" className="chat-flutuante__icone" onClick={fecharPainel} aria-label="Minimizar mensagens" title="Minimizar"><I.ChevronDown size={17} /></button>
           </header>
 
           {contatoSelecionado ? (
@@ -409,7 +410,18 @@ function ChatFlutuante({ usuario, naoLidas = 0 }) {
           )}
         </section>
       ) : (
-        <button type="button" className="chat-flutuante__atalho" onClick={() => setAberto(true)} aria-label="Abrir mensagens"><I.Chat size={21} /><span>Mensagens</span>{naoLidas > 0 && <em>{naoLidas > 99 ? '99+' : naoLidas}</em>}</button>
+        <div className="chat-flutuante__atalho">
+          <button type="button" className="chat-flutuante__atalho-principal" onClick={() => setAberto(true)} aria-label="Abrir mensagens">
+            <span className="chat-flutuante__atalho-avatar"><Avatar contato={usuario} /></span>
+            <span className="chat-flutuante__atalho-mobile-icon" aria-hidden="true"><I.Chat size={21} /></span>
+            <span className="chat-flutuante__atalho-titulo">Mensagens</span>
+            {naoLidas > 0 && <em>{naoLidas > 99 ? '99+' : naoLidas}</em>}
+          </button>
+          <div className="chat-flutuante__atalho-acoes">
+            <button type="button" onClick={abrirNovaConversa} aria-label="Nova mensagem" title="Nova mensagem"><I.Edit size={17} /></button>
+            <button type="button" onClick={() => setAberto(true)} aria-label="Expandir mensagens" title="Expandir mensagens"><I.ChevronDown className="chat-flutuante__chevron--abrir" size={17} /></button>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -28,6 +28,30 @@ describe('ChatFlutuante', () => {
     api.enviarMensagensEmLote.mockResolvedValue({ enviadas: [{ destinatario_id: 2 }], falhas: [], resumo: { solicitadas: 1, enviadas: 1, falhas: 0 } });
   });
 
+  it('renderiza o dock completo e abre ou minimiza a lista de conversas', async () => {
+    render(<ChatFlutuante usuario={{ id: 1, nome: 'Maria Silva' }} naoLidas={3} />);
+
+    const dock = document.querySelector('.chat-flutuante__atalho');
+    expect(dock).toContainElement(screen.getByRole('button', { name: 'Abrir mensagens' }));
+    expect(dock).toContainElement(screen.getByRole('button', { name: 'Nova mensagem' }));
+    expect(dock).toContainElement(screen.getByRole('button', { name: 'Expandir mensagens' }));
+    expect(screen.getByText('MS')).toBeVisible();
+    expect(screen.getByText('3')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expandir mensagens' }));
+    expect(await screen.findByRole('dialog', { name: 'Mensagens rápidas' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Minimizar mensagens' }));
+    expect(screen.getByRole('button', { name: 'Expandir mensagens' })).toBeVisible();
+  });
+
+  it('abre o compositor diretamente pela acao do dock', async () => {
+    render(<ChatFlutuante usuario={{ id: 1, nome: 'Maria Silva' }} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nova mensagem' }));
+    expect(await screen.findByText('Nova mensagem')).toBeVisible();
+    expect(screen.getByPlaceholderText('Buscar usuário...')).toBeVisible();
+  });
+
   it('mantem o marcador de não visualizadas na aba e no painel aberto', async () => {
     render(<ChatFlutuante usuario={{ id: 1 }} naoLidas={3} />);
 
