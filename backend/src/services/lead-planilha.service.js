@@ -4615,12 +4615,7 @@ async function reverterVendaRecusadaLead(linhaId, usuarioId, opcoes = {}) {
   const futuroClienteAtivo = Boolean(linha.futuro_cliente && !linha.futuro_cliente_excluido_em);
 
   await LeadLinha.transaction(async trx => {
-    await LeadLinha.query(trx).patchAndFetchById(linha.id, {
-      venda_recusada_motivo: null,
-      venda_recusada_em: null,
-      venda_recusada_por_id: null,
-      status_operacional: futuroClienteAtivo ? 'qualificado' : 'pendente'
-    });
+    await LeadLinha.query(trx).patchAndFetchById(linha.id, montarPatchReversaoVendaRecusada(linha));
 
     const atribuicao = await LeadAtribuicao.query(trx)
       .where({ lead_linha_id: linha.id, usuario_id: donoId, etapa: 'venda' })
@@ -4635,6 +4630,16 @@ async function reverterVendaRecusadaLead(linhaId, usuarioId, opcoes = {}) {
   });
 
   return buscarLinhaFormatada(linha.id);
+}
+
+function montarPatchReversaoVendaRecusada(linha) {
+  const futuroClienteAtivo = Boolean(linha?.futuro_cliente && !linha?.futuro_cliente_excluido_em);
+  return {
+    venda_recusada_motivo: null,
+    venda_recusada_em: null,
+    venda_recusada_por_id: null,
+    status_operacional: futuroClienteAtivo ? 'qualificado' : 'pendente'
+  };
 }
 
 /**
@@ -5187,6 +5192,7 @@ module.exports = {
     montarPatchDivisao,
     montarLimpezaStatusReenvio,
     montarPatchReversaoFuturoCliente,
+    montarPatchReversaoVendaRecusada,
     montarPatchExclusaoFuturoCliente,
     obterResponsavelEscopoLixeira,
     calcularVencimentoLixeiraFuturoCliente,

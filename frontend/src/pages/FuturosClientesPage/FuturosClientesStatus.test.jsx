@@ -660,6 +660,135 @@ describe('modal de adição de lead', () => {
     localStorage.removeItem('usuario');
   });
 
+  it('permite ao gerente de todos confirmar e reverter uma venda recusada', async () => {
+    const linha = {
+      id: 41,
+      futuro_cliente: 1,
+      venda_recusada_em: '2026-08-20 11:39:00',
+      venda_recusada_motivo: 'Cliente ja atendido.',
+      dados_json: {},
+      sondagem: { chips_itens: [] }
+    };
+    localStorage.setItem('usuario', JSON.stringify({
+      id: 7,
+      permissoes: {
+        futuros_clientes_ver_todos: true,
+        futuros_clientes_gerenciar_todos: true
+      }
+    }));
+    const onVendaRecusadaRevertida = vi.fn();
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    let concluirReversao;
+    const reverter = vi.spyOn(leadPlanilhaService, 'reverterVendaRecusadaFuturoCliente')
+      .mockReturnValue(new Promise(resolve => { concluirReversao = resolve; }));
+    render(<FuturoClienteDetalheModal
+      linha={linha}
+      onClose={() => {}}
+      onAtualizado={() => {}}
+      somenteLeitura
+      permitirReverterVendaRecusada
+      onVendaRecusadaRevertida={onVendaRecusadaRevertida}
+    />);
+
+    const botao = screen.getByRole('button', { name: 'Reverter venda recusada' });
+    fireEvent.click(botao);
+    expect(reverter).not.toHaveBeenCalled();
+
+    fireEvent.click(botao);
+    expect(reverter).toHaveBeenCalledWith(41);
+    expect(botao).toBeDisabled();
+
+    concluirReversao({ linha: { ...linha, venda_recusada_em: null, venda_recusada_motivo: null } });
+    await waitFor(() => expect(onVendaRecusadaRevertida).toHaveBeenCalledWith(expect.objectContaining({
+      id: 41,
+      venda_recusada_em: null,
+      venda_recusada_motivo: null
+    })));
+
+    confirmar.mockRestore();
+    reverter.mockRestore();
+    localStorage.removeItem('usuario');
+  });
+
+  it('restringe a reversao ao gerente de todos na visao Todos', () => {
+    const linha = {
+      id: 42,
+      futuro_cliente: 1,
+      venda_recusada_em: '2026-08-20 11:39:00',
+      dados_json: {},
+      sondagem: { chips_itens: [] }
+    };
+    const props = {
+      linha,
+      onClose: () => {},
+      onAtualizado: () => {},
+      somenteLeitura: true
+    };
+
+    localStorage.setItem('usuario', JSON.stringify({
+      id: 7,
+      permissoes: { futuros_clientes_ver_todos: true }
+    }));
+    const apenasVisualiza = render(<FuturoClienteDetalheModal {...props} permitirReverterVendaRecusada />);
+    expect(screen.queryByRole('button', { name: 'Reverter venda recusada' })).not.toBeInTheDocument();
+    apenasVisualiza.unmount();
+
+    localStorage.setItem('usuario', JSON.stringify({
+      id: 7,
+      permissoes: {
+        futuros_clientes_ver_todos: true,
+        futuros_clientes_gerenciar_todos: true
+      }
+    }));
+    const visaoMeus = render(<FuturoClienteDetalheModal {...props} />);
+    expect(screen.queryByRole('button', { name: 'Reverter venda recusada' })).not.toBeInTheDocument();
+    visaoMeus.unmount();
+
+    render(<FuturoClienteDetalheModal
+      {...props}
+      linha={{ ...linha, venda_recusada_em: null, venda_recusada_motivo: null, status_operacional: 'qualificado' }}
+      permitirReverterVendaRecusada
+    />);
+    expect(screen.queryByRole('button', { name: 'Reverter venda recusada' })).not.toBeInTheDocument();
+    localStorage.removeItem('usuario');
+  });
+
+  it('mantem o detalhe aberto e exibe o erro quando a reversao falha', async () => {
+    localStorage.setItem('usuario', JSON.stringify({
+      id: 7,
+      permissoes: {
+        futuros_clientes_ver_todos: true,
+        futuros_clientes_gerenciar_todos: true
+      }
+    }));
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const reverter = vi.spyOn(leadPlanilhaService, 'reverterVendaRecusadaFuturoCliente')
+      .mockRejectedValue(new Error('Nao foi possivel reverter.'));
+    render(<FuturoClienteDetalheModal
+      linha={{
+        id: 43,
+        futuro_cliente: 1,
+        venda_recusada_em: '2026-08-20 11:39:00',
+        dados_json: {},
+        sondagem: { chips_itens: [] }
+      }}
+      onClose={() => {}}
+      onAtualizado={() => {}}
+      somenteLeitura
+      permitirReverterVendaRecusada
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reverter venda recusada' }));
+
+    expect(await screen.findByText('Nao foi possivel reverter.')).toBeVisible();
+    expect(screen.getByRole('dialog', { name: 'Detalhes do futuro cliente' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Reverter venda recusada' })).toBeEnabled();
+
+    confirmar.mockRestore();
+    reverter.mockRestore();
+    localStorage.removeItem('usuario');
+  });
+
   it('carrega o historico sob demanda na visao Todos e mantem os dados bloqueados', async () => {
     const buscarHistorico = vi.spyOn(leadPlanilhaService, 'obterHistoricoFuturoCliente').mockResolvedValue({
       linha_id: 61,

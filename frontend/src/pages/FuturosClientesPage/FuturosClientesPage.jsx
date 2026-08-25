@@ -41,6 +41,7 @@ import {
   marcarVendaRecusadaLead,
   reverterClienteRecusouLead,
   reverterChamadaNaoAtendidaLead,
+  reverterVendaRecusadaFuturoCliente,
   restaurarFuturoCliente
 } from '../../services/lead-planilha.service';
 import { formatDateValue, formatUtcDateTime, localDateTimeInputToUtc, parseUtcDateTime, toLocalDateTimeInputFromUtc } from '../../utils/datetime';
@@ -2754,6 +2755,8 @@ export function FuturoClienteDetalheModal({
   somenteLeitura = false,
   permitirGerenciarVinculo = false,
   permitirReenvioTelegram = false,
+  permitirReverterVendaRecusada = false,
+  onVendaRecusadaRevertida,
   exibirHistorico = false
 }) {
   const dialogRef = useDialogAcessivel(onClose);
@@ -2815,6 +2818,10 @@ export function FuturoClienteDetalheModal({
   const podeEditar = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'futuros_clientes_registrar')));
   const podeRegistrarVenda = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'vendas_criar')));
   const podeGerenciarVinculo = comoAdmin && (!somenteLeitura || permitirGerenciarVinculo);
+  const podeReverterVendaRecusada = vendaRecusada
+    && permitirReverterVendaRecusada
+    && temPermissao(usuario, 'futuros_clientes_ver_todos')
+    && temPermissao(usuario, 'futuros_clientes_gerenciar_todos');
   const podeEnviarDistribuicao = destinoDistribuivel
     && estadoDistribuivel
     && !vendaRegistrada
@@ -2884,6 +2891,20 @@ export function FuturoClienteDetalheModal({
       onAtualizado(resultado.linha);
     } catch (error) {
       setErro(error.message || 'Erro ao marcar venda recusada.');
+      setSalvando(false);
+    }
+  }
+
+  async function reverterVendaRecusada() {
+    if (!window.confirm('Deseja reverter a venda recusada deste futuro cliente?')) return;
+
+    setSalvando(true);
+    setErro('');
+    try {
+      const resultado = await reverterVendaRecusadaFuturoCliente(linha.id);
+      onVendaRecusadaRevertida?.(resultado.linha);
+    } catch (error) {
+      setErro(error.message || 'Erro ao reverter a venda recusada.');
       setSalvando(false);
     }
   }
@@ -3244,7 +3265,14 @@ export function FuturoClienteDetalheModal({
                 {podeGerenciarVinculo && <button type="button" className="btn" onClick={() => setVinculoAberto(true)}>Gerenciar vínculo</button>}
               </>
             ) : vendaRecusada ? (
-              <div className="futuro-cliente-recusa is-saved">Venda recusada para este futuro cliente.</div>
+              <>
+                <div className="futuro-cliente-recusa is-saved">Venda recusada para este futuro cliente.</div>
+                {podeReverterVendaRecusada && (
+                  <button type="button" className="btn" onClick={reverterVendaRecusada} disabled={salvando || distribuindo}>
+                    Reverter venda recusada
+                  </button>
+                )}
+              </>
             ) : (
               <>
                 {podeRegistrarVenda && <button type="button" className="btn" onClick={() => setEtapa('venda')} disabled={salvando}>
@@ -3901,6 +3929,13 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     fecharDetalhe();
   }
 
+  function handleVendaRecusadaRevertida(linhaAtualizada) {
+    setLinhas(prev => prev.map(linha => linha.id === linhaAtualizada.id ? { ...linha, ...linhaAtualizada } : linha));
+    fecharDetalhe();
+    setRevalidacao(valor => valor + 1);
+    setSucesso('Venda recusada revertida.');
+  }
+
   function handleDistribuido(linhaDistribuida, reencaminhado = false) {
     if (escopoTodos) {
       setLinhas(prev => prev.map(item => item.id === linhaDistribuida.id ? {
@@ -4087,6 +4122,8 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
           permitirGerenciarVinculo={escopoTodos}
           permitirReenvioTelegram={escopoTodos
             && temPermissao(usuario, 'futuros_clientes_ver_todos')}
+          permitirReverterVendaRecusada={escopoTodos}
+          onVendaRecusadaRevertida={handleVendaRecusadaRevertida}
           exibirHistorico={escopoTodos}
         />
       )}

@@ -20,6 +20,7 @@ import {
   listarResponsaveisFuturosClientes,
   obterHistoricoFuturoCliente,
   listarVendasCandidatasLead,
+  reverterVendaRecusadaFuturoCliente,
   restaurarFuturoCliente
 } from './lead-planilha.service';
 
@@ -61,6 +62,16 @@ describe('distribuicao de futuro cliente reservado', () => {
     await obterHistoricoFuturoCliente(81);
 
     expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/81/historico');
+  });
+});
+
+describe('reversao gerencial de venda recusada', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('usa o endpoint protegido da visao Todos', async () => {
+    await reverterVendaRecusadaFuturoCliente(81);
+
+    expect(apiPost).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/81/venda-recusada/reverter', {});
   });
 });
 

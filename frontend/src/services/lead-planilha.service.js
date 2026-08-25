@@ -362,6 +362,11 @@ export function adminReverterVendaRecusadaLead(linhaId) {
   return apiPost(`/lead-planilhas/linhas/${linhaId}/venda-recusada/reverter`, {});
 }
 
+/** Reverte uma venda recusada a partir da visao gerencial de futuros clientes. */
+export function reverterVendaRecusadaFuturoCliente(linhaId) {
+  return apiPost(`/lead-planilhas/futuros-clientes/${linhaId}/venda-recusada/reverter`, {});
+}
+
 export function adminMarcarClienteRecusouLead(linhaId, motivo) {
   return apiPost(`/lead-planilhas/linhas/${linhaId}/cliente-recusou`, { motivo });
 }
