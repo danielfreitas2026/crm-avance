@@ -29,4 +29,26 @@ describe('destinos das notificacoes', () => {
     expect(resultado.podeAbrir).toBe(false);
     expect(resultado.motivo).toMatch(/precisa de acesso ao Funil de Vendas/i);
   });
+
+  it('abre retorno de mailing no controle global para usuario administrativo', () => {
+    const notificacao = {
+      id: 12,
+      tipo: 'lead_retorno_due',
+      entidade: 'lead_linhas',
+      entidade_id: 104
+    };
+    const admin = { role: { nome: 'admin' } };
+
+    expect(resolverDestinoNotificacao(notificacao, admin)).toMatchObject({
+      podeAbrir: true,
+      rota: '/clientes-secretos?notificacao_id=12&linha_id=104'
+    });
+    expect(resolverDestinoNotificacao(notificacao, {
+      role: { nome: 'usuario' },
+      permissoes: { futuros_clientes_ver: true }
+    })).toMatchObject({
+      podeAbrir: true,
+      rota: '/futuros-clientes?notificacao_id=12&aba=mailings&linha_id=104'
+    });
+  });
 });

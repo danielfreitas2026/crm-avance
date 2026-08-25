@@ -83,7 +83,19 @@ export function montarDestinoNotificacao(notificacao) {
 }
 
 export function resolverDestinoNotificacao(notificacao, usuario) {
-  const resultado = montarDestinoNotificacao(notificacao);
+  const resultadoBase = montarDestinoNotificacao(notificacao);
+  const dados = dadosNotificacao(notificacao);
+  const linhaId = dados.lead_linha_id || (notificacao?.entidade === 'lead_linhas' ? notificacao.entidade_id : '');
+  const retornoMailing = ['lead_retorno_pre', 'lead_retorno_due'].includes(notificacao?.tipo);
+  const resultado = retornoMailing && temPermissao(usuario, 'gerenciar_leads')
+    ? destino(
+      '/clientes-secretos',
+      { notificacao_id: notificacao?.id || '', linha_id: linhaId },
+      'gerenciar_leads',
+      'acesso administrativo aos leads',
+      linhaId
+    )
+    : resultadoBase;
   if (!resultado.rota) return { ...resultado, podeAbrir: false };
   if (!temPermissao(usuario, resultado.permissao)) {
     return {

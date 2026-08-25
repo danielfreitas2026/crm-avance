@@ -1,9 +1,11 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import AdminLeadsPage from './AdminLeadsPage';
 import { listarLeadLinhas, listarLeadPlanilhas } from '../../services/lead-planilha.service';
 import { listarVendedoras } from '../../services/venda.service';
+import { confirmarAberturaNotificacao } from '../../services/notificacao-abertura.service';
 
 vi.mock('../../services/lead-planilha.service', () => ({
   adminAtualizarCampoLead: vi.fn(),
@@ -30,6 +32,11 @@ vi.mock('../../services/lead-planilha.service', () => ({
 
 vi.mock('../../services/venda.service', () => ({ listarVendedoras: vi.fn() }));
 vi.mock('../../services/cliente-antigo.service', () => ({ previewPlanilhaClientesAntigos: vi.fn() }));
+vi.mock('../../services/notificacao-abertura.service', () => ({
+  confirmarAberturaNotificacao: vi.fn().mockResolvedValue(true),
+  falharAberturaNotificacao: vi.fn(),
+  getNotificacaoIdParam: parametros => Number(parametros?.get('notificacao_id')) || null
+}));
 vi.mock('../../layouts/LayoutPrivado/LayoutPrivado', () => ({ default: ({ children }) => <main>{children}</main> }));
 
 const PLANILHA = {
@@ -54,6 +61,14 @@ function respostaComLinha(linha) {
   };
 }
 
+function renderPagina() {
+  return render(
+    <MemoryRouter initialEntries={[`${window.location.pathname}${window.location.search}`]}>
+      <AdminLeadsPage />
+    </MemoryRouter>
+  );
+}
+
 /**
  * Renderiza a pagina e seleciona a planilha, deixando a tabela visivel.
  */
@@ -62,7 +77,7 @@ async function abrirTabelaCom(linha) {
   listarVendedoras.mockResolvedValue([]);
   listarLeadLinhas.mockResolvedValue(respostaComLinha(linha));
 
-  render(<AdminLeadsPage />);
+  renderPagina();
 
   const card = await screen.findByTitle('Julho 24');
   await userEvent.click(card);
@@ -87,6 +102,20 @@ const LINHA_BASE = {
 describe('AdminLeadsPage - coluna Status da tabela', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/clientes-secretos');
+  });
+
+  it('abre diretamente um lead global recebido por notificacao', async () => {
+    listarLeadPlanilhas.mockResolvedValue([]);
+    listarVendedoras.mockResolvedValue([]);
+    listarLeadLinhas.mockResolvedValue(respostaComLinha(LINHA_BASE));
+    window.history.replaceState({}, '', '/clientes-secretos?notificacao_id=77&linha_id=10');
+
+    renderPagina();
+
+    expect(await screen.findByText('Detalhe do cliente')).toBeVisible();
+    expect(listarLeadLinhas).toHaveBeenCalledWith({ linha_id: 10, page: 1, page_size: 1 });
+    expect(confirmarAberturaNotificacao).toHaveBeenCalledWith(77);
   });
 
   it('mostra "Chamada não atendida" na linha da tabela quando o lead esta marcado', async () => {

@@ -1212,7 +1212,15 @@ function DashboardPage() {
     if (TIPOS_RETORNO_PAGINA_LEADS.includes(notificacao.tipo)) {
       const linhaId = Number(notificacao.entidade_id || notificacao.dados?.lead_linha_id || 0);
       if (TIPOS_RETORNO_MAILING.includes(notificacao.tipo)) {
-        navigate(linhaId > 0 ? `/futuros-clientes?aba=mailings&linha_id=${linhaId}` : '/futuros-clientes?aba=mailings');
+        if (temPermissao(usuario, 'gerenciar_leads')) {
+          const parametros = new URLSearchParams();
+          if (notificacao.id) parametros.set('notificacao_id', String(notificacao.id));
+          if (linhaId > 0) parametros.set('linha_id', String(linhaId));
+          const query = parametros.toString();
+          navigate(`/clientes-secretos${query ? `?${query}` : ''}`);
+        } else {
+          navigate(linhaId > 0 ? `/futuros-clientes?aba=mailings&linha_id=${linhaId}` : '/futuros-clientes?aba=mailings');
+        }
       } else {
         navigate(linhaId > 0 ? `/futuros-clientes?aba=meus&linha_id=${linhaId}` : '/futuros-clientes?aba=meus');
       }

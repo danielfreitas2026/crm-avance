@@ -1,7 +1,13 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import * as I from '../../components/Icons';
 import DocProgresso from '../../components/DocProgresso';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
+import {
+  confirmarAberturaNotificacao,
+  falharAberturaNotificacao,
+  getNotificacaoIdParam
+} from '../../services/notificacao-abertura.service';
 import { calcularProgresso } from '../../utils/progresso';
 import { listarVendedoras } from '../../services/venda.service';
 import {
@@ -1233,7 +1239,9 @@ export function LeadDetalheAdminModal({ linha, onClose, onAtualizado }) {
  * Renderiza admin leads page.
  */
 function AdminLeadsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const inputRef = useRef(null);
+  const notificacaoAbertaRef = useRef(null);
   const [planilhas, setPlanilhas] = useState([]);
   const [selecionadas, setSelecionadas] = useState([]);
   const [linhas, setLinhas] = useState([]);
@@ -1276,6 +1284,21 @@ function AdminLeadsPage() {
     totalMinimo: '',
     enviadosMinimo: ''
   });
+  const linhaNotificacaoId = useMemo(() => {
+    const id = Number(searchParams.get('linha_id'));
+    return Number.isInteger(id) && id > 0 ? id : null;
+  }, [searchParams]);
+  const notificacaoId = getNotificacaoIdParam(searchParams);
+
+  function fecharDetalhe() {
+    setLinhaDetalhe(null);
+    if (!linhaNotificacaoId) return;
+
+    const parametros = new URLSearchParams(searchParams);
+    parametros.delete('linha_id');
+    parametros.delete('notificacao_id');
+    setSearchParams(parametros, { replace: true });
+  }
 
   /**
    * Carrega base e atualiza o estado relacionado.
@@ -1313,6 +1336,38 @@ function AdminLeadsPage() {
       });
     return () => { ativo = false; };
   }, []);
+
+  useEffect(() => {
+    const chaveNotificacao = `${linhaNotificacaoId || ''}:${notificacaoId || ''}`;
+    if (!linhaNotificacaoId || notificacaoAbertaRef.current === chaveNotificacao) return undefined;
+
+    let cancelado = false;
+    notificacaoAbertaRef.current = chaveNotificacao;
+    listarLeadLinhas({ linha_id: linhaNotificacaoId, page: 1, page_size: 1 })
+      .then(resultado => {
+        if (cancelado) return;
+        const linha = (resultado.data || []).find(item => Number(item.id) === linhaNotificacaoId);
+        if (!linha) {
+          if (notificacaoId) falharAberturaNotificacao(notificacaoId);
+          setErro('O lead desta notificacao nao esta mais disponivel.');
+          return;
+        }
+
+        setLinhaDetalhe(linha);
+        if (notificacaoId) {
+          void confirmarAberturaNotificacao(notificacaoId).catch(error => {
+            console.error('Erro ao confirmar abertura da notificacao:', error);
+          });
+        }
+      })
+      .catch(error => {
+        if (cancelado) return;
+        if (notificacaoId) falharAberturaNotificacao(notificacaoId);
+        setErro(error.message || 'Erro ao carregar o lead desta notificacao.');
+      });
+
+    return () => { cancelado = true; };
+  }, [linhaNotificacaoId, notificacaoId]);
 
 
   useEffect(() => {
@@ -2159,7 +2214,7 @@ function AdminLeadsPage() {
       {linhaDetalhe && (
         <LeadDetalheAdminModal
           linha={linhaDetalhe}
-          onClose={() => setLinhaDetalhe(null)}
+          onClose={fecharDetalhe}
           onAtualizado={atualizarLinhaNaLista}
         />
       )}
