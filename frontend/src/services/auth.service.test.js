@@ -48,7 +48,7 @@ describe('auth.service', () => {
     expect(temPermissao({ role: { nome: 'admin' }, permissoes: { clientes_excluir: false } }, 'clientes_excluir')).toBe(false);
     expect(temPermissao({ role: { nome: 'admin' } }, 'clientes_secretos_ver_todos')).toBe(false);
     expect(temPermissao({ role: { nome: 'admin' } }, 'clientes_antigos_ver_historico')).toBe(false);
-    expect(temPermissao({ role: { nome: 'admin' } }, 'vendas_excluir_reversoes')).toBe(false);
+    expect(temPermissao({ role: { nome: 'admin' } }, 'vendas_excluir_reversoes')).toBe(true);
     expect(temPermissao({ role: { nome: 'admin' } }, 'configurar_horario_acesso')).toBe(false);
     expect(temPermissao({ role: { nome: 'admin' }, permissoes: { clientes_secretos_ver_todos: true } }, 'clientes_secretos_ver_todos')).toBe(true);
     expect(temPermissao({ role: { nome: 'admin' }, permissoes: { clientes_antigos_ver_historico: true } }, 'clientes_antigos_ver_historico')).toBe(true);
@@ -61,6 +61,27 @@ describe('auth.service', () => {
     expect(temPermissao({ permissoes: { a: false, b: true } }, ['a', 'b'])).toBe(true);
     expect(temPermissao({ permissoes: { a: false } }, 'b')).toBe(false);
     expect(temPermissao(null, '')).toBe(true);
+  });
+
+  it('ignora negacoes de vendas para admin e remove a limitacao temporal', () => {
+    const admin = {
+      role: { nome: 'admin' },
+      permissoes: {
+        vendas_ver_todas: false,
+        vendas_editar: false,
+        vendas_excluir: false,
+        pos_venda: false,
+        vendas_limitar_ultimos_6_meses: true,
+        clientes_excluir: false
+      }
+    };
+
+    expect(temPermissao(admin, 'vendas_ver_todas')).toBe(true);
+    expect(temPermissao(admin, 'vendas_editar')).toBe(true);
+    expect(temPermissao(admin, 'vendas_excluir')).toBe(true);
+    expect(temPermissao(admin, 'pos_venda')).toBe(true);
+    expect(temPermissao(admin, 'vendas_limitar_ultimos_6_meses')).toBe(false);
+    expect(temPermissao(admin, 'clientes_excluir')).toBe(false);
   });
 
   it('limpa dados locais no logout', () => {

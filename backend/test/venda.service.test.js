@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const vendaService = require('../src/services/venda.service');
+const Usuario = require('../src/models/Usuario');
 
 const {
   adicionarMesesDataISO,
@@ -25,6 +26,8 @@ const {
   validarDataVendaNaoFutura,
   normalizarItensChips,
   vendaDeveNotificarTelegram,
+  montarEscopoVendasUsuario,
+  usuarioPodeAcessarVenda,
   obterDataLimiteConcluidaAntiga,
   obterTipoLinhaPorNomeTipoVenda,
   obterQuantidadeChipsVenda,
@@ -39,6 +42,71 @@ const {
   validarVendedorasNosChips,
   vendaDeveAparecerNoFunil
 } = vendaService._internals;
+
+test('admin acessa todas as vendas sem limite mesmo com negacoes locais', () => {
+  const escopo = montarEscopoVendasUsuario({
+    ativo: true,
+    role: { nome: 'admin' },
+    permissoes: {
+      vendas_ver_todas: false,
+      vendas_ver_proprias: false,
+      ver_vendas_compartilhadas: false,
+      vendas_limitar_ultimos_6_meses: true
+    }
+  });
+
+  assert.deepEqual(escopo, {
+    podeVerTodas: true,
+    podeVerProprias: true,
+    podeVerCompartilhadas: true,
+    limitarUltimos6Meses: false
+  });
+});
+
+test('usuario comum preserva o escopo configurado de vendas', () => {
+  const escopo = montarEscopoVendasUsuario({
+    ativo: true,
+    role: {
+      nome: 'usuario',
+      permissoes: { vendas_ver_proprias: true }
+    },
+    permissoes: { vendas_limitar_ultimos_6_meses: true }
+  });
+
+  assert.deepEqual(escopo, {
+    podeVerTodas: false,
+    podeVerProprias: true,
+    podeVerCompartilhadas: false,
+    limitarUltimos6Meses: true
+  });
+});
+
+test('admin acessa venda de outro usuario sem consultar posse ou vinculo', async () => {
+  const queryOriginal = Usuario.query;
+  Usuario.query = () => ({
+    findById() {
+      return this;
+    },
+    withGraphFetched() {
+      return Promise.resolve({
+        id: 7,
+        ativo: true,
+        role: { nome: 'admin' },
+        permissoes: {
+          vendas_ver_todas: false,
+          vendas_ver_proprias: false,
+          ver_vendas_compartilhadas: false
+        }
+      });
+    }
+  });
+
+  try {
+    assert.equal(await usuarioPodeAcessarVenda(999, 7), true);
+  } finally {
+    Usuario.query = queryOriginal;
+  }
+});
 
 test('mantem lead que ja pertence ao usuario e garante sua atribuicao de venda', async () => {
   let verificouMailing = false;

@@ -64,12 +64,13 @@ export function CopiarPermissoesSelect({ value, onChange, options, placeholder =
   );
 }
 
-export function PermissaoCard({ item, selecionado, exclusivo, grupoExclusivo, onToggle }) {
+export function PermissaoCard({ item, selecionado, exclusivo, grupoExclusivo, onToggle, bloqueado = false }) {
   return (
     <label className={`permissions-option ${selecionado ? 'is-active' : ''} ${exclusivo ? 'permissions-option--exclusive' : ''}`}>
       <input
         type="checkbox"
         checked={selecionado}
+        disabled={bloqueado}
         onChange={() => onToggle(item.chave, exclusivo ? { grupoExclusivo } : undefined)}
       />
       <span>
@@ -80,7 +81,7 @@ export function PermissaoCard({ item, selecionado, exclusivo, grupoExclusivo, on
   );
 }
 
-function SeletorBlocoPermissoes({ titulo, total, selecionadas, onToggle }) {
+function SeletorBlocoPermissoes({ titulo, total, selecionadas, onToggle, bloqueado = false }) {
   const checkboxRef = useRef(null);
   const todasSelecionadas = total > 0 && selecionadas === total;
   const parcial = selecionadas > 0 && selecionadas < total;
@@ -95,6 +96,7 @@ function SeletorBlocoPermissoes({ titulo, total, selecionadas, onToggle }) {
         ref={checkboxRef}
         type="checkbox"
         checked={todasSelecionadas}
+        disabled={bloqueado}
         onChange={() => onToggle(!todasSelecionadas)}
       />
       <span>
@@ -105,7 +107,7 @@ function SeletorBlocoPermissoes({ titulo, total, selecionadas, onToggle }) {
   );
 }
 
-export function PermissaoGrupo({ grupo, selecionadas, onToggle, onToggleBloco }) {
+export function PermissaoGrupo({ grupo, selecionadas, onToggle, onToggleBloco, chavesBloqueadas = new Set() }) {
   const chaves = getChavesGrupo(grupo);
   const selecionadasNoGrupo = chaves.filter(chave => selecionadas.includes(chave)).length;
   const ativo = selecionadasNoGrupo > 0;
@@ -137,6 +139,7 @@ export function PermissaoGrupo({ grupo, selecionadas, onToggle, onToggleBloco })
                     titulo="Selecionar bloco"
                     total={chavesSecao.length}
                     selecionadas={selecionadasNaSecao}
+                    bloqueado={chavesSecao.every(chave => chavesBloqueadas.has(chave))}
                     onToggle={selecionar => onToggleBloco(chavesSecao, selecionar)}
                   />
                 )}
@@ -150,6 +153,7 @@ export function PermissaoGrupo({ grupo, selecionadas, onToggle, onToggleBloco })
                     exclusivo={secao.exclusivo}
                     grupoExclusivo={grupoExclusivo}
                     onToggle={onToggle}
+                    bloqueado={chavesBloqueadas.has(item.chave)}
                   />
                 ))}
               </div>

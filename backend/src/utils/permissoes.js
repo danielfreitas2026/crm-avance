@@ -3,9 +3,47 @@ const Permissao = require('../models/Permissao');
 const PERMISSOES_ADMIN_EXPLICITAS = new Set([
   'clientes_secretos_ver_todos',
   'clientes_antigos_ver_historico',
-  'vendas_excluir_reversoes',
   'configurar_horario_acesso'
 ]);
+
+const PERMISSOES_ADMIN_VENDAS_OBRIGATORIAS = new Set([
+  'vendas',
+  'vendas_ver_proprias',
+  'vendas_ver_todas',
+  'vendas_criar',
+  'vendas_auto_pos_venda',
+  'vendas_editar',
+  'vendas_permitir_reversoes',
+  'vendas_excluir_reversoes',
+  'compartilhar_venda',
+  'vendas_atribuir_qualquer_vendedor',
+  'ver_vendas_compartilhadas',
+  'editar_vendas_compartilhadas',
+  'vendas_excluir',
+  'vendas_cancelar',
+  'vendas_reverter_cancelamento',
+  'vendas_documentos',
+  'adicionar_documentos',
+  'pos_venda',
+  'vendas_marcar_problema',
+  'vendas_fechamento_mensal',
+  'vendas_cruzar',
+  'vendas_aprovacoes_visualizar',
+  'vendas_aprovacoes_decidir',
+  'funil_vendas',
+  'dashboard_resumo_vendas',
+  'relatorios_visualizar',
+  'notificacoes_vendas_paradas'
+]);
+
+const PERMISSAO_ADMIN_VENDAS_SEM_LIMITE = 'vendas_limitar_ultimos_6_meses';
+
+/** Retorna a decisao obrigatoria de uma permissao de vendas para ADM. */
+function permissaoObrigatoriaAdminVendas(permissao) {
+  if (permissao === PERMISSAO_ADMIN_VENDAS_SEM_LIMITE) return false;
+  if (PERMISSOES_ADMIN_VENDAS_OBRIGATORIAS.has(permissao)) return true;
+  return null;
+}
 
 /**
  * Converte permissoes em array de chaves ativas.
@@ -99,6 +137,9 @@ function usuarioTemPermissaoLocal(usuario, permissao) {
   if (!usuario || !usuario.ativo) return false;
 
   if (usuario.role?.nome === 'admin') {
+    const permissaoObrigatoria = permissaoObrigatoriaAdminVendas(permissao);
+    if (permissaoObrigatoria !== null) return permissaoObrigatoria;
+
     if (PERMISSOES_ADMIN_EXPLICITAS.has(permissao)) {
       return adminTemPermissaoExplicita(usuario, permissao);
     }
@@ -132,9 +173,12 @@ async function montarMapaPermissoesEfetivas(usuario) {
 
   return todasPermissoes.reduce((acc, permissao) => {
     if (usuario?.role?.nome === 'admin') {
-      acc[permissao.chave] = PERMISSOES_ADMIN_EXPLICITAS.has(permissao.chave)
-        ? adminTemPermissaoExplicita(usuario, permissao.chave)
-        : !adminTemPermissaoNegada(usuario, permissao.chave);
+      const permissaoObrigatoria = permissaoObrigatoriaAdminVendas(permissao.chave);
+      acc[permissao.chave] = permissaoObrigatoria !== null
+        ? permissaoObrigatoria
+        : PERMISSOES_ADMIN_EXPLICITAS.has(permissao.chave)
+          ? adminTemPermissaoExplicita(usuario, permissao.chave)
+          : !adminTemPermissaoNegada(usuario, permissao.chave);
     } else {
       acc[permissao.chave] = permitidas.has(permissao.chave);
     }
@@ -158,9 +202,13 @@ async function listarPermissoesEfetivas(usuario) {
     return todasPermissoes
       .map(permissao => permissao.chave)
       .filter(chave => (
-        PERMISSOES_ADMIN_EXPLICITAS.has(chave)
-          ? adminTemPermissaoExplicita(usuario, chave)
-          : !adminTemPermissaoNegada(usuario, chave)
+        permissaoObrigatoriaAdminVendas(chave) === true
+        || (
+          permissaoObrigatoriaAdminVendas(chave) === null
+          && (PERMISSOES_ADMIN_EXPLICITAS.has(chave)
+            ? adminTemPermissaoExplicita(usuario, chave)
+            : !adminTemPermissaoNegada(usuario, chave))
+        )
       ));
   }
 
@@ -174,6 +222,9 @@ module.exports = {
   parsePermissoes,
   normalizarPermissoes,
   PERMISSOES_ADMIN_EXPLICITAS,
+  PERMISSOES_ADMIN_VENDAS_OBRIGATORIAS,
+  PERMISSAO_ADMIN_VENDAS_SEM_LIMITE,
+  permissaoObrigatoriaAdminVendas,
   usuarioTemPermissaoLocal,
   montarMapaPermissoesEfetivas,
   listarPermissoesEfetivas

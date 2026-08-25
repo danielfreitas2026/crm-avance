@@ -1350,8 +1350,27 @@ async function buscarEscopoVendas(usuarioId) {
     .findById(usuarioId)
     .withGraphFetched('role');
 
+  return montarEscopoVendasUsuario(usuario);
+}
+
+/** Monta o escopo de vendas a partir do usuario carregado. */
+function montarEscopoVendasUsuario(usuario) {
   if (!usuario || !usuario.ativo) {
-    return { podeVerTodas: false, podeVerProprias: false };
+    return {
+      podeVerTodas: false,
+      podeVerProprias: false,
+      podeVerCompartilhadas: false,
+      limitarUltimos6Meses: false
+    };
+  }
+
+  if (usuario.role?.nome === 'admin') {
+    return {
+      podeVerTodas: true,
+      podeVerProprias: true,
+      podeVerCompartilhadas: true,
+      limitarUltimos6Meses: false
+    };
   }
 
   return {
@@ -4535,6 +4554,8 @@ module.exports = {
     validarDataVendaAntiga,
     validarDataVendaNaoFutura,
     vendaDeveNotificarTelegram,
+    montarEscopoVendasUsuario,
+    usuarioPodeAcessarVenda,
     normalizarGigas,
     normalizarIdsVendedoras,
     normalizarItensChips,

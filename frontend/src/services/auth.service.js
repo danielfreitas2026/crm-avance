@@ -2,13 +2,10 @@
  * Cliente de API para autenticacao, perfil local e permissoes do usuario.
  */
 import { apiGet, apiPost, apiPut } from './api';
-
-const PERMISSOES_ADMIN_EXPLICITAS = new Set([
-  'clientes_secretos_ver_todos',
-  'clientes_antigos_ver_historico',
-  'vendas_excluir_reversoes',
-  'configurar_horario_acesso'
-]);
+import {
+  PERMISSOES_ADMIN_EXPLICITAS,
+  permissaoObrigatoriaAdminVendas
+} from '../utils/permissoes-admin';
 
 /**
  * Processa login conforme as regras do dominio.
@@ -84,6 +81,9 @@ export function temPermissao(usuario, permissao) {
   }
 
   if (usuario?.role?.nome === 'admin') {
+    const permissaoObrigatoria = permissaoObrigatoriaAdminVendas(permissao);
+    if (permissaoObrigatoria !== null) return permissaoObrigatoria;
+
     const permissoesUsuario = normalizarPermissoes(usuario?.permissoes);
     if (PERMISSOES_ADMIN_EXPLICITAS.has(permissao)) {
       return permissoesUsuario?.[permissao] === true;

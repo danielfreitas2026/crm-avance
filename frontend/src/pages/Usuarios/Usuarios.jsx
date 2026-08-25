@@ -15,6 +15,8 @@ import {
   montarGruposPermissoes as montarGruposPermissoesCompartilhados,
   getPermissoesCopiaveis as getPermissoesCopiaveisCompartilhado,
   getPermissoesSelecionadasUsuario,
+  getPermissoesBloqueadasAdmin,
+  normalizarPermissoesSelecionadasAdmin,
   montarPermissoesAdminParaSalvar
 } from './permissoes';
 import {
@@ -74,6 +76,8 @@ function ModalPermissoes({ usuarioId, usuarios, onClose, onSave }) {
    * Alterna  no estado atual.
    */
   function toggle(chave, opcoes = {}) {
+    if (chavesBloqueadas.has(chave)) return;
+
     setAvisoCopia('');
     setSelecionadas(prev => {
       const selecionada = prev.includes(chave);
@@ -91,13 +95,16 @@ function ModalPermissoes({ usuarioId, usuarios, onClose, onSave }) {
    * Alterna bloco no estado atual.
    */
   function toggleBloco(chaves, selecionar) {
+    const chavesEditaveis = chaves.filter(chave => !chavesBloqueadas.has(chave));
+    if (chavesEditaveis.length === 0) return;
+
     setAvisoCopia('');
     setSelecionadas(prev => {
       if (!selecionar) {
-        return prev.filter(chave => !chaves.includes(chave));
+        return prev.filter(chave => !chavesEditaveis.includes(chave));
       }
 
-      return Array.from(new Set([...prev, ...chaves]));
+      return Array.from(new Set([...prev, ...chavesEditaveis]));
     });
   }
 
@@ -112,7 +119,10 @@ function ModalPermissoes({ usuarioId, usuarios, onClose, onSave }) {
       return;
     }
 
-    const proximasPermissoes = getPermissoesCopiaveisCompartilhado(usuarioOrigem, permissoes);
+    const copiadas = getPermissoesCopiaveisCompartilhado(usuarioOrigem, permissoes);
+    const proximasPermissoes = usuario?.role?.nome === 'admin'
+      ? normalizarPermissoesSelecionadasAdmin(copiadas, permissoes)
+      : copiadas;
     setSelecionadas(proximasPermissoes);
     setAvisoCopia(`Permissões de ${usuarioOrigem.nome} copiadas. Revise e salve para aplicar.`);
   }
@@ -138,6 +148,7 @@ function ModalPermissoes({ usuarioId, usuarios, onClose, onSave }) {
   }
 
   const gruposPermissoesCompartilhados = montarGruposPermissoesCompartilhados(permissoes);
+  const chavesBloqueadas = usuario?.role?.nome === 'admin' ? getPermissoesBloqueadasAdmin() : new Set();
   const termoBuscaPermissao = buscaPermissao.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').trim();
   const gruposFiltrados = !termoBuscaPermissao ? gruposPermissoesCompartilhados : gruposPermissoesCompartilhados.map(grupo => ({ ...grupo, secoes: grupo.secoes.map(secao => ({ ...secao, itens: secao.itens.filter(item => [grupo.titulo, grupo.descricao, secao.titulo, item.chave, item.nome, item.descricao].some(texto => String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').includes(termoBuscaPermissao))) })).filter(secao => secao.itens.length > 0) })).filter(grupo => grupo.secoes.length > 0);
   const totalSelecionadas = selecionadas.length;
@@ -204,6 +215,7 @@ function ModalPermissoes({ usuarioId, usuarios, onClose, onSave }) {
                     selecionadas={selecionadas}
                     onToggle={toggle}
                     onToggleBloco={toggleBloco}
+                    chavesBloqueadas={chavesBloqueadas}
                   />
                 ))}
 

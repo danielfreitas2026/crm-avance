@@ -35,14 +35,26 @@ test('admin precisa de permissao explicita para visualizar recursos sensiveis', 
   }, 'clientes_antigos_ver_historico'), true);
 });
 
-test('admin precisa de permissao explicita para excluir reversoes', () => {
-  const admin = { ativo: true, role: { nome: 'admin', permissoes: { vendas_excluir_reversoes: true } } };
+test('admin sempre possui controle integral de vendas apesar de negacoes locais', () => {
+  const admin = {
+    ativo: true,
+    role: { nome: 'admin' },
+    permissoes: {
+      vendas_ver_todas: false,
+      vendas_editar: false,
+      vendas_excluir: false,
+      vendas_excluir_reversoes: false,
+      pos_venda: false,
+      vendas_limitar_ultimos_6_meses: true
+    }
+  };
 
-  assert.equal(usuarioTemPermissaoLocal(admin, 'vendas_excluir_reversoes'), false);
-  assert.equal(usuarioTemPermissaoLocal({
-    ...admin,
-    permissoes: { vendas_excluir_reversoes: true }
-  }, 'vendas_excluir_reversoes'), true);
+  assert.equal(usuarioTemPermissaoLocal(admin, 'vendas_ver_todas'), true);
+  assert.equal(usuarioTemPermissaoLocal(admin, 'vendas_editar'), true);
+  assert.equal(usuarioTemPermissaoLocal(admin, 'vendas_excluir'), true);
+  assert.equal(usuarioTemPermissaoLocal(admin, 'vendas_excluir_reversoes'), true);
+  assert.equal(usuarioTemPermissaoLocal(admin, 'pos_venda'), true);
+  assert.equal(usuarioTemPermissaoLocal(admin, 'vendas_limitar_ultimos_6_meses'), false);
 });
 
 test('admin precisa de permissao explicita para configurar horario de acesso', () => {
