@@ -39,6 +39,32 @@ function botaoEncaminhar(linhaId) {
   return [[{ text: 'Encaminhar', callback_data: `fc:selecionar:${linhaId}` }]];
 }
 
+function botaoCancelarEnvio(linhaId, nomeConsultora) {
+  const nome = String(nomeConsultora || '').trim();
+  return {
+    text: nome ? `Cancelar envio ${nome}` : 'Cancelar envio',
+    callback_data: `fc:cancelar:${linhaId}`
+  };
+}
+
+async function garantirBotaoCancelarEnvio(linhaId, nomeConsultora, telegramContexto = {}, opcoes = {}) {
+  const chamarApi = opcoes.chamarApi || telegramService.chamarApi;
+  try {
+    await chamarApi('editMessageReplyMarkup', {
+      chat_id: telegramContexto.chatId,
+      message_id: telegramContexto.messageId,
+      reply_markup: {
+        inline_keyboard: [[botaoCancelarEnvio(linhaId, nomeConsultora)]]
+      }
+    });
+    return true;
+  } catch (error) {
+    if (/message is not modified/i.test(String(error?.message || ''))) return true;
+    console.error('Erro ao garantir botao de cancelamento do futuro cliente no Telegram:', error.message);
+    return false;
+  }
+}
+
 function montarAtribuicaoDistribuicao({ linhaId, envioId, vendedoraId, gerenteTelegramId, telegramContexto }, agora) {
   return {
     lead_linha_id: linhaId,
@@ -162,11 +188,13 @@ async function processarCallback(query) {
   }
   if (acao === 'atribuir') {
     try {
-      const vendedora = await distribuir(Number(linhaId), Number(vendedoraId), telegramId, {
+      const telegramContexto = {
         chatId: query.message.chat.id,
         messageId: query.message.message_id,
         mensagemTexto: query.message.text || query.message.caption || ''
-      });
+      };
+      const vendedora = await distribuir(Number(linhaId), Number(vendedoraId), telegramId, telegramContexto);
+      await garantirBotaoCancelarEnvio(Number(linhaId), vendedora.nome, telegramContexto);
       return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: `Encaminhado para ${vendedora.nome}.` });
     } catch (error) {
       return telegramService.chamarApi('answerCallbackQuery', {
@@ -193,5 +221,12 @@ module.exports = {
   processarCallback,
   distribuir,
   cancelarEnvio,
-  _internals: { atribuicaoRepetidaValida, botaoEncaminhar, botoesVendedoras, montarAtribuicaoDistribuicao }
+  _internals: {
+    atribuicaoRepetidaValida,
+    botaoCancelarEnvio,
+    botaoEncaminhar,
+    botoesVendedoras,
+    garantirBotaoCancelarEnvio,
+    montarAtribuicaoDistribuicao
+  }
 };

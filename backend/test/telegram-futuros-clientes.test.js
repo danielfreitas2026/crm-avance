@@ -79,6 +79,42 @@ test('inicia o primeiro prazo no momento do encaminhamento', () => {
   assert.equal(atribuicao.prazo_acao_em.toISOString(), '2026-07-30T15:30:00.000Z');
 });
 
+test('garante o cancelamento com a nova consultora ao reencaminhar mensagem de retorno', async () => {
+  const chamadas = [];
+  const atualizado = await telegramInternals.garantirBotaoCancelarEnvio(
+    123,
+    'Beatriz Consultora',
+    { chatId: -1001, messageId: 99 },
+    { chamarApi: async (metodo, dados) => chamadas.push({ metodo, dados }) }
+  );
+
+  assert.equal(atualizado, true);
+  assert.deepEqual(chamadas, [{
+    metodo: 'editMessageReplyMarkup',
+    dados: {
+      chat_id: -1001,
+      message_id: 99,
+      reply_markup: {
+        inline_keyboard: [[{
+          text: 'Cancelar envio Beatriz Consultora',
+          callback_data: 'fc:cancelar:123'
+        }]]
+      }
+    }
+  }]);
+});
+
+test('considera garantido quando a fila ja colocou o mesmo botao', async () => {
+  const atualizado = await telegramInternals.garantirBotaoCancelarEnvio(
+    123,
+    'Beatriz Consultora',
+    { chatId: -1001, messageId: 99 },
+    { chamarApi: async () => { throw new Error('Bad Request: message is not modified'); } }
+  );
+
+  assert.equal(atualizado, true);
+});
+
 test('callback repetido so e idempotente para a mesma consultora e mensagem', () => {
   const atribuicao = {
     usuario_id: 9,

@@ -7,7 +7,6 @@ const { _internals: leadPlanilhaInternals } = require('../src/services/lead-plan
 const {
   adicionarMinutos,
   calcularPrazoAcao,
-  dadosMensagemAceiteTelegram,
   encerrarMensagemTelegram,
   linhaTemAcaoValida,
   botaoCancelarEnvio,
@@ -155,32 +154,6 @@ test('identifica a consultora no botao de cancelar envio da mensagem de aceite',
   assert.deepEqual(botaoCancelarEnvio(42), {
     text: 'Cancelar envio',
     callback_data: 'fc:cancelar:42'
-  });
-});
-
-test('mantem o botao de cancelar envio quando o aceite ja possui retorno agendado', () => {
-  const dados = dadosMensagemAceiteTelegram({
-    lead_linha_id: 42,
-    telegram_chat_id: '-100123',
-    telegram_message_id: '777',
-    consultora_nome: 'Ana Consultora',
-    aceite_status: leadDistribuicaoService.ACEITE_ACEITO,
-    acao_registrada_tipo: 'retorno_agendado',
-    atribuido_em: '2026-07-30T15:00:00.000Z',
-    prazo_acao_em: '2026-07-31T16:00:00.000Z'
-  }, {
-    id: 42,
-    retorno_agendado_em: '2026-07-31T15:30:00.000Z',
-    sondagem: { razao_social: 'Empresa Teste', cnpj: '12.345.678/0001-90' }
-  });
-
-  assert.equal(dados.chat_id, '-100123');
-  assert.equal(dados.message_id, '777');
-  assert.deepEqual(dados.reply_markup, {
-    inline_keyboard: [[{
-      text: 'Cancelar envio Ana Consultora',
-      callback_data: 'fc:cancelar:42'
-    }]]
   });
 });
 
@@ -335,7 +308,7 @@ test('monta mensagem de retorno com razao social, CNPJ, consultora e horario', (
   ].join('\n'));
 });
 
-test('mantem o cancelamento e envia o retorno ao grupo da atribuicao aceita', async () => {
+test('remove o cancelamento e envia o retorno ao grupo da atribuicao aceita', async () => {
   const chamadas = [];
   const resultado = await enviarNotificacaoRetornoAgendado({
     aceite_status: leadDistribuicaoService.ACEITE_ACEITO,
@@ -353,11 +326,11 @@ test('mantem o cancelamento e envia o retorno ao grupo da atribuicao aceita', as
   });
 
   assert.equal(resultado.enviado, true);
-  assert.equal(resultado.botao_removido, false);
+  assert.equal(resultado.botao_removido, true);
   assert.equal(resultado.message_id, 889);
-  assert.deepEqual(chamadas.map(item => item.metodo), ['sendMessage']);
-  assert.match(chamadas[0].dados.text, /Consultora: Ana Consultora/);
-  assert.match(chamadas[0].dados.text, /Retorno: 31\/07\/2026, 12:30/);
+  assert.deepEqual(chamadas.map(item => item.metodo), ['editMessageReplyMarkup', 'sendMessage']);
+  assert.match(chamadas[1].dados.text, /Consultora: Ana Consultora/);
+  assert.match(chamadas[1].dados.text, /Retorno: 31\/07\/2026, 12:30/);
 });
 
 test('nao envia retorno sem atribuicao aceita e isola falhas do Telegram', async () => {
@@ -381,7 +354,7 @@ test('nao envia retorno sem atribuicao aceita e isola falhas do Telegram', async
     });
     assert.equal(resultado.enviado, false);
     assert.equal(resultado.botao_removido, false);
-    assert.deepEqual(resultado.erros.map(item => item.operacao), ['enviar_mensagem']);
+    assert.deepEqual(resultado.erros.map(item => item.operacao), ['remover_botao', 'enviar_mensagem']);
   } finally {
     console.error = erroAnterior;
   }
