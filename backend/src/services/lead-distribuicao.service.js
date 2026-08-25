@@ -496,6 +496,18 @@ function botaoCancelarEnvio(linhaId, nomeConsultora) {
   };
 }
 
+function dadosMensagemAceiteTelegram(atribuicao, linha = {}) {
+  return {
+    chat_id: atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID,
+    message_id: atribuicao.telegram_message_id,
+    text: montarMensagemAceiteTelegram(atribuicao, atribuicao.consultora_nome, linha),
+    disable_web_page_preview: true,
+    reply_markup: {
+      inline_keyboard: [[botaoCancelarEnvio(atribuicao.lead_linha_id, atribuicao.consultora_nome)]]
+    }
+  };
+}
+
 function normalizarItensChipsVenda(valor) {
   if (Array.isArray(valor)) return valor;
   try {
@@ -606,19 +618,6 @@ async function enviarNotificacaoRetornoAgendado(atribuicao, linha, retorno, opco
 
   const chamarApi = opcoes.chamarApi || telegramService.chamarApi;
   const resultado = { enviado: false, botao_removido: false, erros: [] };
-  if (atribuicao.telegram_message_id) {
-    try {
-      await chamarApi('editMessageReplyMarkup', {
-        chat_id: chatId,
-        message_id: String(atribuicao.telegram_message_id),
-        reply_markup: { inline_keyboard: [] }
-      });
-      resultado.botao_removido = true;
-    } catch (error) {
-      resultado.erros.push({ operacao: 'remover_botao', mensagem: error.message });
-      console.error('Erro ao remover botao de cancelamento do retorno agendado no Telegram:', error.message);
-    }
-  }
 
   try {
     const mensagem = await chamarApi('sendMessage', {
@@ -763,22 +762,8 @@ async function reconciliarMensagemTelegram(atribuicaoId) {
   }
 
   if (atribuicao.aceite_status === ACEITE_ACEITO) {
-    if (atribuicao.acao_registrada_tipo === 'retorno_agendado') {
-      await editarMensagemTelegram('editMessageReplyMarkup', {
-        chat_id: chatId,
-        message_id: atribuicao.telegram_message_id,
-        reply_markup: { inline_keyboard: [] }
-      });
-      return { sincronizado: true };
-    }
     const linha = await carregarLinhaTelegram(atribuicao.lead_linha_id);
-    await editarMensagemTelegram('editMessageText', {
-      chat_id: chatId,
-      message_id: atribuicao.telegram_message_id,
-      text: montarMensagemAceiteTelegram(atribuicao, atribuicao.consultora_nome, linha || {}),
-      disable_web_page_preview: true,
-      reply_markup: { inline_keyboard: [[botaoCancelarEnvio(atribuicao.lead_linha_id, atribuicao.consultora_nome)]] }
-    });
+    await editarMensagemTelegram('editMessageText', dadosMensagemAceiteTelegram(atribuicao, linha || {}));
     return { sincronizado: true };
   }
 
@@ -1051,6 +1036,7 @@ module.exports = {
     montarMensagemEnvioExpiradoTelegram,
     montarMensagemRetornoAgendadoTelegram,
     montarMensagemVendaFechadaTelegram,
+    dadosMensagemAceiteTelegram,
     enviarNotificacaoVendaFechada,
     enviarNotificacaoRetornoAgendado,
     vendaCorrespondeAtribuicao,
