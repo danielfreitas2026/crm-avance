@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Sidebar from '../../components/Sidebar/Sidebar';
 import Header from '../../components/Header/Header';
 import ChatFlutuante from '../../components/ChatFlutuante/ChatFlutuante';
+import RetornoFuturoClientePopup from '../../components/RetornoFuturoClientePopup/RetornoFuturoClientePopup';
+import { ordenarPopupsRetornoFuturo } from '../../components/RetornoFuturoClientePopup/retorno-futuro-popup.utils';
 import * as I from '../../components/Icons';
 import { buscarPerfil, getUsuarioLocal, logout, temPermissao } from '../../services/auth.service';
 import VendaModal from '../../pages/VendasPage/VendaModal';
@@ -13,7 +15,8 @@ import { criarVenda, listarAprovacoesVenda, listarVendedoras, obterReferenciasCl
 import { criarNotaEntidade } from '../../services/nota.service';
 import {
   excluirNotificacao,
-  listarNotificacoesUrgentes
+  listarNotificacoesUrgentes,
+  marcarPopupNotificacaoVisto
 } from '../../services/notificacao.service';
 import {
   aberturaNotificacaoPendente,
@@ -479,6 +482,12 @@ function LayoutPrivado({ children }) {
     });
   }
 
+  /** Confirma somente o popup, sem alterar a tela ou qualquer modal em uso. */
+  async function confirmarPopupRetornoFuturo(notificacao) {
+    await marcarPopupNotificacaoVisto(notificacao.id);
+    ocultarAlertaUrgente(notificacao);
+  }
+
   /**
    * Exclui alerta urgente somente para o usuario atual.
    */
@@ -560,6 +569,10 @@ function LayoutPrivado({ children }) {
   }, [detalheAlerta]);
 
   const mostrarMobileFabNovaVenda = podeCriarVenda && location.pathname === '/vendas';
+  const popupRetornoFuturo = ordenarPopupsRetornoFuturo(alertasUrgentes)[0] || null;
+  const destinoPopupRetorno = popupRetornoFuturo
+    ? resolverDestinoNotificacao(popupRetornoFuturo, usuario)
+    : null;
   const appClasses = [
     'app',
     mobileMenuOpen ? 'is-mobile-menu-open' : '',
@@ -678,6 +691,15 @@ function LayoutPrivado({ children }) {
             </div>
           </div>
         </div>
+      )}
+
+      {popupRetornoFuturo && (
+        <RetornoFuturoClientePopup
+          key={popupRetornoFuturo.id}
+          notificacao={popupRetornoFuturo}
+          atendimentoUrl={destinoPopupRetorno?.podeAbrir ? destinoPopupRetorno.rota : null}
+          onConfirmar={confirmarPopupRetornoFuturo}
+        />
       )}
 
       {podeUsarChat && location.pathname !== '/mensagens' && (

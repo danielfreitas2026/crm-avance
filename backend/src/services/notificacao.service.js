@@ -10,7 +10,8 @@ const db = require('../database/connection');
 const vendaNotificacaoParadaService = require('./venda-notificacao-parada.service');
 const {
   salvarNotificacaoIdempotente,
-  desativarNotificacoesAtivas
+  desativarNotificacoesAtivas,
+  deveRearmarRetorno
 } = require('./notificacao-persistencia.service');
 const { parseUtcDateTime } = require('../utils/datetime');
 const {
@@ -49,6 +50,7 @@ const TIPOS_OPERACIONAIS_VENDA = [
 ];
 const TIPO_VENDA_PARADA = vendaNotificacaoParadaService.TIPO_NOTIFICACAO;
 const PERMISSAO_VENDAS_PARADAS = vendaNotificacaoParadaService.PERMISSAO_VENDAS_PARADAS;
+const JANELA_POPUP_RETORNO_FUTURO_MS = 15 * 60 * 1000;
 
 /**
  * Verifica se usuario tem permissao local atende a condicao esperada.
@@ -136,6 +138,39 @@ function montarNivel(diasRestantes) {
  */
 function parseDataHora(valor) {
   return parseUtcDateTime(valor);
+}
+
+/** Verifica se uma notificacao ativa voltou a exigir atencao. */
+function notificacaoFoiReativada(notificacao, payload) {
+  return Number(notificacao?.ativa) !== 1 && Number(payload?.ativa) === 1;
+}
+
+/**
+ * Rearma o popup somente quando o retorno foi reativado ou realmente reagendado.
+ * A mudanca automatica de "pre" para "due" nao deve exibir um segundo popup.
+ */
+function deveRearmarPopupRetornoFuturo(notificacao, payload) {
+  if (!notificacao) return false;
+  if (notificacaoFoiReativada(notificacao, payload)) return true;
+
+  const retornoAnterior = parseDataHora(parseDados(notificacao.dados).retorno_agendado_para);
+  const retornoNovo = parseDataHora(parseDados(payload?.dados).retorno_agendado_para);
+
+  return Boolean(retornoAnterior && retornoNovo && retornoAnterior.getTime() !== retornoNovo.getTime());
+}
+
+/** Indica se a notificacao de retorno deve abrir o popup global para este usuario. */
+function popupRetornoFuturoDisponivel(notificacao, usuarioId, agora = new Date()) {
+  const dados = parseDados(notificacao?.dados);
+  const futuroCliente = TIPOS_FUTURO_RETORNO.includes(notificacao?.tipo)
+    || (TIPOS_LEAD_RETORNO.includes(notificacao?.tipo) && dados.futuro_cliente === true);
+  if (!futuroCliente || Number(dados.responsavel_usuario_id) !== Number(usuarioId)) return false;
+
+  const retorno = parseDataHora(dados.retorno_agendado_para);
+  const instanteAtual = parseDataHora(agora);
+  if (!retorno || !instanteAtual) return false;
+
+  return retorno.getTime() - instanteAtual.getTime() <= JANELA_POPUP_RETORNO_FUTURO_MS;
 }
 
 /**
@@ -441,7 +476,9 @@ async function salvarNotificacaoRetornoFuturoCliente(linha, etapa, agora) {
       lead_linha_id: linha.lead_linha_id,
       retorno_agendado_para: linha.retorno_em,
       retorno_etapa: isDue ? 'due' : 'pre',
-      titulo_nota: nome
+      titulo_nota: nome,
+      responsavel_usuario_id: Number(linha.usuario_id),
+      futuro_cliente: true
     }),
     ativa: true
   };
@@ -452,7 +489,8 @@ async function salvarNotificacaoRetornoFuturoCliente(linha, etapa, agora) {
     sourceKeyNova: sourceKey,
     payload,
     destinatarios,
-    agora
+    agora,
+    rearmarQuando: deveRearmarPopupRetornoFuturo
   });
   return resultado.notificacao;
 }
@@ -595,7 +633,9 @@ async function salvarNotificacaoRetornoLead(linha, etapa, agora) {
       lead_linha_id: linha.id,
       retorno_agendado_para: linha.retorno_agendado_em,
       retorno_etapa: isDue ? 'due' : 'pre',
-      titulo_nota: nome
+      titulo_nota: nome,
+      responsavel_usuario_id: Number(linha.atribuido_para_id),
+      futuro_cliente: Boolean(linha.futuro_cliente)
     }),
     ativa: true
   };
@@ -606,7 +646,8 @@ async function salvarNotificacaoRetornoLead(linha, etapa, agora) {
     sourceKeyNova: sourceKey,
     payload,
     destinatarios,
-    agora
+    agora,
+    rearmarQuando: linha.futuro_cliente ? deveRearmarPopupRetornoFuturo : deveRearmarRetorno
   });
   return resultado.notificacao;
 }
@@ -991,7 +1032,14 @@ async function listarUrgentes(usuarioId) {
 
   const notificacoes = await query;
 
-  return notificacoes.map(mapearNotificacao);
+  const agora = new Date();
+  return notificacoes.map(notificacao => {
+    const mapeada = mapearNotificacao(notificacao);
+    return {
+      ...mapeada,
+      popup_retorno_futuro_disponivel: popupRetornoFuturoDisponivel(mapeada, usuarioId, agora)
+    };
+  });
 }
 
 /**
@@ -1219,6 +1267,8 @@ module.exports = {
     aplicarLimiteListagem,
     aplicarFiltroTiposVisiveis,
     isRetornoLeadAgendadoElegivel,
+    deveRearmarPopupRetornoFuturo,
+    popupRetornoFuturoDisponivel,
     salvarOcultacaoDestinatario
   }
 };
