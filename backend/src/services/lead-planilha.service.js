@@ -3283,7 +3283,7 @@ function obterValorDadosAcompanhamento(dadosJson, termos = []) {
   return '';
 }
 
-function montarQueryFuturosClientesComConsultoras(filtros = {}) {
+function montarQueryFuturosClientesComConsultoras(filtros = {}, usuarioId = null) {
   const query = db('lead_atribuicoes as la')
     .join('lead_linhas as ll', 'll.id', 'la.lead_linha_id')
     .leftJoin('lead_sondagens as ls', 'ls.lead_linha_id', 'll.id')
@@ -3308,6 +3308,10 @@ function montarQueryFuturosClientesComConsultoras(filtros = {}) {
     .where(builder => builder
       .whereNull('la.acao_registrada_em')
       .orWhere('la.acao_registrada_tipo', 'retorno_agendado'));
+
+  if (usuarioId !== null && usuarioId !== undefined) {
+    query.where('la.usuario_id', Number(usuarioId));
+  }
 
   const busca = String(filtros.busca || '').trim().toLowerCase();
   if (busca) {
@@ -3359,11 +3363,11 @@ function formatarFuturoClienteComConsultora(item) {
 }
 
 /** Lista futuros clientes ainda sob responsabilidade de uma consultora. */
-async function listarFuturosClientesComConsultoras(filtros = {}) {
+async function listarFuturosClientesComConsultoras(filtros = {}, usuarioId = null) {
   const page = Math.max(1, Number(filtros.page || 1));
   const pageSize = Math.min(100, Math.max(1, Number(filtros.page_size || 30)));
   const prazoMinutos = leadDistribuicaoService.prazoAcaoMinutos();
-  const base = montarQueryFuturosClientesComConsultoras(filtros);
+  const base = montarQueryFuturosClientesComConsultoras(filtros, usuarioId);
   const totalResultado = await base.clone().countDistinct({ total: 'la.id' }).first();
   const itens = await base.clone()
     .select(

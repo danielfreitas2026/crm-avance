@@ -17,6 +17,7 @@ import {
   excluirFuturoClienteDefinitivo,
   listarFuturosClientesLixeira,
   listarFuturosClientesComConsultoras,
+  listarMeusFuturosClientesEmAcompanhamento,
   listarResponsaveisFuturosClientes,
   obterHistoricoFuturoCliente,
   listarVendasCandidatasLead,
@@ -116,5 +117,11 @@ describe('filtros de futuros clientes', () => {
     await listarFuturosClientesComConsultoras({ page: 2, page_size: 30, busca: 'Ana Souza' });
 
     expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/em-acompanhamento?page=2&page_size=30&busca=Ana+Souza');
+  });
+
+  it('consulta somente o acompanhamento do usuario no endpoint individual', async () => {
+    await listarMeusFuturosClientesEmAcompanhamento({ page: 1, page_size: 30 });
+
+    expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/me/futuros-clientes/em-acompanhamento?page=1&page_size=30');
   });
 });

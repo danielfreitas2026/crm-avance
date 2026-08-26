@@ -25,6 +25,7 @@ import {
   listarEstatisticasMailingsUsuario,
   listarFuturosClientesLeads,
   listarFuturosClientesComConsultoras,
+  listarMeusFuturosClientesEmAcompanhamento,
   listarFuturosClientesRecebidos,
   listarFuturosClientesLixeira,
   obterHistoricoFuturoCliente,
@@ -3610,8 +3611,8 @@ const ROTULOS_SITUACAO_CONSULTORA = {
   retorno_marcado: 'Retorno marcado'
 };
 
-/** Exibe para gestores os futuros clientes que ainda estao com consultoras. */
-function FuturosClientesComConsultorasView({ agora }) {
+/** Exibe os futuros clientes que ainda estao sob responsabilidade de consultoras. */
+function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
   const [linhas, setLinhas] = useState([]);
   const [total, setTotal] = useState(0);
   const [pagina, setPagina] = useState(1);
@@ -3625,7 +3626,10 @@ function FuturosClientesComConsultorasView({ agora }) {
   useEffect(() => {
     let cancelado = false;
     if (!consultaIniciada.current) setCarregando(true);
-    listarFuturosClientesComConsultoras({
+    const listarEmAcompanhamento = escopoTodos
+      ? listarFuturosClientesComConsultoras
+      : listarMeusFuturosClientesEmAcompanhamento;
+    listarEmAcompanhamento({
       page: pagina,
       page_size: 30,
       busca: buscaDeferred || undefined
@@ -3650,7 +3654,7 @@ function FuturosClientesComConsultorasView({ agora }) {
       }
     });
     return () => { cancelado = true; };
-  }, [pagina, buscaDeferred, agora]);
+  }, [pagina, buscaDeferred, agora, escopoTodos]);
 
   return (
     <div className="futuros-clientes-view futuros-clientes-consultoras-view">
@@ -4954,7 +4958,7 @@ function FuturosClientesPage() {
   const usuario = getUsuarioLocal();
   const podeVerTodos = temPermissao(usuario, 'futuros_clientes_ver_todos');
   const podeVerEstatisticas = temPermissao(usuario, 'gerenciar_leads');
-  const abaDaNotificacao = resolverAbaFuturosClientes(searchParams.get('aba'), podeVerEstatisticas, podeVerTodos);
+  const abaDaNotificacao = resolverAbaFuturosClientes(searchParams.get('aba'), podeVerEstatisticas);
   const [abaSelecionada, setAbaSelecionada] = useState('meus');
   const [escopoTodos, setEscopoTodos] = useState(false);
   const abaAtiva = searchParams.has('aba') ? abaDaNotificacao : abaSelecionada;
@@ -4991,7 +4995,7 @@ function FuturosClientesPage() {
             Futuros Clientes Recebidos
           </button>
           <button type="button" className={`clientes-tab ${abaAtiva === 'mailings' ? 'active' : ''}`} onClick={() => selecionarAba('mailings')}>Mailings Recebidos</button>
-          {podeVerTodos && <button type="button" className={`clientes-tab ${abaAtiva === 'consultoras' ? 'active' : ''}`} onClick={() => selecionarAba('consultoras')}>Com consultoras</button>}
+          <button type="button" className={`clientes-tab ${abaAtiva === 'consultoras' ? 'active' : ''}`} onClick={() => selecionarAba('consultoras')}>{podeVerTodos ? 'Com consultoras' : 'Meus prazos'}</button>
           {podeVerEstatisticas && <button type="button" className={`clientes-tab ${abaAtiva === 'estatisticas' ? 'active' : ''}`} onClick={() => selecionarAba('estatisticas')}>Estatísticas</button>}
         </div>
 
@@ -5001,7 +5005,7 @@ function FuturosClientesPage() {
         </>}
         {abaAtiva === 'recebidos' && <FuturosClientesMainView agora={agora} tipo="recebidos" />}
         {abaAtiva === 'mailings' && <LeadsRecebidosView agora={agora} />}
-        {abaAtiva === 'consultoras' && podeVerTodos && <FuturosClientesComConsultorasView agora={agora} />}
+        {abaAtiva === 'consultoras' && <FuturosClientesComConsultorasView agora={agora} escopoTodos={podeVerTodos} />}
         {abaAtiva === 'estatisticas' && podeVerEstatisticas && <EstatisticasFuturosClientesView />}
       </div>
     </LayoutPrivado>

@@ -4,7 +4,10 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FuturosClientesPage from './FuturosClientesPage';
 import { formatarTempoRetornoConsultora } from './lead-status';
-import { listarFuturosClientesComConsultoras } from '../../services/lead-planilha.service';
+import {
+  listarFuturosClientesComConsultoras,
+  listarMeusFuturosClientesEmAcompanhamento
+} from '../../services/lead-planilha.service';
 
 const authState = vi.hoisted(() => ({ gerente: true }));
 
@@ -22,7 +25,8 @@ vi.mock('../../services/lead-planilha.service', async () => {
   return {
     ...actual,
     listarFuturosClientesLeads: vi.fn().mockResolvedValue({ data: [], total: 0 }),
-    listarFuturosClientesComConsultoras: vi.fn()
+    listarFuturosClientesComConsultoras: vi.fn(),
+    listarMeusFuturosClientesEmAcompanhamento: vi.fn()
   };
 });
 
@@ -30,7 +34,7 @@ describe('aba de futuros clientes com consultoras', () => {
   beforeEach(() => {
     authState.gerente = true;
     vi.clearAllMocks();
-    listarFuturosClientesComConsultoras.mockResolvedValue({
+    const resultado = {
       data: [{
         id: 12,
         razao_social: 'Empresa Exemplo Ltda',
@@ -42,12 +46,14 @@ describe('aba de futuros clientes com consultoras', () => {
       total: 1,
       page: 1,
       page_size: 30
-    });
+    };
+    listarFuturosClientesComConsultoras.mockResolvedValue(resultado);
+    listarMeusFuturosClientesEmAcompanhamento.mockResolvedValue(resultado);
   });
 
   afterEach(() => cleanup());
 
-  it('fica visivel apenas para gestores', () => {
+  it('mostra o escopo global para gestores e o individual para usuarios comuns', () => {
     const { unmount } = render(<MemoryRouter><FuturosClientesPage /></MemoryRouter>);
     expect(screen.getByRole('button', { name: 'Com consultoras' })).toBeVisible();
     unmount();
@@ -55,6 +61,35 @@ describe('aba de futuros clientes com consultoras', () => {
     authState.gerente = false;
     render(<MemoryRouter><FuturosClientesPage /></MemoryRouter>);
     expect(screen.queryByRole('button', { name: 'Com consultoras' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Meus prazos' })).toBeVisible();
+  });
+
+  it('usuario comum ve a tabela completa consultando somente o endpoint individual', async () => {
+    authState.gerente = false;
+    const user = userEvent.setup();
+    render(<MemoryRouter><FuturosClientesPage /></MemoryRouter>);
+    await user.click(screen.getByRole('button', { name: 'Meus prazos' }));
+
+    expect(await screen.findByText('Empresa Exemplo Ltda')).toBeVisible();
+    expect(screen.getByText('00.123.456/0001-99')).toBeVisible();
+    expect(screen.getByText('Ana Consultora')).toBeVisible();
+    expect(screen.getByText('Retorno marcado')).toBeVisible();
+    expect(screen.getByText('Prazo vencido')).toBeVisible();
+    expect(listarMeusFuturosClientesEmAcompanhamento).toHaveBeenCalledWith({
+      page: 1,
+      page_size: 30,
+      busca: undefined
+    });
+    expect(listarFuturosClientesComConsultoras).not.toHaveBeenCalled();
+  });
+
+  it('permite abrir Meus prazos diretamente pela URL', async () => {
+    authState.gerente = false;
+    render(<MemoryRouter initialEntries={['/futuros-clientes?aba=consultoras']}><FuturosClientesPage /></MemoryRouter>);
+
+    expect(screen.getByRole('button', { name: 'Meus prazos' })).toHaveClass('active');
+    expect(await screen.findByText('Empresa Exemplo Ltda')).toBeVisible();
+    expect(listarMeusFuturosClientesEmAcompanhamento).toHaveBeenCalled();
   });
 
   it('mostra dados, prazo vencido e pesquisa no endpoint paginado', async () => {

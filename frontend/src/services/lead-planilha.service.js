@@ -395,6 +395,10 @@ export function listarFuturosClientesComConsultoras(filtros = {}) {
   return apiGet(`/lead-planilhas/futuros-clientes/em-acompanhamento${montarQuery(filtros)}`);
 }
 
+export function listarMeusFuturosClientesEmAcompanhamento(filtros = {}) {
+  return apiGet(`/lead-planilhas/me/futuros-clientes/em-acompanhamento${montarQuery(filtros)}`);
+}
+
 export function listarResponsaveisFuturosClientes() {
   return apiGet('/lead-planilhas/futuros-clientes/responsaveis');
 }

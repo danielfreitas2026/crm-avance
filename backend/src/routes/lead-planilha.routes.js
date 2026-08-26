@@ -28,6 +28,11 @@ router.get('/me/mailings', leadPlanilhaController.meusMailings);
 router.get('/me/linhas', leadPlanilhaController.minhasLinhas);
 router.get('/me/futuros-clientes', exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']), leadPlanilhaController.listarFuturosClientes);
 router.get('/me/futuros-clientes/recebidos', exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']), leadPlanilhaController.listarFuturosClientesRecebidos);
+router.get(
+  '/me/futuros-clientes/em-acompanhamento',
+  exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']),
+  leadPlanilhaController.listarMeusFuturosClientesEmAcompanhamento
+);
 router.post(
   '/me/futuros-clientes/:id/aceitar',
   exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']),

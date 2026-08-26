@@ -15,13 +15,13 @@ export function getVendaClassificacaoTipo(linha) {
   return linha?.possui_venda_cliente ? 'venda_antiga_registrada' : null;
 }
 
-export function resolverAbaFuturosClientes(valor, podeVerEstatisticas = false, podeVerTodos = false) {
+export function resolverAbaFuturosClientes(valor, podeVerEstatisticas = false) {
   const normalizada = ({ futuros: 'meus', leads: 'mailings' })[valor] || valor;
   const permitidas = [
     'meus',
     'recebidos',
     'mailings',
-    ...(podeVerTodos ? ['consultoras'] : []),
+    'consultoras',
     ...(podeVerEstatisticas ? ['estatisticas'] : [])
   ];
   return permitidas.includes(normalizada) ? normalizada : 'meus';

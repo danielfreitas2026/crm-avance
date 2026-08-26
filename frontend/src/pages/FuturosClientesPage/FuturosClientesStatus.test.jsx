@@ -109,8 +109,7 @@ describe('abas de futuros clientes', () => {
     expect(resolverAbaFuturosClientes('recebidos')).toBe('recebidos');
     expect(resolverAbaFuturosClientes('estatisticas', false)).toBe('meus');
     expect(resolverAbaFuturosClientes('estatisticas', true)).toBe('estatisticas');
-    expect(resolverAbaFuturosClientes('consultoras', false, false)).toBe('meus');
-    expect(resolverAbaFuturosClientes('consultoras', false, true)).toBe('consultoras');
+    expect(resolverAbaFuturosClientes('consultoras', false)).toBe('consultoras');
   });
 
   it('indica de forma acessível qual escopo está selecionado', () => {
