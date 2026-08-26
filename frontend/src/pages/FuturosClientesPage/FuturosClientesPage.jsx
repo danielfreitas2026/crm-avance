@@ -3615,6 +3615,7 @@ const ROTULOS_SITUACAO_CONSULTORA = {
 
 /** Exibe os futuros clientes que ainda estao sob responsabilidade de consultoras. */
 function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
+  const navigate = useNavigate();
   const [linhas, setLinhas] = useState([]);
   const [total, setTotal] = useState(0);
   const [pagina, setPagina] = useState(1);
@@ -3623,6 +3624,7 @@ function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
   const [erro, setErro] = useState('');
   const [linhaAtiva, setLinhaAtiva] = useState(null);
   const [carregandoDetalheId, setCarregandoDetalheId] = useState(null);
+  const [revalidacao, setRevalidacao] = useState(0);
   const buscaDeferred = useDeferredValue(busca);
   const consultaIniciada = useRef(false);
   const totalPaginas = Math.max(1, Math.ceil(total / 30));
@@ -3658,7 +3660,7 @@ function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
       }
     });
     return () => { cancelado = true; };
-  }, [pagina, buscaDeferred, agora, escopoTodos]);
+  }, [pagina, buscaDeferred, agora, escopoTodos, revalidacao]);
 
   async function abrirDetalhe(linha) {
     if (carregandoDetalheId !== null) return;
@@ -3689,6 +3691,24 @@ function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
     setLinhaAtiva(null);
   }
 
+  function concluirAtualizacao() {
+    setLinhaAtiva(null);
+    setRevalidacao(valor => valor + 1);
+  }
+
+  function registrarVenda(vendaPreenchida) {
+    navigate('/vendas?nova=1', {
+      state: {
+        vendaPreenchida,
+        clientePreenchido: montarClientePreenchido(vendaPreenchida),
+        origemLead: {
+          linha_id: linhaAtiva?.id,
+          envio: linhaAtiva?.envio?.nome || ''
+        }
+      }
+    });
+  }
+
   return (
     <div className="futuros-clientes-view futuros-clientes-consultoras-view">
       {linhaAtiva?.detalhes_bloqueados ? (
@@ -3702,8 +3722,8 @@ function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
         <FuturoClienteDetalheModal
           linha={linhaAtiva}
           onClose={() => setLinhaAtiva(null)}
-          onAtualizado={setLinhaAtiva}
-          somenteLeitura
+          onAtualizado={concluirAtualizacao}
+          onRegistrarVenda={registrarVenda}
           exibirHistorico={escopoTodos}
         />
       )}

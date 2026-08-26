@@ -19,7 +19,12 @@ vi.mock('../../layouts/LayoutPrivado/LayoutPrivado', () => ({
 
 vi.mock('../../services/auth.service', () => ({
   getUsuarioLocal: () => ({ id: 1, nome: 'Gestor' }),
-  temPermissao: (_usuario, permissao) => permissao === 'futuros_clientes_ver_todos' && authState.gerente
+  temPermissao: (_usuario, permissao) => {
+    if (permissao === 'futuros_clientes_ver_todos' || permissao === 'gerenciar_leads') {
+      return authState.gerente;
+    }
+    return ['futuros_clientes_registrar', 'vendas_criar'].includes(permissao);
+  }
 }));
 
 vi.mock('../../services/lead-planilha.service', async () => {
@@ -60,7 +65,7 @@ describe('aba de futuros clientes com consultoras', () => {
         dados_json: { Empresa: 'Empresa Exemplo Ltda', Telefone: '31999999999' },
         envio: { nome: 'Indicação #12' },
         sondagem: null,
-        atribuicao_para_id: 7,
+        atribuido_para_id: 1,
         detalhes_bloqueados: false
       }
     };
@@ -128,7 +133,7 @@ describe('aba de futuros clientes com consultoras', () => {
     }));
   });
 
-  it('abre os detalhes em modo leitura ao clicar na linha do usuario comum', async () => {
+  it('abre os detalhes com as acoes da consultora responsavel', async () => {
     authState.gerente = false;
     const user = userEvent.setup();
     render(<MemoryRouter><FuturosClientesPage /></MemoryRouter>);
@@ -140,7 +145,9 @@ describe('aba de futuros clientes com consultoras', () => {
     expect(screen.getByText('31999999999')).toBeVisible();
     expect(obterMeuFuturoClienteEmAcompanhamento).toHaveBeenCalledWith(12);
     expect(obterFuturoClienteEmAcompanhamento).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /Salvar/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Registrar venda' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Marcar venda recusada' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeVisible();
   });
 
   it('usa o detalhe global para quem possui permissao de ver todos', async () => {
@@ -152,6 +159,8 @@ describe('aba de futuros clientes com consultoras', () => {
     expect(await screen.findByRole('dialog', { name: 'Detalhes do futuro cliente' })).toBeVisible();
     expect(obterFuturoClienteEmAcompanhamento).toHaveBeenCalledWith(12);
     expect(obterMeuFuturoClienteEmAcompanhamento).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Registrar venda' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeVisible();
   });
 
   it('formata a contagem regressiva sem exibir valores negativos', () => {
