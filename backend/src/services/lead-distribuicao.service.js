@@ -827,6 +827,37 @@ async function republicarPendentesAntigosNoTelegram() {
   return { encontrados: pendentes.length, publicados, falhas };
 }
 
+function acaoRegistradaImpedeFinalizacao(atribuicao, expirandoRetorno, ignorarAcaoRegistrada = false) {
+  return Boolean(
+    !ignorarAcaoRegistrada
+    && atribuicao?.aceite_status === ACEITE_ACEITO
+    && atribuicao?.acao_registrada_em
+    && !expirandoRetorno
+  );
+}
+
+function montarPatchLinhaAposFinalizacao(atribuicaoSondagem, agora = new Date()) {
+  return {
+    envio_id: atribuicaoSondagem?.envio_id || null,
+    atribuido_para_id: atribuicaoSondagem?.usuario_id || null,
+    etapa_atual: 'sondagem',
+    status_operacional: 'qualificado',
+    updated_at: agora
+  };
+}
+
+function futuroClientePodeSerDevolvido(linha) {
+  return Boolean(
+    linha
+    && linha.futuro_cliente
+    && !linha.futuro_cliente_excluido_em
+    && !linha.venda_id
+    && !linha.venda_recusada_em
+    && !linha.cliente_recusou
+    && !['vendido', 'perdido'].includes(linha.status_operacional)
+  );
+}
+
 async function finalizarAtribuicao(linhaId, opcoes = {}) {
   const aceiteStatusFinal = opcoes.aceiteStatus || ACEITE_CANCELADO;
   const agora = new Date();
@@ -856,18 +887,23 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
       error.statusCode = 403;
       throw error;
     }
+    if (opcoes.validarFuturoClienteAtivo && !futuroClientePodeSerDevolvido(linha)) {
+      const error = new Error('Este futuro cliente nao esta disponivel para distribuicao.');
+      error.statusCode = 409;
+      throw error;
+    }
     if (!linha) return null;
     const expirandoRetorno = opcoes.permitirRetornoVencido
       && atribuicao.acao_registrada_tipo === 'retorno_agendado';
     if ((opcoes.validarPrazoVencido || expirandoRetorno) && !prazoAtribuicaoVencido(atribuicao, agora)) {
       return { prazoAtualizado: true };
     }
-    if (atribuicao.aceite_status === ACEITE_ACEITO && atribuicao.acao_registrada_em && !expirandoRetorno) {
+    if (acaoRegistradaImpedeFinalizacao(atribuicao, expirandoRetorno, opcoes.ignorarAcaoRegistrada)) {
       return { acaoEncontrada: true };
     }
 
     const inicioJanelaAcao = atribuicao.aceite_em || atribuicao.atribuido_em;
-    if (linhaTemAcaoValida(linha, inicioJanelaAcao)) {
+    if (!opcoes.ignorarAcaoRegistrada && linhaTemAcaoValida(linha, inicioJanelaAcao)) {
       await trx('lead_atribuicoes').where('id', atribuicao.id).update({
         acao_registrada_em: agora,
         acao_registrada_tipo: tipoAcaoValida(linha, inicioJanelaAcao),
@@ -897,13 +933,8 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
         updated_at: agora
       });
     }
-    await trx('lead_linhas').where('id', Number(linhaId)).update({
-      envio_id: atribuicaoSondagem?.envio_id || null,
-      atribuido_para_id: atribuicaoSondagem?.usuario_id || null,
-      etapa_atual: 'sondagem',
-      status_operacional: 'qualificado',
-      updated_at: agora
-    });
+    await trx('lead_linhas').where('id', Number(linhaId))
+      .update(montarPatchLinhaAposFinalizacao(atribuicaoSondagem, agora));
     await trx('notificacoes')
       .where('source_key', `futuro_cliente_distribuido:${Number(linhaId)}`)
       .update({ ativa: false, updated_at: agora });
@@ -931,7 +962,8 @@ async function finalizarAtribuicao(linhaId, opcoes = {}) {
     );
   }
   if (opcoes.republicar !== false && opcoes.processarTelegram !== false) {
-    await leadTelegramPublicacaoService.processarRepublicacaoDaLinha(resultado.linhaId);
+    const publicacao = await leadTelegramPublicacaoService.processarRepublicacaoDaLinha(resultado.linhaId);
+    return { ...resultado, publicacao };
   }
   return resultado;
 }
@@ -1055,6 +1087,9 @@ module.exports = {
     enviarNotificacaoRetornoAgendado,
     vendaCorrespondeAtribuicao,
     botaoCancelarEnvio,
-    encerrarMensagemTelegram
+    acaoRegistradaImpedeFinalizacao,
+    encerrarMensagemTelegram,
+    futuroClientePodeSerDevolvido,
+    montarPatchLinhaAposFinalizacao
   }
 };

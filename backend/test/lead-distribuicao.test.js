@@ -6,8 +6,10 @@ const { _internals: leadPlanilhaInternals } = require('../src/services/lead-plan
 
 const {
   adicionarMinutos,
+  acaoRegistradaImpedeFinalizacao,
   calcularPrazoAcao,
   encerrarMensagemTelegram,
+  futuroClientePodeSerDevolvido,
   linhaTemAcaoValida,
   botaoCancelarEnvio,
   enviarNotificacaoVendaFechada,
@@ -17,6 +19,7 @@ const {
   montarMensagemRetornoAgendadoTelegram,
   montarMensagemVendaFechadaTelegram,
   montarPatchAceite,
+  montarPatchLinhaAposFinalizacao,
   montarPatchPrazoRetorno,
   prazoAcaoMinutos,
   prazoAtribuicaoVencido,
@@ -26,6 +29,51 @@ const {
   tipoAcaoValida,
   vendaCorrespondeAtribuicao
 } = leadDistribuicaoService._internals;
+
+test('devolucao administrativa ignora retorno registrado e preserva seus dados na linha', () => {
+  const atribuicao = {
+    aceite_status: leadDistribuicaoService.ACEITE_ACEITO,
+    acao_registrada_em: '2026-08-25T12:00:00.000Z',
+    acao_registrada_tipo: 'retorno_agendado'
+  };
+
+  assert.equal(acaoRegistradaImpedeFinalizacao(atribuicao, false), true);
+  assert.equal(acaoRegistradaImpedeFinalizacao(atribuicao, false, true), false);
+
+  const patch = montarPatchLinhaAposFinalizacao(
+    { envio_id: 51, usuario_id: 7 },
+    new Date('2026-08-25T13:00:00.000Z')
+  );
+  assert.deepEqual(patch, {
+    envio_id: 51,
+    atribuido_para_id: 7,
+    etapa_atual: 'sondagem',
+    status_operacional: 'qualificado',
+    updated_at: new Date('2026-08-25T13:00:00.000Z')
+  });
+  assert.equal(Object.hasOwn(patch, 'retorno_agendado_em'), false);
+  assert.equal(Object.hasOwn(patch, 'futuro_cliente_retorno'), false);
+
+  assert.equal(futuroClientePodeSerDevolvido({
+    futuro_cliente: true,
+    status_operacional: 'distribuido_venda',
+    retorno_agendado_em: '2026-08-28 10:00:00'
+  }), true);
+  assert.equal(futuroClientePodeSerDevolvido({
+    futuro_cliente: true,
+    status_operacional: 'vendido',
+    venda_id: 91
+  }), false);
+  assert.equal(futuroClientePodeSerDevolvido({
+    futuro_cliente: true,
+    status_operacional: 'perdido',
+    venda_recusada_em: '2026-08-25 10:00:00'
+  }), false);
+  assert.equal(futuroClientePodeSerDevolvido({
+    futuro_cliente: true,
+    futuro_cliente_excluido_em: '2026-08-25 10:00:00'
+  }), false);
+});
 
 test('inicia o prazo de acao 30 minutos depois do aceite por padrao', () => {
   const anterior = process.env.FUTURO_CLIENTE_PRAZO_ACAO_MINUTOS;

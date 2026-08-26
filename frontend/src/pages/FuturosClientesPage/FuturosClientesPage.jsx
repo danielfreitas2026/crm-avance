@@ -2809,6 +2809,12 @@ export function FuturoClienteDetalheModal({
   const distribuicaoAtiva = ['aguardando_aceite', 'aceito'].includes(linha.distribuicao?.status);
   const temPermissoesReenvio = permitirReenvioTelegram
     && temPermissao(usuario, 'futuros_clientes_ver_todos');
+  const futuroClienteAtivo = Boolean(linha.futuro_cliente)
+    && !linha.futuro_cliente_excluido_em
+    && !vendaRegistrada
+    && !vendaRecusada
+    && !linha.cliente_recusou
+    && !['vendido', 'perdido'].includes(linha.status_operacional);
   const estadoDistribuivel = (!linha.status_operacional || linha.status_operacional === 'qualificado')
     && linha.etapa_atual !== 'venda'
     && !linha.venda_id
@@ -2822,14 +2828,16 @@ export function FuturoClienteDetalheModal({
     && permitirReverterVendaRecusada
     && temPermissao(usuario, 'futuros_clientes_ver_todos')
     && temPermissao(usuario, 'futuros_clientes_gerenciar_todos');
-  const podeEnviarDistribuicao = destinoDistribuivel
+  const podeRetornarTelegram = temPermissoesReenvio && futuroClienteAtivo;
+  const podeEnviarDistribuicao = podeRetornarTelegram || (
+    destinoDistribuivel
     && estadoDistribuivel
     && !vendaRegistrada
     && !vendaRecusada
-    && (
-      (!somenteLeitura && ehDono && !jaEnviadoTelegram)
-      || temPermissoesReenvio
-    );
+    && !somenteLeitura
+    && ehDono
+    && !jaEnviadoTelegram
+  );
 
   const estadoAtual = historico?.estado_atual || linha.estado_atual;
 
@@ -2910,14 +2918,17 @@ export function FuturoClienteDetalheModal({
   }
 
   async function enviarParaDistribuicao() {
-    if (jaEnviadoTelegram && !window.confirm('Este futuro cliente já foi encaminhado. Deseja publicar uma nova mensagem no Telegram?')) {
+    const mensagemConfirmacao = podeRetornarTelegram
+      ? 'Deseja desvincular a consultora atual e retornar este futuro cliente para a distribuição no Telegram? O retorno marcado será preservado.'
+      : 'Este futuro cliente já foi encaminhado. Deseja publicar uma nova mensagem no Telegram?';
+    if ((podeRetornarTelegram || jaEnviadoTelegram) && !window.confirm(mensagemConfirmacao)) {
       return;
     }
     setDistribuindo(true);
     setErro('');
     try {
       const resultado = await enviarFuturoClienteParaDistribuicao(linha.id);
-      onDistribuido?.(resultado.linha, jaEnviadoTelegram);
+      onDistribuido?.(resultado.linha, podeRetornarTelegram || jaEnviadoTelegram);
     } catch (error) {
       setErro(error.message || 'Erro ao enviar futuro cliente para distribuicao.');
       setDistribuindo(false);
@@ -3256,7 +3267,7 @@ export function FuturoClienteDetalheModal({
           <div className="futuro-cliente-detalhe__acoes futuro-cliente-detalhe__acoes--principais">
             {podeEnviarDistribuicao && (
               <button type="button" className="btn" onClick={enviarParaDistribuicao} disabled={salvando || distribuindo}>
-                <I.Send size={14} /> {distribuindo ? 'Enviando...' : jaEnviadoTelegram ? 'Reencaminhar ao Telegram' : 'Enviar para distribuição'}
+                <I.Send size={14} /> {distribuindo ? 'Enviando...' : podeRetornarTelegram ? 'Retornar ao Telegram' : jaEnviadoTelegram ? 'Reencaminhar ao Telegram' : 'Enviar para distribuição'}
               </button>
             )}
             {vendaRegistrada ? (
@@ -3936,7 +3947,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     setSucesso('Venda recusada revertida.');
   }
 
-  function handleDistribuido(linhaDistribuida, reencaminhado = false) {
+  function handleDistribuido(linhaDistribuida, retornado = false) {
     if (escopoTodos) {
       setLinhas(prev => prev.map(item => item.id === linhaDistribuida.id ? {
         ...item,
@@ -3955,8 +3966,8 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
       setTotal(prev => Math.max(0, prev - 1));
     }
     fecharDetalhe();
-    setSucesso(reencaminhado
-      ? 'Futuro cliente reencaminhado ao Telegram.'
+    setSucesso(retornado
+      ? 'Futuro cliente retornado ao Telegram.'
       : 'Futuro cliente enviado para a distribuição do Telegram.');
   }
 

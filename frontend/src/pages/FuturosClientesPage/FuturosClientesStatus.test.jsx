@@ -570,6 +570,7 @@ describe('modal de adição de lead', () => {
     localStorage.setItem('usuario', JSON.stringify({ id: 7, role: { nome: 'admin' } }));
     const linha = {
       id: 31,
+      futuro_cliente: 1,
       atribuido_para_id: 7,
       futuro_cliente_marcado_por_id: 7,
       futuro_cliente_destino: 'carteira',
@@ -597,18 +598,21 @@ describe('modal de adição de lead', () => {
       futuro_cliente_destino: null,
       distribuicao: { id: 91, status: 'expirado_apos_retorno' }
     }} {...props} somenteLeitura permitirReenvioTelegram />);
-    expect(screen.getByRole('button', { name: /Reencaminhar ao Telegram/i })).toBeVisible();
+    expect(screen.getByRole('button', { name: /Retornar ao Telegram/i })).toBeVisible();
     localStorage.removeItem('usuario');
   });
 
-  it('permite republicar na visao completa com a permissao de ver todos e pede confirmacao', async () => {
+  it('permite retornar na visao completa com retorno marcado e pede confirmacao', async () => {
     const linha = {
       id: 32,
+      futuro_cliente: 1,
       atribuido_para_id: 9,
       futuro_cliente_marcado_por_id: 9,
       futuro_cliente_destino: 'distribuicao',
-      status_operacional: 'qualificado',
-      etapa_atual: 'sondagem',
+      status_operacional: 'distribuido_venda',
+      etapa_atual: 'venda',
+      retorno_agendado_em: '2026-08-28 10:00:00',
+      distribuicao: { id: 92, status: 'aceito', acao_registrada_tipo: 'retorno_agendado' },
       cliente_id: 72,
       dados_json: { 'Razão social': 'Empresa republicada' },
       envio: { nome: 'Envio futuro' },
@@ -629,7 +633,7 @@ describe('modal de adição de lead', () => {
       permissoes: { futuros_clientes_ver_todos: true }
     }));
     const { unmount } = render(<FuturoClienteDetalheModal {...props} />);
-    expect(screen.getByRole('button', { name: /Reencaminhar ao Telegram/i })).toBeVisible();
+    expect(screen.getByRole('button', { name: /Retornar ao Telegram/i })).toBeVisible();
     unmount();
 
     localStorage.setItem('usuario', JSON.stringify({
@@ -645,10 +649,12 @@ describe('modal de adição de lead', () => {
     const enviar = vi.spyOn(leadPlanilhaService, 'enviarFuturoClienteParaDistribuicao').mockResolvedValue({ linha });
     render(<FuturoClienteDetalheModal {...props} onDistribuido={onDistribuido} />);
 
-    const botao = screen.getByRole('button', { name: /Reencaminhar ao Telegram/i });
+    const botao = screen.getByRole('button', { name: /Retornar ao Telegram/i });
     expect(screen.getByLabelText('CNPJ')).toBeDisabled();
     fireEvent.click(botao);
     expect(confirmar).toHaveBeenCalledTimes(1);
+    expect(confirmar).toHaveBeenCalledWith(expect.stringMatching(/desvincular a consultora atual/i));
+    expect(confirmar).toHaveBeenCalledWith(expect.stringMatching(/retorno marcado será preservado/i));
     expect(enviar).not.toHaveBeenCalled();
 
     fireEvent.click(botao);
@@ -657,6 +663,49 @@ describe('modal de adição de lead', () => {
 
     confirmar.mockRestore();
     enviar.mockRestore();
+    localStorage.removeItem('usuario');
+  });
+
+  it('mostra retorno ao Telegram aguardando aceite e bloqueia estados encerrados', () => {
+    localStorage.setItem('usuario', JSON.stringify({
+      id: 7,
+      permissoes: { futuros_clientes_ver_todos: true }
+    }));
+    const base = {
+      id: 33,
+      futuro_cliente: 1,
+      futuro_cliente_destino: 'distribuicao',
+      dados_json: {},
+      sondagem: { chips_itens: [] }
+    };
+    const props = {
+      onClose: () => {},
+      onAtualizado: () => {},
+      somenteLeitura: true,
+      permitirReenvioTelegram: true
+    };
+
+    const aguardando = render(<FuturoClienteDetalheModal
+      {...props}
+      linha={{
+        ...base,
+        status_operacional: 'distribuido_venda',
+        etapa_atual: 'venda',
+        distribuicao: { id: 93, status: 'aguardando_aceite' }
+      }}
+    />);
+    expect(screen.getByRole('button', { name: /Retornar ao Telegram/i })).toBeVisible();
+    aguardando.unmount();
+
+    for (const encerrado of [
+      { venda_id: 91, status_operacional: 'vendido' },
+      { venda_recusada_em: '2026-08-20 10:00:00', status_operacional: 'perdido' },
+      { futuro_cliente_excluido_em: '2026-08-20 10:00:00' }
+    ]) {
+      const tela = render(<FuturoClienteDetalheModal {...props} linha={{ ...base, ...encerrado }} />);
+      expect(screen.queryByRole('button', { name: /Retornar ao Telegram/i })).not.toBeInTheDocument();
+      tela.unmount();
+    }
     localStorage.removeItem('usuario');
   });
 

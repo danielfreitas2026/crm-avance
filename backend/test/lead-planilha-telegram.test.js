@@ -94,6 +94,11 @@ test('envio posterior preserva o primeiro envio do dono e exige acesso total par
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, futuro_cliente_destino: null }, 17)?.statusCode, 409);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({
     ...disponivel,
+    futuro_cliente_destino: null,
+    status_operacional: null
+  }, 18, { podeReencaminharTodos: true }), null);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({
+    ...disponivel,
     futuro_cliente_destino: null
   }, 18, { podeReencaminharTodos: true, possuiHistoricoDistribuicao: true }), null);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao(disponivel, 18)?.statusCode, 403);
@@ -102,7 +107,7 @@ test('envio posterior preserva o primeiro envio do dono e exige acesso total par
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, futuro_cliente_excluido_em: new Date() }, 17)?.statusCode, 404);
 });
 
-test('republicacao bloqueia recusas, vendas e atribuicoes ativas', () => {
+test('republicacao administrativa aceita atribuicao ativa e bloqueia estados encerrados', () => {
   const disponivel = {
     futuro_cliente: true,
     futuro_cliente_excluido_em: null,
@@ -117,10 +122,22 @@ test('republicacao bloqueia recusas, vendas e atribuicoes ativas', () => {
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, venda_id: 91 }, 18, acessoTotal)?.statusCode, 409);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, venda_recusada_em: new Date() }, 18, acessoTotal)?.statusCode, 409);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, cliente_recusou: true }, 18, acessoTotal)?.statusCode, 409);
-  assert.equal(obterErroEnvioFuturoClienteDistribuicao(disponivel, 18, {
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({
+    ...disponivel,
+    status_operacional: 'distribuido_venda',
+    etapa_atual: 'venda',
+    retorno_agendado_em: '2026-08-28 10:00:00'
+  }, 18, {
     ...acessoTotal,
     possuiAtribuicaoAtiva: true
-  })?.statusCode, 409);
+  }), null);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({
+    ...disponivel,
+    status_operacional: 'distribuido_venda',
+    etapa_atual: 'venda'
+  }, 17, { possuiAtribuicaoAtiva: true })?.statusCode, 403);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, status_operacional: 'vendido' }, 18, acessoTotal)?.statusCode, 409);
+  assert.equal(obterErroEnvioFuturoClienteDistribuicao({ ...disponivel, status_operacional: 'perdido' }, 18, acessoTotal)?.statusCode, 409);
   assert.equal(obterErroEnvioFuturoClienteDistribuicao({
     ...disponivel,
     cliente_id: 72
