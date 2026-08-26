@@ -71,10 +71,27 @@ function processarPrazosDistribuicao() {
     });
 }
 
-function corrigirBotoesCancelamentoAntigos() {
-  telegramCancelamentoRetroativoService.corrigirBotoesCancelamento()
+function corrigirBotoesCancelamentoAntigos(tentativa = 1) {
+  return telegramCancelamentoRetroativoService.corrigirBotoesCancelamento()
+    .then(resumo => {
+      console.info(
+        `Correcao de botoes antigos no Telegram: ${resumo.encontrados} encontrados, `
+        + `${resumo.atualizados} atualizados e ${resumo.falhas} falhas.`
+      );
+      if (resumo.falhas > 0) {
+        console.error('Falhas ao corrigir botoes antigos no Telegram:', resumo.erros);
+      }
+      if (resumo.falhas > 0 && tentativa < 3) {
+        setTimeout(() => corrigirBotoesCancelamentoAntigos(tentativa + 1), tentativa * 60 * 1000);
+      }
+      return resumo;
+    })
     .catch(error => {
       console.error('Erro ao corrigir botoes antigos de cancelamento no Telegram:', error);
+      if (tentativa < 3) {
+        setTimeout(() => corrigirBotoesCancelamentoAntigos(tentativa + 1), tentativa * 60 * 1000);
+      }
+      return null;
     });
 }
 

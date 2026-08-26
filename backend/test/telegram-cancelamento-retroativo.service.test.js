@@ -30,6 +30,31 @@ test('monta o botao retroativo com consultora e callback preservado', () => {
   assert.equal(_internals.montarBotaoCancelarEnvio(42).text, 'Cancelar envio');
 });
 
+test('usa a mensagem da republicacao quando a atribuicao antiga nao guardou seus ids', () => {
+  const resolvida = _internals.resolverMensagemTelegram({
+    ...atribuicaoAtiva,
+    telegram_chat_id: null,
+    telegram_message_id: null,
+    publicacao_telegram_chat_id: '-100999',
+    publicacao_telegram_message_id: '888'
+  });
+
+  assert.equal(resolvida.telegram_chat_id, '-100999');
+  assert.equal(resolvida.telegram_message_id, '888');
+  assert.equal(_internals.atribuicaoElegivel(resolvida), true);
+});
+
+test('prioriza os ids da atribuicao quando ambos os registros existem', () => {
+  const resolvida = _internals.resolverMensagemTelegram({
+    ...atribuicaoAtiva,
+    publicacao_telegram_chat_id: '-100999',
+    publicacao_telegram_message_id: '888'
+  });
+
+  assert.equal(resolvida.telegram_chat_id, '-100123');
+  assert.equal(resolvida.telegram_message_id, '777');
+});
+
 test('preview nao chama a API do Telegram', async () => {
   let chamadas = 0;
   const resumo = await _internals.atualizarBotoesCancelamento([atribuicaoAtiva], {
@@ -75,4 +100,7 @@ test('agenda a correcao retroativa uma vez ao iniciar o backend', () => {
   assert.match(conteudo, /telegramCancelamentoRetroativoService\.corrigirBotoesCancelamento\(\)/);
   assert.match(conteudo, /setTimeout\(corrigirBotoesCancelamentoAntigos, 15000\)/);
   assert.doesNotMatch(conteudo, /setInterval\(corrigirBotoesCancelamentoAntigos/);
+  assert.match(conteudo, /tentativa < 3/);
+  assert.match(conteudo, /resumo\.encontrados/);
+  assert.match(conteudo, /resumo\.erros/);
 });

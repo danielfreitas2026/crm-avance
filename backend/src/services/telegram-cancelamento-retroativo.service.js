@@ -18,23 +18,36 @@ function atribuicaoElegivel(atribuicao = {}) {
     && Boolean(String(atribuicao.telegram_message_id || '').trim());
 }
 
+function resolverMensagemTelegram(atribuicao = {}) {
+  return {
+    ...atribuicao,
+    telegram_chat_id: String(
+      atribuicao.telegram_chat_id || atribuicao.publicacao_telegram_chat_id || ''
+    ).trim(),
+    telegram_message_id: String(
+      atribuicao.telegram_message_id || atribuicao.publicacao_telegram_message_id || ''
+    ).trim()
+  };
+}
+
 async function listarAtribuicoesElegiveis() {
   const atribuicoes = await db('lead_atribuicoes as la')
     .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
+    .leftJoin('lead_telegram_republicacoes as ltr', 'ltr.lead_linha_id', 'la.lead_linha_id')
     .where('la.etapa', 'venda')
     .whereIn('la.aceite_status', ACEITES_ATIVOS)
-    .whereNotNull('la.telegram_chat_id')
-    .whereNotNull('la.telegram_message_id')
     .select(
       'la.id',
       'la.lead_linha_id',
       'la.aceite_status',
       'la.telegram_chat_id',
       'la.telegram_message_id',
+      'ltr.telegram_chat_id as publicacao_telegram_chat_id',
+      'ltr.telegram_message_id as publicacao_telegram_message_id',
       'u.nome as consultora_nome'
     );
 
-  return atribuicoes.filter(atribuicaoElegivel);
+  return atribuicoes.map(resolverMensagemTelegram).filter(atribuicaoElegivel);
 }
 
 async function atualizarBotoesCancelamento(atribuicoes, opcoes = {}) {
@@ -89,6 +102,7 @@ module.exports = {
     atribuicaoElegivel,
     atualizarBotoesCancelamento,
     listarAtribuicoesElegiveis,
-    montarBotaoCancelarEnvio
+    montarBotaoCancelarEnvio,
+    resolverMensagemTelegram
   }
 };
