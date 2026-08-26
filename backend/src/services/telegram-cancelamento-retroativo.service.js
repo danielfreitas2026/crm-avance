@@ -61,6 +61,10 @@ async function atualizarBotoesCancelamento(atribuicoes, opcoes = {}) {
       });
       resumo.atualizados += 1;
     } catch (error) {
+      if (/message is not modified/i.test(String(error?.message || ''))) {
+        resumo.atualizados += 1;
+        continue;
+      }
       resumo.falhas += 1;
       resumo.erros.push({
         atribuicao_id: atribuicao.id,

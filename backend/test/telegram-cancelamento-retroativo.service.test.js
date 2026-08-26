@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { _internals } = require('../src/services/telegram-cancelamento-retroativo.service');
 
@@ -14,6 +16,7 @@ const atribuicaoAtiva = {
 
 test('seleciona somente atribuicoes ativas com mensagem do Telegram', () => {
   assert.equal(_internals.atribuicaoElegivel(atribuicaoAtiva), true);
+  assert.equal(_internals.atribuicaoElegivel({ ...atribuicaoAtiva, aceite_status: 'aceito' }), true);
   assert.equal(_internals.atribuicaoElegivel({ ...atribuicaoAtiva, aceite_status: 'cancelado' }), false);
   assert.equal(_internals.atribuicaoElegivel({ ...atribuicaoAtiva, telegram_chat_id: '  ' }), false);
   assert.equal(_internals.atribuicaoElegivel({ ...atribuicaoAtiva, telegram_message_id: null }), false);
@@ -55,4 +58,21 @@ test('continua atualizando quando uma mensagem falha', async () => {
   assert.equal(resumo.falhas, 1);
   assert.deepEqual(resumo.erros, [{ atribuicao_id: 15, lead_linha_id: 42, mensagem: 'Mensagem não encontrada' }]);
   assert.equal(chamadas[1].reply_markup.inline_keyboard[0][0].text, 'Cancelar envio Bia Consultora');
+});
+
+test('trata como sucesso quando a mensagem antiga ja possui o mesmo botao', async () => {
+  const resumo = await _internals.atualizarBotoesCancelamento([atribuicaoAtiva], {
+    chamarApi: async () => { throw new Error('Bad Request: message is not modified'); }
+  });
+
+  assert.deepEqual(resumo, { encontrados: 1, atualizados: 1, ignorados: 0, falhas: 0, erros: [] });
+});
+
+test('agenda a correcao retroativa uma vez ao iniciar o backend', () => {
+  const arquivo = path.join(__dirname, '../src/server.js');
+  const conteudo = fs.readFileSync(arquivo, 'utf8');
+
+  assert.match(conteudo, /telegramCancelamentoRetroativoService\.corrigirBotoesCancelamento\(\)/);
+  assert.match(conteudo, /setTimeout\(corrigirBotoesCancelamentoAntigos, 15000\)/);
+  assert.doesNotMatch(conteudo, /setInterval\(corrigirBotoesCancelamentoAntigos/);
 });

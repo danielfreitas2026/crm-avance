@@ -9,6 +9,7 @@ const dashboardIntegracaoService = require('./services/dashboard-integracao.serv
 const leadDistribuicaoService = require('./services/lead-distribuicao.service');
 const leadTelegramPublicacaoService = require('./services/lead-telegram-publicacao.service');
 const leadTelegramReconciliacaoService = require('./services/lead-telegram-reconciliacao.service');
+const telegramCancelamentoRetroativoService = require('./services/telegram-cancelamento-retroativo.service');
 const leadEnriquecimentoService = require('./services/lead-enriquecimento.service');
 
 const PORT = process.env.APP_PORT || 3000;
@@ -70,6 +71,13 @@ function processarPrazosDistribuicao() {
     });
 }
 
+function corrigirBotoesCancelamentoAntigos() {
+  telegramCancelamentoRetroativoService.corrigirBotoesCancelamento()
+    .catch(error => {
+      console.error('Erro ao corrigir botoes antigos de cancelamento no Telegram:', error);
+    });
+}
+
 /**
  * Consome a fila de enriquecimento automatico de contatos do mailing sem
  * bloquear as consultas da interface. A reentrancia ja e tratada dentro do
@@ -97,6 +105,7 @@ function iniciarAgendamentos() {
   setInterval(sincronizarNotificacoesPendentes, 30 * 1000);
   setTimeout(processarPrazosDistribuicao, 10000);
   setInterval(processarPrazosDistribuicao, 30 * 1000);
+  setTimeout(corrigirBotoesCancelamentoAntigos, 15000);
 
   const enriquecimentoIntervaloMs = Number(process.env.LEAD_ENRIQUECIMENTO_WORKER_MS || 15 * 1000);
   setTimeout(processarEnriquecimentoMailing, 12000);
