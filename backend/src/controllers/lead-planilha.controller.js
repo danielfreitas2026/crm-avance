@@ -425,6 +425,31 @@ async function listarMeusFuturosClientesEmAcompanhamento(req, res) {
   }
 }
 
+async function obterMeuFuturoClienteEmAcompanhamento(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.buscarFuturoClienteEmAcompanhamento(
+      req.params.id,
+      req.usuario.id
+    ));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 500).json({
+      message: error.message || 'Erro ao carregar o futuro cliente em acompanhamento.'
+    });
+  }
+}
+
+async function obterFuturoClienteEmAcompanhamento(req, res) {
+  try {
+    return res.json(await leadPlanilhaService.buscarFuturoClienteEmAcompanhamento(req.params.id));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 500).json({
+      message: error.message || 'Erro ao carregar o futuro cliente em acompanhamento.'
+    });
+  }
+}
+
 async function listarResponsaveisFuturosClientes(req, res) {
   try {
     return res.json(await leadPlanilhaService.listarResponsaveisFuturosClientes());
@@ -813,6 +838,8 @@ module.exports = {
   listarTodosFuturosClientes,
   listarFuturosClientesComConsultoras,
   listarMeusFuturosClientesEmAcompanhamento,
+  obterMeuFuturoClienteEmAcompanhamento,
+  obterFuturoClienteEmAcompanhamento,
   listarResponsaveisFuturosClientes,
   republicarPendentesAntigosTelegram,
   metricasFuturosClientes,

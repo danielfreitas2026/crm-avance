@@ -33,6 +33,11 @@ router.get(
   exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']),
   leadPlanilhaController.listarMeusFuturosClientesEmAcompanhamento
 );
+router.get(
+  '/me/futuros-clientes/em-acompanhamento/:id',
+  exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']),
+  leadPlanilhaController.obterMeuFuturoClienteEmAcompanhamento
+);
 router.post(
   '/me/futuros-clientes/:id/aceitar',
   exigirUmaPermissao(['futuros_clientes_ver', 'vendas_criar']),
@@ -488,6 +493,7 @@ router.post(
 );
 router.get('/futuros-clientes', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.listarTodosFuturosClientes);
 router.get('/futuros-clientes/em-acompanhamento', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.listarFuturosClientesComConsultoras);
+router.get('/futuros-clientes/em-acompanhamento/:id', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.obterFuturoClienteEmAcompanhamento);
 router.get('/futuros-clientes/responsaveis', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.listarResponsaveisFuturosClientes);
 router.get('/futuros-clientes/:id/historico', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.historicoFuturoCliente);
 router.post(

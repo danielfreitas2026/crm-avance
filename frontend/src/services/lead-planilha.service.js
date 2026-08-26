@@ -399,6 +399,14 @@ export function listarMeusFuturosClientesEmAcompanhamento(filtros = {}) {
   return apiGet(`/lead-planilhas/me/futuros-clientes/em-acompanhamento${montarQuery(filtros)}`);
 }
 
+export function obterMeuFuturoClienteEmAcompanhamento(linhaId) {
+  return apiGet(`/lead-planilhas/me/futuros-clientes/em-acompanhamento/${linhaId}`);
+}
+
+export function obterFuturoClienteEmAcompanhamento(linhaId) {
+  return apiGet(`/lead-planilhas/futuros-clientes/em-acompanhamento/${linhaId}`);
+}
+
 export function listarResponsaveisFuturosClientes() {
   return apiGet('/lead-planilhas/futuros-clientes/responsaveis');
 }

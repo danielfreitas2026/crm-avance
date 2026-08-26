@@ -29,6 +29,8 @@ import {
   listarFuturosClientesRecebidos,
   listarFuturosClientesLixeira,
   obterHistoricoFuturoCliente,
+  obterFuturoClienteEmAcompanhamento,
+  obterMeuFuturoClienteEmAcompanhamento,
   listarVendasCandidatasLead,
   listarQuadroFuturosClientes,
   listarResponsaveisFuturosClientes,
@@ -3619,6 +3621,8 @@ function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
   const [busca, setBusca] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
+  const [linhaAtiva, setLinhaAtiva] = useState(null);
+  const [carregandoDetalheId, setCarregandoDetalheId] = useState(null);
   const buscaDeferred = useDeferredValue(busca);
   const consultaIniciada = useRef(false);
   const totalPaginas = Math.max(1, Math.ceil(total / 30));
@@ -3656,8 +3660,54 @@ function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
     return () => { cancelado = true; };
   }, [pagina, buscaDeferred, agora, escopoTodos]);
 
+  async function abrirDetalhe(linha) {
+    if (carregandoDetalheId !== null) return;
+    setCarregandoDetalheId(linha.id);
+    setErro('');
+    try {
+      const obterDetalhe = escopoTodos
+        ? obterFuturoClienteEmAcompanhamento
+        : obterMeuFuturoClienteEmAcompanhamento;
+      const resultado = await obterDetalhe(linha.id);
+      setLinhaAtiva(resultado.linha);
+    } catch (error) {
+      setErro(error.message || 'Erro ao carregar os detalhes do futuro cliente.');
+    } finally {
+      setCarregandoDetalheId(null);
+    }
+  }
+
+  function abrirDetalhePeloTeclado(event, linha) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    abrirDetalhe(linha);
+  }
+
+  function removerLinhaRecusada() {
+    setLinhas(atuais => atuais.filter(linha => linha.id !== linhaAtiva?.id));
+    setTotal(valor => Math.max(0, valor - 1));
+    setLinhaAtiva(null);
+  }
+
   return (
     <div className="futuros-clientes-view futuros-clientes-consultoras-view">
+      {linhaAtiva?.detalhes_bloqueados ? (
+        <FuturoClienteAceiteModal
+          linha={linhaAtiva}
+          onClose={() => setLinhaAtiva(null)}
+          onAceito={setLinhaAtiva}
+          onRecusado={removerLinhaRecusada}
+        />
+      ) : linhaAtiva && (
+        <FuturoClienteDetalheModal
+          linha={linhaAtiva}
+          onClose={() => setLinhaAtiva(null)}
+          onAtualizado={setLinhaAtiva}
+          somenteLeitura
+          exibirHistorico={escopoTodos}
+        />
+      )}
+
       <div className="clientes-leads-toolbar futuros-clientes-toolbar">
         <form className="clientes-search" onSubmit={event => event.preventDefault()}>
           <I.Search size={14} />
@@ -3694,7 +3744,16 @@ function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
                 const tempo = formatarTempoRetornoConsultora(linha.retorno_previsto_em, agora);
                 const vencido = tempo === 'Prazo vencido';
                 return (
-                  <tr key={linha.id}>
+                  <tr
+                    key={linha.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Abrir detalhes de ${linha.razao_social || `futuro cliente ${linha.id}`}`}
+                    aria-busy={carregandoDetalheId === linha.id}
+                    style={{ cursor: carregandoDetalheId === linha.id ? 'wait' : 'pointer' }}
+                    onClick={() => abrirDetalhe(linha)}
+                    onKeyDown={event => abrirDetalhePeloTeclado(event, linha)}
+                  >
                     <td data-label="Razão Social" className="m-primary"><strong>{linha.razao_social || '-'}</strong></td>
                     <td data-label="CNPJ" className="m-secondary">{formatarCnpj(linha.cnpj) || linha.cnpj || '-'}</td>
                     <td data-label="Vendedor/Consultora atual" className="m-meta">{linha.consultora?.nome || 'Usuário removido'}</td>

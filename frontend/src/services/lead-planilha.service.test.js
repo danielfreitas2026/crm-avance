@@ -18,6 +18,8 @@ import {
   listarFuturosClientesLixeira,
   listarFuturosClientesComConsultoras,
   listarMeusFuturosClientesEmAcompanhamento,
+  obterFuturoClienteEmAcompanhamento,
+  obterMeuFuturoClienteEmAcompanhamento,
   listarResponsaveisFuturosClientes,
   obterHistoricoFuturoCliente,
   listarVendasCandidatasLead,
@@ -123,5 +125,13 @@ describe('filtros de futuros clientes', () => {
     await listarMeusFuturosClientesEmAcompanhamento({ page: 1, page_size: 30 });
 
     expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/me/futuros-clientes/em-acompanhamento?page=1&page_size=30');
+  });
+
+  it('consulta o detalhe no escopo individual ou global correto', async () => {
+    await obterMeuFuturoClienteEmAcompanhamento(81);
+    await obterFuturoClienteEmAcompanhamento(82);
+
+    expect(apiGet).toHaveBeenNthCalledWith(1, '/lead-planilhas/me/futuros-clientes/em-acompanhamento/81');
+    expect(apiGet).toHaveBeenNthCalledWith(2, '/lead-planilhas/futuros-clientes/em-acompanhamento/82');
   });
 });

@@ -6,7 +6,9 @@ import FuturosClientesPage from './FuturosClientesPage';
 import { formatarTempoRetornoConsultora } from './lead-status';
 import {
   listarFuturosClientesComConsultoras,
-  listarMeusFuturosClientesEmAcompanhamento
+  listarMeusFuturosClientesEmAcompanhamento,
+  obterFuturoClienteEmAcompanhamento,
+  obterMeuFuturoClienteEmAcompanhamento
 } from '../../services/lead-planilha.service';
 
 const authState = vi.hoisted(() => ({ gerente: true }));
@@ -26,7 +28,9 @@ vi.mock('../../services/lead-planilha.service', async () => {
     ...actual,
     listarFuturosClientesLeads: vi.fn().mockResolvedValue({ data: [], total: 0 }),
     listarFuturosClientesComConsultoras: vi.fn(),
-    listarMeusFuturosClientesEmAcompanhamento: vi.fn()
+    listarMeusFuturosClientesEmAcompanhamento: vi.fn(),
+    obterFuturoClienteEmAcompanhamento: vi.fn(),
+    obterMeuFuturoClienteEmAcompanhamento: vi.fn()
   };
 });
 
@@ -49,6 +53,19 @@ describe('aba de futuros clientes com consultoras', () => {
     };
     listarFuturosClientesComConsultoras.mockResolvedValue(resultado);
     listarMeusFuturosClientesEmAcompanhamento.mockResolvedValue(resultado);
+    const detalhe = {
+      linha: {
+        id: 12,
+        futuro_cliente: true,
+        dados_json: { Empresa: 'Empresa Exemplo Ltda', Telefone: '31999999999' },
+        envio: { nome: 'Indicação #12' },
+        sondagem: null,
+        atribuicao_para_id: 7,
+        detalhes_bloqueados: false
+      }
+    };
+    obterFuturoClienteEmAcompanhamento.mockResolvedValue(detalhe);
+    obterMeuFuturoClienteEmAcompanhamento.mockResolvedValue(detalhe);
   });
 
   afterEach(() => cleanup());
@@ -109,6 +126,32 @@ describe('aba de futuros clientes com consultoras', () => {
       page_size: 30,
       busca: 'Ana'
     }));
+  });
+
+  it('abre os detalhes em modo leitura ao clicar na linha do usuario comum', async () => {
+    authState.gerente = false;
+    const user = userEvent.setup();
+    render(<MemoryRouter><FuturosClientesPage /></MemoryRouter>);
+    await user.click(screen.getByRole('button', { name: 'Meus prazos' }));
+    await user.click(await screen.findByRole('button', { name: 'Abrir detalhes de Empresa Exemplo Ltda' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Detalhes do futuro cliente' })).toBeVisible();
+    expect(screen.getByText('Dados da planilha')).toBeVisible();
+    expect(screen.getByText('31999999999')).toBeVisible();
+    expect(obterMeuFuturoClienteEmAcompanhamento).toHaveBeenCalledWith(12);
+    expect(obterFuturoClienteEmAcompanhamento).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /Salvar/ })).not.toBeInTheDocument();
+  });
+
+  it('usa o detalhe global para quem possui permissao de ver todos', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><FuturosClientesPage /></MemoryRouter>);
+    await user.click(screen.getByRole('button', { name: 'Com consultoras' }));
+    await user.click(await screen.findByRole('button', { name: 'Abrir detalhes de Empresa Exemplo Ltda' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Detalhes do futuro cliente' })).toBeVisible();
+    expect(obterFuturoClienteEmAcompanhamento).toHaveBeenCalledWith(12);
+    expect(obterMeuFuturoClienteEmAcompanhamento).not.toHaveBeenCalled();
   });
 
   it('formata a contagem regressiva sem exibir valores negativos', () => {

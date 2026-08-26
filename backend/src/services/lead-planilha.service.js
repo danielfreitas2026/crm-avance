@@ -4669,6 +4669,29 @@ function montarPatchReversaoVendaRecusada(linha) {
   };
 }
 
+/** Busca o detalhe de um futuro cliente dentro do escopo de acompanhamento permitido. */
+async function buscarFuturoClienteEmAcompanhamento(linhaId, usuarioId = null) {
+  const item = await montarQueryFuturosClientesComConsultoras({}, usuarioId)
+    .where('ll.id', Number(linhaId))
+    .select('ll.id')
+    .first();
+
+  if (!item) throw criarHttpError(404, 'Futuro cliente não encontrado em acompanhamento.');
+
+  if (usuarioId === null || usuarioId === undefined) {
+    return buscarLinhaFormatada(item.id, { incluirEstadoAtual: true });
+  }
+
+  const resultado = await buscarLinhaFormatada(item.id);
+  const distribuicoes = await leadDistribuicaoService.obterDistribuicoesUsuario([item.id], usuarioId);
+  return {
+    linha: leadDistribuicaoService.ocultarDetalhesAntesDoAceite(
+      resultado.linha,
+      distribuicoes.get(Number(item.id))
+    )
+  };
+}
+
 /**
  * Busca a linha e recarrega com os relacionamentos usados pelo frontend.
  */
@@ -5172,6 +5195,7 @@ module.exports = {
   reverterFuturoClienteLead,
   listarFuturosClientes,
   listarFuturosClientesComConsultoras,
+  buscarFuturoClienteEmAcompanhamento,
   listarResponsaveisFuturosClientes,
   obterHistoricoFuturoCliente,
   listarFuturosClientesRecebidos,

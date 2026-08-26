@@ -163,3 +163,72 @@ test('controller individual repassa filtros e usuario autenticado ao servico', a
     leadPlanilhaService.listarFuturosClientesComConsultoras = originalListar;
   }
 });
+
+test('controllers de detalhe preservam os escopos individual e global', async () => {
+  const originalBuscar = leadPlanilhaService.buscarFuturoClienteEmAcompanhamento;
+  const chamadas = [];
+  leadPlanilhaService.buscarFuturoClienteEmAcompanhamento = async (...args) => {
+    chamadas.push(args);
+    return { linha: { id: Number(args[0]) } };
+  };
+  const respostas = [];
+  const res = { json(payload) { respostas.push(payload); return this; } };
+
+  try {
+    await leadPlanilhaController.obterMeuFuturoClienteEmAcompanhamento(
+      { params: { id: '41' }, usuario: { id: 9 } },
+      res
+    );
+    await leadPlanilhaController.obterFuturoClienteEmAcompanhamento(
+      { params: { id: '42' }, usuario: { id: 9 } },
+      res
+    );
+
+    assert.deepEqual(chamadas, [['41', 9], ['42']]);
+    assert.deepEqual(respostas, [{ linha: { id: 41 } }, { linha: { id: 42 } }]);
+  } finally {
+    leadPlanilhaService.buscarFuturoClienteEmAcompanhamento = originalBuscar;
+  }
+});
+
+test('rotas de detalhe exigem as permissoes dos respectivos escopos', async () => {
+  const rotaIndividual = leadPlanilhaRouter.stack.find(layer => (
+    layer.route?.path === '/me/futuros-clientes/em-acompanhamento/:id' && layer.route.methods.get
+  )).route;
+  const rotaGlobal = leadPlanilhaRouter.stack.find(layer => (
+    layer.route?.path === '/futuros-clientes/em-acompanhamento/:id' && layer.route.methods.get
+  )).route;
+  const originalQuery = Usuario.query;
+  let permissoes = {};
+  Usuario.query = () => ({
+    findById() { return this; },
+    withGraphFetched: async () => ({
+      id: 9,
+      ativo: true,
+      role: { nome: 'usuario', permissoes: {} },
+      permissoes
+    })
+  });
+  const executar = async rota => {
+    const req = { usuario: { id: 9 } };
+    const res = {
+      statusCode: 200,
+      status(code) { this.statusCode = code; return this; },
+      json() { return this; }
+    };
+    let avancou = false;
+    await rota.stack[0].handle(req, res, () => { avancou = true; });
+    return { avancou, statusCode: res.statusCode };
+  };
+
+  try {
+    assert.deepEqual(await executar(rotaIndividual), { avancou: false, statusCode: 403 });
+    permissoes = { futuros_clientes_ver: true };
+    assert.deepEqual(await executar(rotaIndividual), { avancou: true, statusCode: 200 });
+    assert.deepEqual(await executar(rotaGlobal), { avancou: false, statusCode: 403 });
+    permissoes = { futuros_clientes_ver_todos: true };
+    assert.deepEqual(await executar(rotaGlobal), { avancou: true, statusCode: 200 });
+  } finally {
+    Usuario.query = originalQuery;
+  }
+});
