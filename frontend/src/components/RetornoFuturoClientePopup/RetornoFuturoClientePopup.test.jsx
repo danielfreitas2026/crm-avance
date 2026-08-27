@@ -3,7 +3,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import RetornoFuturoClientePopup from './RetornoFuturoClientePopup';
-import { ordenarPopupsRetornoFuturo } from './retorno-futuro-popup.utils';
+import {
+  ordenarPopupsRetornoFuturo,
+  reconciliarPopupRetornoFuturo
+} from './retorno-futuro-popup.utils';
 
 function criarNotificacao(id = 12, retorno = '2026-08-26T18:15:00.000Z') {
   return {
@@ -101,5 +104,26 @@ describe('RetornoFuturoClientePopup', () => {
 
     expect(ordenarPopupsRetornoFuturo([posterior, indisponivel, anterior]).map(item => item.id))
       .toEqual([1, 2]);
+  });
+
+  it('mantem o popup aberto quando a consulta periodica fica vazia', () => {
+    const atual = criarNotificacao();
+
+    expect(reconciliarPopupRetornoFuturo(atual, [])).toBe(atual);
+  });
+
+  it('atualiza a etapa sem desmontar o popup que ja esta aberto', () => {
+    const atual = criarNotificacao();
+    const vencida = {
+      ...atual,
+      tipo: 'futuro_cliente_retorno_due',
+      titulo: 'Retorno vencido',
+      dados: { ...atual.dados, retorno_etapa: 'due' }
+    };
+
+    const resultado = reconciliarPopupRetornoFuturo(atual, [vencida]);
+    expect(resultado.id).toBe(atual.id);
+    expect(resultado.tipo).toBe('futuro_cliente_retorno_due');
+    expect(resultado.dados.retorno_etapa).toBe('due');
   });
 });

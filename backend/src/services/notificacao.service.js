@@ -51,6 +51,7 @@ const TIPOS_OPERACIONAIS_VENDA = [
 const TIPO_VENDA_PARADA = vendaNotificacaoParadaService.TIPO_NOTIFICACAO;
 const PERMISSAO_VENDAS_PARADAS = vendaNotificacaoParadaService.PERMISSAO_VENDAS_PARADAS;
 const JANELA_POPUP_RETORNO_FUTURO_MS = 15 * 60 * 1000;
+const STATUS_DISTRIBUICAO_RESPONSAVEL = ['aguardando_aceite', 'aceito'];
 
 /**
  * Verifica se usuario tem permissao local atende a condicao esperada.
@@ -171,6 +172,15 @@ function popupRetornoFuturoDisponivel(notificacao, usuarioId, agora = new Date()
   if (!retorno || !instanteAtual) return false;
 
   return retorno.getTime() - instanteAtual.getTime() <= JANELA_POPUP_RETORNO_FUTURO_MS;
+}
+
+/** Resolve a mesma consultora exibida em "Com quem esta" para um futuro cliente. */
+function resolverResponsavelAtualFuturoCliente(linha) {
+  if (STATUS_DISTRIBUICAO_RESPONSAVEL.includes(linha?.distribuicao_aceite_status)) {
+    return Number(linha.distribuicao_usuario_id) || null;
+  }
+  if (linha?.futuro_cliente_destino === 'distribuicao') return null;
+  return Number(linha?.atribuido_para_id || linha?.futuro_cliente_marcado_por_id) || null;
 }
 
 /**
@@ -477,13 +487,13 @@ async function salvarNotificacaoRetornoFuturoCliente(linha, etapa, agora) {
       retorno_agendado_para: linha.retorno_em,
       retorno_etapa: isDue ? 'due' : 'pre',
       titulo_nota: nome,
-      responsavel_usuario_id: Number(linha.usuario_id),
+      responsavel_usuario_id: Number(linha.responsavel_usuario_id),
       futuro_cliente: true
     }),
     ativa: true
   };
   const adminsIds = await listarAdminsAtivos();
-  const destinatarios = Array.from(new Set([Number(linha.usuario_id), ...adminsIds].filter(Boolean)));
+  const destinatarios = Array.from(new Set([Number(linha.responsavel_usuario_id), ...adminsIds].filter(Boolean)));
   const resultado = await salvarNotificacaoIdempotente({
     sourceKeys,
     sourceKeyNova: sourceKey,
@@ -576,18 +586,37 @@ async function desativarAlertasObrigatoriosDaLinha(linhaId, trx = null) {
 
 async function sincronizarRetornosFuturosClientes() {
   const agora = new Date();
+  const ultimaDistribuicao = db('lead_atribuicoes')
+    .select('lead_linha_id')
+    .max('id as atribuicao_id')
+    .where('etapa', 'venda')
+    .whereNotNull('aceite_status')
+    .groupBy('lead_linha_id')
+    .as('ultima_distribuicao');
   const linhas = await db('lead_sondagens as ls')
     .join('lead_linhas as ll', 'll.id', 'ls.lead_linha_id')
+    .leftJoin(ultimaDistribuicao, 'ultima_distribuicao.lead_linha_id', 'll.id')
+    .leftJoin('lead_atribuicoes as la_atual', 'la_atual.id', 'ultima_distribuicao.atribuicao_id')
     .where('ll.futuro_cliente', true)
     .whereNull('ll.futuro_cliente_excluido_em')
     .whereNull('ll.retorno_agendado_em')
     .whereNull('ll.futuro_cliente_retorno_realizado_em')
     .whereNotNull('ls.retorno_em')
-    .select('ls.lead_linha_id', 'ls.usuario_id', 'ls.retorno_em', 'll.dados_json');
+    .select(
+      'ls.lead_linha_id',
+      'ls.retorno_em',
+      'll.dados_json',
+      'll.atribuido_para_id',
+      'll.futuro_cliente_marcado_por_id',
+      'll.futuro_cliente_destino',
+      'la_atual.usuario_id as distribuicao_usuario_id',
+      'la_atual.aceite_status as distribuicao_aceite_status'
+    );
 
   for (const linha of linhas) {
     const retorno = parseDataHora(linha.retorno_em);
     if (!retorno) continue;
+    linha.responsavel_usuario_id = resolverResponsavelAtualFuturoCliente(linha);
     if (retorno <= agora) {
       await salvarNotificacaoRetornoFuturoCliente(linha, TIPO_FUTURO_RETORNO_DUE, agora);
     } else {
@@ -1269,6 +1298,7 @@ module.exports = {
     isRetornoLeadAgendadoElegivel,
     deveRearmarPopupRetornoFuturo,
     popupRetornoFuturoDisponivel,
+    resolverResponsavelAtualFuturoCliente,
     salvarOcultacaoDestinatario
   }
 };

@@ -6,7 +6,8 @@ const { _internals } = require('../src/services/notificacao.service');
 const {
   isRetornoLeadAgendadoElegivel,
   deveRearmarPopupRetornoFuturo,
-  popupRetornoFuturoDisponivel
+  popupRetornoFuturoDisponivel,
+  resolverResponsavelAtualFuturoCliente
 } = _internals;
 
 test('mantem retorno de mailing elegivel antes da qualificacao', () => {
@@ -103,4 +104,36 @@ test('nao rearma popup no vencimento, mas rearma depois de reagendamento', () =>
   assert.equal(deveRearmarPopupRetornoFuturo(anterior, vencida), false);
   assert.equal(deveRearmarPopupRetornoFuturo(anterior, reagendada), true);
   assert.equal(deveRearmarPopupRetornoFuturo({ ...anterior, ativa: false }, anterior), true);
+});
+
+test('resolve a consultora atual sem usar quem registrou a sondagem', () => {
+  const carteira = {
+    usuario_id: 3,
+    atribuido_para_id: 7,
+    futuro_cliente_marcado_por_id: 5,
+    futuro_cliente_destino: 'carteira'
+  };
+
+  assert.equal(resolverResponsavelAtualFuturoCliente(carteira), 7);
+  assert.equal(resolverResponsavelAtualFuturoCliente({ ...carteira, atribuido_para_id: null }), 5);
+  assert.equal(resolverResponsavelAtualFuturoCliente({
+    ...carteira,
+    distribuicao_usuario_id: 11,
+    distribuicao_aceite_status: 'aceito'
+  }), 11);
+  assert.equal(resolverResponsavelAtualFuturoCliente({
+    ...carteira,
+    distribuicao_usuario_id: 12,
+    distribuicao_aceite_status: 'aguardando_aceite'
+  }), 12);
+});
+
+test('nao atribui carteira de distribuicao sem consultora ativa', () => {
+  assert.equal(resolverResponsavelAtualFuturoCliente({
+    atribuido_para_id: 7,
+    futuro_cliente_marcado_por_id: 5,
+    futuro_cliente_destino: 'distribuicao',
+    distribuicao_usuario_id: 11,
+    distribuicao_aceite_status: 'cancelado'
+  }), null);
 });

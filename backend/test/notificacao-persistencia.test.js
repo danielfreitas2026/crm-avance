@@ -79,3 +79,15 @@ test('preserva destinatario em sincronizacao comum e limpa estados na escalada',
   assert.deepEqual(escalada.chamadas.inserts, []);
   assert.deepEqual(escalada.chamadas.deletes, []);
 });
+
+test('transfere destinatario quando muda a consultora responsavel', async () => {
+  const contexto = criarKnexFalso();
+
+  await sincronizarDestinatarios(5, [10, 99], { knex: contexto.knex, rearmar: false });
+
+  assert.deepEqual(contexto.chamadas.deletes, [[31]]);
+  assert.deepEqual(contexto.chamadas.inserts, [[
+    { notificacao_id: 5, usuario_id: 10 },
+    { notificacao_id: 5, usuario_id: 99 }
+  ]]);
+});

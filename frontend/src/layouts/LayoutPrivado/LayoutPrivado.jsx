@@ -4,7 +4,7 @@ import Sidebar from '../../components/Sidebar/Sidebar';
 import Header from '../../components/Header/Header';
 import ChatFlutuante from '../../components/ChatFlutuante/ChatFlutuante';
 import RetornoFuturoClientePopup from '../../components/RetornoFuturoClientePopup/RetornoFuturoClientePopup';
-import { ordenarPopupsRetornoFuturo } from '../../components/RetornoFuturoClientePopup/retorno-futuro-popup.utils';
+import { reconciliarPopupRetornoFuturo } from '../../components/RetornoFuturoClientePopup/retorno-futuro-popup.utils';
 import * as I from '../../components/Icons';
 import { buscarPerfil, getUsuarioLocal, logout, temPermissao } from '../../services/auth.service';
 import VendaModal from '../../pages/VendasPage/VendaModal';
@@ -314,6 +314,7 @@ function LayoutPrivado({ children }) {
   }
 
   const [alertasUrgentes, setAlertasUrgentes] = useState([]);
+  const [popupRetornoFuturo, setPopupRetornoFuturo] = useState(null);
   const [aparenciasNotificacao, setAparenciasNotificacao] = useState([]);
   const [detalheAlerta, setDetalheAlerta] = useState(null);
   const carregandoAlertasUrgentesRef = useRef(false);
@@ -445,6 +446,7 @@ function LayoutPrivado({ children }) {
         const assinatura = assinaturaNotificacoesNavbar(notificacoes);
         assinaturaAlertasUrgentesRef.current = assinatura;
         setAlertasUrgentes(notificacoes);
+        setPopupRetornoFuturo(atual => reconciliarPopupRetornoFuturo(atual, notificacoes));
       } catch (error) {
         // Conserva o ultimo resultado valido; apagar a pilha em uma falha temporaria
         // torna o problema invisivel e faz parecer que a notificacao nao chegou.
@@ -485,6 +487,14 @@ function LayoutPrivado({ children }) {
   /** Confirma somente o popup, sem alterar a tela ou qualquer modal em uso. */
   async function confirmarPopupRetornoFuturo(notificacao) {
     await marcarPopupNotificacaoVisto(notificacao.id);
+    setPopupRetornoFuturo(atual => (
+      Number(atual?.id) === Number(notificacao.id)
+        ? reconciliarPopupRetornoFuturo(
+          null,
+          alertasUrgentes.filter(item => Number(item.id) !== Number(notificacao.id))
+        )
+        : atual
+    ));
     ocultarAlertaUrgente(notificacao);
   }
 
@@ -569,7 +579,6 @@ function LayoutPrivado({ children }) {
   }, [detalheAlerta]);
 
   const mostrarMobileFabNovaVenda = podeCriarVenda && location.pathname === '/vendas';
-  const popupRetornoFuturo = ordenarPopupsRetornoFuturo(alertasUrgentes)[0] || null;
   const destinoPopupRetorno = popupRetornoFuturo
     ? resolverDestinoNotificacao(popupRetornoFuturo, usuario)
     : null;
