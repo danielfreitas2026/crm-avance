@@ -95,6 +95,11 @@ const PERMISSOES = [
     descricao: 'Permite editar vendas já enviadas ao pós-venda e operar o funil.'
   },
   {
+    chave: 'vendas_ver_completa_apos_envio',
+    nome: 'Ver venda completa após envio',
+    descricao: 'Libera o formulário completo, notas, documentos, reversões e exportações detalhadas de vendas enviadas ao pós-venda.'
+  },
+  {
     chave: 'funil_vendas',
     nome: 'Funil de vendas',
     descricao: 'Permite acessar a página do funil de vendas.'

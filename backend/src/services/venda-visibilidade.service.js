@@ -6,8 +6,10 @@ const Usuario = require('../models/Usuario');
 const Venda = require('../models/Venda');
 const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
 
+const PERMISSAO_VENDA_COMPLETA_APOS_ENVIO = 'vendas_ver_completa_apos_envio';
+
 function erroAcessoResumo() {
-  const error = new Error('Após o envio ao pós-venda, a consultora possui acesso apenas ao resumo da venda.');
+  const error = new Error('Após o envio ao pós-venda, este usuário possui acesso apenas ao resumo da venda.');
   error.statusCode = 403;
   return error;
 }
@@ -47,18 +49,9 @@ function normalizarValorMonetario(valor) {
   return Number.isFinite(numero) ? numero : 0;
 }
 
-function usuarioVinculadoVenda(venda, usuarioId) {
-  const id = Number(usuarioId);
-  if (!id || !venda) return false;
-  return Number(venda.criado_por_id) === id
-    || Number(venda.vendedora_id) === id
-    || (venda.vendedoras || []).some(item => Number(item?.id || item) === id);
-}
-
 function deveResumirVenda(venda, usuario) {
   if (!venda?.enviada_pos_venda_em || !usuario?.id) return false;
-  if (usuario.role?.nome === 'admin' || usuarioTemPermissaoLocal(usuario, 'pos_venda')) return false;
-  return usuarioVinculadoVenda(venda, usuario.id);
+  return !usuarioTemPermissaoLocal(usuario, PERMISSAO_VENDA_COMPLETA_APOS_ENVIO);
 }
 
 async function buscarUsuario(usuarioId, trx = null) {
@@ -66,12 +59,10 @@ async function buscarUsuario(usuarioId, trx = null) {
   return Usuario.query(trx).findById(usuarioId).withGraphFetched('role');
 }
 
-async function buscarVendaComVinculos(vendaId, trx = null) {
+async function buscarVendaParaVisibilidade(vendaId, trx = null) {
   return Venda.query(trx)
     .findById(vendaId)
-    .whereNull('excluido_em')
-    .withGraphFetched('vendedoras')
-    .modifyGraph('vendedoras', builder => builder.select('usuarios.id', 'usuarios.nome'));
+    .whereNull('excluido_em');
 }
 
 async function obterCodigoEtapaFinal(trx = null) {
@@ -159,7 +150,7 @@ async function aplicarVisibilidadeVenda(venda, usuarioId, opcoes = {}) {
 async function garantirAcessoCompletoVenda(vendaOuId, usuarioId, opcoes = {}) {
   const venda = typeof vendaOuId === 'object'
     ? vendaOuId
-    : await buscarVendaComVinculos(vendaOuId, opcoes.trx);
+    : await buscarVendaParaVisibilidade(vendaOuId, opcoes.trx);
   if (!venda) return null;
   const usuario = opcoes.usuario || await buscarUsuario(usuarioId, opcoes.trx);
   if (deveResumirVenda(venda, usuario)) throw erroAcessoResumo();
@@ -193,9 +184,9 @@ module.exports = {
   deveResumirVenda,
   garantirAcessoCompletoVenda,
   montarResumoVenda,
+  PERMISSAO_VENDA_COMPLETA_APOS_ENVIO,
   sanitizarProblema,
   sanitizarProblemaParaUsuario,
-  usuarioVinculadoVenda,
   _internals: {
     normalizarData,
     normalizarItensChips,

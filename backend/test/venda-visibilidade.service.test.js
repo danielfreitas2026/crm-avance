@@ -5,8 +5,8 @@ const {
   deveResumirVenda,
   garantirAcessoCompletoVenda,
   montarResumoVenda,
-  sanitizarProblema,
-  usuarioVinculadoVenda
+  PERMISSAO_VENDA_COMPLETA_APOS_ENVIO,
+  sanitizarProblema
 } = require('../src/services/venda-visibilidade.service');
 
 const consultora = {
@@ -27,17 +27,28 @@ function venda(overrides = {}) {
   };
 }
 
-test('restringe criadora, vendedora principal e participante depois do envio', () => {
-  assert.equal(usuarioVinculadoVenda(venda(), 9), true);
+test('restringe qualquer usuario sem a permissao explicita depois do envio', () => {
   assert.equal(deveResumirVenda(venda(), consultora), true);
   assert.equal(deveResumirVenda(venda({ criado_por_id: 2, vendedora_id: 2, vendedoras: [{ id: 9, nome: 'Ana' }] }), consultora), true);
+  assert.equal(deveResumirVenda(venda({ criado_por_id: 2, vendedora_id: 2, vendedoras: [{ id: 2 }] }), consultora), true);
+  assert.equal(deveResumirVenda(venda(), { ...consultora, permissoes: { vendas_ver_todas: true, pos_venda: true } }), true);
 });
 
-test('nao restringe aprovacao pendente, usuario nao vinculado, admin ou pos-venda', () => {
+test('libera somente venda nao enviada, administrador ou permissao explicita', () => {
   assert.equal(deveResumirVenda(venda({ enviada_pos_venda_em: null }), consultora), false);
-  assert.equal(deveResumirVenda(venda({ criado_por_id: 2, vendedora_id: 2, vendedoras: [{ id: 2 }] }), consultora), false);
   assert.equal(deveResumirVenda(venda(), { ...consultora, role: { nome: 'admin' } }), false);
-  assert.equal(deveResumirVenda(venda(), { ...consultora, permissoes: { pos_venda: true } }), false);
+  assert.equal(deveResumirVenda(venda(), {
+    ...consultora,
+    permissoes: { [PERMISSAO_VENDA_COMPLETA_APOS_ENVIO]: true }
+  }), false);
+  assert.equal(deveResumirVenda(venda(), {
+    ...consultora,
+    role: {
+      nome: 'usuario',
+      permissoes: { [PERMISSAO_VENDA_COMPLETA_APOS_ENVIO]: true }
+    },
+    permissoes: {}
+  }), false);
 });
 
 test('guarda central responde 403 para canais detalhados da consultora', async () => {
@@ -49,7 +60,10 @@ test('guarda central responde 403 para canais detalhados da consultora', async (
 
   assert.equal(
     await garantirAcessoCompletoVenda(vendaEnviada, consultora.id, {
-      usuario: { ...consultora, permissoes: { pos_venda: true } }
+      usuario: {
+        ...consultora,
+        permissoes: { [PERMISSAO_VENDA_COMPLETA_APOS_ENVIO]: true }
+      }
     }),
     vendaEnviada
   );

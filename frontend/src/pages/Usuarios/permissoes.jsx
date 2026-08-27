@@ -188,6 +188,11 @@ export const GRUPOS_PERMISSOES = [
             descricao: 'Permite editar vendas enviadas ao pós-venda e movimentar vendas no funil.'
           },
           {
+            chave: 'vendas_ver_completa_apos_envio',
+            nome: 'Ver venda completa após envio',
+            descricao: 'Libera formulário, notas, documentos, reversões e exportações detalhadas após o envio ao pós-venda.'
+          },
+          {
             chave: 'vendas_marcar_problema',
             nome: 'Marcar problema',
             descricao: 'Permite abrir solicitações urgentes de problema em vendas.'

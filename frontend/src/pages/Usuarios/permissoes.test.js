@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getPermissoesDeclaradas,
   getPermissoesBloqueadasAdmin,
   getPermissoesSelecionadasUsuario,
   montarPermissoesAdminParaSalvar,
   normalizarPermissoesSelecionadasAdmin
 } from './permissoes';
+
+describe('catalogo de permissoes de vendas', () => {
+  it('declara o acesso completo de vendas enviadas como permissao configuravel', () => {
+    expect(getPermissoesDeclaradas()).toContainEqual({
+      chave: 'vendas_ver_completa_apos_envio',
+      nome: 'Ver venda completa após envio',
+      descricao: 'Libera formulário, notas, documentos, reversões e exportações detalhadas após o envio ao pós-venda.'
+    });
+  });
+});
 
 const permissoes = [
   { chave: 'vendas_ver_todas' },
