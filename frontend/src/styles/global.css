@@ -1133,6 +1133,24 @@ button.urgent-alert-panel__header {
   border-color: #15803d;
   box-shadow: 0 2px 8px rgba(22, 163, 74, 0.25);
 }
+.sale-card-sem-documento {
+  background: linear-gradient(135deg, #fef9c3 0%, #fef08a 100%);
+  border-color: #ca8a04;
+  box-shadow: 0 1px 3px rgba(202, 138, 4, 0.18);
+}
+.sale-card-sem-documento:hover {
+  border-color: #a16207;
+  box-shadow: 0 2px 8px rgba(202, 138, 4, 0.26);
+}
+.sale-card.sale-card-cancelada.sale-card-sem-documento {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  border-color: #dc2626;
+  box-shadow: 0 1px 3px rgba(220, 38, 38, 0.15);
+}
+.sale-card.sale-card-cancelada.sale-card-sem-documento:hover {
+  border-color: #b91c1c;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
+}
 .sale-card.sale-card-priority-alta { border-left-color: #ef4444; }
 .sale-card.sale-card-priority-media { border-left-color: #3b82f6; }
 .sale-card.sale-card-priority-baixa { border-left-color: #eab308; }
@@ -1154,8 +1172,18 @@ button.urgent-alert-panel__header {
 .sale-card.sale-card-finalizada .seller-name {
   color: #166534;
 }
+.sale-card.sale-card-sem-documento:not(.sale-card-cancelada) .client,
+.sale-card.sale-card-sem-documento:not(.sale-card-cancelada) .value {
+  color: #713f12;
+}
+.sale-card.sale-card-sem-documento:not(.sale-card-cancelada) .sale-card-meta,
+.sale-card.sale-card-sem-documento:not(.sale-card-cancelada) .sale-card-bottom,
+.sale-card.sale-card-sem-documento:not(.sale-card-cancelada) .seller-name {
+  color: #854d0e;
+}
 .sale-card-cancelada-tag,
-.sale-card-finalizada-tag {
+.sale-card-finalizada-tag,
+.sale-card-sem-documento-tag {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1178,8 +1206,14 @@ button.urgent-alert-panel__header {
   color: #fff;
   box-shadow: 0 1px 2px rgba(20, 83, 45, 0.3);
 }
+.sale-card-sem-documento-tag {
+  background: #ca8a04;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(113, 63, 18, 0.3);
+}
 .sale-card-cancelada-tag::before,
-.sale-card-finalizada-tag::before {
+.sale-card-finalizada-tag::before,
+.sale-card-sem-documento-tag::before {
   content: '';
   width: 5px;
   height: 5px;
@@ -1526,6 +1560,13 @@ button.urgent-alert-panel__header {
 /* Desktop: chips row is a regular flex row inside .filters */
 .funil-chips-row {
   display: contents;
+}
+.funil-quick-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .funnel-search-box .btn {
   width: 24px;

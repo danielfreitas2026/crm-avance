@@ -45,6 +45,13 @@ import {
   listarVendedoras
 } from '../../services/venda.service';
 import { parseUtcDateTime } from '../../utils/datetime';
+import {
+  VISIBILIDADE_OCULTAR,
+  VISIBILIDADE_SOMENTE,
+  VISIBILIDADE_TODAS,
+  vendaCorrespondeAtalhos,
+  vendaSemDocumento
+} from './funilFiltros';
 import '../VendasPage/VendasPage.css';
 
 /**
@@ -857,6 +864,7 @@ function mapVendaToSale(venda, stageLabels = STAGE_LABELS) {
     lancadaEm: created,
     updated,
     canceladaEm: venda.cancelada_em || null,
+    semDocumento: vendaSemDocumento(venda),
     motivoCancelamento: venda.motivo_cancelamento || null,
     canceladaPorId: venda.cancelada_por_id || null,
     historico: mapHistoricoVenda(venda, stage, updated, created, sellerName, stageLabels),
@@ -1686,10 +1694,12 @@ function StageMenu({ stage, disabled, onRename, onToggleFinal, onToggleBarrier, 
 /**
  * Renderiza sale card.
  */
-function SaleCard({ sale, finalizada = false, onClick, onEmail, gerandoEmailId, onXlsxClaro, baixandoXlsxId, onWhatsapp, onProblema, podeOperarPosVenda }) {
+export function SaleCard({ sale, finalizada = false, onClick, onEmail, gerandoEmailId, onXlsxClaro, baixandoXlsxId, onWhatsapp, onProblema, podeOperarPosVenda }) {
   const priorityInfo = getPriorityInfo(sale.priority);
   const cancelada = Boolean(sale.canceladaEm);
+  const semDocumento = sale.semDocumento ?? vendaSemDocumento(sale);
   const classeStatus = cancelada ? ' sale-card-cancelada' : finalizada ? ' sale-card-finalizada' : '';
+  const classeDocumento = semDocumento ? ' sale-card-sem-documento' : '';
   const cardRef = useRef(null);
   const [tooltipPosicao, setTooltipPosicao] = useState(null);
 
@@ -1716,15 +1726,23 @@ function SaleCard({ sale, finalizada = false, onClick, onEmail, gerandoEmailId, 
     <>
     <div
       ref={cardRef}
-      className={`sale-card sale-card-priority-${priorityInfo.key}${classeStatus}`}
+      className={`sale-card sale-card-priority-${priorityInfo.key}${classeStatus}${classeDocumento}`}
       onClick={onClick}
       onMouseEnter={exibirTooltip}
       onMouseLeave={() => setTooltipPosicao(null)}
-      title={cancelada && sale.motivoCancelamento ? `Cancelada: ${sale.motivoCancelamento}` : finalizada ? `Venda na etapa final - ${priorityInfo.label}` : priorityInfo.label}
+      title={[
+        cancelada && (sale.motivoCancelamento ? `Cancelada: ${sale.motivoCancelamento}` : 'Venda cancelada'),
+        semDocumento && 'Venda sem documento na casa nem anexado no sistema',
+        !cancelada && finalizada && 'Venda na etapa final',
+        priorityInfo.label
+      ].filter(Boolean).join(' - ')}
     >
 
       {cancelada && (
         <span className="sale-card-cancelada-tag">Cancelada</span>
+      )}
+      {semDocumento && (
+        <span className="sale-card-sem-documento-tag">Venda sem doc</span>
       )}
       {!cancelada && finalizada && (
         <span className="sale-card-finalizada-tag">Finalizada</span>
@@ -1913,6 +1931,8 @@ function FunilPage() {
   const [dataFim, setDataFim] = useState('');
   const [valorMin, setValorMin] = useState('');
   const [valorMax, setValorMax] = useState('');
+  const [visibilidadeCanceladas, setVisibilidadeCanceladas] = useState(VISIBILIDADE_TODAS);
+  const [visibilidadeSemDocumento, setVisibilidadeSemDocumento] = useState(VISIBILIDADE_TODAS);
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const buscaDeferred = useDeferredValue(busca);
   const [selectedSaleId, setSelectedSaleId] = useState(null);
@@ -2602,6 +2622,8 @@ function FunilPage() {
     setDataFim('');
     setValorMin('');
     setValorMax('');
+    setVisibilidadeCanceladas(VISIBILIDADE_TODAS);
+    setVisibilidadeSemDocumento(VISIBILIDADE_TODAS);
   }
 
   const selectedSale = selectedSaleId ? sales.find(s => s.id === selectedSaleId) : null;
@@ -2656,15 +2678,23 @@ function FunilPage() {
     valorMax
   }), [vendedoraId, operadoraId, tipoVendaId, servicoId, statusFunil, prioridadeFunil, uf, municipio, dataInicio, dataFim, valorMin, valorMax]);
   const filtrosPopupAtivos = Object.values(filtrosFunil).filter(valor => valor !== '').length;
+  const atalhosAtivos = Number(visibilidadeCanceladas !== VISIBILIDADE_TODAS)
+    + Number(visibilidadeSemDocumento !== VISIBILIDADE_TODAS);
+  const totalFiltrosAtivos = filtrosPopupAtivos + atalhosAtivos;
+  const filtrosAtalhos = useMemo(() => ({
+    canceladas: visibilidadeCanceladas,
+    semDocumento: visibilidadeSemDocumento
+  }), [visibilidadeCanceladas, visibilidadeSemDocumento]);
   const { filtradas, total } = useMemo(() => {
     const filtered = sales.filter(s => {
       if (s.stage === 'retorno') return false;
       if (!vendaCorrespondeBusca(s, buscaDeferred)) return false;
       if (!vendaCorrespondeFiltros(s, filtrosFunil)) return false;
+      if (!vendaCorrespondeAtalhos(s, filtrosAtalhos)) return false;
       return true;
     });
     return { filtradas: filtered, total: filtered.reduce((sum, s) => sum + s.value, 0) };
-  }, [sales, buscaDeferred, filtrosFunil]);
+  }, [sales, buscaDeferred, filtrosFunil, filtrosAtalhos]);
   const stageLabels = montarStageLabels(stagesVisiveis);
   const statusFunilFiltros = useMemo(
     () => [
@@ -2835,7 +2865,7 @@ function FunilPage() {
               </div>
             </div>
             <div className="filtros-popup__footer">
-              <button type="button" className="btn btn-ghost" onClick={limparFiltros} disabled={filtrosPopupAtivos === 0}>
+              <button type="button" className="btn btn-ghost" onClick={limparFiltros} disabled={totalFiltrosAtivos === 0}>
                 <I.Close size={13} /> Limpar filtros
               </button>
               <button type="button" className="btn btn-primary" onClick={() => setFiltrosAbertos(false)}>
@@ -2869,7 +2899,49 @@ function FunilPage() {
           <div className="funil-chips-row">
             <button className="btn" type="button" onClick={() => setFiltrosAbertos(true)}>
               <I.Filter size={14} /> Filtros
-              {filtrosPopupAtivos > 0 && <span className="filtros-count">{filtrosPopupAtivos}</span>}
+              {totalFiltrosAtivos > 0 && <span className="filtros-count">{totalFiltrosAtivos}</span>}
+            </button>
+            <button
+              type="button"
+              className={`filter-chip funil-quick-filter${visibilidadeCanceladas === VISIBILIDADE_OCULTAR ? ' active' : ''}`}
+              aria-pressed={visibilidadeCanceladas === VISIBILIDADE_OCULTAR}
+              onClick={() => setVisibilidadeCanceladas(atual => (
+                atual === VISIBILIDADE_OCULTAR ? VISIBILIDADE_TODAS : VISIBILIDADE_OCULTAR
+              ))}
+            >
+              {visibilidadeCanceladas === VISIBILIDADE_OCULTAR ? <I.Eye size={12} /> : <I.EyeOff size={12} />}
+              {visibilidadeCanceladas === VISIBILIDADE_OCULTAR ? 'Mostrar canceladas' : 'Ocultar canceladas'}
+            </button>
+            <button
+              type="button"
+              className={`filter-chip funil-quick-filter${visibilidadeCanceladas === VISIBILIDADE_SOMENTE ? ' active' : ''}`}
+              aria-pressed={visibilidadeCanceladas === VISIBILIDADE_SOMENTE}
+              onClick={() => setVisibilidadeCanceladas(atual => (
+                atual === VISIBILIDADE_SOMENTE ? VISIBILIDADE_TODAS : VISIBILIDADE_SOMENTE
+              ))}
+            >
+              <I.Filter size={12} /> Somente canceladas
+            </button>
+            <button
+              type="button"
+              className={`filter-chip funil-quick-filter${visibilidadeSemDocumento === VISIBILIDADE_SOMENTE ? ' active' : ''}`}
+              aria-pressed={visibilidadeSemDocumento === VISIBILIDADE_SOMENTE}
+              onClick={() => setVisibilidadeSemDocumento(atual => (
+                atual === VISIBILIDADE_SOMENTE ? VISIBILIDADE_TODAS : VISIBILIDADE_SOMENTE
+              ))}
+            >
+              <I.Document size={12} /> Somente sem doc
+            </button>
+            <button
+              type="button"
+              className={`filter-chip funil-quick-filter${visibilidadeSemDocumento === VISIBILIDADE_OCULTAR ? ' active' : ''}`}
+              aria-pressed={visibilidadeSemDocumento === VISIBILIDADE_OCULTAR}
+              onClick={() => setVisibilidadeSemDocumento(atual => (
+                atual === VISIBILIDADE_OCULTAR ? VISIBILIDADE_TODAS : VISIBILIDADE_OCULTAR
+              ))}
+            >
+              {visibilidadeSemDocumento === VISIBILIDADE_OCULTAR ? <I.Eye size={12} /> : <I.EyeOff size={12} />}
+              {visibilidadeSemDocumento === VISIBILIDADE_OCULTAR ? 'Mostrar vendas sem doc' : 'Ocultar vendas sem doc'}
             </button>
             <div className="funil-stats" style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center', fontSize: 12.5, flexShrink: 0 }}>
               <span className="muted">{filtradas.length} vendas</span>
