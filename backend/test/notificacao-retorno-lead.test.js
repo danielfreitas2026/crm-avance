@@ -2,13 +2,52 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { _internals } = require('../src/services/notificacao.service');
+const db = require('../src/database/connection');
 
 const {
+  isLinhaLeadFinalizada,
+  aplicarCondicaoLinhaLeadNaoFinalizada,
+  aplicarFiltroRetornosLeadPendentes,
   isRetornoLeadAgendadoElegivel,
   deveRearmarPopupRetornoFuturo,
   popupRetornoFuturoDisponivel,
   resolverResponsavelAtualFuturoCliente
 } = _internals;
+
+test('considera estados finais inelegiveis para retorno pendente', () => {
+  const ativa = {
+    venda_id: null,
+    venda_recusada_em: null,
+    cliente_recusou: false,
+    status_operacional: 'distribuido_venda'
+  };
+
+  assert.equal(isLinhaLeadFinalizada(ativa), false);
+  assert.equal(isLinhaLeadFinalizada({ ...ativa, venda_id: 31 }), true);
+  assert.equal(isLinhaLeadFinalizada({ ...ativa, venda_recusada_em: '2026-08-27 10:00:00' }), true);
+  assert.equal(isLinhaLeadFinalizada({ ...ativa, status_operacional: 'vendido' }), true);
+  assert.equal(isLinhaLeadFinalizada({ ...ativa, status_operacional: 'perdido' }), true);
+  assert.equal(isLinhaLeadFinalizada({ ...ativa, cliente_recusou: true }), true);
+});
+
+test('aplica estados finais nos produtores e no leitor de notificacoes urgentes', () => {
+  const produtora = aplicarCondicaoLinhaLeadNaoFinalizada(
+    db('lead_linhas as ll').select('ll.id'),
+    'll'
+  ).toSQL();
+  const leitora = aplicarFiltroRetornosLeadPendentes(
+    db('notificacoes as n').select('n.id')
+  ).toSQL();
+
+  for (const consulta of [produtora, leitora]) {
+    assert.match(consulta.sql, /venda_id.*is null/i);
+    assert.match(consulta.sql, /venda_recusada_em.*is null/i);
+    assert.match(consulta.sql, /cliente_recusou/i);
+    assert.match(consulta.sql, /status_operacional.*not in/i);
+    assert.deepEqual(consulta.bindings.slice(-2), ['vendido', 'perdido']);
+  }
+  assert.match(leitora.sql, /exists/i);
+});
 
 test('mantem retorno de mailing elegivel antes da qualificacao', () => {
   assert.equal(isRetornoLeadAgendadoElegivel({
@@ -48,6 +87,26 @@ test('nao cria retorno sem data ou depois de recusa do cliente', () => {
     cliente_recusou: true,
     futuro_cliente: false
   }), false);
+});
+
+test('nao cria retorno para venda fechada, perdida ou recusada', () => {
+  const retornoAtivo = {
+    retorno_agendado_em: '2026-07-29 14:00:00',
+    retorno_agendado_realizado_em: null,
+    cliente_recusou: false,
+    futuro_cliente: true,
+    status_operacional: 'distribuido_venda',
+    venda_id: null,
+    venda_recusada_em: null
+  };
+
+  assert.equal(isRetornoLeadAgendadoElegivel({ ...retornoAtivo, venda_id: 15 }), false);
+  assert.equal(isRetornoLeadAgendadoElegivel({
+    ...retornoAtivo,
+    venda_recusada_em: '2026-08-27 10:00:00'
+  }), false);
+  assert.equal(isRetornoLeadAgendadoElegivel({ ...retornoAtivo, status_operacional: 'vendido' }), false);
+  assert.equal(isRetornoLeadAgendadoElegivel({ ...retornoAtivo, status_operacional: 'perdido' }), false);
 });
 
 function notificacaoRetorno(overrides = {}) {

@@ -69,45 +69,30 @@ describe('VendaModal - reversões', () => {
     expect(screen.getByRole('button', { name: /Salvar reversão/i })).toBeInTheDocument();
   }, 10000);
 
-  it('permite ao vendedor registrar reversão em venda enviada ao pós-venda sem liberar a edição comum', async () => {
-    const onSaveReversal = vi.fn().mockResolvedValue({});
+  it('remove a reversão e o formulário quando a API entrega o resumo protegido', () => {
     renderModal({
       venda: {
         id: 7,
-        nome: 'Cliente corrigido',
         razao_social: 'Empresa original',
-        cliente_id: 3,
-        vendedora_id: 9,
-        vendedoras: [{ id: 9, nome: 'Consultora' }],
-        servico_id: 4,
-        cliente_solicitou_servicos: ['nenhum_servico'],
-        enviada_pos_venda_em: '2026-08-13 11:00:00',
-        updated_at: '2026-08-13 12:00:00',
-        reversoes: []
+        cnpj: '12345678000190',
+        data_venda: '2026-08-13',
+        visao_resumida_consultora: true,
+        concluida: false,
+        chips: [],
+        valor_total: 0,
+        vendedoras: []
       },
-      servicos: [{ id: 4, nome: 'Móvel' }],
       usuarioLogado: {
         ...usuario,
         permissoes: { ...usuario.permissoes, vendas_editar: true }
-      },
-      onSaveReversal
+      }
     });
 
-    const botaoReversao = screen.getByRole('button', { name: /Registrar Reversão/i });
-    expect(botaoReversao).toBeEnabled();
+    expect(screen.getByRole('dialog', { name: /Resumo da venda/i })).toHaveTextContent('Empresa original');
+    expect(screen.queryByRole('button', { name: /Registrar Reversão/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Editar venda/i })).not.toBeInTheDocument();
-
-    fireEvent.click(botaoReversao);
-    fireEvent.change(screen.getByDisplayValue('Empresa original'), { target: { value: 'Empresa corrigida' } });
-    fireEvent.change(await screen.findByLabelText(/Nova observação de reversão/i), { target: { value: 'Correção auditada.' } });
-    fireEvent.click(screen.getByRole('button', { name: /Salvar reversão/i }));
-
-    await waitFor(() => expect(onSaveReversal).toHaveBeenCalledWith(
-      expect.objectContaining({ razao_social: 'Empresa corrigida' }),
-      'Correção auditada.',
-      '2026-08-13 12:00:00'
-    ));
-  }, 10000);
+    expect(screen.queryByDisplayValue('Empresa original')).not.toBeInTheDocument();
+  });
 
   it('não mostra um traço para um registro antigo que não possui data', () => {
     renderModal({

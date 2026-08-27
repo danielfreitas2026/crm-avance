@@ -472,6 +472,12 @@ async function xlsxClaro(req, res) {
       return res.status(404).json({ message: 'Venda não encontrada.' });
     }
 
+    if (venda.visao_resumida_consultora) {
+      return res.status(403).json({
+        message: 'A planilha detalhada não está disponível após o envio ao pós-venda.'
+      });
+    }
+
     const operadora = _internals.resolverOperadora(venda);
     if (operadora !== 'Claro') {
       return res.status(400).json({ message: 'Planilha disponível apenas para vendas Claro.' });
@@ -485,7 +491,9 @@ async function xlsxClaro(req, res) {
     return res.send(buffer);
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: 'Erro ao gerar planilha Claro.' });
+    return res.status(error.statusCode || 500).json({
+      message: error.message || 'Erro ao gerar planilha Claro.'
+    });
   }
 }
 

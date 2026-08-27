@@ -504,7 +504,7 @@ test('monta alteracoes de reversao normalizando campos simples e compostos', () 
   ]);
 });
 
-test('permite reversao de venda enviada ao pos-venda sem exigir permissao de pos-venda', () => {
+test('preserva o bypass interno de reversao para usuarios nao sujeitos ao resumo protegido', () => {
   assert.doesNotThrow(() => validarBloqueioEdicaoPosVenda({
     enviada_pos_venda_em: '2026-08-13 11:00:00'
   }, false, true));

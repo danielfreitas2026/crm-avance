@@ -12,6 +12,7 @@ const Usuario = require('../models/Usuario');
  * Servico de anexos e pacotes de arquivos de vendas.
  */
 const arquivoService = require('./arquivo.service');
+const vendaVisibilidadeService = require('./venda-visibilidade.service');
 const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
 
 const {
@@ -120,6 +121,8 @@ async function garantirAcessoVenda(vendaId, usuarioId) {
     error.statusCode = 404;
     throw error;
   }
+
+  await vendaVisibilidadeService.garantirAcessoCompletoVenda(vendaId, usuarioId);
 }
 
 /**

@@ -17,7 +17,7 @@ async function index(req, res) {
 
     return res.json(notas);
   } catch (error) {
-    return res.status(400).json({ message: error.message || 'Erro ao listar notas.' });
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao listar notas.' });
   }
 }
 
@@ -38,7 +38,7 @@ async function store(req, res) {
 
     return res.status(201).json(nota);
   } catch (error) {
-    return res.status(400).json({ message: error.message || 'Erro ao criar nota.' });
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao criar nota.' });
   }
 }
 
@@ -59,7 +59,7 @@ async function update(req, res) {
 
     return res.json(nota);
   } catch (error) {
-    return res.status(400).json({ message: error.message || 'Erro ao atualizar nota.' });
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao atualizar nota.' });
   }
 }
 
@@ -90,7 +90,7 @@ async function destroy(req, res) {
 
     return res.status(204).send();
   } catch (error) {
-    return res.status(500).json({ message: 'Erro ao excluir nota.' });
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Erro ao excluir nota.' });
   }
 }
 

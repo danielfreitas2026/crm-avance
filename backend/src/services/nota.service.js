@@ -94,7 +94,17 @@ async function usuarioPodeAcessarEntidade(tipo, entidadeId, usuarioId) {
   }
 
   const venda = await vendaService.buscarVendaPorId(entidadeId, usuarioId);
+  if (venda?.visao_resumida_consultora) {
+    const error = new Error('Notas da venda não estão disponíveis após o envio ao pós-venda.');
+    error.statusCode = 403;
+    throw error;
+  }
   return Boolean(venda);
+}
+
+async function garantirAcessoNota(nota, usuarioId) {
+  if (!nota) return false;
+  return usuarioPodeAcessarEntidade(nota.entidade_tipo, nota.entidade_id, usuarioId);
 }
 
 /**
@@ -177,7 +187,7 @@ async function atualizarNota(notaId, usuarioId, dados) {
     .where({ id: Number(notaId), usuario_id: Number(usuarioId) })
     .first();
 
-  if (!nota) return null;
+  if (!nota || !await garantirAcessoNota(nota, usuarioId)) return null;
 
   const payload = montarPayload(dados);
   const retornoAlterado = Object.prototype.hasOwnProperty.call(payload, 'retorno_agendado_para')
@@ -210,7 +220,7 @@ async function realizarRetornoNota(notaId, usuarioId, opcoes = {}) {
   if (!opcoes.ignorarProprietario) query.where('usuario_id', Number(usuarioId));
   const nota = await query.first();
 
-  if (!nota) return null;
+  if (!nota || !await garantirAcessoNota(nota, usuarioId)) return null;
   if (!nota.retorno_agendado_para) {
     const error = new Error('Esta nota não possui retorno agendado.');
     error.statusCode = 409;
@@ -233,6 +243,11 @@ async function realizarRetornoNota(notaId, usuarioId, opcoes = {}) {
  * Exclui nota conforme a regra de negocio.
  */
 async function excluirNota(notaId, usuarioId) {
+  const nota = await db('entidade_notas')
+    .where({ id: Number(notaId), usuario_id: Number(usuarioId) })
+    .first();
+  if (!nota || !await garantirAcessoNota(nota, usuarioId)) return 0;
+
   const total = await db('entidade_notas')
     .where({ id: Number(notaId), usuario_id: Number(usuarioId) })
     .delete();

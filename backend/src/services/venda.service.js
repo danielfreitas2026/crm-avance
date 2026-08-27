@@ -20,6 +20,7 @@ const telegramService = require('./telegram.service');
 const telegramAprovacoesService = require('./telegram-aprovacoes.service');
 const leadDistribuicaoService = require('./lead-distribuicao.service');
 const vendaFuturoClienteService = require('./venda-futuro-cliente.service');
+const vendaVisibilidadeService = require('./venda-visibilidade.service');
 const { parseUtcDateTime } = require('../utils/datetime');
 const { listarPermissoesEfetivas, usuarioTemPermissaoLocal } = require('../utils/permissoes');
 const ExcelJS = require('exceljs');
@@ -2456,6 +2457,8 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
   delete filtrosExportacao.per_page;
 
   const vendas = await listarVendas(filtrosExportacao, usuarioId);
+  const usuario = await vendaVisibilidadeService.buscarUsuario(usuarioId);
+  const etapaFinal = await obterCodigoEtapaFinal();
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Vendas');
 
@@ -2493,37 +2496,40 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
   ];
 
   vendas.forEach(venda => {
+    const vendaRestrita = vendaVisibilidadeService.deveResumirVenda(venda, usuario);
     const detalhesVendedoras = montarDetalhesChipsExportacao(venda);
 
     detalhesVendedoras.forEach(detalhes => {
       const row = worksheet.addRow({
         id: venda.id,
-        cliente: venda.nome || venda.cliente?.nome || '',
+        cliente: vendaRestrita ? '' : venda.nome || venda.cliente?.nome || '',
         razao_social: venda.razao_social || venda.cliente?.razao_social || '',
         cnpj: venda.cnpj || venda.cliente?.cnpj || '',
         vendedora: detalhes.vendedora,
         quantidade_chips_vendedora: detalhes.quantidadeChips,
         operadora: venda.operadora?.nome || '',
         tipo: venda.tipoVenda?.nome || '',
-        produto: venda.servico?.nome || venda.produto_fechado || '',
+        produto: vendaRestrita ? '' : venda.servico?.nome || venda.produto_fechado || '',
         quantidade_linhas: venda.quantidade_linhas ?? null,
         gb: venda.gb || '',
         valor_total: venda.valor_total === null || venda.valor_total === undefined ? null : Number(venda.valor_total),
         valores_unitarios_chips: detalhes.valoresUnitarios,
-        dia_vencimento: venda.dia_vencimento ?? null,
+        dia_vencimento: vendaRestrita ? null : venda.dia_vencimento ?? null,
         data_venda: valorDataExcel(venda.data_venda),
-        data_ativacao: valorDataExcel(venda.data_ativacao),
-        status: statusVendaExportacao(venda),
-        prioridade: venda.prioridade_funil || '',
-        protocolo: venda.protocolo || '',
-        uf: venda.uf || '',
-        municipio: venda.municipio || '',
-        telefone: venda.telefone || '',
-        email: venda.email || '',
-        criado_por: venda.criador?.nome || '',
-        created_at: valorDataExcel(venda.criado_em || venda.created_at),
-        enviada_pos_venda_em: valorDataExcel(venda.enviada_pos_venda_em),
-        cancelada_em: valorDataExcel(venda.cancelada_em)
+        data_ativacao: vendaRestrita ? null : valorDataExcel(venda.data_ativacao),
+        status: vendaRestrita
+          ? (venda.status_funil === etapaFinal ? 'Concluída' : 'Não concluída')
+          : statusVendaExportacao(venda),
+        prioridade: vendaRestrita ? '' : venda.prioridade_funil || '',
+        protocolo: vendaRestrita ? '' : venda.protocolo || '',
+        uf: vendaRestrita ? '' : venda.uf || '',
+        municipio: vendaRestrita ? '' : venda.municipio || '',
+        telefone: vendaRestrita ? '' : venda.telefone || '',
+        email: vendaRestrita ? '' : venda.email || '',
+        criado_por: vendaRestrita ? '' : venda.criador?.nome || '',
+        created_at: vendaRestrita ? null : valorDataExcel(venda.criado_em || venda.created_at),
+        enviada_pos_venda_em: vendaRestrita ? null : valorDataExcel(venda.enviada_pos_venda_em),
+        cancelada_em: vendaRestrita ? null : valorDataExcel(venda.cancelada_em)
       });
 
       row.height = 15 * detalhes.quantidadeLinhas;
@@ -3096,6 +3102,9 @@ async function buscarVendaPorId(id, usuarioId) {
   const venda = await query;
   if (!venda) return null;
 
+  const vendaVisivel = await vendaVisibilidadeService.aplicarVisibilidadeVenda(venda, usuarioId);
+  if (vendaVisivel?.visao_resumida_consultora) return vendaVisivel;
+
   try {
     venda.integracao_dashboard = await dashboardIntegracaoService.obterResumoSincronizacao(venda.id);
   } catch (error) {
@@ -3114,6 +3123,12 @@ async function gerarEmailTemplateVenda(id, usuarioId) {
 
   if (!venda) {
     return null;
+  }
+
+  if (venda.visao_resumida_consultora) {
+    const error = new Error('O e-mail detalhado não está disponível após o envio ao pós-venda.');
+    error.statusCode = 403;
+    throw error;
   }
 
   return renderEmailVenda(venda);
@@ -3483,6 +3498,10 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
     return null;
   }
 
+  if (reversao) {
+    await vendaVisibilidadeService.garantirAcessoCompletoVenda(vendaAtual, usuarioId);
+  }
+
   const observacaoReversao = String(opcoes.observacao || '').trim();
   if (reversao && !observacaoReversao) {
     const error = new Error('Informe a observação da reversão.');
@@ -3698,6 +3717,9 @@ async function excluirReversaoVenda(vendaId, reversaoId, motivo, usuarioId) {
 
   const vendaAcessivel = await buscarVendaPorId(vendaId, usuarioId);
   if (!vendaAcessivel) return null;
+  if (vendaAcessivel.visao_resumida_consultora) {
+    await vendaVisibilidadeService.garantirAcessoCompletoVenda(vendaId, usuarioId);
+  }
 
   const agora = formatarDateTimeSQL();
   return VendaHistorico.transaction(async trx => {

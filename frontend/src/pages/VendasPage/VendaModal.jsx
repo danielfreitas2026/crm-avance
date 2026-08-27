@@ -3679,6 +3679,115 @@ export function ArquivosVendaTab({
 /**
  * Renderiza venda modal.
  */
+export function VendaResumoConsultora({ venda }) {
+  const chips = Array.isArray(venda?.chips) ? venda.chips : [];
+  const vendedoras = Array.isArray(venda?.vendedoras) ? venda.vendedoras : [];
+
+  return (
+    <div className="venda-resumo-consultora">
+      <div className={`venda-resumo-consultora__status ${venda?.concluida ? 'is-concluida' : 'is-andamento'}`}>
+        {venda?.concluida ? <I.Check size={15} /> : <I.History size={15} />}
+        <span>{venda?.concluida ? 'Venda concluída' : 'Venda ainda não concluída'}</span>
+      </div>
+
+      <dl className="venda-resumo-consultora__dados">
+        <div>
+          <dt>Razão social</dt>
+          <dd>{venda?.razao_social || 'Não informada'}</dd>
+        </div>
+        <div>
+          <dt>CNPJ</dt>
+          <dd>{venda?.cnpj ? formatarCnpj(venda.cnpj) : 'Não informado'}</dd>
+        </div>
+        <div>
+          <dt>Data da venda</dt>
+          <dd>{formatarData(venda?.data_venda)}</dd>
+        </div>
+        {vendedoras.length > 1 && (
+          <div>
+            <dt>Vendedoras</dt>
+            <dd>{vendedoras.map(item => item.nome).filter(Boolean).join(', ') || 'Não informadas'}</dd>
+          </div>
+        )}
+      </dl>
+
+      <section className="venda-resumo-consultora__chips" aria-labelledby="resumo-chips-title">
+        <div className="venda-resumo-consultora__section-title" id="resumo-chips-title">Chips e valores vendidos</div>
+        {chips.length === 0 ? (
+          <p className="venda-resumo-consultora__empty">Nenhum chip informado.</p>
+        ) : (
+          <div
+            className={`venda-resumo-consultora__chip-list${chips.length > 4 ? ' has-overflow' : ''}`}
+            data-count={chips.length}
+          >
+            {chips.map((chip, index) => {
+              const quantidade = Number(chip.quantidade) || 0;
+              const operadoraAtual = String(chip.operadora_atual || '').trim();
+              const operadoraDestino = String(chip.operadora_destino || '').trim();
+              const operadorasIguais = Boolean(
+                operadoraAtual
+                && operadoraDestino
+                && operadoraAtual.localeCompare(operadoraDestino, 'pt-BR', { sensitivity: 'base' }) === 0
+              );
+
+              return (
+                <article className="venda-resumo-consultora__chip-card" key={`${chip.operadora_destino || 'chip'}-${index}`}>
+                  <div className="venda-resumo-consultora__chip-main">
+                    <div className="venda-resumo-consultora__chip-identity">
+                      <span className="venda-resumo-consultora__chip-icon"><I.SimCard size={16} aria-hidden="true" /></span>
+                      <div>
+                        <strong>{chip.quantidade || '—'} {quantidade === 1 ? 'chip' : 'chips'}</strong>
+                        <span>{chip.gb ? `${chip.gb} GB` : 'Franquia não informada'}</span>
+                      </div>
+                    </div>
+                    <span className="venda-resumo-consultora__chip-type">
+                      {formatarTipoLinhaChipLabel(chip.tipo_linha)}
+                    </span>
+                  </div>
+
+                  {operadorasIguais ? (
+                    <div className="venda-resumo-consultora__chip-operator is-single" aria-label={`Operadora ${operadoraDestino}`}>
+                      <span>Operadora</span>
+                      <strong>{operadoraDestino}</strong>
+                    </div>
+                  ) : (
+                    <div className="venda-resumo-consultora__chip-operator" aria-label="Rota entre operadoras">
+                      <div>
+                        <span>De</span>
+                        <strong>{operadoraAtual || '—'}</strong>
+                      </div>
+                      <I.ArrowRight size={16} aria-hidden="true" />
+                      <div>
+                        <span>Para</span>
+                        <strong>{operadoraDestino || '—'}</strong>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="venda-resumo-consultora__chip-price">
+                    <div>
+                      <span>Cálculo</span>
+                      <strong>{chip.quantidade || '—'} × {formatarMoeda(chip.valor_unitario)}</strong>
+                    </div>
+                    <div>
+                      <span>Subtotal</span>
+                      <strong>{formatarMoeda(chip.subtotal)}</strong>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+        <div className="venda-resumo-consultora__total">
+          <span>Valor total</span>
+          <strong>{formatarMoeda(venda?.valor_total)}</strong>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function VendaModal({
   venda,
   initialValues,
@@ -4898,6 +5007,42 @@ function VendaModal({
     } finally {
       setReenviandoDashboard(false);
     }
+  }
+
+  if (venda?.visao_resumida_consultora) {
+    const exibindoProblema = initialTab === 'problema';
+    return (
+      <div className="modal-overlay">
+        <section className="modal venda-modal venda-resumo-consultora-modal" role="dialog" aria-modal="true" aria-label={exibindoProblema ? 'Problemas da venda' : 'Resumo da venda'}>
+          <div className="modal-header">
+            <div className="modal-header-row">
+              <div>
+                <div className="modal-client">{exibindoProblema ? 'Problemas da venda' : 'Resumo da venda'}</div>
+                <div className="modal-sub">
+                  {exibindoProblema
+                    ? 'Acompanhe e responda às correções solicitadas pelo pós-venda.'
+                    : 'Após o envio ao pós-venda, ficam disponíveis apenas as informações comerciais abaixo.'}
+                </div>
+              </div>
+              <button type="button" className="btn btn-icon btn-ghost" title="Fechar" onClick={handleClose}>
+                <I.Close size={14} />
+              </button>
+            </div>
+          </div>
+          <div className="modal-body venda-resumo-consultora-modal__body">
+            <VendaResumoConsultora venda={venda} />
+            {exibindoProblema && (
+              <div className="venda-resumo-consultora__problemas">
+                <VendaProblemaPanel venda={venda} usuario={usuarioLogado} initialProblemaId={initialProblemaId} />
+              </div>
+            )}
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn" onClick={handleClose}>Fechar</button>
+          </div>
+        </section>
+      </div>
+    );
   }
 
   return (

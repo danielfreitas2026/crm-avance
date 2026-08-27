@@ -4616,6 +4616,7 @@ async function marcarVendaRecusadaLead(linhaId, usuarioId, dados = {}, opcoes = 
       'venda_recusada',
       trx
     );
+    await desativarAlertasObrigatoriosDaLinha(linha.id, trx);
   });
 
   const atualizada = await LeadLinha.query()
@@ -5005,8 +5006,8 @@ async function sincronizarNotificacaoRetornoLead(linhaId) {
   }
 }
 /** Encerra alertas obrigatorios somente depois de uma alteracao real da linha. */
-async function desativarAlertasObrigatoriosDaLinha(linhaId) {
-  await require('./notificacao.service').desativarAlertasObrigatoriosDaLinha(linhaId);
+async function desativarAlertasObrigatoriosDaLinha(linhaId, trx = null) {
+  await require('./notificacao.service').desativarAlertasObrigatoriosDaLinha(linhaId, trx);
 }
 
 /**

@@ -1,4 +1,5 @@
 const vendaProblemaService = require('../services/venda-problema.service');
+const vendaVisibilidadeService = require('../services/venda-visibilidade.service');
 
 /**
  * Envia erro padronizado de operacoes de problemas de venda.
@@ -24,7 +25,8 @@ function responderErro(res, error, fallback) {
  */
 async function store(req, res) {
   try {
-    const problema = await vendaProblemaService.abrirProblema(req.params.id, req.body, req.usuario.id);
+    const problemaCompleto = await vendaProblemaService.abrirProblema(req.params.id, req.body, req.usuario.id);
+    const problema = await vendaVisibilidadeService.sanitizarProblemaParaUsuario(problemaCompleto, req.usuario.id);
     return res.status(201).json(problema);
   } catch (error) {
     return responderErro(res, error, 'Erro ao marcar problema na venda.');
@@ -56,7 +58,8 @@ async function destinatarios(req, res) {
  */
 async function ativo(req, res) {
   try {
-    const problema = await vendaProblemaService.obterAtivo(req.params.id, req.usuario.id);
+    const problemaCompleto = await vendaProblemaService.obterAtivo(req.params.id, req.usuario.id);
+    const problema = await vendaVisibilidadeService.sanitizarProblemaParaUsuario(problemaCompleto, req.usuario.id);
     return res.json(problema || null);
   } catch (error) {
     return responderErro(res, error, 'Erro ao buscar problema ativo da venda.');
@@ -72,7 +75,8 @@ async function ativo(req, res) {
  */
 async function index(req, res) {
   try {
-    const problemas = await vendaProblemaService.listarAtivos(req.params.id, req.usuario.id);
+    const problemasCompletos = await vendaProblemaService.listarAtivos(req.params.id, req.usuario.id);
+    const problemas = await vendaVisibilidadeService.sanitizarProblemaParaUsuario(problemasCompletos, req.usuario.id);
     return res.json(problemas);
   } catch (error) {
     return responderErro(res, error, 'Erro ao listar problemas ativos da venda.');
@@ -88,7 +92,8 @@ async function index(req, res) {
  */
 async function resolver(req, res) {
   try {
-    const problema = await vendaProblemaService.resolverProblema(req.params.problemaId, req.body, req.usuario.id);
+    const problemaCompleto = await vendaProblemaService.resolverProblema(req.params.problemaId, req.body, req.usuario.id);
+    const problema = await vendaVisibilidadeService.sanitizarProblemaParaUsuario(problemaCompleto, req.usuario.id);
     return res.json(problema);
   } catch (error) {
     return responderErro(res, error, 'Erro ao resolver problema da venda.');
@@ -104,7 +109,8 @@ async function resolver(req, res) {
  */
 async function correcao(req, res) {
   try {
-    const problema = await vendaProblemaService.solicitarCorrecao(req.params.problemaId, req.body, req.usuario.id);
+    const problemaCompleto = await vendaProblemaService.solicitarCorrecao(req.params.problemaId, req.body, req.usuario.id);
+    const problema = await vendaVisibilidadeService.sanitizarProblemaParaUsuario(problemaCompleto, req.usuario.id);
     return res.json(problema);
   } catch (error) {
     return responderErro(res, error, 'Erro ao solicitar nova correção.');
@@ -120,7 +126,8 @@ async function correcao(req, res) {
  */
 async function verificar(req, res) {
   try {
-    const problema = await vendaProblemaService.verificarProblema(req.params.problemaId, req.usuario.id);
+    const problemaCompleto = await vendaProblemaService.verificarProblema(req.params.problemaId, req.usuario.id);
+    const problema = await vendaVisibilidadeService.sanitizarProblemaParaUsuario(problemaCompleto, req.usuario.id);
     return res.json(problema);
   } catch (error) {
     return responderErro(res, error, 'Erro ao verificar problema da venda.');
