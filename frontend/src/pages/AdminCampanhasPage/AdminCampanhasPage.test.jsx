@@ -114,7 +114,7 @@ describe('AdminCampanhasPage - regras individuais', () => {
     expect(botaoExpandir).toHaveAttribute('aria-expanded', 'false');
     expect(detalhes).toHaveAttribute('hidden');
 
-    await user.click(botaoExpandir);
+    await user.click(screen.getByRole('heading', { level: 4, name: 'Vendas elegíveis' }));
     const botaoRecolher = screen.getByRole('button', { name: 'Recolher' });
     expect(botaoRecolher).toHaveAttribute('aria-expanded', 'true');
     expect(detalhes).not.toHaveAttribute('hidden');

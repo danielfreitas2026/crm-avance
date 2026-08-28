@@ -223,6 +223,14 @@ function AdminCampanhasPage() {
     else next.add(id);
     return next;
   });
+  const expandirCampanhaAoClicar = (event, id) => {
+    if (!campanhasRecolhidas.has(id) || event.target.closest('button')) return;
+    toggleCampanha(id);
+  };
+  const recolherCampanhaAoClicar = (event, id) => {
+    if (campanhasRecolhidas.has(id) || event.target.closest('button')) return;
+    toggleCampanha(id);
+  };
   const atualizarExcecoes = (campanhaId, vendas) => setCampanhas(items => items.map(campanha => campanha.id === campanhaId ? {
     ...campanha,
     vendas_excecao: vendas,
@@ -295,8 +303,8 @@ function AdminCampanhasPage() {
             return <section key={campanha.id} ref={elemento => {
           if (elemento) elementosCampanhas.current.set(campanha.id, elemento);
           else elementosCampanhas.current.delete(campanha.id);
-        }} className={`admin-campanhas-campaign${campanhasRecolhidas.has(campanha.id) ? ' is-collapsed' : ''}`} tabIndex="-1">
-          <header className="admin-campanhas-campaign__header"><div className="admin-campanhas-campaign__heading"><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}{encerrada && <span className="admin-campanhas-ended-badge">Encerrada</span>}</span><h4>{campanha.desc?.trim() || `Campanha ${index + 1}`}</h4></div><div className="admin-campanhas-campaign__header-actions">{campanhaConfirmandoExclusao === campanha.id ? <div className="admin-campanhas-delete-confirm" role="group" aria-label={`Confirmar exclusão da campanha ${index + 1}`}><span>Excluir esta campanha?</span><button type="button" className="btn btn-sm btn-ghost" onClick={() => setCampanhaConfirmandoExclusao(null)} disabled={saving}>Cancelar</button><button type="button" className="btn btn-sm admin-campanhas-delete-confirm__button" onClick={() => remove(campanha.id)} disabled={saving}>{saving ? 'Excluindo...' : 'Sim'}</button></div> : <><button type="button" className="btn btn-sm btn-ghost admin-campanhas-toggle" onClick={() => toggleCampanha(campanha.id)} aria-expanded={!campanhasRecolhidas.has(campanha.id)} aria-controls={`campanha-detalhes-${campanha.id}`}><I.ChevronDown size={16} /> {campanhasRecolhidas.has(campanha.id) ? 'Expandir' : 'Recolher'}</button>{!encerrada && <button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => setCampanhaConfirmandoExclusao(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button>}</>}</div></header>
+        }} className={`admin-campanhas-campaign${campanhasRecolhidas.has(campanha.id) ? ' is-collapsed' : ''}`} onClick={event => expandirCampanhaAoClicar(event, campanha.id)} tabIndex="-1">
+          <header className="admin-campanhas-campaign__header" onClick={event => recolherCampanhaAoClicar(event, campanha.id)}><div className="admin-campanhas-campaign__heading"><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}{encerrada && <span className="admin-campanhas-ended-badge">Encerrada</span>}</span><h4>{campanha.desc?.trim() || `Campanha ${index + 1}`}</h4></div><div className="admin-campanhas-campaign__header-actions">{campanhaConfirmandoExclusao === campanha.id ? <div className="admin-campanhas-delete-confirm" role="group" aria-label={`Confirmar exclusão da campanha ${index + 1}`}><span>Excluir esta campanha?</span><button type="button" className="btn btn-sm btn-ghost" onClick={() => setCampanhaConfirmandoExclusao(null)} disabled={saving}>Cancelar</button><button type="button" className="btn btn-sm admin-campanhas-delete-confirm__button" onClick={() => remove(campanha.id)} disabled={saving}>{saving ? 'Excluindo...' : 'Sim'}</button></div> : <><button type="button" className="btn btn-sm btn-ghost admin-campanhas-toggle" onClick={() => toggleCampanha(campanha.id)} aria-expanded={!campanhasRecolhidas.has(campanha.id)} aria-controls={`campanha-detalhes-${campanha.id}`}><I.ChevronDown size={16} /> {campanhasRecolhidas.has(campanha.id) ? 'Expandir' : 'Recolher'}</button>{!encerrada && <button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => setCampanhaConfirmandoExclusao(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button>}</>}</div></header>
           <div id={`campanha-detalhes-${campanha.id}`} className="admin-campanhas-campaign__details" hidden={campanhasRecolhidas.has(campanha.id)}>
           <div className="admin-campanhas-section">
             <h5>Meta da campanha</h5>
