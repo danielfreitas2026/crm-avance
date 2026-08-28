@@ -33,6 +33,7 @@ import {
 import { listarClientes } from '../../services/cliente.service';
 import { agruparOpcoesServicos, formatarNomeServico, servicoIdInclui } from '../../utils/servicos';
 import {
+  atualizarAceiteBiometriaVenda,
   atualizarStatusVenda,
   cancelarVenda,
   reverterCancelamentoVenda,
@@ -155,7 +156,8 @@ function normalizarEtapasFunil(etapas = [], usarFallback = true) {
         ordem: Number(etapa.ordem ?? index),
         ativo: normalizarAtivo(etapa.ativo),
         etapaFinal: Boolean(etapa.etapa_final || etapa.etapaFinal),
-        bloqueiaAvanco: Boolean(etapa.bloqueia_avanco || etapa.bloqueiaAvanco)
+        bloqueiaAvanco: Boolean(etapa.bloqueia_avanco || etapa.bloqueiaAvanco),
+        aceiteBiometria: Boolean(etapa.aceite_biometria || etapa.aceiteBiometria)
       };
     })
     .filter(etapa => etapa.id && etapa.name);
@@ -861,6 +863,8 @@ function mapVendaToSale(venda, stageLabels = STAGE_LABELS) {
     ].filter(Boolean).join(', ') || 'Endereço não informado',
     stage,
     priority: getPriorityInfo(venda.prioridade_funil).key,
+    aceiteConcluido: Boolean(venda.aceite_concluido),
+    biometriaConcluida: Boolean(venda.biometria_concluida),
     lancadaEm: created,
     updated,
     canceladaEm: venda.cancelada_em || null,
@@ -875,7 +879,7 @@ function mapVendaToSale(venda, stageLabels = STAGE_LABELS) {
 /**
  * Renderiza sale modal.
  */
-function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onOpenFullSale, openingFullSale, podeCancelar, podeReverterCancelamento, onCancelSale, onReverterCancelamento, podeEditarVenda, podeVerDocumentos, podeAdicionarDocumentos, onEtapasAtualizadas = () => {} }) {
+export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onUpdatePossuiDocNaCasa, onOpenFullSale, openingFullSale, podeCancelar, podeReverterCancelamento, onCancelSale, onReverterCancelamento, podeEditarVenda, podeVerDocumentos, podeAdicionarDocumentos, onEtapasAtualizadas = () => {} }) {
   const [tab, setTab] = useState('info');
   const [novaFase, setNovaFase] = useState(sale.stage);
   const [novaPrioridade, setNovaPrioridade] = useState(sale.priority || 'media');
@@ -887,6 +891,10 @@ function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onOpenFul
   const [revertModalOpen, setRevertModalOpen] = useState(false);
   const [historicoEventos, setHistoricoEventos] = useState(sale.historico);
   const [historicoCarregando, setHistoricoCarregando] = useState(true);
+  const [possuiDocNaCasa, setPossuiDocNaCasa] = useState(
+    sale.raw?.possui_doc_na_casa === true || Number(sale.raw?.possui_doc_na_casa) === 1
+  );
+  const [salvandoDocNaCasa, setSalvandoDocNaCasa] = useState(false);
   const cancelada = Boolean(sale.canceladaEm);
   const priorityInfo = getPriorityInfo(sale.priority);
   const podeAcessarDocumentos = Boolean(podeVerDocumentos || podeAdicionarDocumentos);
@@ -954,6 +962,25 @@ function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onOpenFul
     if (novaFase !== sale.stage || observacao.trim()) return;
 
     submitStatus(sale.stage, '', '', { prioridade });
+  }
+
+  /**
+   * Persiste imediatamente o marcador de documento fisico alterado no modal rapido.
+   */
+  async function handlePossuiDocNaCasaChange(valor) {
+    const valorAnterior = possuiDocNaCasa;
+    setPossuiDocNaCasa(valor);
+    setSalvandoDocNaCasa(true);
+    setError('');
+
+    try {
+      await onUpdatePossuiDocNaCasa(sale.id, valor);
+    } catch (err) {
+      setPossuiDocNaCasa(valorAnterior);
+      setError(err.message || 'Erro ao atualizar documento na casa.');
+    } finally {
+      setSalvandoDocNaCasa(false);
+    }
   }
 
   /**
@@ -1145,13 +1172,18 @@ function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onOpenFul
           )}
 
           {tab === 'documentos' && podeAcessarDocumentos && (
-            <ArquivosVendaTab
-              venda={{ id: sale.id }}
-              podeEditar={podeEditarVenda}
-              podeVisualizar={podeVerDocumentos}
-              podeAdicionar={podeAdicionarDocumentos}
-              onEtapasAtualizadas={etapas => onEtapasAtualizadas(sale.id, etapas)}
-            />
+            <>
+              <ArquivosVendaTab
+                venda={{ id: sale.id }}
+                podeEditar={podeEditarVenda && !salvandoDocNaCasa}
+                podeVisualizar={podeVerDocumentos}
+                podeAdicionar={podeAdicionarDocumentos}
+                possuiDocNaCasa={possuiDocNaCasa}
+                onPossuiDocNaCasaChange={handlePossuiDocNaCasaChange}
+                onEtapasAtualizadas={etapas => onEtapasAtualizadas(sale.id, etapas)}
+              />
+              {error && <div className="alert-error" style={{ marginTop: 12 }}>{error}</div>}
+            </>
           )}
 
           {tab === 'status' && (
@@ -1578,7 +1610,7 @@ function DeleteStageModal({ stage, saving, onClose, onConfirm }) {
  * Renderiza o menu de acoes de uma etapa do funil, em portal para nao ser cortado
  * pelo overflow da coluna.
  */
-function StageMenu({ stage, disabled, onRename, onToggleFinal, onToggleBarrier, onToggleActive, onDelete }) {
+function StageMenu({ stage, disabled, onRename, onToggleFinal, onToggleBarrier, onToggleAceiteBiometria, onToggleActive, onDelete }) {
   const [aberto, setAberto] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const triggerRef = useRef(null);
@@ -1675,6 +1707,15 @@ function StageMenu({ stage, disabled, onRename, onToggleFinal, onToggleBarrier, 
           >
             <I.Shield size={13} /> {stage.bloqueiaAvanco ? 'Remover barreira' : 'Ativar barreira'}
           </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="stage-menu__item"
+            onClick={() => executar(onToggleAceiteBiometria)}
+            title="Exibe os marcadores de Aceite e Biometria e exige ambos para avançar"
+          >
+            <I.Check size={13} /> {stage.aceiteBiometria ? 'Remover Aceite/Biometria' : 'Marcar como Aceite/Biometria'}
+          </button>
 
           <div className="stage-menu__sep" />
 
@@ -1694,7 +1735,7 @@ function StageMenu({ stage, disabled, onRename, onToggleFinal, onToggleBarrier, 
 /**
  * Renderiza sale card.
  */
-export function SaleCard({ sale, finalizada = false, onClick, onEmail, gerandoEmailId, onXlsxClaro, baixandoXlsxId, onWhatsapp, onProblema, podeOperarPosVenda }) {
+export function SaleCard({ sale, finalizada = false, aceiteBiometria = false, marcadorSaving = '', onToggleMarcador = () => {}, onClick, onEmail, gerandoEmailId, onXlsxClaro, baixandoXlsxId, onWhatsapp, onProblema, podeOperarPosVenda }) {
   const priorityInfo = getPriorityInfo(sale.priority);
   const cancelada = Boolean(sale.canceladaEm);
   const semDocumento = sale.semDocumento ?? vendaSemDocumento(sale);
@@ -1770,6 +1811,38 @@ export function SaleCard({ sale, finalizada = false, onClick, onEmail, gerandoEm
           {priorityInfo.label.replace('Prioridade ', '')}
         </span>
       </div>
+      {aceiteBiometria && (
+        <div className="sale-card-markers" aria-label="Conclusão de Aceite e Biometria">
+          {[
+            ['aceite', 'Aceite', sale.aceiteConcluido],
+            ['biometria', 'Biometria', sale.biometriaConcluida]
+          ].map(([marcador, rotulo, concluido]) => {
+            const chave = `${sale.id}:${marcador}`;
+            const vendaSalvando = marcadorSaving.startsWith(`${sale.id}:`);
+            const salvando = marcadorSaving === chave;
+            const indisponivel = Boolean(sale.canceladaEm) || vendaSalvando;
+            return (
+              <button
+                key={marcador}
+                type="button"
+                className={`sale-card-marker${concluido ? ' is-complete' : ''}${salvando ? ' is-saving' : ''}`}
+                aria-pressed={concluido}
+                aria-busy={salvando || undefined}
+                aria-disabled={indisponivel}
+                title={`${rotulo}: ${concluido ? 'concluído' : 'pendente'}. Clique para alterar.`}
+                disabled={Boolean(sale.canceladaEm)}
+                onClick={event => {
+                  event.stopPropagation();
+                  if (vendaSalvando) return;
+                  onToggleMarcador(sale, marcador, !concluido);
+                }}
+              >
+                {rotulo}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="sale-card-bottom">
         <span className="seller">
           <SellerAvatar seller={sale.seller} />
@@ -1866,7 +1939,8 @@ const NOVA_ETAPA = {
   ordem: 0,
   ativo: true,
   etapa_final: false,
-  bloqueia_avanco: false
+  bloqueia_avanco: false,
+  aceite_biometria: false
 };
 
 /**
@@ -1948,6 +2022,7 @@ function FunilPage() {
   const [stageToDelete, setStageToDelete] = useState(null);
   const [error, setError] = useState('');
   const [stageFeedback, setStageFeedback] = useState({ type: '', message: '' });
+  const [marcadorSaving, setMarcadorSaving] = useState('');
 
   const [emailTemplate, setEmailTemplate] = useState(null);
   const [gerandoEmailId, setGerandoEmailId] = useState(null);
@@ -2051,6 +2126,21 @@ function FunilPage() {
           base0800: ROTULOS_BASE_0800[resultado] || '',
           raw: { ...sale.raw, etapa_0800_resultado: resultado }
         }
+        : sale
+    )));
+  }
+
+  /**
+   * Atualiza o marcador de documento fisico e reflete o resultado no funil.
+   */
+  async function handleUpdatePossuiDocNaCasa(saleId, possuiDocNaCasa) {
+    const vendaAtualizada = await atualizarVenda(saleId, {
+      possui_doc_na_casa: possuiDocNaCasa
+    });
+
+    setSales(prev => prev.map(sale => (
+      sale.id === saleId
+        ? { ...sale, ...mapVendaToSale(vendaAtualizada, stageLabels) }
         : sale
     )));
   }
@@ -2379,6 +2469,7 @@ function FunilPage() {
         nome: newStage.nome.trim(),
         etapa_final: newStage.etapa_final,
         bloqueia_avanco: newStage.bloqueia_avanco,
+        aceite_biometria: newStage.aceite_biometria,
         ativo: true,
         ordem: stagesVisiveis.filter(s => s.adminId).length + 1
       });
@@ -2543,6 +2634,58 @@ function FunilPage() {
       setStageFeedback({ type: 'error', message: err.message || 'Erro ao definir barreira da etapa.' });
     } finally {
       setStageSavingId(null);
+    }
+  }
+
+  /**
+   * Alterna se a etapa exige os marcadores de aceite e biometria.
+   */
+  async function handleToggleAceiteBiometriaStage(stage) {
+    if (!stage.adminId) return;
+
+    setStageSavingId(stage.adminId);
+    setStageFeedback({ type: '', message: '' });
+
+    try {
+      await atualizarEtapaFunil(stage.adminId, {
+        aceite_biometria: !stage.aceiteBiometria
+      });
+      await atualizarEtapasAposCrud(
+        !stage.aceiteBiometria
+          ? 'Etapa marcada como Aceite/Biometria.'
+          : 'Marcação de Aceite/Biometria removida da etapa.'
+      );
+    } catch (err) {
+      setStageFeedback({ type: 'error', message: err.message || 'Erro ao configurar Aceite/Biometria.' });
+    } finally {
+      setStageSavingId(null);
+    }
+  }
+
+  /**
+   * Atualiza uma tag do cartão sem abrir a venda ou alterar os demais cartões.
+   */
+  async function handleToggleMarcador(sale, marcador, concluido) {
+    const chave = `${sale.id}:${marcador}`;
+    setMarcadorSaving(chave);
+    setError('');
+
+    try {
+      const marcadores = await atualizarAceiteBiometriaVenda(sale.id, marcador, concluido);
+      setSales(prev => prev.map(item => (
+        item.id === sale.id
+          ? {
+            ...item,
+            aceiteConcluido: Boolean(marcadores.aceite_concluido),
+            biometriaConcluida: Boolean(marcadores.biometria_concluida),
+            raw: { ...item.raw, ...marcadores }
+          }
+          : item
+      )));
+    } catch (err) {
+      setError(err.message || 'Erro ao atualizar Aceite/Biometria da venda.');
+    } finally {
+      setMarcadorSaving('');
     }
   }
 
@@ -2714,6 +2857,7 @@ function FunilPage() {
           stageLabels={stageLabels}
           onClose={() => setSelectedSaleId(null)}
           onUpdateSale={handleUpdateSale}
+          onUpdatePossuiDocNaCasa={handleUpdatePossuiDocNaCasa}
           onOpenFullSale={podeAbrirVendaCompleta ? () => abrirVendaCompleta(selectedSale) : null}
           openingFullSale={abrindoVendaCompletaId === selectedSale.id}
           podeCancelar={podeCancelarVenda}
@@ -3000,6 +3144,18 @@ function FunilPage() {
                     />
                     Barreira de conferência
                   </label>
+                  <label
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                    title="Exibe Aceite e Biometria nos cartões e exige ambos para avançar"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={newStage.aceite_biometria}
+                      onChange={event => setNewStage({ ...newStage, aceite_biometria: event.target.checked })}
+                      disabled={creatingStage}
+                    />
+                    Aceite/Biometria
+                  </label>
                   <button type="submit" className="btn btn-primary btn-sm" disabled={creatingStage || !newStage.nome.trim()}>
                     {creatingStage ? 'Adicionando...' : 'Adicionar'}
                   </button>
@@ -3132,6 +3288,15 @@ function FunilPage() {
                                 <I.Shield size={12} />
                               </span>
                             )}
+                            {st.aceiteBiometria && (
+                              <span
+                                className="column-flag is-acceptance"
+                                title="Etapa de Aceite/Biometria"
+                                aria-label="Etapa de Aceite/Biometria"
+                              >
+                                <I.Check size={12} />
+                              </span>
+                            )}
                           </span>
                         )}
                         <span className="column-count">{items.length}</span>
@@ -3145,6 +3310,7 @@ function FunilPage() {
                             }}
                             onToggleFinal={() => handleToggleFinalStage(editableStage)}
                             onToggleBarrier={() => handleToggleBarrierStage(editableStage)}
+                            onToggleAceiteBiometria={() => handleToggleAceiteBiometriaStage(editableStage)}
                             onToggleActive={() => handleToggleStage(editableStage)}
                             onDelete={() => setStageToDelete({ ...editableStage, vendasCount: items.length })}
                           />
@@ -3172,6 +3338,9 @@ function FunilPage() {
                         key={s.id}
                         sale={s}
                         finalizada={etapasFinaisIds.has(s.stage)}
+                        aceiteBiometria={st.aceiteBiometria}
+                        marcadorSaving={marcadorSaving}
+                        onToggleMarcador={handleToggleMarcador}
                         onClick={() => setSelectedSaleId(s.id)}
                         onEmail={abrirEmailVenda}
                         gerandoEmailId={gerandoEmailId}

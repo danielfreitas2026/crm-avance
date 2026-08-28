@@ -1951,6 +1951,7 @@ async function listarEtapasFunilOrdenadas() {
         ordem: etapa.ordem,
         etapa_final: Boolean(etapa.etapa_final),
         bloqueia_avanco: Boolean(etapa.bloqueia_avanco),
+        aceite_biometria: Boolean(etapa.aceite_biometria),
         retorno: false
       }));
     }
@@ -1962,6 +1963,7 @@ async function listarEtapasFunilOrdenadas() {
         nome: FUNIL_STATUS_LABELS[status] || status,
         ordem: index + 1,
         bloqueia_avanco: false,
+        aceite_biometria: false,
         retorno: false
       }));
   }
@@ -1974,6 +1976,7 @@ async function listarEtapasFunilOrdenadas() {
       etapa_final: status === 'concluido',
       ordem: index + 1,
       bloqueia_avanco: false,
+      aceite_biometria: false,
       retorno: false
     }));
 }
@@ -3809,6 +3812,79 @@ async function validarBarreiraConferencia(venda, statusDestino) {
 }
 
 /**
+ * Impede o avanco a partir de uma etapa de aceite/biometria enquanto houver
+ * marcadores pendentes. Permanecer na etapa, retornar e voltar etapas continua
+ * permitido.
+ */
+async function validarAceiteBiometria(venda, statusDestino, etapasInformadas = null) {
+  if (!venda?.status_funil || !statusDestino || statusDestino === 'retorno') return null;
+
+  const etapasFunil = etapasInformadas || await listarEtapasFunilOrdenadas();
+  const origem = etapasFunil.find(etapa => etapa.id === venda.status_funil);
+  const destino = etapasFunil.find(etapa => etapa.id === statusDestino);
+
+  if (!origem?.aceite_biometria || !destino || Number(destino.ordem) <= Number(origem.ordem)) {
+    return null;
+  }
+
+  const pendentes = [];
+  if (!venda.aceite_concluido) pendentes.push('Aceite');
+  if (!venda.biometria_concluida) pendentes.push('Biometria');
+
+  return pendentes.length
+    ? `Conclua ${pendentes.join(' e ')} antes de avançar para outra etapa.`
+    : null;
+}
+
+/**
+ * Atualiza um dos marcadores operacionais da venda. O acesso segue o mesmo
+ * escopo de visualizacao usado pelo funil.
+ */
+async function atualizarAceiteBiometriaVenda(id, dados, usuarioId) {
+  if (!await usuarioPodeAcessarVenda(id, usuarioId)) {
+    return { status: 'not_found' };
+  }
+
+  const marcador = String(dados?.marcador || '').trim().toLowerCase();
+  if (!['aceite', 'biometria'].includes(marcador) || typeof dados?.concluido !== 'boolean') {
+    return { status: 'invalid', message: 'Informe um marcador e um estado válidos.' };
+  }
+
+  const venda = await Venda.query().findById(id);
+  if (!venda || venda.excluido_em) return { status: 'not_found' };
+  if (venda.cancelada_em) {
+    return { status: 'invalid', message: 'Os marcadores de uma venda cancelada não podem ser alterados.' };
+  }
+
+  const etapa = await FunilEtapa.query()
+    .findOne({ codigo: venda.status_funil })
+    .select('id', 'aceite_biometria');
+
+  if (!etapa?.aceite_biometria) {
+    return { status: 'invalid', message: 'A venda não está em uma etapa de Aceite/Biometria.' };
+  }
+
+  const coluna = marcador === 'aceite' ? 'aceite_concluido' : 'biometria_concluida';
+  const patch = {
+    [coluna]: dados.concluido,
+    updated_at: formatarDateTimeSQL()
+  };
+  const atualizadas = await Venda.query()
+    .where({ id: Number(id), status_funil: venda.status_funil })
+    .whereNull('excluido_em')
+    .whereNull('cancelada_em')
+    .patch(patch);
+
+  if (!atualizadas) {
+    return { status: 'conflict', message: 'A venda mudou de etapa ou estado. Atualize o funil e tente novamente.' };
+  }
+
+  const vendaAtualizada = await Venda.query().findById(id);
+
+  return { status: 'ok', venda: vendaAtualizada };
+}
+
+/**
  * Atualiza status venda com os dados informados.
  */
 async function atualizarStatusVenda(id, dados, usuarioId) {
@@ -3861,6 +3937,12 @@ async function atualizarStatusVenda(id, dados, usuarioId) {
 
   if (bloqueioBarreira) {
     return { status: 'invalid', message: bloqueioBarreira };
+  }
+
+  const bloqueioAceiteBiometria = await validarAceiteBiometria(venda, status);
+
+  if (bloqueioAceiteBiometria) {
+    return { status: 'invalid', message: bloqueioAceiteBiometria };
   }
 
   if (status === 'retorno') {
@@ -4546,6 +4628,7 @@ module.exports = {
   registrarReversaoVenda,
   excluirReversaoVenda,
   atualizarStatusVenda,
+  atualizarAceiteBiometriaVenda,
   cancelarVenda,
   reverterCancelamentoVenda,
   enviarVendaParaPosVenda,
@@ -4603,6 +4686,7 @@ module.exports = {
     resumirGigasItensChips,
     somarQuantidadeItensChips,
     validarVendedorasNosChips,
-    vendaDeveAparecerNoFunil
+    vendaDeveAparecerNoFunil,
+    validarAceiteBiometria
   }
 };

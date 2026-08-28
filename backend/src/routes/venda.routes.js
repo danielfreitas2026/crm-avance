@@ -94,6 +94,20 @@ router.patch(
   }),
   vendaEtapaController.update0800
 );
+router.patch(
+  '/:id/aceite-biometria',
+  exigirUmaPermissao(['vendas_ver_proprias', 'ver_vendas_compartilhadas', 'vendas_ver_todas']),
+  auditar({
+    acao: req => `venda.${String(req.body?.marcador || 'marcador')}_atualizado`,
+    entidade: 'vendas',
+    entidade_id: req => req.params.id,
+    dados: req => ({
+      marcador: req.body?.marcador || null,
+      concluido: req.body?.concluido
+    })
+  }),
+  vendaController.updateAceiteBiometria
+);
 router.get('/:id', exigirUmaPermissao(['vendas_ver_proprias', 'ver_vendas_compartilhadas', 'vendas_ver_todas']), vendaController.show);
 router.post(
   '/:id/email-template',

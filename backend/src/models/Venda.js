@@ -130,6 +130,9 @@ class Venda extends Model {
         etapa_vivo_concluida_em: { type: ['string', 'null'] },
         etapa_vivo_concluida_por_id: { type: ['integer', 'null'] },
 
+        aceite_concluido: { type: ['boolean', 'integer'] },
+        biometria_concluida: { type: ['boolean', 'integer'] },
+
         status_funil: { type: ['string', 'null'], maxLength: 40 },
         prioridade_funil: { type: 'string', maxLength: 20 },
         status_anterior_retorno: { type: ['string', 'null'], maxLength: 40 },

@@ -11,6 +11,7 @@ vi.mock('./api', () => ({
 
 import { apiDelete, apiGet, apiPost, apiPut, apiRequest } from './api';
 import {
+  atualizarAceiteBiometriaVenda,
   atualizarStatusVenda,
   atualizarVenda,
   buscarVendaPorId,
@@ -76,6 +77,15 @@ describe('venda.service', () => {
       venda: { nome: 'Corrigido' },
       observacao: 'Correção solicitada',
       versao: '2026-08-13T12:00:00.000Z'
+    });
+  });
+
+  it('atualiza marcador de aceite ou biometria via PATCH', async () => {
+    await atualizarAceiteBiometriaVenda(7, 'biometria', true);
+
+    expect(apiRequest).toHaveBeenCalledWith('/vendas/7/aceite-biometria', {
+      method: 'PATCH',
+      body: JSON.stringify({ marcador: 'biometria', concluido: true }),
     });
   });
 

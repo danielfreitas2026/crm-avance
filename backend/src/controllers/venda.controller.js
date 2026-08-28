@@ -498,6 +498,36 @@ async function xlsxClaro(req, res) {
 }
 
 /**
+ * Atualiza um marcador de aceite ou biometria da venda.
+ */
+async function updateAceiteBiometria(req, res) {
+  try {
+    const resultado = await vendaService.atualizarAceiteBiometriaVenda(req.params.id, req.body, req.usuario.id);
+
+    if (resultado.status === 'not_found') {
+      return res.status(404).json({ message: 'Venda não encontrada.' });
+    }
+
+    if (resultado.status === 'invalid') {
+      return res.status(400).json({ message: resultado.message });
+    }
+
+    if (resultado.status === 'conflict') {
+      return res.status(409).json({ message: resultado.message });
+    }
+
+    return res.json({
+      id: resultado.venda.id,
+      aceite_concluido: Boolean(resultado.venda.aceite_concluido),
+      biometria_concluida: Boolean(resultado.venda.biometria_concluida)
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Erro ao atualizar Aceite/Biometria da venda.' });
+  }
+}
+
+/**
  * Processa cancelar conforme as regras do dominio.
  */
 async function cancelar(req, res) {
@@ -572,6 +602,7 @@ module.exports = {
   registrarReversao,
   excluirReversao,
   updateStatus,
+  updateAceiteBiometria,
   cancelar,
   reverterCancelamento,
   enviarPosVenda,

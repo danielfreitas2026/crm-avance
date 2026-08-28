@@ -348,6 +348,16 @@ export async function atualizarStatusVenda(id, dados) {
 }
 
 /**
+ * Atualiza um marcador de aceite ou biometria da venda.
+ */
+export async function atualizarAceiteBiometriaVenda(id, marcador, concluido) {
+  return apiRequest(`/vendas/${id}/aceite-biometria`, {
+    method: 'PATCH',
+    body: JSON.stringify({ marcador, concluido })
+  });
+}
+
+/**
  * Processa cancelar venda conforme as regras do dominio.
  */
 export async function cancelarVenda(id, motivo) {
