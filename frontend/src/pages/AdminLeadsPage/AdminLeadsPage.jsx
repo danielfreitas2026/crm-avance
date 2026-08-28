@@ -1320,6 +1320,18 @@ function AdminLeadsPage() {
     }
   }
 
+  /**
+   * Recarrega apenas as planilhas (cards/progresso) sem exibir estado de carregamento.
+   */
+  async function recarregarPlanilhas() {
+    try {
+      const planilhasData = await listarLeadPlanilhas();
+      setPlanilhas(planilhasData);
+    } catch (error) {
+      setErro(error.message || 'Erro ao atualizar planilhas.');
+    }
+  }
+
   useEffect(() => {
     let ativo = true;
     Promise.all([listarLeadPlanilhas(), listarVendedoras()])
@@ -1922,6 +1934,7 @@ function AdminLeadsPage() {
         ? `Mailing enviado. ${resultado.total_reenviados} registro(s) já enviados foram transferidos.`
         : 'Mailing enviado para os vendedores.');
       setSelecionadas([...selecionadas]);
+      await recarregarPlanilhas();
     }
     return resultado;
   }
