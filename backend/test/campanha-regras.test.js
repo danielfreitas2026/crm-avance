@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const campanhaController = require('../src/controllers/campanha.controller');
 const Campanha = require('../src/models/Campanha');
 const {
+  campanhaPodeSerResgatada,
   campanhaVisivelParaUsuario,
   calcularContribuicoesCampanha,
   calcularValorCampanha,
@@ -227,6 +228,41 @@ test('mantem campanhas encerradas e resgatadas visiveis como historico', () => {
   assert.equal(campanhaVisivelParaUsuario(campanha, 5, false, '2026-08-11'), true);
   assert.equal(campanhaVisivelParaUsuario(campanha, 5, true, '2026-08-11'), true);
   assert.equal(campanhaVisivelParaUsuario({ ...campanha, data_inicio: '2026-08-12' }, 0, false, '2026-08-11'), true);
+});
+
+test('permite resgate posterior de campanha encerrada que atingiu a meta', () => {
+  const campanha = { data_inicio: '2026-08-01', data_fim: '2026-08-10', target: 5 };
+  assert.equal(campanhaPodeSerResgatada(campanha, 5, false, '2026-08-11'), true);
+  assert.equal(campanhaPodeSerResgatada(campanha, 4, false, '2026-08-11'), false);
+  assert.equal(campanhaPodeSerResgatada(campanha, 5, true, '2026-08-11'), false);
+});
+
+test('rejeita exclusao de campanha encerrada com conflito', async () => {
+  const deleteOriginal = Campanha.deleteById;
+  let statusCode;
+  let resposta;
+  let hojeRecebido;
+  Campanha.deleteById = async (_id, hoje) => {
+    hojeRecebido = hoje;
+    const erro = new Error('Campanhas encerradas são mantidas no histórico e não podem ser excluídas.');
+    erro.code = 'CAMPANHA_ENCERRADA';
+    throw erro;
+  };
+
+  const res = {
+    status(code) { statusCode = code; return this; },
+    json(payload) { resposta = payload; return this; }
+  };
+
+  try {
+    await campanhaController.destroy({ params: { id: '12' } }, res);
+  } finally {
+    Campanha.deleteById = deleteOriginal;
+  }
+
+  assert.match(hojeRecebido, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(statusCode, 409);
+  assert.match(resposta.error, /histórico/i);
 });
 
 test('distribui itens compartilhados por vendedora e fecha com o total coletivo', () => {

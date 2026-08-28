@@ -1305,9 +1305,15 @@ function DashboardPage() {
     return { ...campanha, current, target, pct, achieved: detalhe?.achieved ?? pct >= 100, claimed: detalhe?.claimed ?? openedGifts.has(Number(campanha.id)), estado_periodo };
   });
 
-  const doneCount = campanhasComProgresso.filter(m => m.achieved).length;
-  const totalCount = campanhasComProgresso.length;
+  const campanhasAtuais = campanhasComProgresso.filter(campanha => campanha.estado_periodo !== 'encerrada');
+  const campanhasEncerradas = campanhasComProgresso.filter(campanha => campanha.estado_periodo === 'encerrada');
+  const doneCount = campanhasAtuais.filter(m => m.achieved).length;
+  const totalCount = campanhasAtuais.length;
   const overallPct = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
+  const gruposCampanhasDashboard = [
+    { id: 'atuais', campanhas: campanhasAtuais, historico: false },
+    { id: 'historico', campanhas: campanhasEncerradas, historico: true }
+  ];
   const vendasPorCliente = useMemo(() => montarMapaReferencias(referenciasClientes, 'total'), [referenciasClientes]);
   const vendasEmAndamentoPorCliente = useMemo(() => montarMapaReferencias(referenciasClientes, 'em_andamento_total'), [referenciasClientes]);
 
@@ -1774,25 +1780,28 @@ function DashboardPage() {
         {/* Campanhas coletivas */}
         {podeVerCampanhas && campanhasComProgresso.length > 0 && (
           <>
+            {gruposCampanhasDashboard.filter(grupo => grupo.campanhas.length).map(grupo => <section className={`campaigns-section${grupo.historico ? ' campaigns-section--history' : ''}`} key={grupo.id}>
             <div className="rewards-header">
               <div>
-                <h2>Campanhas</h2>
+                <h2>{grupo.historico ? 'Histórico de campanhas' : 'Campanhas'}</h2>
                 <p>
-                  Toda contribuição dos participantes aproxima o grupo da meta.
+                  {grupo.historico
+                    ? 'Consulte os resultados finais, participantes e recompensas das campanhas encerradas.'
+                    : 'Toda contribuição dos participantes aproxima o grupo da meta.'}
                 </p>
               </div>
 
-              <div className="rewards-progress-summary">
+              {!grupo.historico && <div className="rewards-progress-summary">
                 <span>Progresso de campanhas</span>
                 <div className="progress-track">
                   <div className="progress-fill" style={{ width: `${overallPct}%` }} />
                 </div>
                 <strong>{doneCount}/{totalCount}</strong>
-              </div>
+              </div>}
             </div>
 
             <div className="rewards-grid">
-              {campanhasComProgresso.map((campanha, i) => {
+              {grupo.campanhas.map((campanha, i) => {
                 const isClaimed = campanha.claimed;
                 const isClaiming = claimingId === campanha.id;
                 const remaining = Math.max(0, campanha.target - campanha.current);
@@ -1801,7 +1810,7 @@ function DashboardPage() {
                 return (
                   <article
                     key={campanha.id}
-                    className={`reward-card reward-card--collective ${campanha.achieved ? 'achieved' : ''} ${isClaimed ? 'claimed' : ''}`}
+                    className={`reward-card reward-card--collective ${campanha.achieved ? 'achieved' : ''} ${isClaimed ? 'claimed' : ''} ${encerrada ? `is-ended ${campanha.achieved ? 'is-ended-success' : 'is-ended-failure'}` : ''}`}
                     role="button"
                     tabIndex={0}
                     onClick={() => handleOpenRanking(campanha)}
@@ -1810,13 +1819,13 @@ function DashboardPage() {
                     }}
                   >
                     <div className="reward-top">
-                      <div className="reward-icon">{isClaimed ? '✅' : campanha.achieved ? '🎉' : '🎁'}</div>
+                      <div className="reward-icon">{isClaimed ? '✅' : campanha.achieved ? '🎉' : encerrada ? '🎯' : '🎁'}</div>
                       <div className="reward-step">Campanha {i + 1}</div>
                       <span className="pill" style={{ marginLeft: 6, fontSize: 10 }}>
                         {getCampanhaScope(campanha)}
                       </span>
                       {futura && <span className="pill" style={{ marginLeft: 'auto', fontSize: 10 }}>Em breve</span>}
-                      {encerrada && <span className="pill" style={{ marginLeft: 'auto', fontSize: 10 }}>Encerrada</span>}
+                      {encerrada && <span className={`campaign-result ${campanha.achieved ? 'campaign-result--success' : 'campaign-result--incomplete'}`}>{campanha.achieved ? <I.Check size={12} /> : <I.Close size={12} />} {campanha.achieved ? 'Meta atingida' : 'Meta não atingida'}</span>}
                       {campanha.achieved && !isClaimed && !futura && (
                         <span style={{ 
                           marginLeft: 'auto', 
@@ -1893,6 +1902,8 @@ function DashboardPage() {
                     >
                       {futura
                         ? 'Em breve'
+                        : encerrada && !campanha.achieved
+                        ? 'Meta não atingida'
                         : isClaiming
                         ? 'Resgatando...'
                         : isClaimed
@@ -1905,6 +1916,7 @@ function DashboardPage() {
                 );
               })}
             </div>
+            </section>)}
           </>
         )}
 

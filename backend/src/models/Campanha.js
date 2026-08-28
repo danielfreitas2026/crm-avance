@@ -277,10 +277,15 @@ class Campanha {
     return (await this.findAll()).find(c => Number(c.id) === Number(id));
   }
 
-  static async deleteById(id) {
+  static async deleteById(id, hoje = null) {
     return db.transaction(async trx => {
-      const campanha = await trx(this.tableName).where({ id }).where('is_gift', true).first('id');
+      const campanha = await trx(this.tableName).where({ id }).where('is_gift', true).first('id', 'data_fim');
       if (!campanha) return 0;
+      if (hoje && normalizarDataISO(campanha.data_fim) < normalizarDataISO(hoje)) {
+        const erro = new Error('Campanhas encerradas são mantidas no histórico e não podem ser excluídas.');
+        erro.code = 'CAMPANHA_ENCERRADA';
+        throw erro;
+      }
 
       await trx('campanha_resgates').where({ campanha_id: id }).del();
       await trx('campanha_regras').where({ campanha_id: id }).del();

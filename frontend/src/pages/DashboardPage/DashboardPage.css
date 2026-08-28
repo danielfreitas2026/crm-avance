@@ -1201,6 +1201,12 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
+.campaigns-section { display: block; }
+.campaigns-section--history {
+  margin-top: 30px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
 .reward-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1218,6 +1224,18 @@
 }
 .reward-card.claimed {
   opacity: 1;
+}
+
+.reward-card.is-ended {
+  box-shadow: none;
+}
+
+.reward-card.is-ended-failure {
+  background: var(--surface-2);
+}
+
+.reward-card.is-ended-success {
+  border-color: #bbf7d0;
 }
 
 .reward-card--collective {
@@ -1243,6 +1261,26 @@
 }
 .reward-card--collective .reward-top > span {
   display: inline-flex;
+}
+.campaign-result {
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.campaign-result--success {
+  border-color: #bbf7d0;
+  background: var(--success-bg);
+  color: var(--success);
+}
+.campaign-result--incomplete {
+  background: var(--surface-2);
+  color: var(--text-2);
 }
 .reward-icon {
   width: 36px;

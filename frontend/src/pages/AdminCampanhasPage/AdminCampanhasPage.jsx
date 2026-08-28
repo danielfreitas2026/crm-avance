@@ -265,17 +265,37 @@ function AdminCampanhasPage() {
     } catch (error) { setMessage({ type: 'error', text: error.message || 'Erro ao excluir campanha.' }); }
     finally { setSaving(false); }
   };
+  const campanhasGift = campanhas.filter(campanha => campanha.is_gift);
+  const gruposCampanhas = [
+    {
+      id: 'atuais',
+      titulo: 'Campanhas atuais',
+      descricao: 'Campanhas ativas e programadas.',
+      campanhas: campanhasGift.filter(campanha => campanha.estado_periodo !== 'encerrada')
+    },
+    {
+      id: 'historico',
+      titulo: 'Histórico de campanhas',
+      descricao: 'Campanhas encerradas permanecem disponíveis para consulta e edição.',
+      campanhas: campanhasGift.filter(campanha => campanha.estado_periodo === 'encerrada')
+    }
+  ];
   if (loading) return <LayoutPrivado><div className="empty">Carregando campanhas...</div></LayoutPrivado>;
 
   return <LayoutPrivado><div className="page admin-campanhas-page">
     {message && <div className={`alert-${message.type} admin-campanhas-alert`}>{message.text}</div>}
     <div className="panel admin-campanhas-panel"><div className="panel-header admin-campanhas-panel__header"><div><h3>Gamificação: presentes e recompensas</h3><span className="muted">Defina as metas, o público e a recompensa de cada campanha.</span></div><button type="button" className="btn admin-campanhas-add-button" onClick={add} disabled={saving}><I.Plus size={16} /> {adding ? 'Adicionando...' : 'Adicionar campanha'}</button></div>
       <div className="panel-body admin-campanhas-panel__body">
-        {campanhas.filter(c => c.is_gift).map((campanha, index) => <section key={campanha.id} ref={elemento => {
+        {gruposCampanhas.filter(grupo => grupo.campanhas.length).map(grupo => <div className="admin-campanhas-group" key={grupo.id}>
+          <div className="admin-campanhas-group__header"><div><h4>{grupo.titulo}</h4><p>{grupo.descricao}</p></div><span>{grupo.campanhas.length}</span></div>
+          {grupo.campanhas.map(campanha => {
+            const index = campanhasGift.findIndex(item => Number(item.id) === Number(campanha.id));
+            const encerrada = campanha.estado_periodo === 'encerrada';
+            return <section key={campanha.id} ref={elemento => {
           if (elemento) elementosCampanhas.current.set(campanha.id, elemento);
           else elementosCampanhas.current.delete(campanha.id);
         }} className={`admin-campanhas-campaign${campanhasRecolhidas.has(campanha.id) ? ' is-collapsed' : ''}`} tabIndex="-1">
-          <header className="admin-campanhas-campaign__header"><div className="admin-campanhas-campaign__heading"><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}</span><h4>{campanha.desc?.trim() || `Campanha ${index + 1}`}</h4></div><div className="admin-campanhas-campaign__header-actions">{campanhaConfirmandoExclusao === campanha.id ? <div className="admin-campanhas-delete-confirm" role="group" aria-label={`Confirmar exclusão da campanha ${index + 1}`}><span>Excluir esta campanha?</span><button type="button" className="btn btn-sm btn-ghost" onClick={() => setCampanhaConfirmandoExclusao(null)} disabled={saving}>Cancelar</button><button type="button" className="btn btn-sm admin-campanhas-delete-confirm__button" onClick={() => remove(campanha.id)} disabled={saving}>{saving ? 'Excluindo...' : 'Sim'}</button></div> : <><button type="button" className="btn btn-sm btn-ghost admin-campanhas-toggle" onClick={() => toggleCampanha(campanha.id)} aria-expanded={!campanhasRecolhidas.has(campanha.id)} aria-controls={`campanha-detalhes-${campanha.id}`}><I.ChevronDown size={16} /> {campanhasRecolhidas.has(campanha.id) ? 'Expandir' : 'Recolher'}</button><button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => setCampanhaConfirmandoExclusao(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button></>}</div></header>
+          <header className="admin-campanhas-campaign__header"><div className="admin-campanhas-campaign__heading"><span className="admin-campanhas-campaign__eyebrow">Campanha {index + 1}{encerrada && <span className="admin-campanhas-ended-badge">Encerrada</span>}</span><h4>{campanha.desc?.trim() || `Campanha ${index + 1}`}</h4></div><div className="admin-campanhas-campaign__header-actions">{campanhaConfirmandoExclusao === campanha.id ? <div className="admin-campanhas-delete-confirm" role="group" aria-label={`Confirmar exclusão da campanha ${index + 1}`}><span>Excluir esta campanha?</span><button type="button" className="btn btn-sm btn-ghost" onClick={() => setCampanhaConfirmandoExclusao(null)} disabled={saving}>Cancelar</button><button type="button" className="btn btn-sm admin-campanhas-delete-confirm__button" onClick={() => remove(campanha.id)} disabled={saving}>{saving ? 'Excluindo...' : 'Sim'}</button></div> : <><button type="button" className="btn btn-sm btn-ghost admin-campanhas-toggle" onClick={() => toggleCampanha(campanha.id)} aria-expanded={!campanhasRecolhidas.has(campanha.id)} aria-controls={`campanha-detalhes-${campanha.id}`}><I.ChevronDown size={16} /> {campanhasRecolhidas.has(campanha.id) ? 'Expandir' : 'Recolher'}</button>{!encerrada && <button type="button" className="btn btn-icon btn-ghost btn-danger-icon" onClick={() => setCampanhaConfirmandoExclusao(campanha.id)} disabled={saving} title="Excluir campanha" aria-label={`Excluir campanha ${index + 1}`}><I.Trash size={16} /></button>}</>}</div></header>
           <div id={`campanha-detalhes-${campanha.id}`} className="admin-campanhas-campaign__details" hidden={campanhasRecolhidas.has(campanha.id)}>
           <div className="admin-campanhas-section">
             <h5>Meta da campanha</h5>
@@ -316,7 +336,9 @@ function AdminCampanhasPage() {
             <div className="admin-campanhas-fields"><label className="admin-campanhas-field--wide">Recompensa<input value={campanha.reward || ''} onChange={e => change(campanha.id, 'reward', e.target.value)} placeholder="Ex.: Folga na sexta-feira" /></label></div>
           </div>
           </div>
-        </section>)}
+        </section>;
+          })}
+        </div>)}
       </div>
     </div>
     <div className="admin-campanhas-actions"><button className="btn btn-primary" onClick={save} disabled={saving}><I.Check size={16} /> {saving ? 'Salvando...' : 'Salvar alterações'}</button></div>

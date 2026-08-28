@@ -70,11 +70,13 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
   const idsVisiveis = Array.isArray(progressoPermitido.campanhas_visiveis)
     ? new Set(progressoPermitido.campanhas_visiveis.map(Number))
     : null;
-  const giftCampanhas = campanhasPermitidas.filter(m => (
-    m.is_gift
-    && (!m.participante_ids?.length || m.participante_ids.map(Number).includes(Number(usuario?.id)))
-    && (!idsVisiveis || idsVisiveis.has(Number(m.id)))
-  ));
+  const giftCampanhas = campanhasPermitidas.filter(m => {
+    const estadoPeriodo = progressoPermitido.estados_campanhas?.[m.id] || m.estado_periodo || 'ativa';
+    return m.is_gift
+      && estadoPeriodo !== 'encerrada'
+      && (!m.participante_ids?.length || m.participante_ids.map(Number).includes(Number(usuario?.id)))
+      && (!idsVisiveis || idsVisiveis.has(Number(m.id)));
+  });
   const resgatadas = new Set((progressoPermitido.resgatadas || []).map(Number));
 
   return (

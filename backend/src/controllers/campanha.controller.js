@@ -64,6 +64,12 @@ function campanhaVisivelParaUsuario(campanha, current, claimed, hoje = dataHojeS
   return true;
 }
 
+function campanhaPodeSerResgatada(campanha, current, claimed, hoje = dataHojeSaoPaulo()) {
+  return intervaloCampanha(campanha, hoje).estado !== 'futura'
+    && Number(current || 0) >= Number(campanha.target || 0)
+    && !claimed;
+}
+
 /**
  * Valida os campos obrigatorios e categorias permitidas de uma campanha.
  */
@@ -1212,7 +1218,7 @@ class CampanhaController {
           pct: calculo.pct,
           achieved: calculo.achieved,
           claimed,
-          pode_resgatar: participa && calculo.estado_periodo !== 'futura' && calculo.achieved && !claimed
+          pode_resgatar: participa && campanhaPodeSerResgatada(campanha, calculo.current, claimed)
         },
         participantes: calculo.ranking,
         vendas: calculo.vendasContabilizadas
@@ -1332,7 +1338,7 @@ class CampanhaController {
 
   async destroy(req, res) {
     try {
-      const deleted = await Campanha.deleteById(req.params.id);
+      const deleted = await Campanha.deleteById(req.params.id, dataHojeSaoPaulo());
 
       if (!deleted) {
         return res.status(404).json({ error: 'Campanha não encontrada.' });
@@ -1340,6 +1346,9 @@ class CampanhaController {
 
       res.status(204).send();
     } catch (error) {
+      if (error?.code === 'CAMPANHA_ENCERRADA') {
+        return res.status(409).json({ error: error.message });
+      }
       console.error(error);
       res.status(500).json({ error: 'Erro ao excluir campanha.' });
     }
@@ -1349,6 +1358,7 @@ class CampanhaController {
 module.exports = new CampanhaController();
 module.exports.__testables = {
   adicionarDiasISO,
+  campanhaPodeSerResgatada,
   campanhaVisivelParaUsuario,
   calcularContribuicoesCampanha,
   montarRanking,

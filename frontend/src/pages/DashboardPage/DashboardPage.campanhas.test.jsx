@@ -92,4 +92,33 @@ describe('DashboardPage - campanhas coletivas', () => {
     expect(screen.getByText('Ana · Vivo')).toBeInTheDocument();
     expect(screen.getByText('#321')).toBeInTheDocument();
   });
+
+  it('separa o histórico e mostra o resultado final de campanhas encerradas', async () => {
+    api.getCampanhas.mockResolvedValue([
+      { ...campanha, id: 21, desc: 'Campanha conquistada', estado_periodo: 'encerrada' },
+      { ...campanha, id: 22, desc: 'Campanha incompleta', estado_periodo: 'encerrada' }
+    ]);
+    api.getProgresso.mockResolvedValue({
+      campanhas: {
+        21: { current: 10, target: 10, pct: 100, achieved: true, claimed: false, estado_periodo: 'encerrada' },
+        22: { current: 4, target: 10, pct: 40, achieved: false, claimed: false, estado_periodo: 'encerrada' }
+      },
+      campanhas_visiveis: [21, 22],
+      estados_campanhas: { 21: 'encerrada', 22: 'encerrada' },
+      resgatadas: []
+    });
+    api.resgatarCampanha.mockResolvedValue({ reward: 'Prêmio' });
+    const user = userEvent.setup();
+    render(<DashboardPage />);
+
+    expect(await screen.findByRole('heading', { name: 'Histórico de campanhas' })).toBeInTheDocument();
+    expect(screen.getByText('Meta atingida')).toBeInTheDocument();
+    expect(screen.getAllByText('Meta não atingida').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('heading', { name: 'Campanhas' })).not.toBeInTheDocument();
+
+    const cardConquistado = screen.getByText('Campanha conquistada').closest('article');
+    await user.click(cardConquistado.querySelector('button'));
+    await waitFor(() => expect(api.resgatarCampanha).toHaveBeenCalledWith(21));
+    expect(await screen.findByText('Parabéns!')).toBeInTheDocument();
+  });
 });

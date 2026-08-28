@@ -155,6 +155,19 @@ describe('AdminCampanhasPage - regras individuais', () => {
     expect(screen.getByText('Campanha excluída com sucesso.')).toBeInTheDocument();
   });
 
+  it('separa campanhas encerradas no histórico, mantendo edição sem exclusão', async () => {
+    api.getCampanhas.mockResolvedValue([campanhaBase({
+      desc: 'Campanha finalizada',
+      estado_periodo: 'encerrada'
+    })]);
+    render(<AdminCampanhasPage />);
+
+    expect(await screen.findByRole('heading', { name: 'Histórico de campanhas' })).toBeInTheDocument();
+    expect(screen.getByText('Encerrada')).toBeInTheDocument();
+    expect(screen.getByLabelText('Nome da campanha')).not.toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Excluir campanha 1' })).not.toBeInTheDocument();
+  });
+
   it('adiciona, configura e salva regras', async () => {
     const user = userEvent.setup();
     render(<AdminCampanhasPage />);
