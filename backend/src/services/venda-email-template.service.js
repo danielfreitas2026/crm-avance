@@ -81,6 +81,21 @@ function formatarData(valor) {
 }
 
 /**
+ * Combina documento e data de nascimento sem criar separadores vazios.
+ */
+function documentoComNascimento(documento, nascimento, rotuloNascimento = 'DN') {
+  const documentoTexto = texto(documento);
+  const nascimentoTexto = formatarData(nascimento);
+
+  if (documentoTexto && nascimentoTexto) {
+    return `${documentoTexto} / ${rotuloNascimento}: ${nascimentoTexto}`;
+  }
+
+  if (nascimentoTexto) return `${rotuloNascimento}: ${nascimentoTexto}`;
+  return documentoTexto;
+}
+
+/**
  * Converte numero para o formato interno esperado.
  */
 function parseNumero(valor) {
@@ -273,6 +288,75 @@ function montarContexto(venda) {
 }
 
 /**
+ * Resolve a pessoa escolhida para confirmar o aceite da venda.
+ */
+function pessoaConfirmacao(venda) {
+  const valorInformado = texto(venda.nome_fechou_venda);
+  const valorNormalizado = normalizarTexto(valorInformado);
+  const pessoas = [
+    {
+      aliases: ['rl', 'representante legal'],
+      nome: texto(venda.nome_representante_legal),
+      cpf: texto(venda.cpf_representante_legal),
+      rg: texto(venda.rg_representante_legal),
+      nascimento: formatarData(venda.data_nascimento_representante_legal),
+      telefone: telefone(venda.telefone_representante_legal)
+    },
+    {
+      aliases: ['adm', 'administrador'],
+      nome: texto(venda.nome_administrador),
+      cpf: texto(venda.cpf_administrador),
+      rg: texto(venda.rg_administrador),
+      nascimento: formatarData(venda.data_nascimento_administrador),
+      telefone: telefone(venda.telefone_administrador)
+    }
+  ];
+
+  const encontrada = pessoas.find(pessoa => (
+    pessoa.aliases.includes(valorNormalizado)
+    || (pessoa.nome && normalizarTexto(pessoa.nome) === valorNormalizado)
+  ));
+
+  return encontrada || {
+    nome: valorInformado,
+    cpf: '',
+    rg: '',
+    nascimento: '',
+    telefone: ''
+  };
+}
+
+/**
+ * Lista movimentos distintos entre operadoras no formato do checklist Vivo.
+ */
+function movimentosOperadora(venda, ctx) {
+  const movimentos = [];
+  const chaves = new Set();
+
+  function adicionar(origem, destino) {
+    const origemTexto = texto(origem);
+    const destinoTexto = texto(destino);
+    if (!origemTexto || !destinoTexto) return;
+
+    const chave = `${normalizarTexto(origemTexto)}|${normalizarTexto(destinoTexto)}`;
+    if (normalizarTexto(origemTexto) === normalizarTexto(destinoTexto) || chaves.has(chave)) return;
+
+    chaves.add(chave);
+    movimentos.push(`${origemTexto.toLowerCase()} para ${destinoTexto.toLowerCase()}`);
+  }
+
+  ctx.itens.forEach(item => {
+    adicionar(item.operadoraAtualNome, item.operadoraNome || venda.operadora?.nome);
+  });
+
+  if (movimentos.length === 0) {
+    adicionar(venda.operadoraAtual?.nome, venda.operadora?.nome);
+  }
+
+  return movimentos;
+}
+
+/**
  * Formata plano claro para exibicao ou envio.
  */
 function formatarPlanoClaro(venda, ctx) {
@@ -361,8 +445,14 @@ function planoVivo(venda, ctx) {
  */
 function renderVivo(venda) {
   const ctx = montarContexto(venda);
+  const confirmacao = pessoaConfirmacao(venda);
   const linhaNova = ctx.qtdNovas && ctx.precoUnitario ? `${ctx.qtdNovas}x${ctx.precoUnitario}` : 'X';
-  const portabilidade = ctx.qtdPortados && ctx.precoUnitario ? `${ctx.qtdPortados}x${ctx.precoUnitario}` : 'X';
+  const portabilidadeBase = ctx.qtdPortados && ctx.precoUnitario ? `${ctx.qtdPortados}x${ctx.precoUnitario}` : '';
+  const portabilidade = [portabilidadeBase, ctx.portados.join(', ')].filter(Boolean).join('-') || 'X';
+  const nomeConfirmacao = confirmacao.nascimento
+    ? `${confirmacao.nome} - dn: ${confirmacao.nascimento}`.trim()
+    : confirmacao.nome;
+  const movimentos = movimentosOperadora(venda, ctx);
 
   return [
     `VENDA ${ctx.vendedora} - ${ctx.cliente}`,
@@ -374,14 +464,21 @@ function renderVivo(venda) {
     linha('RAZAO SOCIAL', ctx.cliente),
     linha('CNPJ', cnpj(venda.cnpj || venda.cliente?.cnpj)),
     linha('REPRESENTANTE LEGAL', venda.nome_representante_legal),
-    linha('CPF REPRESENTANTE LEGAL', venda.cpf_representante_legal),
+    linha('CPF REPRESENTANTE LEGAL', documentoComNascimento(
+      venda.cpf_representante_legal,
+      venda.data_nascimento_representante_legal
+    )),
+    linha('RG', venda.rg_representante_legal),
     linha('EMAIL PARA ENVIO ACEITE', venda.email_representante_legal),
-    linha('TELEFONE', telefone(venda.fixo_ddd || venda.telefone)),
-    linha('CONFIRMAÇÃO FALAR COM', venda.nome_fechou_venda),
+    linha('TELEFONE', confirmacao.telefone || telefone(venda.telefone) || telefone(venda.fixo_ddd)),
+    linha('CONFIRMAÇÃO FALAR COM', nomeConfirmacao),
+    linha('rg', confirmacao.rg),
+    linha('CPF', confirmacao.cpf),
     linha('ENDEREÇO', enderecoReceita(venda, 'endereco') || venda.ponto_referencia || venda.tipo_local_cpf),
     linha('LINHA NOVA', linhaNova),
     linha('PORTABILIDADE', portabilidade),
     linha('LINHA COM DDD X PLANO', planoVivo(venda, ctx)),
+    ...movimentos,
     linha('VALOR TOTAL NEGOCIADO', valorTotal(venda)),
     '',
     linha('VENCIMENTO', venda.dia_vencimento),

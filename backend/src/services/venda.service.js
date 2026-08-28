@@ -3131,6 +3131,10 @@ async function gerarEmailTemplateVenda(id, usuarioId) {
     throw error;
   }
 
+  if (!venda.operadoraAtual && venda.operadora_atual_id) {
+    await venda.$fetchGraph('operadoraAtual');
+  }
+
   return renderEmailVenda(venda);
 }
 

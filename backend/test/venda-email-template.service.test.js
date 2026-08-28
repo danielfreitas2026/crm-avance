@@ -52,26 +52,102 @@ test('renderiza template Claro com campos essenciais', () => {
   assert.match(resultado.texto, /11999990000/);
 });
 
-test('renderiza template Vivo com linhas novas e portabilidade', () => {
+test('renderiza checklist Vivo completo com administrador na confirmacao', () => {
   const resultado = renderEmailVenda({
     operadora: { nome: 'Vivo' },
     vendedora: { nome: 'Bia' },
     razao_social: 'Cliente Vivo LTDA',
     cnpj: '11222333000181',
-    quantidade_linhas: 3,
-    valor_total: 150,
-    gb: '20',
-    ddd: '21',
-    numeros_portados: ['21999990000'],
-    telefone: '2133334444',
-    nome_fechou_venda: 'Maria'
+    quantidade_linhas: 1,
+    valor_total: 79.99,
+    valores_unitarios_chips: [{
+      quantidade: 1,
+      gb: '40',
+      tipo_linha: 'portabilidade',
+      valor_unitario: 79.99,
+      operadora_atual_nome: 'TIM',
+      operadora_nome: 'Vivo'
+    }],
+    ddd: '31',
+    numeros_portados: ['31 986550327'],
+    telefone: '31999990000',
+    fixo_ddd: '3133334444',
+    nome_representante_legal: 'SUZANA DOMINGUES',
+    cpf_representante_legal: '584.092.116-53',
+    rg_representante_legal: '2399103SSPMG',
+    data_nascimento_representante_legal: '1962-08-08',
+    telefone_representante_legal: '31911112222',
+    email_representante_legal: 'suzana@test.local',
+    nome_administrador: 'MAYARA LUIZA DE SOUZA',
+    cpf_administrador: '107.441.966-98',
+    rg_administrador: 'MG17151692',
+    data_nascimento_administrador: '1991-08-08',
+    telefone_administrador: '+55 (31) 98655-0327',
+    nome_fechou_venda: 'ADM'
   });
 
   assert.equal(resultado.operadora, 'Vivo');
   assert.match(resultado.texto, /VENDA Bia - Cliente Vivo LTDA/);
-  assert.match(resultado.texto, /LINHA NOVA : 2x50,00/);
-  assert.match(resultado.texto, /PORTABILIDADE : 1x50,00/);
-  assert.match(resultado.texto, /VIVO 20GB - 3X50,00 - DDD 21/);
+  assert.match(resultado.texto, /CPF REPRESENTANTE LEGAL : 584\.092\.116-53 \/ DN: 08\/08\/1962/);
+  assert.match(resultado.texto, /RG : 2399103SSPMG/);
+  assert.match(resultado.texto, /TELEFONE : 31986550327/);
+  assert.match(resultado.texto, /CONFIRMAÇÃO FALAR COM : MAYARA LUIZA DE SOUZA - dn: 08\/08\/1991/);
+  assert.match(resultado.texto, /rg : MG17151692/);
+  assert.match(resultado.texto, /CPF : 107\.441\.966-98/);
+  assert.match(resultado.texto, /LINHA NOVA : X/);
+  assert.match(resultado.texto, /PORTABILIDADE : 1x79,99-31 986550327/);
+  assert.match(resultado.texto, /VIVO 40GB - 1X79,99 - DDD 31/);
+  assert.match(resultado.texto, /tim para vivo/);
+});
+
+test('resolve confirmacao pelo RL e usa telefone geral como fallback', () => {
+  const resultado = renderEmailVenda({
+    operadora: { nome: 'Vivo' },
+    operadoraAtual: { nome: 'Claro' },
+    nome_fechou_venda: 'RL',
+    nome_representante_legal: 'Maria Legal',
+    cpf_representante_legal: '111.222.333-44',
+    rg_representante_legal: 'MG123',
+    data_nascimento_representante_legal: '1980-02-03',
+    telefone: '(11) 99999-0000',
+    fixo_ddd: '1133334444'
+  });
+
+  assert.match(resultado.texto, /TELEFONE : 11999990000/);
+  assert.match(resultado.texto, /CONFIRMAÇÃO FALAR COM : Maria Legal - dn: 03\/02\/1980/);
+  assert.match(resultado.texto, /rg : MG123/);
+  assert.match(resultado.texto, /CPF : 111\.222\.333-44/);
+  assert.match(resultado.texto, /claro para vivo/);
+});
+
+test('reconhece nome legado do administrador na confirmacao', () => {
+  const resultado = renderEmailVenda({
+    operadora: { nome: 'Vivo' },
+    nome_fechou_venda: '  josé da silva ',
+    nome_administrador: 'José da Silva',
+    cpf_administrador: '123.456.789-00',
+    telefone_administrador: '21988887777'
+  });
+
+  assert.match(resultado.texto, /TELEFONE : 21988887777/);
+  assert.match(resultado.texto, /CONFIRMAÇÃO FALAR COM : José da Silva/);
+  assert.match(resultado.texto, /CPF : 123\.456\.789-00/);
+});
+
+test('preserva nome legado desconhecido sem associar documentos', () => {
+  const resultado = renderEmailVenda({
+    operadora: { nome: 'Vivo' },
+    nome_fechou_venda: 'Contato Externo',
+    nome_representante_legal: 'Outra Pessoa',
+    cpf_representante_legal: '111.222.333-44',
+    telefone: '',
+    fixo_ddd: '(31) 3333-4444'
+  });
+
+  assert.match(resultado.texto, /TELEFONE : 3133334444/);
+  assert.match(resultado.texto, /CONFIRMAÇÃO FALAR COM : Contato Externo/);
+  assert.match(resultado.texto, /rg :\nCPF :\n/);
+  assert.doesNotMatch(resultado.texto, /CPF : 111\.222\.333-44/);
 });
 
 test('rejeita operadora sem template de email', () => {
