@@ -41,6 +41,10 @@ const campanhaBase = (overrides = {}) => ({
   ...overrides
 });
 
+const expandirPrimeiraCampanha = async user => {
+  await user.click(await screen.findByRole('button', { name: 'Expandir' }));
+};
+
 describe('AdminCampanhasPage - regras individuais', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -66,7 +70,9 @@ describe('AdminCampanhasPage - regras individuais', () => {
   });
 
   it('preserva a categoria legada somente na campanha que ja a utiliza', async () => {
+    const user = userEvent.setup();
     render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
 
     const categoria = await screen.findByLabelText('Categoria');
     expect(categoria).toHaveValue('venda');
@@ -99,28 +105,29 @@ describe('AdminCampanhasPage - regras individuais', () => {
     expect(novaCampanha.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
   });
 
-  it('recolhe e expande os detalhes de uma campanha', async () => {
+  it('inicia recolhida e permite expandir e recolher uma campanha', async () => {
     const user = userEvent.setup();
     render(<AdminCampanhasPage />);
 
-    const botaoRecolher = await screen.findByRole('button', { name: 'Recolher' });
+    const botaoExpandir = await screen.findByRole('button', { name: 'Expandir' });
     const detalhes = document.getElementById('campanha-detalhes-10');
-    expect(botaoRecolher).toHaveAttribute('aria-expanded', 'true');
-    expect(detalhes).not.toHaveAttribute('hidden');
-
-    await user.click(botaoRecolher);
-    const botaoExpandir = screen.getByRole('button', { name: 'Expandir' });
     expect(botaoExpandir).toHaveAttribute('aria-expanded', 'false');
     expect(detalhes).toHaveAttribute('hidden');
 
     await user.click(botaoExpandir);
-    expect(screen.getByRole('button', { name: 'Recolher' })).toHaveAttribute('aria-expanded', 'true');
+    const botaoRecolher = screen.getByRole('button', { name: 'Recolher' });
+    expect(botaoRecolher).toHaveAttribute('aria-expanded', 'true');
     expect(detalhes).not.toHaveAttribute('hidden');
+
+    await user.click(botaoRecolher);
+    expect(screen.getByRole('button', { name: 'Expandir' })).toHaveAttribute('aria-expanded', 'false');
+    expect(detalhes).toHaveAttribute('hidden');
   });
 
   it('edita, salva e mantém o nome da campanha visível no cabeçalho recolhido', async () => {
     const user = userEvent.setup();
     render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
 
     const nome = await screen.findByLabelText('Nome da campanha');
     expect(screen.getByRole('heading', { level: 4, name: 'Vendas elegíveis' })).toBeInTheDocument();
@@ -171,6 +178,7 @@ describe('AdminCampanhasPage - regras individuais', () => {
   it('adiciona, configura e salva regras', async () => {
     const user = userEvent.setup();
     render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
 
     await screen.findByText('Regras de elegibilidade');
     await user.click(screen.getByRole('button', { name: /adicionar regra/i }));
@@ -241,6 +249,7 @@ describe('AdminCampanhasPage - regras individuais', () => {
   it('remove uma regra adicional sem permitir excluir a ultima', async () => {
     const user = userEvent.setup();
     render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
     await screen.findByText('Regras de elegibilidade');
 
     expect(screen.getByRole('button', { name: 'Remover regra 1' })).toBeDisabled();
@@ -287,6 +296,7 @@ describe('AdminCampanhasPage - regras individuais', () => {
       total: 2
     });
     render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
 
     await user.click(await screen.findByRole('button', { name: 'Adicionar exceção' }));
     expect(await screen.findByRole('dialog', { name: 'Adicionar exceção' })).toBeInTheDocument();
@@ -310,6 +320,7 @@ describe('AdminCampanhasPage - regras individuais', () => {
       vendas_excecao: [{ id: 77, cliente_nome: 'Venda cancelada', valida: false }]
     })]);
     render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
 
     expect(await screen.findByText(/Indisponível/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Remover exceção da venda 77' }));
@@ -327,6 +338,7 @@ describe('AdminCampanhasPage - regras individuais', () => {
       total: 1
     });
     render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
 
     await user.selectOptions(await screen.findByLabelText('Categoria'), 'valor_monetario');
     await user.click(await screen.findByRole('button', { name: 'Adicionar exceção' }));

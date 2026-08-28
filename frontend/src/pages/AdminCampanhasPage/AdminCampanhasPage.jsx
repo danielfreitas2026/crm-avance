@@ -168,6 +168,7 @@ function AdminCampanhasPage() {
       .then(([data, ops, users]) => {
         if (!ativo) return;
         setCampanhas(data.map(c => ({ ...c, operadora_ids: c.operadora_ids || [], participante_ids: c.participante_ids || [], venda_excecao_ids: c.venda_excecao_ids || [], vendas_excecao: c.vendas_excecao || [], regras: normalizarRegrasTela(c) })));
+        setCampanhasRecolhidas(new Set(data.filter(campanha => campanha.is_gift).map(campanha => campanha.id)));
         setOperadoras(ops);
         setUsuarios(users);
       })
