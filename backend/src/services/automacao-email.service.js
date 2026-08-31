@@ -87,24 +87,74 @@ async function buscarCandidatas(campos) {
     .whereNull('v.excluido_em').withGraphFetched('[cliente, operadora]');
 }
 
-function validarCandidata(venda, campos) {
-  const falhas = [];
-  if (venda.cancelada_em) falhas.push('venda cancelada');
-  if (campos.data_venda && String(venda.data_venda || '').slice(0, 10) !== campos.data_venda) falhas.push('data da venda divergente');
-  if (campos.quantidade !== null && Number(venda.quantidade_linhas) !== Number(campos.quantidade)) falhas.push('quantidade divergente');
-  if (campos.valor_mensal !== null && centavos(venda.valor_total) !== centavos(campos.valor_mensal)) falhas.push('valor mensal divergente');
-  return falhas;
+async function codigosEtapasFinais() {
+  try {
+    const etapas = await FunilEtapa.query().where({ ativo: true, etapa_final: true });
+    return etapas.length ? etapas.map(etapa => etapa.codigo) : ['concluido'];
+  } catch {
+    return ['concluido'];
+  }
+}
+
+function divergenciasSecundarias(venda, campos) {
+  const divergencias = [];
+  if (campos.data_venda && String(venda.data_venda || '').slice(0, 10) !== campos.data_venda) divergencias.push('data da venda divergente');
+  if (campos.quantidade !== null && campos.quantidade !== undefined && Number(venda.quantidade_linhas) !== Number(campos.quantidade)) divergencias.push('quantidade divergente');
+  if (campos.valor_mensal !== null && campos.valor_mensal !== undefined && centavos(venda.valor_total) !== centavos(campos.valor_mensal)) divergencias.push('valor mensal divergente');
+  return divergencias;
+}
+
+function motivosInelegibilidade(venda, etapasFinais) {
+  const motivos = [];
+  if (venda.excluido_em) motivos.push('venda excluída');
+  if (venda.cancelada_em) motivos.push('venda cancelada');
+  if (etapasFinais.includes(venda.status_funil)) motivos.push('venda concluída');
+  return motivos;
+}
+
+function avaliarCandidatas(candidatas, campos, etapasFinais) {
+  const avaliadas = candidatas.map(venda => {
+    const inelegibilidades = motivosInelegibilidade(venda, etapasFinais);
+    return {
+      venda,
+      auditoria: {
+        id: venda.id,
+        nome: venda.nome,
+        status_funil: venda.status_funil || null,
+        elegivel: inelegibilidades.length === 0,
+        inelegibilidades,
+        divergencias: divergenciasSecundarias(venda, campos)
+      }
+    };
+  });
+  const elegiveis = avaliadas.filter(item => item.auditoria.elegivel);
+  let selecionada = null;
+  if (elegiveis.length === 1) selecionada = elegiveis[0].venda;
+  if (elegiveis.length > 1) {
+    const compativeis = elegiveis.filter(item => item.auditoria.divergencias.length === 0);
+    if (compativeis.length === 1) selecionada = compativeis[0].venda;
+  }
+  let erro = null;
+  if (!selecionada && avaliadas.length > 0 && elegiveis.length === 0) {
+    erro = 'Todas as vendas encontradas para o documento estão concluídas, canceladas ou excluídas.';
+  } else if (!selecionada) {
+    erro = 'Não foi possível identificar uma única venda ativa para o documento.';
+  }
+  return { venda: selecionada, candidatas: avaliadas.map(item => item.auditoria), erro };
 }
 
 async function resolverVenda(registro, campos) {
+  const etapasFinais = await codigosEtapasFinais();
   if (registro.revisado_por_id && registro.venda_id) {
     const escolhida = await Venda.query().findById(registro.venda_id).withGraphFetched('[cliente, operadora]');
-    return escolhida ? { venda: escolhida, candidatas: [{ id: escolhida.id, falhas: [], manual: true }] } : { venda: null, candidatas: [] };
+    if (!escolhida) return { venda: null, candidatas: [], erro: 'A venda selecionada manualmente não foi encontrada.' };
+    const resultado = avaliarCandidatas([escolhida], campos, etapasFinais);
+    resultado.candidatas[0].manual = true;
+    if (!resultado.venda) resultado.erro = 'A venda selecionada manualmente está concluída, cancelada ou excluída e não pode receber atualizações.';
+    return resultado;
   }
   const candidatas = await buscarCandidatas(campos);
-  const avaliadas = candidatas.map(venda => ({ id: venda.id, nome: venda.nome, falhas: validarCandidata(venda, campos) }));
-  const validas = candidatas.filter((venda, indice) => avaliadas[indice].falhas.length === 0);
-  return { venda: validas.length === 1 ? validas[0] : null, candidatas: avaliadas };
+  return avaliarCandidatas(candidatas, campos, etapasFinais);
 }
 
 async function etapaDestino(alvo) {
@@ -169,7 +219,7 @@ async function processarRegistro(registro) {
   const dadosExtraidos = { ...campos, candidatas: resolucao.candidatas };
   const revisaoManual = Boolean(registro.revisado_por_id && registro.venda_id);
   if ((!revisaoManual && !campos.documento) || (!revisaoManual && !campos.destino) || campos.classificacao === 'desconhecido') return { status: 'revisao', erro: 'E-mail não reconhecido ou sem campos obrigatórios.', dados_extraidos: JSON.stringify(dadosExtraidos) };
-  if (!resolucao.venda) return { status: 'revisao', erro: 'Não foi possível identificar uma única venda com validação estrita.', dados_extraidos: JSON.stringify(dadosExtraidos) };
+  if (!resolucao.venda) return { status: 'revisao', erro: resolucao.erro || 'Não foi possível identificar uma única venda ativa para o documento.', dados_extraidos: JSON.stringify(dadosExtraidos) };
   const venda = resolucao.venda;
   if (campos.classificacao === 'tipo_2') {
     if (!campos.mensagem_operador) return { status: 'revisao', erro: 'Mensagem ao operador não encontrada.', dados_extraidos: JSON.stringify(dadosExtraidos), venda_id: venda.id };
@@ -261,4 +311,4 @@ async function resolverProblemaAutomatico(problemaId, mensagem, usuarioId) {
   return { ok: true };
 }
 
-module.exports = { ciclo, coletarEmails, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, _internals: { validarCandidata, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro } };
+module.exports = { ciclo, coletarEmails, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, _internals: { divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro } };

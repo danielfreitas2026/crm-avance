@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const parser = require('../src/services/vivo-email-parser.service');
 const automacao = require('../src/services/automacao-email.service');
+const FunilEtapa = require('../src/models/FunilEtapa');
+const Venda = require('../src/models/Venda');
 
 const EMAIL_PROBLEMA = `Dados da Venda
 ID: 301913
@@ -35,14 +37,88 @@ test('mapeia os destinos de aceite e entrega com texto normal ou corrompido', ()
   assert.equal(parser.classificarDestino('Destino novo').classificacao, 'desconhecido');
 });
 
-test('valida estritamente data, quantidade, valor e cancelamento', () => {
+test('registra as divergencias secundarias separadamente', () => {
   const campos = { data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99 };
   const venda = { data_venda: '2026-08-24', quantidade_linhas: 1, valor_total: 54.99, cancelada_em: null };
-  assert.deepEqual(automacao._internals.validarCandidata(venda, campos), []);
-  assert.deepEqual(automacao._internals.validarCandidata({ ...venda, data_venda: '2026-08-25' }, campos), ['data da venda divergente']);
-  assert.deepEqual(automacao._internals.validarCandidata({ ...venda, quantidade_linhas: 2 }, campos), ['quantidade divergente']);
-  assert.deepEqual(automacao._internals.validarCandidata({ ...venda, valor_total: 55 }, campos), ['valor mensal divergente']);
-  assert.deepEqual(automacao._internals.validarCandidata({ ...venda, cancelada_em: '2026-08-30' }, campos), ['venda cancelada']);
+  assert.deepEqual(automacao._internals.divergenciasSecundarias(venda, campos), []);
+  assert.deepEqual(automacao._internals.divergenciasSecundarias({ ...venda, data_venda: '2026-08-25' }, campos), ['data da venda divergente']);
+  assert.deepEqual(automacao._internals.divergenciasSecundarias({ ...venda, quantidade_linhas: 2 }, campos), ['quantidade divergente']);
+  assert.deepEqual(automacao._internals.divergenciasSecundarias({ ...venda, valor_total: 55 }, campos), ['valor mensal divergente']);
+});
+
+test('CNPJ com uma unica venda ativa prevalece sobre divergencias secundarias', () => {
+  const venda = { id: 1, status_funil: 'ativacao', data_venda: '2026-08-25', quantidade_linhas: 2, valor_total: 100 };
+  const resultado = automacao._internals.avaliarCandidatas(
+    [venda],
+    { data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99 },
+    ['concluido']
+  );
+  assert.equal(resultado.venda, venda);
+  assert.deepEqual(resultado.candidatas[0].divergencias, ['data da venda divergente', 'quantidade divergente', 'valor mensal divergente']);
+  assert.equal(resultado.candidatas[0].elegivel, true);
+});
+
+test('varias vendas ativas exigem uma unica correspondencia secundaria completa', () => {
+  const campos = { data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99 };
+  const exata = { id: 1, status_funil: 'ativacao', data_venda: '2026-08-24', quantidade_linhas: 1, valor_total: 54.99 };
+  const divergente = { id: 2, status_funil: 'entrega', data_venda: '2026-08-24', quantidade_linhas: 2, valor_total: 54.99 };
+  const resultado = automacao._internals.avaliarCandidatas([exata, divergente], campos, ['concluido']);
+  assert.equal(resultado.venda, exata);
+
+  const empatadas = automacao._internals.avaliarCandidatas([exata, { ...exata, id: 3 }], campos, ['concluido']);
+  assert.equal(empatadas.venda, null);
+
+  const semCamposSecundarios = automacao._internals.avaliarCandidatas([exata, { ...exata, id: 3 }], {}, ['concluido']);
+  assert.equal(semCamposSecundarios.venda, null);
+  assert.deepEqual(semCamposSecundarios.candidatas[0].divergencias, []);
+
+  const semCorrespondencia = automacao._internals.avaliarCandidatas(
+    [{ ...exata, quantidade_linhas: 2 }, { ...exata, id: 3, valor_total: 100 }],
+    campos,
+    ['concluido']
+  );
+  assert.equal(semCorrespondencia.venda, null);
+});
+
+test('vendas concluidas, canceladas e excluidas nao participam da correspondencia', () => {
+  const campos = { data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99 };
+  const ativa = { id: 1, status_funil: 'entrega', data_venda: '2026-08-25', quantidade_linhas: 2, valor_total: 100 };
+  const concluida = { ...ativa, id: 2, status_funil: 'final_personalizado' };
+  const cancelada = { ...ativa, id: 3, cancelada_em: '2026-08-30' };
+  const excluida = { ...ativa, id: 4, excluido_em: '2026-08-30' };
+  const resultado = automacao._internals.avaliarCandidatas([concluida, cancelada, excluida, ativa], campos, ['final_personalizado']);
+  assert.equal(resultado.venda, ativa);
+  assert.deepEqual(resultado.candidatas.map(item => item.elegivel), [false, false, false, true]);
+  assert.deepEqual(resultado.candidatas[0].inelegibilidades, ['venda concluída']);
+});
+
+test('documento com somente vendas finalizadas segue para revisao', () => {
+  const resultado = automacao._internals.avaliarCandidatas([
+    { id: 1, status_funil: 'concluido' },
+    { id: 2, status_funil: 'entrega', cancelada_em: '2026-08-30' }
+  ], {}, ['concluido']);
+  assert.equal(resultado.venda, null);
+  assert.match(resultado.erro, /concluídas, canceladas ou excluídas/);
+});
+
+test('revisao manual bloqueia venda concluida', async () => {
+  const queryVendaOriginal = Venda.query;
+  const queryEtapaOriginal = FunilEtapa.query;
+  Venda.query = () => ({
+    findById: () => ({
+      withGraphFetched: async () => ({ id: 9, status_funil: 'final_personalizado', excluido_em: null, cancelada_em: null })
+    })
+  });
+  FunilEtapa.query = () => ({ where: async () => [{ codigo: 'final_personalizado' }] });
+  try {
+    const resultado = await automacao._internals.resolverVenda({ revisado_por_id: 3, venda_id: 9 }, {});
+    assert.equal(resultado.venda, null);
+    assert.match(resultado.erro, /não pode receber atualizações/);
+    assert.equal(resultado.candidatas[0].manual, true);
+  } finally {
+    Venda.query = queryVendaOriginal;
+    FunilEtapa.query = queryEtapaOriginal;
+  }
 });
 
 test('normaliza endereco do remetente sem aceitar nome de exibicao', () => {
