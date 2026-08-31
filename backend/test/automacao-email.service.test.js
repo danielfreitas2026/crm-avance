@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { simpleParser } = require('mailparser');
 const parser = require('../src/services/vivo-email-parser.service');
 const automacao = require('../src/services/automacao-email.service');
 const FunilEtapa = require('../src/models/FunilEtapa');
@@ -56,6 +57,61 @@ test('interpreta input realizado com sucesso e direciona para aceite e biometria
     destino: 'Pend�ncia > Input Realizado com Sucesso',
     mensagem_operador: '1-CG8LB6HL', classificacao: 'tipo_1', alvo: 'aceite_biometria'
   });
+});
+
+test('usa o HTML quando a parte de texto do email contem apenas o placeholder', async () => {
+  const mime = await simpleParser(Buffer.from(`MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alternativa"
+
+--alternativa
+Content-Type: text/plain; charset=utf-8
+
+This is the plain text version of the email content
+--alternativa
+Content-Type: text/html; charset=utf-8
+
+<html><body>
+  <h3>Dados da Venda</h3>
+  <div>ID: 303048</div>
+  <div>Tipo Pessoa: Pessoa Jur&iacute;dica</div>
+  <div>Data da Venda: 27/08/2026 14:30:59</div>
+  <div>CNPJ: 29.046.034/0001-07 (29046034000107)</div>
+  <div>Raz&atilde;o Social: SINDICATO RURAL DE PIRAI</div>
+  <div>Nome Comercial:</div>
+  <h3>Resumo da Venda</h3>
+  <table><tr><th>Indicador</th><th>Quantidade</th><th>Total Mensal</th><th>Total Aparelho</th></tr>
+  <tr><td>Alta - Terminais</td><td>4</td><td>R$ 399,96</td><td>R$ 60,00</td></tr>
+  <tr><td>Total</td><td>4</td><td>R$ 399,96</td><td>R$ 60,00</td></tr></table>
+  <h3>Workflow (tramita&ccedil;&atilde;o do pedido)</h3>
+  <div>Origem: Aguardando Input Autom&aacute;tico</div>
+  <div>Mensagem ao Operador: 1-CG8LB6HL</div>
+  <div>Destino: Pend&ecirc;ncia &gt; Input Realizado com Sucesso</div>
+</body></html>
+--alternativa--`));
+
+  assert.equal(mime.text.trim(), 'This is the plain text version of the email content');
+  assert.deepEqual(parser.interpretarEmail(automacao._internals.extrairCorpoMensagem(mime)), {
+    documento: '29046034000107', data_venda: '2026-08-27', quantidade: 4, valor_mensal: 399.96,
+    destino: 'Pendência > Input Realizado com Sucesso',
+    mensagem_operador: '1-CG8LB6HL', classificacao: 'tipo_1', alvo: 'aceite_biometria'
+  });
+});
+
+test('repeticao recarrega do Gmail um corpo armazenado sem dados uteis', async () => {
+  let mensagemConsultada = null;
+  const atualizacao = await automacao._internals.prepararRepeticao({
+    gmail_message_id: 'gmail-303048',
+    corpo_texto: 'This is the plain text version of the email content'
+  }, async gmailMessageId => {
+    mensagemConsultada = gmailMessageId;
+    return EMAIL_INPUT_REALIZADO;
+  });
+
+  assert.equal(mensagemConsultada, 'gmail-303048');
+  assert.equal(atualizacao.status, 'pendente');
+  assert.equal(atualizacao.erro, null);
+  assert.equal(atualizacao.corpo_texto, EMAIL_INPUT_REALIZADO);
+  assert.match(atualizacao.corpo_hash, /^[a-f0-9]{64}$/);
 });
 
 test('mapeia os destinos de aceite e entrega com texto normal ou corrompido', () => {

@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const axios = require('axios');
+const { htmlToText } = require('html-to-text');
 const { simpleParser } = require('mailparser');
 const db = require('../database/connection');
 const AutomacaoEmail = require('../models/AutomacaoEmail');
@@ -27,6 +28,29 @@ function emailRemetente(valor) { return String(valor || '').match(/<([^>]+)>/)?.
 function configurado() { return String(process.env.GMAIL_VIVO_AUTOMATION_ENABLED || '').toLowerCase() === 'true'; }
 function tokenTelegramProblemas() { return String(process.env.TELEGRAM_APROVACOES_BOT_TOKEN || '').trim(); }
 
+function pontuarCorpoEmail(corpo) {
+  const campos = interpretarEmail(corpo);
+  return [
+    campos.documento,
+    campos.data_venda,
+    campos.quantidade !== null ? campos.quantidade : null,
+    campos.valor_mensal !== null ? campos.valor_mensal : null,
+    campos.destino
+  ].filter(valor => valor !== null && valor !== undefined && valor !== '').length;
+}
+
+function extrairCorpoMensagem(mime) {
+  const texto = String(mime?.text || '').trim();
+  let textoHtml = '';
+  if (typeof mime?.html === 'string' && mime.html.trim()) {
+    try { textoHtml = htmlToText(mime.html, { wordwrap: false }).trim(); } catch { textoHtml = ''; }
+  }
+  const candidatos = [...new Set([texto, textoHtml].filter(Boolean))];
+  return candidatos.reduce((melhor, candidato) => (
+    pontuarCorpoEmail(candidato) > pontuarCorpoEmail(melhor) ? candidato : melhor
+  ), '');
+}
+
 async function tokenAcesso() {
   const parametros = new URLSearchParams({
     client_id: process.env.GMAIL_VIVO_CLIENT_ID || '', client_secret: process.env.GMAIL_VIVO_CLIENT_SECRET || '',
@@ -40,6 +64,13 @@ async function gmailGet(caminho, token, params = {}) {
   return axios.get(`https://gmail.googleapis.com/gmail/v1/users/me/${caminho}`, { headers: { Authorization: `Bearer ${token}` }, params, timeout: 15000 });
 }
 
+async function carregarCorpoGmail(gmailMessageId) {
+  const token = await tokenAcesso();
+  const resposta = await gmailGet(`messages/${gmailMessageId}`, token, { format: 'raw' });
+  const mime = await simpleParser(Buffer.from(resposta.data.raw, 'base64url'), { skipImageLinks: true });
+  return extrairCorpoMensagem(mime);
+}
+
 async function registrarMensagem(remota, token) {
   if (await AutomacaoEmail.query().findOne({ gmail_message_id: remota.id })) return false;
   const resposta = await gmailGet(`messages/${remota.id}`, token, { format: 'raw' });
@@ -47,7 +78,7 @@ async function registrarMensagem(remota, token) {
   const mime = await simpleParser(Buffer.from(mensagem.raw, 'base64url'), { skipImageLinks: true });
   const remetente = mime.from?.text || '';
   const autorizado = remetentesPermitidos().has(emailRemetente(remetente));
-  const corpo = autorizado ? String(mime.text || '').trim() : null;
+  const corpo = autorizado ? extrairCorpoMensagem(mime) : null;
   await AutomacaoEmail.query().insert({
     gmail_message_id: mensagem.id, gmail_thread_id: mensagem.threadId || null,
     remetente, assunto: mime.subject || null, corpo_texto: corpo,
@@ -309,7 +340,23 @@ async function revisar(id, dados, usuarioId) {
   await processarPendentes(); return AutomacaoEmail.query().findById(id);
 }
 
-async function repetir(id) { const item = await AutomacaoEmail.query().findById(id); if (!item) return null; await AutomacaoEmail.query().patchAndFetchById(id, { status: 'pendente', erro: null }); await processarPendentes(); return AutomacaoEmail.query().findById(id); }
+async function prepararRepeticao(item, carregarCorpo = carregarCorpoGmail) {
+  const atualizacao = { status: 'pendente', erro: null };
+  if (pontuarCorpoEmail(item.corpo_texto) === 0 && item.gmail_message_id) {
+    const corpo = await carregarCorpo(item.gmail_message_id);
+    atualizacao.corpo_texto = corpo;
+    atualizacao.corpo_hash = corpo ? crypto.createHash('sha256').update(corpo).digest('hex') : null;
+  }
+  return atualizacao;
+}
+
+async function repetir(id) {
+  const item = await AutomacaoEmail.query().findById(id);
+  if (!item) return null;
+  await AutomacaoEmail.query().patchAndFetchById(id, await prepararRepeticao(item));
+  await processarPendentes();
+  return AutomacaoEmail.query().findById(id);
+}
 async function descartar(id, justificativa, usuarioId) { if (!String(justificativa || '').trim()) throw Object.assign(new Error('Informe a justificativa.'), { statusCode: 400 }); return AutomacaoEmail.query().patchAndFetchById(id, { status: 'descartado', justificativa_revisao: String(justificativa).trim(), revisado_por_id: usuarioId, processado_em: formatarSQL() }); }
 
 async function limparCorposExpirados() { const limite = new Date(); limite.setUTCFullYear(limite.getUTCFullYear() - 1); return AutomacaoEmail.query().whereNotNull('corpo_texto').where('recebido_em', '<', formatarSQL(limite)).patch({ corpo_texto: null, corpo_expirado_em: formatarSQL(), updated_at: new Date() }); }
@@ -334,4 +381,4 @@ async function resolverProblemaAutomatico(problemaId, mensagem, usuarioId) {
   return { ok: true };
 }
 
-module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, _internals: { calcularDepois, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro } };
+module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro } };
