@@ -46,6 +46,7 @@ import {
   listarVendedoras
 } from '../../services/venda.service';
 import { parseUtcDateTime } from '../../utils/datetime';
+import { getAutorHistorico } from '../../utils/origemHistorico';
 import {
   VISIBILIDADE_OCULTAR,
   VISIBILIDADE_SOMENTE,
@@ -518,7 +519,7 @@ function getSellers(venda = {}) {
  * Retorna history author a partir dos dados informados.
  */
 function getHistoryAuthor(item) {
-  return item.usuario?.nome || (item.usuario_id ? `Usuário #${item.usuario_id}` : 'Sistema');
+  return getAutorHistorico(item);
 }
 
 /**

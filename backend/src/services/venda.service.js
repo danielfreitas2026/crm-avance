@@ -21,6 +21,7 @@ const telegramAprovacoesService = require('./telegram-aprovacoes.service');
 const leadDistribuicaoService = require('./lead-distribuicao.service');
 const vendaFuturoClienteService = require('./venda-futuro-cliente.service');
 const vendaVisibilidadeService = require('./venda-visibilidade.service');
+const auditLogService = require('./audit-log.service');
 const { parseUtcDateTime } = require('../utils/datetime');
 const { listarPermissoesEfetivas, usuarioTemPermissaoLocal } = require('../utils/permissoes');
 const ExcelJS = require('exceljs');
@@ -1937,10 +1938,12 @@ function montarResumoFases(vendas = []) {
 /**
  * Lista etapas funil ordenadas conforme os filtros e parametros informados.
  */
-async function listarEtapasFunilOrdenadas() {
+async function listarEtapasFunilOrdenadas(opcoes = {}) {
   try {
-    const etapas = await FunilEtapa.query()
-      .where('ativo', true)
+    const query = FunilEtapa.query();
+    if (!opcoes.incluirInativas) query.where('ativo', true);
+
+    const etapas = await query
       .orderBy('ordem', 'asc')
       .orderBy('nome', 'asc');
 
@@ -3811,6 +3814,71 @@ async function validarBarreiraConferencia(venda, statusDestino) {
   return `Conclua as etapas de conferência antes de avançar: ${pendentes.map(etapa => etapa.titulo).join(', ')}.`;
 }
 
+/** Retorna as etapas de origem e intermediarias atravessadas em um avanco. */
+function obterEtapasAtravessadas(etapasFunil, statusOrigem, statusDestino) {
+  const origem = etapasFunil.findIndex(etapa => etapa.id === statusOrigem);
+  const destino = etapasFunil.findIndex(etapa => etapa.id === statusDestino);
+
+  if (origem < 0 || destino <= origem) return [];
+  return etapasFunil.slice(origem, destino);
+}
+
+/**
+ * Monta o patch que considera cumpridos os requisitos das etapas atravessadas
+ * pela automacao do Gmail, sem sobrescrever conclusoes manuais existentes.
+ */
+function montarConclusaoRequisitosGmail(venda, etapasAtravessadas, agora) {
+  const patch = {};
+  const concluidos = [];
+
+  if (etapasAtravessadas.some(etapa => etapa.aceite_biometria)) {
+    if (!venda.aceite_concluido) {
+      patch.aceite_concluido = true;
+      concluidos.push('aceite');
+    }
+    if (!venda.biometria_concluida) {
+      patch.biometria_concluida = true;
+      concluidos.push('biometria');
+    }
+  }
+
+  if (etapasAtravessadas.some(etapa => etapa.bloqueia_avanco)) {
+    // Require tardio: venda-etapa.service depende de venda-arquivo.service,
+    // que importa este modulo.
+    const { ETAPAS, etapasPendentes } = require('./venda-etapa.service');
+    const chavesPendentes = new Set(etapasPendentes(venda).map(etapa => etapa.chave));
+
+    ETAPAS.filter(etapa => chavesPendentes.has(etapa.chave)).forEach(etapa => {
+      patch[etapa.coluna] = true;
+      patch[`${etapa.coluna}_em`] = agora;
+      patch[`${etapa.coluna}_por_id`] = null;
+      concluidos.push(etapa.chave);
+    });
+  }
+
+  return { patch, concluidos };
+}
+
+/** Prepara os requisitos automaticos aplicaveis ao avanco solicitado. */
+async function prepararConclusaoRequisitosGmail(venda, statusDestino, agora) {
+  const etapasFunil = await listarEtapasFunilOrdenadas({ incluirInativas: true });
+  const atravessadas = obterEtapasAtravessadas(
+    etapasFunil,
+    venda.status_funil,
+    statusDestino
+  );
+
+  if (!atravessadas.some(etapa => etapa.bloqueia_avanco)) {
+    return montarConclusaoRequisitosGmail(venda, atravessadas, agora);
+  }
+
+  const vendaComOperadora = await Venda.query()
+    .findById(venda.id)
+    .withGraphFetched('operadora');
+
+  return montarConclusaoRequisitosGmail(vendaComOperadora || venda, atravessadas, agora);
+}
+
 /**
  * Impede o avanco a partir de uma etapa de aceite/biometria enquanto houver
  * marcadores pendentes. Permanecer na etapa, retornar e voltar etapas continua
@@ -3889,6 +3957,7 @@ async function atualizarAceiteBiometriaVenda(id, dados, usuarioId) {
  */
 async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
   const atorSistema = opcoes.sistema === true;
+  const origemGmail = opcoes.origemMovimentacao === 'automacao_gmail';
   const permitido = atorSistema || await usuarioPodeAcessarVenda(id, usuarioId);
 
   if (!permitido) {
@@ -3919,6 +3988,9 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
   const prioridade = prioridadeInformada === undefined
     ? venda.prioridade_funil || 'media'
     : prioridadeInformada;
+  const requisitosAutomaticos = origemGmail
+    ? await prepararConclusaoRequisitosGmail(venda, status, agora)
+    : { patch: {}, concluidos: [] };
 
   const retornoVoltandoParaOrigem = venda.status_funil === 'retorno' && status === (venda.status_anterior_retorno || 'aprovacao');
 
@@ -3934,13 +4006,13 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
     return { status: 'invalid', message: 'Prioridade do funil invalida.' };
   }
 
-  const bloqueioBarreira = await validarBarreiraConferencia(venda, status);
+  const bloqueioBarreira = origemGmail ? null : await validarBarreiraConferencia(venda, status);
 
   if (bloqueioBarreira) {
     return { status: 'invalid', message: bloqueioBarreira };
   }
 
-  const bloqueioAceiteBiometria = await validarAceiteBiometria(venda, status);
+  const bloqueioAceiteBiometria = origemGmail ? null : await validarAceiteBiometria(venda, status);
 
   if (bloqueioAceiteBiometria) {
     return { status: 'invalid', message: bloqueioAceiteBiometria };
@@ -4088,6 +4160,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
   let clienteSincronizadoId = null;
   const vendaAtualizada = await Venda.transaction(async trx => {
     const dadosAtualizacao = {
+      ...requisitosAutomaticos.patch,
       status_funil: status,
       prioridade_funil: prioridade,
       ultima_atividade_em: agora,
@@ -4118,11 +4191,41 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
         status_anterior: venda.status_funil || null,
         prioridade_funil: prioridade,
         prioridade_anterior: venda.prioridade_funil || 'media',
-        observacao
+        observacao,
+        ...(origemGmail ? {
+          origem_movimentacao: 'automacao_gmail',
+          automacao_email_id: Number(opcoes.automacaoEmailId) || null,
+          requisitos_concluidos_automaticamente: requisitosAutomaticos.concluidos
+        } : {})
       },
       createdAt: agora,
       trx
     });
+
+    if (origemGmail) {
+      await auditLogService.registrar(null, {
+        acao: 'venda.status_atualizado',
+        entidade: 'vendas',
+        entidade_id: id,
+        dados: {
+          id,
+          origem_movimentacao: 'automacao_gmail',
+          automacao_email_id: Number(opcoes.automacaoEmailId) || null,
+          requisitos_concluidos_automaticamente: requisitosAutomaticos.concluidos,
+          alteracoes: {
+            status_funil: status,
+            observacao
+          },
+          status_funil: status,
+          movimentacao: {
+            acao: 'venda.status_atualizado',
+            status_anterior: venda.status_funil || null,
+            status_novo: status,
+            observacao: observacao || null
+          }
+        }
+      }, trx);
+    }
 
     if (status !== venda.status_funil) {
       await vendaNotificacaoParadaService.desativarNotificacaoVendaParada(id, venda.status_funil, trx);
@@ -4688,6 +4791,8 @@ module.exports = {
     somarQuantidadeItensChips,
     validarVendedorasNosChips,
     vendaDeveAparecerNoFunil,
-    validarAceiteBiometria
+    validarAceiteBiometria,
+    obterEtapasAtravessadas,
+    montarConclusaoRequisitosGmail
   }
 };

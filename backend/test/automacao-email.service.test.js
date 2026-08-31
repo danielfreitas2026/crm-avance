@@ -4,6 +4,7 @@ const parser = require('../src/services/vivo-email-parser.service');
 const automacao = require('../src/services/automacao-email.service');
 const FunilEtapa = require('../src/models/FunilEtapa');
 const Venda = require('../src/models/Venda');
+const vendaService = require('../src/services/venda.service');
 
 const EMAIL_PROBLEMA = `Dados da Venda
 ID: 301913
@@ -138,5 +139,70 @@ test('usa especificamente o bot de aprovacoes para notificar problemas', () => {
     else process.env.TELEGRAM_APROVACOES_BOT_TOKEN = tokenAprovacoesAnterior;
     if (tokenGeralAnterior === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
     else process.env.TELEGRAM_BOT_TOKEN = tokenGeralAnterior;
+  }
+});
+
+test('movimentacao processada pelo Gmail envia origem e id da automacao ao servico de vendas', async () => {
+  const queryVendaOriginal = Venda.query;
+  const queryEtapaOriginal = FunilEtapa.query;
+  const atualizarOriginal = vendaService.atualizarStatusVenda;
+  let chamada = null;
+  let consultaEtapa = 0;
+
+  Venda.query = () => ({
+    findById() { return this; },
+    withGraphFetched: async () => ({
+      id: 41,
+      status_funil: 'aceite',
+      excluido_em: null,
+      cancelada_em: null
+    })
+  });
+  FunilEtapa.query = () => {
+    consultaEtapa += 1;
+    if (consultaEtapa === 1) {
+      return { where: async () => [{ codigo: 'concluido' }] };
+    }
+    return {
+      findOne: async filtros => filtros.codigo === 'entrega'
+        ? { codigo: 'entrega', ordem: 3 }
+        : { codigo: 'aceite', ordem: 2 }
+    };
+  };
+  vendaService.atualizarStatusVenda = async (...args) => {
+    chamada = args;
+    return { status: 'ok' };
+  };
+
+  try {
+    const resultado = await automacao._internals.processarRegistro({
+      id: 88,
+      venda_id: 41,
+      revisado_por_id: 7,
+      corpo_texto: '',
+      dados_extraidos: JSON.stringify({
+        _override: {
+          classificacao: 'tipo_1',
+          alvo: 'entrega',
+          destino: 'Logística concluída',
+          documento: '11143938000187'
+        }
+      })
+    });
+
+    assert.equal(resultado.status, 'concluido');
+    assert.equal(chamada[0], 41);
+    assert.equal(chamada[1].status_funil, 'entrega');
+    assert.match(chamada[1].observacao, /Gmail/);
+    assert.equal(chamada[2], null);
+    assert.deepEqual(chamada[3], {
+      sistema: true,
+      origemMovimentacao: 'automacao_gmail',
+      automacaoEmailId: 88
+    });
+  } finally {
+    Venda.query = queryVendaOriginal;
+    FunilEtapa.query = queryEtapaOriginal;
+    vendaService.atualizarStatusVenda = atualizarOriginal;
   }
 });

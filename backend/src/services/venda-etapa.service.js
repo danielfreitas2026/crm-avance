@@ -124,6 +124,15 @@ async function sincronizarEtapaPorArquivos(vendaId, categoria, usuarioId) {
 
   const concluida = total > 0;
 
+  // Conclusoes feitas pela automacao do Gmail nao possuem usuario autor e
+  // continuam validas mesmo sem comprovante anexado.
+  const conclusaoAutomatica = Boolean(venda[etapa.coluna])
+    && !venda[`${etapa.coluna}_por_id`];
+
+  if (!concluida && conclusaoAutomatica) {
+    return { chave: etapa.chave, concluida: true };
+  }
+
   if (Boolean(venda[etapa.coluna]) === concluida) {
     return { chave: etapa.chave, concluida };
   }

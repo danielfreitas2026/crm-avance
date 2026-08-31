@@ -19,6 +19,7 @@ import {
 import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import { STAGES as FALLBACK_STAGES } from '../../config/constants';
 import { formatUtcDateTime, getUtcDateTimeTimestamp } from '../../utils/datetime';
+import { getAutorHistorico } from '../../utils/origemHistorico';
 import '../VendasPage/VendasPage.css';
 import '../Clientes/Clientes.css';
 
@@ -480,7 +481,7 @@ function MarkerIcon({ log, size = 12 }) {
  */
 function HistoricoItem({ log, selecionado, compacto, onClick }) {
   const tipo = getTipo(log);
-  const usuario = log.usuario?.nome || (log.usuario_id ? `Usuário #${log.usuario_id}` : 'Sistema');
+  const usuario = getAutorHistorico(log);
 
   return (
     <div 
@@ -563,7 +564,7 @@ function buildStageProgression(logs, etapas = []) {
 
   for (const log of sorted) {
     const dados = parseDados(log.dados);
-    const usuario = log.usuario?.nome || (log.usuario_id ? `Usuário #${log.usuario_id}` : 'Sistema');
+    const usuario = getAutorHistorico(log);
 
     if (log.acao === 'venda.criada') {
       if (!reached.has(primeiraEtapa)) {
@@ -802,7 +803,7 @@ function VendaHistoricoGrupo({ grupo, etapasFunil, stageNamesMap, logSelecionado
           <div className="history-sale-row__scroll" role="list" aria-label={`Eventos da venda ${grupo.vendaId}`}>
             {grupo.logs.map((log, index) => {
               const tipo = getTipo(log);
-              const usuario = log.usuario?.nome || (log.usuario_id ? `Usuário #${log.usuario_id}` : 'Sistema');
+              const usuario = getAutorHistorico(log);
               const selecionado = logSelecionado?.id === log.id;
 
               return (
@@ -897,7 +898,7 @@ function DetalheCard({ log, stageNamesMap = DEFAULT_STAGE_NAMES_MAP, onClose, on
         <div className="history-detail-row">
           <span className="history-detail-label">Usuário:</span>
           <span className="history-detail-value">
-            {log.usuario?.nome || (log.usuario_id ? `Usuário #${log.usuario_id}` : 'Sistema')}
+            {getAutorHistorico(log)}
           </span>
         </div>
 

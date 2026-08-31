@@ -231,7 +231,19 @@ async function processarRegistro(registro) {
   const atual = await FunilEtapa.query().findOne({ codigo: venda.status_funil });
   if (atual && Number(etapa.ordem) < Number(atual.ordem)) return { status: 'revisao', erro: 'O e-mail tentaria regredir o funil.', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos) };
   if (venda.status_funil !== etapa.codigo) {
-    const movimento = await vendaService.atualizarStatusVenda(venda.id, { status_funil: etapa.codigo, observacao: `Atualização automática pelo Gmail: ${campos.destino}` }, null, { sistema: true });
+    const movimento = await vendaService.atualizarStatusVenda(
+      venda.id,
+      {
+        status_funil: etapa.codigo,
+        observacao: `Atualização automática pelo Gmail: ${campos.destino}`
+      },
+      null,
+      {
+        sistema: true,
+        origemMovimentacao: 'automacao_gmail',
+        automacaoEmailId: registro.id
+      }
+    );
     if (movimento.status !== 'ok') return { status: 'revisao', erro: movimento.message || 'Movimentação bloqueada pelas regras do funil.', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos) };
   }
   return { status: 'concluido', classificacao: 'tipo_1', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos), erro: null, processado_em: formatarSQL() };

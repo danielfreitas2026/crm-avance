@@ -74,12 +74,12 @@ function montarRegistro(req, dadosAuditoria) {
 /**
  * Processa registrar conforme as regras do dominio.
  */
-async function registrar(req, dadosAuditoria) {
+async function registrar(req, dadosAuditoria, trx = null) {
   if (!dadosAuditoria?.acao) {
     throw new Error('A ação da auditoria é obrigatória.');
   }
 
-  return AuditLog.query().insert(montarRegistro(req, dadosAuditoria));
+  return AuditLog.query(trx).insert(montarRegistro(req, dadosAuditoria));
 }
 
 /**
