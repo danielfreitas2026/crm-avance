@@ -59,13 +59,17 @@ async function registrarMensagem(remota, token) {
   return true;
 }
 
-async function coletarEmails() {
+function calcularDepois(inicio, ultima, desdeInicio = false) {
+  if (desdeInicio || !ultima) return Math.floor(inicio.getTime() / 1000);
+  return Math.max(Math.floor(new Date(ultima).getTime() / 1000) - 300, Math.floor(inicio.getTime() / 1000));
+}
+
+async function coletarEmails({ desdeInicio = false } = {}) {
   if (!configurado()) return { habilitado: false, coletados: 0 };
   const inicio = new Date(process.env.GMAIL_VIVO_PROCESS_AFTER || '');
   if (Number.isNaN(inicio.getTime())) throw new Error('GMAIL_VIVO_PROCESS_AFTER inválido ou ausente.');
   const ultima = await AutomacaoEmail.query().max('recebido_em as valor').first();
-  const referencia = ultima?.valor ? new Date(ultima.valor) : inicio;
-  const depois = Math.max(Math.floor(referencia.getTime() / 1000) - 300, Math.floor(inicio.getTime() / 1000));
+  const depois = calcularDepois(inicio, ultima?.valor, desdeInicio);
   const token = await tokenAcesso();
   let pageToken;
   let coletados = 0;
@@ -75,6 +79,13 @@ async function coletarEmails() {
     pageToken = resposta.data.nextPageToken;
   } while (pageToken);
   return { habilitado: true, coletados };
+}
+
+async function coletarHistorico() {
+  const coleta = await coletarEmails({ desdeInicio: true });
+  if (!coleta.habilitado) throw Object.assign(new Error('A automação Gmail está desabilitada.'), { statusCode: 409 });
+  const processados = await processarPendentes();
+  return { ...coleta, processados };
 }
 
 async function buscarCandidatas(campos) {
@@ -323,4 +334,4 @@ async function resolverProblemaAutomatico(problemaId, mensagem, usuarioId) {
   return { ok: true };
 }
 
-module.exports = { ciclo, coletarEmails, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, _internals: { divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro } };
+module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, _internals: { calcularDepois, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro } };

@@ -5,6 +5,7 @@ import AutomacoesPage from './AutomacoesPage';
 import ProblemasPage from '../ProblemasPage/ProblemasPage';
 
 const api = vi.hoisted(() => ({
+  coletarHistoricoAutomacoes: vi.fn(),
   descartarAutomacao: vi.fn(),
   listarAutomacoes: vi.fn(),
   obterResumoAutomacoes: vi.fn(),
@@ -53,6 +54,7 @@ describe('Painéis da automação Gmail VIVO', () => {
     api.revisarAutomacao.mockResolvedValue({});
     api.repetirAutomacao.mockResolvedValue({});
     api.descartarAutomacao.mockResolvedValue({});
+    api.coletarHistoricoAutomacoes.mockResolvedValue({ coletados: 4, processados: 4 });
     api.resolverProblemaAutomatico.mockResolvedValue({});
   });
 
@@ -94,6 +96,17 @@ describe('Painéis da automação Gmail VIVO', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Falha ao consultar automações.');
     expect(screen.getByTestId('layout-privado')).toBeInTheDocument();
+  });
+
+  it('busca o histórico quando a integração está ativa', async () => {
+    const user = userEvent.setup();
+    api.obterResumoAutomacoes.mockResolvedValue({ ...resumo, habilitada: true });
+    render(<AutomacoesPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Buscar e-mails anteriores' }));
+
+    await waitFor(() => expect(api.coletarHistoricoAutomacoes).toHaveBeenCalledOnce());
+    expect(await screen.findByRole('status')).toHaveTextContent('4 e-mail(is) anterior(es) encontrado(s); 4 processado(s) agora.');
   });
 
   it('renderiza o painel de problemas no layout e apresenta a pendência', async () => {

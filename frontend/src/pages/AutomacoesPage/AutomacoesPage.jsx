@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
 import {
+  coletarHistoricoAutomacoes,
   descartarAutomacao,
   listarAutomacoes,
   obterResumoAutomacoes,
@@ -100,6 +101,8 @@ export default function AutomacoesPage() {
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
+  const [coletandoHistorico, setColetandoHistorico] = useState(false);
+  const [sucesso, setSucesso] = useState('');
 
   async function carregar(manual = false) {
     if (manual) setAtualizando(true);
@@ -114,6 +117,21 @@ export default function AutomacoesPage() {
     } finally {
       setCarregando(false);
       setAtualizando(false);
+    }
+  }
+
+  async function coletarHistorico() {
+    setColetandoHistorico(true);
+    setErro('');
+    setSucesso('');
+    try {
+      const resultado = await coletarHistoricoAutomacoes();
+      setSucesso(`${resultado.coletados} e-mail(is) anterior(es) encontrado(s); ${resultado.processados} processado(s) agora.`);
+      await carregar(true);
+    } catch (error) {
+      setErro(error.message);
+    } finally {
+      setColetandoHistorico(false);
     }
   }
 
@@ -159,10 +177,12 @@ export default function AutomacoesPage() {
               {STATUS.map(item => <option key={item} value={item}>{item ? STATUS_LABEL[item] : 'Todos os status'}</option>)}
             </select>
           </label>
+          <button type="button" className="btn" disabled={coletandoHistorico || !resumo.habilitada} onClick={coletarHistorico}><I.History size={14} /> {coletandoHistorico ? 'Buscando histórico...' : 'Buscar e-mails anteriores'}</button>
           <button type="button" className="btn automation-refresh" disabled={atualizando} onClick={() => carregar(true)}><I.Refresh size={14} /> {atualizando ? 'Atualizando...' : 'Atualizar'}</button>
         </section>
 
         {erro && <div className="alert-error automation-alert" role="alert">{erro}</div>}
+        {sucesso && <div className="alert-success automation-alert" role="status">{sucesso}</div>}
 
         <section className="automation-list" aria-busy={carregando}>
           {carregando && <div className="automation-empty"><span className="automation-spinner" aria-hidden="true" /><strong>Carregando execuções</strong><span>Consultando o histórico da automação.</span></div>}

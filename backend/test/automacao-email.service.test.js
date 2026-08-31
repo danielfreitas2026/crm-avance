@@ -126,6 +126,14 @@ test('normaliza endereco do remetente sem aceitar nome de exibicao', () => {
   assert.equal(automacao._internals.emailRemetente('MS Gestor <workflow@vivo.example>'), 'workflow@vivo.example');
 });
 
+test('coleta historica ignora o cursor mais recente e respeita a data inicial', () => {
+  const inicio = new Date('2026-08-20T03:00:00.000Z');
+  const ultima = '2026-08-30T12:00:00.000Z';
+
+  assert.equal(automacao._internals.calcularDepois(inicio, ultima, true), 1787194800);
+  assert.equal(automacao._internals.calcularDepois(inicio, ultima, false), 1788090900);
+});
+
 test('usa especificamente o bot de aprovacoes para notificar problemas', () => {
   const tokenAprovacoesAnterior = process.env.TELEGRAM_APROVACOES_BOT_TOKEN;
   const tokenGeralAnterior = process.env.TELEGRAM_BOT_TOKEN;
