@@ -27,6 +27,8 @@ import ClientesAntigosPage from '../pages/ClientesAntigosPage/ClientesAntigosPag
 import FuturosClientesPage from '../pages/FuturosClientesPage/FuturosClientesPage';
 import FechamentoMensalPage from '../pages/FechamentoMensalPage/FechamentoMensalPage';
 import MensagensPage from '../pages/MensagensPage/MensagensPage';
+import AutomacoesPage from '../pages/AutomacoesPage/AutomacoesPage';
+import ProblemasPage from '../pages/ProblemasPage/ProblemasPage';
 import '../pages/HistoricoPage/HistoricoPage.css';
 
 import { getUsuarioLocal, temPermissao } from '../services/auth.service';
@@ -126,6 +128,8 @@ function AppRoutes() {
       <Route path="/dashboard" element={<Navigate to="/" replace />} />
       <Route path="/relatorios" element={<PrivateRoute permission="relatorios_visualizar"><RelatoriosPage /></PrivateRoute>} />
       <Route path="/mensagens" element={<PrivateRoute permission={['chat_usar', 'chat_visualizar_todas']}><MensagensPage /></PrivateRoute>} />
+      <Route path="/automacoes" element={<PrivateRoute permission="automacoes_gerenciar"><AutomacoesPage /></PrivateRoute>} />
+      <Route path="/problemas" element={<PrivateRoute permission="problemas_pos_venda_responsavel"><ProblemasPage /></PrivateRoute>} />
       <Route path="/historico" element={<PrivateRoute permission="historico_visualizar"><HistoricoPage /></PrivateRoute>} />
       <Route path="/historico/lixeira" element={<PrivateRoute permission="historico_visualizar"><HistoricoLixeiraPage /></PrivateRoute>} />
       <Route

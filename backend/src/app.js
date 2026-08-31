@@ -23,6 +23,8 @@ const notaRoutes = require('./routes/nota.routes');
 const fechamentoRoutes = require('./routes/fechamento.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const telegramRoutes = require('./routes/telegram.routes');
+const automacaoRoutes = require('./routes/automacao.routes');
+const problemaRoutes = require('./routes/problema.routes');
 const { securityHeadersMiddleware } = require('./middlewares/security-headers.middleware');
 
 const app = express();
@@ -72,6 +74,8 @@ app.use('/api/notas', notaRoutes);
 app.use('/api/fechamento', fechamentoRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/telegram', telegramRoutes);
+app.use('/api/automacoes', automacaoRoutes);
+app.use('/api/problemas', problemaRoutes);
 
 app.get('/api/health', (req, res) => {
   return res.json({

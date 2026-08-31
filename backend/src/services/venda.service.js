@@ -3887,8 +3887,9 @@ async function atualizarAceiteBiometriaVenda(id, dados, usuarioId) {
 /**
  * Atualiza status venda com os dados informados.
  */
-async function atualizarStatusVenda(id, dados, usuarioId) {
-  const permitido = await usuarioPodeAcessarVenda(id, usuarioId);
+async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
+  const atorSistema = opcoes.sistema === true;
+  const permitido = atorSistema || await usuarioPodeAcessarVenda(id, usuarioId);
 
   if (!permitido) {
     return { status: 'not_found' };
@@ -3921,7 +3922,7 @@ async function atualizarStatusVenda(id, dados, usuarioId) {
 
   const retornoVoltandoParaOrigem = venda.status_funil === 'retorno' && status === (venda.status_anterior_retorno || 'aprovacao');
 
-  if (!retornoVoltandoParaOrigem && !await usuarioTemPermissao(usuarioId, 'pos_venda')) {
+  if (!atorSistema && !retornoVoltandoParaOrigem && !await usuarioTemPermissao(usuarioId, 'pos_venda')) {
     return { status: 'forbidden', message: 'Apenas usuários com permissão de pós-venda podem movimentar vendas no funil.' };
   }
 

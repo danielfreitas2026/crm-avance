@@ -34,7 +34,8 @@ const TIPOS_LEAD_RETORNO = [TIPO_LEAD_RETORNO_PRE, TIPO_LEAD_RETORNO_DUE];
 const TIPOS_PROBLEMA_VENDA = [
   'venda_problema_aberto',
   'venda_problema_resolvido',
-  'venda_problema_correcao'
+  'venda_problema_correcao',
+  'venda_problema_automatico'
 ];
 const TIPOS_APROVACAO_VENDA = ['venda_aprovacao_pendente'];
 const TIPOS_RETORNO_VENDA = ['venda_retorno_registrado'];

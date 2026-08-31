@@ -7,7 +7,8 @@ export const PERMISSAO_GERENCIAR_PERMISSOES = 'gerenciar_permissoes';
 export const PERMISSOES_ADMIN_EXPLICITAS = new Set([
   'clientes_secretos_ver_todos',
   'clientes_antigos_ver_historico',
-  'configurar_horario_acesso'
+  'configurar_horario_acesso',
+  'problemas_pos_venda_responsavel'
 ]);
 const PERMISSOES_ADMIN_VENDAS_OBRIGATORIAS = new Set([
   'vendas',

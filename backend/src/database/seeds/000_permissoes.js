@@ -313,6 +313,16 @@ const PERMISSOES = [
     chave: 'chat_visualizar_todas',
     nome: 'Chat: visualizar todas',
     descricao: 'Permite acessar a aba de chat e visualizar todas as conversas internas do sistema.'
+  },
+  {
+    chave: 'automacoes_gerenciar',
+    nome: 'Automações: gerenciar',
+    descricao: 'Permite acompanhar, revisar e reprocessar automações.'
+  },
+  {
+    chave: 'problemas_pos_venda_responsavel',
+    nome: 'Problemas pós-venda: responsável',
+    descricao: 'Recebe, visualiza e resolve problemas automáticos de pós-venda.'
   }
 ];
 

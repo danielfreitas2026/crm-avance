@@ -65,6 +65,8 @@ const routeConfigs = [
   { path: '/clientes-antigos', title: 'Busca de Clientes Antigos', sub: 'Consulte vendas antigas por CNPJ para revenda', id: 'clientes-antigos', end: true },
   { path: '/futuros-clientes', title: 'Futuros Clientes', sub: 'Mailing marcados para acompanhamento futuro', id: 'futuros-clientes', end: true },
   { path: '/mensagens', title: 'Mensagens', sub: 'Conversas internas entre usuários', id: 'mensagens', end: true },
+  { path: '/problemas', title: 'Problemas Pós-venda', sub: 'Correções solicitadas pela operadora', id: 'problemas', end: true },
+  { path: '/automacoes', title: 'Automações', sub: 'Histórico e revisão da integração Gmail', id: 'automacoes', end: true },
 ];
 
 /**
@@ -172,6 +174,8 @@ function LayoutPrivado({ children }) {
       leads: '/admin/leads',
       'cruzar-vendas': '/admin/cruzar-vendas',
       'consultar-cnpj': '/admin/consultar-cnpj',
+      problemas: '/problemas',
+      automacoes: '/automacoes',
     };
 
     if (routeMap[id]) {
@@ -528,6 +532,7 @@ function LayoutPrivado({ children }) {
       case 'venda_problema_aberto':
       case 'venda_problema_resolvido':
       case 'venda_problema_correcao':
+      case 'venda_problema_automatico':
         return 'info';
       case 'venda_retorno_registrado':
         return 'danger';

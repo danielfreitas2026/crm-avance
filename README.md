@@ -43,6 +43,10 @@ A aplicação garante a parada segura da nova instância, mas continuidade sem i
 
 Nunca execute `knex migrate:rollback` automaticamente durante deploy. Uma reversão deve usar uma nova migration corretiva ou ser realizada manualmente após backup e análise.
 
+## Automação Gmail da VIVO
+
+A integração lê uma caixa Gmail dedicada com OAuth `gmail.readonly`, sem marcar ou alterar mensagens. Antes de habilitar, configure as variáveis `GMAIL_VIVO_*` descritas em `backend/.env.example`, uma data ISO em `GMAIL_VIVO_PROCESS_AFTER`, a lista exata de remetentes autorizados e `TELEGRAM_PROBLEMAS_CHAT_ID`. As notificações de problemas usam especificamente o bot configurado em `TELEGRAM_APROVACOES_BOT_TOKEN`. Faça o primeiro deploy com `GMAIL_VIVO_AUTOMATION_ENABLED=false`, valide as permissões e somente então habilite o worker. O corpo textual é removido do CRM após 12 meses; anexos e mensagens cujo conteúdo exista apenas em imagem não são processados automaticamente.
+
 ## Correção retroativa de botões do Telegram
 
 Para visualizar os encaminhamentos ativos que terão o botão corrigido, execute:

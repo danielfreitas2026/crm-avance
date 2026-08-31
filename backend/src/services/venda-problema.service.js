@@ -18,7 +18,8 @@ const STATUS_ATIVOS = ['aberto', 'resolvido', 'correcao_solicitada'];
 const TIPOS_NOTIFICACAO_PROBLEMA = [
   'venda_problema_aberto',
   'venda_problema_resolvido',
-  'venda_problema_correcao'
+  'venda_problema_correcao',
+  'venda_problema_automatico'
 ];
 
 /**

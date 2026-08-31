@@ -29,6 +29,7 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "knex": "^3.2.9",
+    "mailparser": "^3.9.17",
     "mysql2": "^3.22.2",
     "nodemailer": "^8.0.7",
     "objection": "^3.1.5"

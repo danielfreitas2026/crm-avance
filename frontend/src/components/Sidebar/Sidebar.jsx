@@ -40,6 +40,7 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
     { id: 'relatorios', label: 'Relatórios', icon: <I.Chart />, permission: 'relatorios_visualizar' },
     { id: 'historico', label: 'Histórico', icon: <I.History />, permission: 'historico_visualizar' },
     { id: 'mensagens', label: 'Mensagens', icon: <I.Chat />, badge: counts?.mensagens, permission: ['chat_usar', 'chat_visualizar_todas'] },
+    { id: 'problemas', label: 'Problemas Pós-venda', icon: <I.Shield />, permission: 'problemas_pos_venda_responsavel' },
   ].filter(it => !it.permission || temPermissao(usuario, it.permission));
 
   const admin = [
@@ -50,6 +51,7 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
     { id: 'leads', label: 'Planilha de Mailing', icon: <I.LayoutList />, permission: 'gerenciar_leads' },
     { id: 'cruzar-vendas', label: 'Cruzar Vendas', icon: <I.TableSheet />, permission: 'vendas_cruzar' },
     { id: 'consultar-cnpj', label: 'Consultar CNPJ', icon: <I.Search />, permission: 'clientes_importar_planilhas' },
+    { id: 'automacoes', label: 'Automações', icon: <I.Settings />, permission: 'automacoes_gerenciar' },
   ].filter(it => !it.permission || temPermissao(usuario, it.permission));
 
   /**

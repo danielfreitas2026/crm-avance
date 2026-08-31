@@ -11,6 +11,7 @@ const leadTelegramPublicacaoService = require('./services/lead-telegram-publicac
 const leadTelegramReconciliacaoService = require('./services/lead-telegram-reconciliacao.service');
 const telegramCancelamentoRetroativoService = require('./services/telegram-cancelamento-retroativo.service');
 const leadEnriquecimentoService = require('./services/lead-enriquecimento.service');
+const automacaoEmailService = require('./services/automacao-email.service');
 
 const PORT = process.env.APP_PORT || 3000;
 
@@ -113,6 +114,15 @@ function processarEnriquecimentoMailing() {
     });
 }
 
+let processandoEmailsVivo = false;
+function processarEmailsVivo() {
+  if (processandoEmailsVivo) return;
+  processandoEmailsVivo = true;
+  automacaoEmailService.ciclo()
+    .catch(error => console.error('Erro ao processar e-mails da VIVO:', error))
+    .finally(() => { processandoEmailsVivo = false; });
+}
+
 function iniciarAgendamentos() {
   setTimeout(limparArquivosVencidos, 60 * 1000);
   setInterval(limparArquivosVencidos, 24 * 60 * 60 * 1000);
@@ -127,6 +137,11 @@ function iniciarAgendamentos() {
   const enriquecimentoIntervaloMs = Number(process.env.LEAD_ENRIQUECIMENTO_WORKER_MS || 15 * 1000);
   setTimeout(processarEnriquecimentoMailing, 12000);
   setInterval(processarEnriquecimentoMailing, enriquecimentoIntervaloMs);
+  const gmailIntervaloMs = Math.max(30000, Number(process.env.GMAIL_VIVO_POLL_INTERVAL_MS) || 60000);
+  setTimeout(processarEmailsVivo, 20000);
+  setInterval(processarEmailsVivo, gmailIntervaloMs);
+  setTimeout(() => automacaoEmailService.limparCorposExpirados().catch(error => console.error('Erro ao expirar corpos de e-mail:', error)), 25000);
+  setInterval(() => automacaoEmailService.limparCorposExpirados().catch(error => console.error('Erro ao expirar corpos de e-mail:', error)), 24 * 60 * 60 * 1000);
 }
 
 iniciarAplicacao({

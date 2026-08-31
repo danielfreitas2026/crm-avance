@@ -54,6 +54,8 @@ export function montarDestinoNotificacao(notificacao) {
     case 'venda_problema_resolvido':
     case 'venda_problema_correcao':
       return destino('/vendas', { ...comum, venda_id: vendaId, aba: 'problema', problema_id: dados.problema_id }, PERMISSOES_VENDAS, 'acesso a Vendas', vendaId);
+    case 'venda_problema_automatico':
+      return destino('/problemas', { ...comum, problema_id: dados.problema_id }, 'problemas_pos_venda_responsavel', 'acesso aos problemas pós-venda', dados.problema_id);
     case 'venda_aprovacao_pendente':
       return destino('/vendas/aprovacoes', { ...comum, solicitacao_id: dados.solicitacao_id }, 'vendas_aprovacoes_visualizar', 'visualização de aprovações', dados.solicitacao_id);
     case 'venda_parada_funil':
