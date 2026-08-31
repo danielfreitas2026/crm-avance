@@ -24,11 +24,37 @@ Origem: An�lise da Qualidade e Auditoria
 Mensagem ao Operador: 37991490023 - Chama ate cair por VVN, e nao possui WPP.
 Destino: Corre��o do Pedido de Venda Pelo Consultor`;
 
+const EMAIL_INPUT_REALIZADO = `Dados da Venda
+ID: 303048
+Tipo Pessoa: Pessoa Jur�dica
+Data da Venda: 27/08/2026 14:30:59
+CNPJ: 29.046.034/0001-07 (29046034000107)
+Raz�o Social: SINDICATO RURAL DE PIRAI
+Nome Comercial:
+
+Resumo da Venda
+Indicador Quantidade Total Mensal Total Aparelho
+Alta - Terminais 4 R$ 399,96 R$ 60,00
+Total 4 R$ 399,96 R$ 60,00
+
+Workflow (tramita��o do pedido)
+Origem: Aguardando Input Autom�tico
+Mensagem ao Operador: 1-CG8LB6HL
+Destino: Pend�ncia > Input Realizado com Sucesso`;
+
 test('interpreta problema mesmo com acentos substituidos por caracteres invalidos', () => {
   assert.deepEqual(parser.interpretarEmail(EMAIL_PROBLEMA), {
     documento: '11143938000187', data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99,
     destino: 'Corre��o do Pedido de Venda Pelo Consultor',
     mensagem_operador: '37991490023 - Chama ate cair por VVN, e nao possui WPP.', classificacao: 'tipo_2', alvo: null
+  });
+});
+
+test('interpreta input realizado com sucesso e direciona para aceite e biometria', () => {
+  assert.deepEqual(parser.interpretarEmail(EMAIL_INPUT_REALIZADO), {
+    documento: '29046034000107', data_venda: '2026-08-27', quantidade: 4, valor_mensal: 399.96,
+    destino: 'Pend�ncia > Input Realizado com Sucesso',
+    mensagem_operador: '1-CG8LB6HL', classificacao: 'tipo_1', alvo: 'aceite_biometria'
   });
 });
 

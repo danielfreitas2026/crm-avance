@@ -54,6 +54,7 @@ function extrairResumo(texto) {
 function classificarDestino(destino) {
   const valor = textoCanonico(destino);
   if (/aguardando\s+aceite\s*[/ ]\s*assinatura/.test(valor)) return { classificacao: 'tipo_1', alvo: 'aceite_biometria' };
+  if (/\binput\s+realizado\s+com\s+sucesso\b/.test(valor)) return { classificacao: 'tipo_1', alvo: 'aceite_biometria' };
   if (/log[ai?]{1,4}stica\s+conclu[ai?]{1,4}da/.test(valor)) return { classificacao: 'tipo_1', alvo: 'entrega' };
   if (/corre[a-z?]{0,5}o\s+do\s+pedido\s+de\s+venda\s+pelo\s+consultor/.test(valor)) return { classificacao: 'tipo_2', alvo: null };
   return { classificacao: 'desconhecido', alvo: null };
