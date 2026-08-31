@@ -1,11 +1,33 @@
-import { useCallback, useEffect, useState } from 'react';
-import { descartarAutomacao, listarAutomacoes, obterResumoAutomacoes, repetirAutomacao, revisarAutomacao } from '../../services/automacao.service';
+import { useEffect, useState } from 'react';
+import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
+import * as I from '../../components/Icons';
+import {
+  descartarAutomacao,
+  listarAutomacoes,
+  obterResumoAutomacoes,
+  repetirAutomacao,
+  revisarAutomacao
+} from '../../services/automacao.service';
 import './AutomacoesPage.css';
 
 const STATUS = ['', 'pendente', 'processando', 'concluido', 'revisao', 'erro', 'rejeitado', 'descartado'];
+const STATUS_LABEL = {
+  pendente: 'Pendente',
+  processando: 'Processando',
+  concluido: 'Concluído',
+  revisao: 'Revisão manual',
+  erro: 'Erro',
+  rejeitado: 'Rejeitado',
+  descartado: 'Descartado'
+};
+const CLASSIFICACAO_LABEL = {
+  tipo_1: 'Atualização de etapa',
+  tipo_2: 'Problema pós-venda'
+};
+
 const dataHora = valor => valor ? new Date(valor).toLocaleString('pt-BR') : '—';
 
-function Revisao({ item, onAtualizar }) {
+function Revisao({ item, onAtualizar, onErro }) {
   const extraidos = item.dados_extraidos || {};
   const [vendaId, setVendaId] = useState(item.venda_id || '');
   const [tipo, setTipo] = useState(item.classificacao || extraidos.classificacao || 'tipo_1');
@@ -16,38 +38,156 @@ function Revisao({ item, onAtualizar }) {
 
   async function executar(acao) {
     setSalvando(true);
+    onErro('');
     try {
-      if (acao === 'revisar') await revisarAutomacao(item.id, { venda_id: Number(vendaId), classificacao: tipo, etapa_destino: tipo === 'tipo_1' ? etapa : null, mensagem_operador: mensagem, justificativa });
+      if (acao === 'revisar') {
+        await revisarAutomacao(item.id, {
+          venda_id: Number(vendaId),
+          classificacao: tipo,
+          etapa_destino: tipo === 'tipo_1' ? etapa : null,
+          mensagem_operador: mensagem,
+          justificativa
+        });
+      }
       if (acao === 'repetir') await repetirAutomacao(item.id);
       if (acao === 'descartar') await descartarAutomacao(item.id, justificativa);
-      onAtualizar();
-    } finally { setSalvando(false); }
+      await onAtualizar();
+    } catch (error) {
+      onErro(error.message);
+    } finally {
+      setSalvando(false);
+    }
   }
 
-  return <div className="automation-review">
-    <label>Venda ID<input value={vendaId} onChange={event => setVendaId(event.target.value)} inputMode="numeric" /></label>
-    <label>Tipo<select value={tipo} onChange={event => setTipo(event.target.value)}><option value="tipo_1">Atualização de etapa</option><option value="tipo_2">Problema</option></select></label>
-    {tipo === 'tipo_1' && <label>Destino<select value={etapa} onChange={event => setEtapa(event.target.value)}><option value="entrega">Entrega</option><option value="aceite_biometria">Aceite/Biometria</option></select></label>}
-    {tipo === 'tipo_2' && <label className="wide">Mensagem ao operador<textarea value={mensagem} onChange={event => setMensagem(event.target.value)} /></label>}
-    <label className="wide">Justificativa<textarea value={justificativa} onChange={event => setJustificativa(event.target.value)} /></label>
-    <div className="automation-actions"><button className="btn btn-primary" disabled={salvando || !vendaId || !justificativa.trim()} onClick={() => executar('revisar')}>Corrigir e reprocessar</button><button className="btn" disabled={salvando} onClick={() => executar('repetir')}>Repetir</button><button className="btn btn-danger" disabled={salvando || !justificativa.trim()} onClick={() => executar('descartar')}>Descartar</button></div>
-  </div>;
+  return (
+    <div className="automation-review">
+      <div className="automation-review__heading">
+        <strong>Revisão manual</strong>
+        <span>Corrija os dados abaixo antes de reprocessar esta execução.</span>
+      </div>
+      <label>Venda ID<input value={vendaId} onChange={event => setVendaId(event.target.value)} inputMode="numeric" /></label>
+      <label>
+        Tipo
+        <select value={tipo} onChange={event => setTipo(event.target.value)}>
+          <option value="tipo_1">Atualização de etapa</option>
+          <option value="tipo_2">Problema</option>
+        </select>
+      </label>
+      {tipo === 'tipo_1' && (
+        <label>
+          Destino
+          <select value={etapa} onChange={event => setEtapa(event.target.value)}>
+            <option value="entrega">Entrega</option>
+            <option value="aceite_biometria">Aceite/Biometria</option>
+          </select>
+        </label>
+      )}
+      {tipo === 'tipo_2' && <label className="wide">Mensagem ao operador<textarea value={mensagem} onChange={event => setMensagem(event.target.value)} /></label>}
+      <label className="wide">Justificativa<textarea value={justificativa} onChange={event => setJustificativa(event.target.value)} placeholder="Informe o motivo da correção ou descarte" /></label>
+      <div className="automation-actions">
+        <button type="button" className="btn btn-primary" disabled={salvando || !vendaId || !justificativa.trim()} onClick={() => executar('revisar')}>{salvando ? 'Processando...' : 'Corrigir e reprocessar'}</button>
+        <button type="button" className="btn" disabled={salvando} onClick={() => executar('repetir')}>Repetir execução</button>
+        <button type="button" className="btn btn-danger" disabled={salvando || !justificativa.trim()} onClick={() => executar('descartar')}>Descartar</button>
+      </div>
+    </div>
+  );
 }
 
 export default function AutomacoesPage() {
-  const [status, setStatus] = useState(''); const [itens, setItens] = useState([]); const [resumo, setResumo] = useState({ contadores: {} }); const [erro, setErro] = useState('');
-  const carregar = useCallback(async () => { try { setErro(''); const [lista, dadosResumo] = await Promise.all([listarAutomacoes(status), obterResumoAutomacoes()]); setItens(lista.data || []); setResumo(dadosResumo); } catch (error) { setErro(error.message); } }, [status]);
+  const [status, setStatus] = useState('');
+  const [itens, setItens] = useState([]);
+  const [resumo, setResumo] = useState({ contadores: {} });
+  const [erro, setErro] = useState('');
+  const [carregando, setCarregando] = useState(true);
+  const [atualizando, setAtualizando] = useState(false);
+
+  async function carregar(manual = false) {
+    if (manual) setAtualizando(true);
+    else setCarregando(true);
+    try {
+      setErro('');
+      const [lista, dadosResumo] = await Promise.all([listarAutomacoes(status), obterResumoAutomacoes()]);
+      setItens(lista.data || []);
+      setResumo(dadosResumo);
+    } catch (error) {
+      setErro(error.message);
+    } finally {
+      setCarregando(false);
+      setAtualizando(false);
+    }
+  }
+
   useEffect(() => {
     let ativo = true;
     Promise.all([listarAutomacoes(status), obterResumoAutomacoes()])
-      .then(([lista, dadosResumo]) => { if (ativo) { setItens(lista.data || []); setResumo(dadosResumo); setErro(''); } })
-      .catch(error => { if (ativo) setErro(error.message); });
+      .then(([lista, dadosResumo]) => {
+        if (!ativo) return;
+        setItens(lista.data || []);
+        setResumo(dadosResumo);
+        setErro('');
+      })
+      .catch(error => { if (ativo) setErro(error.message); })
+      .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
   }, [status]);
-  return <main className="automation-page">
-    <section className="automation-summary"><div><strong>{resumo.habilitada ? 'Gmail ativo' : 'Gmail desabilitado'}</strong><span>Última mensagem: {dataHora(resumo.ultima_mensagem_em)}</span></div>{Object.entries(resumo.contadores || {}).map(([chave, total]) => <button key={chave} onClick={() => setStatus(chave)}><strong>{total}</strong><span>{chave}</span></button>)}</section>
-    <div className="automation-toolbar"><label>Status<select value={status} onChange={event => setStatus(event.target.value)}>{STATUS.map(item => <option key={item} value={item}>{item || 'Todos'}</option>)}</select></label><button className="btn" onClick={carregar}>Atualizar</button></div>
-    {erro && <div className="alert-error">{erro}</div>}
-    <section className="automation-list">{itens.length === 0 && <div className="empty">Nenhuma execução encontrada.</div>}{itens.map(item => <details key={item.id} className={`automation-card status-${item.status}`}><summary><div><strong>{item.assunto || '(sem assunto)'}</strong><span>{item.remetente}</span></div><div><span className="automation-status">{item.status}</span><time>{dataHora(item.recebido_em)}</time></div></summary><div className="automation-detail"><dl><div><dt>Venda</dt><dd>{item.venda_id || 'não vinculada'}</dd></div><div><dt>Classificação</dt><dd>{item.classificacao || item.dados_extraidos?.classificacao || '—'}</dd></div><div><dt>Destino</dt><dd>{item.dados_extraidos?.destino || '—'}</dd></div><div><dt>Documento</dt><dd>{item.dados_extraidos?.documento || '—'}</dd></div></dl>{item.erro && <div className="alert-error">{item.erro}</div>}<pre>{item.corpo_texto || 'Corpo removido ou não armazenado.'}</pre>{['revisao', 'erro'].includes(item.status) && <Revisao item={item} onAtualizar={carregar} />}</div></details>)}</section>
-  </main>;
+
+  const contadores = resumo.contadores || {};
+  const total = Object.values(contadores).reduce((soma, quantidade) => soma + Number(quantidade || 0), 0);
+  function alterarStatus(novoStatus) {
+    if (novoStatus !== status) setCarregando(true);
+    setStatus(novoStatus);
+  }
+
+  return (
+    <LayoutPrivado>
+      <main className="automation-page">
+        <section className="automation-summary" aria-label="Resumo das automações">
+          <div className={`automation-connection ${resumo.habilitada ? 'is-active' : 'is-disabled'}`}>
+            <span className="automation-summary__icon"><I.Mail size={18} /></span>
+            <div><strong>{resumo.habilitada ? 'Gmail ativo' : 'Gmail desabilitado'}</strong><span>Última mensagem: {dataHora(resumo.ultima_mensagem_em)}</span></div>
+          </div>
+          <button type="button" className={`automation-metric ${status === '' ? 'is-selected' : ''}`} aria-label={`Mostrar todas as ${total} execuções`} aria-pressed={status === ''} onClick={() => alterarStatus('')}><strong>{total}</strong><span>Todas</span></button>
+          {STATUS.filter(Boolean).map(chave => (
+            <button type="button" key={chave} className={`automation-metric status-${chave} ${status === chave ? 'is-selected' : ''}`} aria-label={`Filtrar por ${STATUS_LABEL[chave]}: ${Number(contadores[chave] || 0)}`} aria-pressed={status === chave} onClick={() => alterarStatus(chave)}><strong>{Number(contadores[chave] || 0)}</strong><span>{STATUS_LABEL[chave]}</span></button>
+          ))}
+        </section>
+
+        <section className="automation-toolbar" aria-label="Filtros das automações">
+          <label>
+            Status
+            <select value={status} onChange={event => alterarStatus(event.target.value)}>
+              {STATUS.map(item => <option key={item} value={item}>{item ? STATUS_LABEL[item] : 'Todos os status'}</option>)}
+            </select>
+          </label>
+          <button type="button" className="btn automation-refresh" disabled={atualizando} onClick={() => carregar(true)}><I.Refresh size={14} /> {atualizando ? 'Atualizando...' : 'Atualizar'}</button>
+        </section>
+
+        {erro && <div className="alert-error automation-alert" role="alert">{erro}</div>}
+
+        <section className="automation-list" aria-busy={carregando}>
+          {carregando && <div className="automation-empty"><span className="automation-spinner" aria-hidden="true" /><strong>Carregando execuções</strong><span>Consultando o histórico da automação.</span></div>}
+          {!carregando && itens.length === 0 && <div className="automation-empty"><span className="automation-empty__icon"><I.History size={24} /></span><strong>Nenhuma execução encontrada</strong><span>{status ? `Não há execuções com o status “${STATUS_LABEL[status]}”.` : 'Os novos e-mails processados aparecerão aqui.'}</span></div>}
+          {!carregando && itens.map(item => (
+            <details key={item.id} className={`automation-card status-${item.status}`}>
+              <summary>
+                <div className="automation-card__identity"><strong>{item.assunto || '(sem assunto)'}</strong><span>{item.remetente || 'Remetente não informado'}</span></div>
+                <div className="automation-card__meta"><span className="automation-status">{STATUS_LABEL[item.status] || item.status}</span><time>{dataHora(item.recebido_em)}</time><I.ChevronDown className="automation-chevron" size={16} /></div>
+              </summary>
+              <div className="automation-detail">
+                <dl>
+                  <div><dt>Venda</dt><dd>{item.venda_id ? `#${item.venda_id}` : 'Não vinculada'}</dd></div>
+                  <div><dt>Classificação</dt><dd>{CLASSIFICACAO_LABEL[item.classificacao || item.dados_extraidos?.classificacao] || '—'}</dd></div>
+                  <div><dt>Destino</dt><dd>{item.dados_extraidos?.destino || '—'}</dd></div>
+                  <div><dt>Documento</dt><dd>{item.dados_extraidos?.documento || '—'}</dd></div>
+                </dl>
+                {item.erro && <div className="alert-error automation-alert" role="alert">{item.erro}</div>}
+                <div className="automation-email-body"><strong>Conteúdo recebido</strong><pre>{item.corpo_texto || 'Corpo removido ou não armazenado.'}</pre></div>
+                {['revisao', 'erro'].includes(item.status) && <Revisao item={item} onAtualizar={() => carregar(true)} onErro={setErro} />}
+              </div>
+            </details>
+          ))}
+        </section>
+      </main>
+    </LayoutPrivado>
+  );
 }

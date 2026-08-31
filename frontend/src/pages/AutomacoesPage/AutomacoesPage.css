@@ -1,1 +1,545 @@
-.automation-page{display:grid;gap:18px}.automation-summary{display:flex;gap:12px;flex-wrap:wrap}.automation-summary>div,.automation-summary>button{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;display:grid;gap:4px;min-width:130px;text-align:left;color:inherit}.automation-summary span{color:var(--text-3);font-size:12px}.automation-toolbar{display:flex;align-items:end;gap:10px}.automation-toolbar label,.automation-review label{display:grid;gap:6px;font-size:12px}.automation-toolbar select,.automation-review input,.automation-review select,.automation-review textarea{border:1px solid var(--border);border-radius:8px;background:var(--surface);color:inherit;padding:9px}.automation-list{display:grid;gap:10px}.automation-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--border);border-radius:12px}.automation-card.status-revisao,.automation-card.status-erro{border-left-color:var(--danger)}.automation-card summary{cursor:pointer;padding:14px;display:flex;justify-content:space-between;gap:18px}.automation-card summary>div{display:grid;gap:4px}.automation-card summary span,.automation-card time{font-size:12px;color:var(--text-3)}.automation-detail{padding:0 16px 16px;display:grid;gap:12px}.automation-detail dl{display:flex;gap:20px;flex-wrap:wrap}.automation-detail dl div{display:grid}.automation-detail dt{font-size:11px;color:var(--text-3)}.automation-detail pre{white-space:pre-wrap;max-height:300px;overflow:auto;background:var(--surface-2);padding:12px;border-radius:8px}.automation-review{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;border-top:1px solid var(--border);padding-top:12px}.automation-review .wide,.automation-actions{grid-column:1/-1}.automation-review textarea{min-height:70px;resize:vertical}.automation-actions{display:flex;gap:8px;flex-wrap:wrap}@media(max-width:700px){.automation-review{grid-template-columns:1fr}.automation-card summary{display:grid}}
+.automation-page {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  width: 100%;
+  padding: 24px;
+}
+
+.automation-summary {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.automation-connection,
+.automation-metric {
+  min-height: 76px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.automation-connection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 250px;
+  padding: 14px 16px;
+}
+
+.automation-connection > div {
+  display: grid;
+  gap: 3px;
+}
+
+.automation-connection strong,
+.automation-metric strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.automation-connection span,
+.automation-metric span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.automation-summary__icon,
+.automation-empty__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.automation-connection.is-active .automation-summary__icon,
+.automation-empty__icon.is-success {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.automation-connection.is-disabled .automation-summary__icon,
+.automation-connection.has-problems .automation-summary__icon {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.automation-metric {
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-width: 102px;
+  padding: 12px 14px;
+  color: inherit;
+  text-align: left;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.automation-metric strong {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.automation-metric:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.automation-metric.is-selected {
+  border-color: var(--text);
+  box-shadow: 0 0 0 1px var(--text);
+}
+
+.automation-metric.status-revisao strong,
+.automation-metric.status-erro strong {
+  color: var(--danger);
+}
+
+.automation-metric.status-concluido strong {
+  color: #15803d;
+}
+
+.automation-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.automation-toolbar label,
+.automation-review label,
+.problem-resolution {
+  display: grid;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.automation-toolbar select,
+.automation-review input,
+.automation-review select,
+.automation-review textarea,
+.problem-resolution textarea {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.automation-toolbar select {
+  min-width: 210px;
+}
+
+.automation-toolbar select:focus,
+.automation-review input:focus,
+.automation-review select:focus,
+.automation-review textarea:focus,
+.problem-resolution textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-color: var(--accent);
+}
+
+.automation-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.automation-alert {
+  margin: 0;
+}
+
+.automation-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.automation-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-height: 250px;
+  align-content: center;
+  padding: 40px 24px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-3);
+  text-align: center;
+}
+
+.automation-empty strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.automation-spinner {
+  width: 24px;
+  height: 24px;
+  margin-bottom: 6px;
+  border: 3px solid var(--border);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: automation-spin 700ms linear infinite;
+}
+
+@keyframes automation-spin {
+  to { transform: rotate(360deg); }
+}
+
+.automation-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.automation-card.status-revisao,
+.automation-card.status-erro {
+  border-left-color: var(--danger);
+}
+
+.automation-card.status-concluido {
+  border-left-color: #22c55e;
+}
+
+.automation-card.status-processando,
+.automation-card.status-pendente {
+  border-left-color: #f59e0b;
+}
+
+.automation-card summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.automation-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.automation-card summary:hover {
+  background: var(--surface-2);
+}
+
+.automation-card__identity,
+.automation-card__meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.automation-card__identity {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.automation-card__identity strong,
+.automation-card__identity span {
+  max-width: min(680px, 58vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-card__identity span,
+.automation-card time,
+.problem-card__header > div > span:last-child {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.automation-card__meta {
+  justify-content: flex-end;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+.automation-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.status-revisao .automation-status,
+.status-erro .automation-status {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.status-concluido .automation-status {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.automation-chevron {
+  color: var(--text-3);
+  transition: transform 140ms ease;
+}
+
+.automation-card[open] .automation-chevron {
+  transform: rotate(180deg);
+}
+
+.automation-detail {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.automation-detail dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.automation-detail dl div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.automation-detail dt {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.automation-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.automation-email-body {
+  display: grid;
+  gap: 7px;
+}
+
+.automation-email-body > strong,
+.problem-message > strong,
+.problem-history > strong {
+  font-size: 12px;
+}
+
+.automation-email-body pre {
+  max-height: 300px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.automation-review {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.automation-review__heading,
+.automation-review .wide,
+.automation-actions {
+  grid-column: 1 / -1;
+}
+
+.automation-review__heading {
+  display: grid;
+  gap: 2px;
+}
+
+.automation-review__heading span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.automation-review textarea,
+.problem-resolution textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.automation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.problems-page .automation-summary {
+  justify-content: space-between;
+}
+
+.problem-card .automation-detail {
+  border-top: 0;
+}
+
+.problem-card__header h2 {
+  margin: 7px 0 3px;
+  font-size: 16px;
+}
+
+.problem-message {
+  padding: 14px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff7ed;
+}
+
+.problem-message p,
+.problem-history__item p {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.problem-history {
+  display: grid;
+  gap: 8px;
+}
+
+.problem-history__item {
+  padding: 10px 12px;
+  border-left: 2px solid var(--border-strong);
+  background: var(--surface-2);
+}
+
+.problem-history__item span {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+@media (max-width: 900px) {
+  .automation-detail dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .automation-review {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .automation-page {
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .automation-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .automation-connection,
+  .problems-page .automation-refresh {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .automation-metric {
+    min-width: 0;
+  }
+
+  .automation-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .automation-toolbar select,
+  .automation-toolbar .btn {
+    width: 100%;
+  }
+
+  .automation-card summary,
+  .automation-card__meta {
+    align-items: flex-start;
+  }
+
+  .automation-card summary {
+    flex-direction: column;
+  }
+
+  .automation-card__meta {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .automation-card__identity strong,
+  .automation-card__identity span {
+    max-width: calc(100vw - 72px);
+  }
+
+  .automation-card__meta .automation-chevron {
+    margin-left: auto;
+  }
+
+  .automation-detail dl {
+    grid-template-columns: 1fr;
+  }
+
+  .automation-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .automation-actions .btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .automation-spinner {
+    animation-duration: 1.5s;
+  }
+
+  .automation-metric,
+  .automation-chevron {
+    transition: none;
+  }
+}
