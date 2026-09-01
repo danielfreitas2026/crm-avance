@@ -141,18 +141,34 @@ describe('Painéis da automação Gmail VIVO', () => {
 
     expect(await screen.findByText(/Venda #42 — Empresa Exemplo/)).toBeInTheDocument();
     expect(screen.getByTestId('layout-privado')).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Informações principais da venda' })).toHaveTextContent('Thayara');
-    expect(screen.getByRole('region', { name: 'Informações principais da venda' })).toHaveTextContent('31/07/2026');
-    expect(screen.getByRole('table')).toHaveTextContent('2×30 GB · Novo');
-    expect(screen.getByRole('table')).toHaveTextContent('R$ 119,80');
+    expect(screen.queryByRole('region', { name: 'Informações principais da venda' })).not.toBeInTheDocument();
     expect(screen.queryByText('Corrigir o pedido de venda.')).not.toBeInTheDocument();
     const expandir = screen.getByRole('button', { name: 'Expandir informações' });
     expect(expandir).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(expandir);
+    expect(screen.getByRole('region', { name: 'Informações principais da venda' })).toHaveTextContent('Thayara');
+    expect(screen.getByRole('region', { name: 'Informações principais da venda' })).toHaveTextContent('31/07/2026');
+    expect(screen.getByRole('table')).toHaveTextContent('2×30 GB · Novo');
+    expect(screen.getByRole('table')).toHaveTextContent('R$ 119,80');
     expect(screen.getByText('Corrigir o pedido de venda.')).toBeInTheDocument();
     expect(screen.getByText(/Problema identificado/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Resolver problema' })).toBeDisabled();
     await waitFor(() => expect(localStorage.getItem('problemas-page:expandidos:v1:anonimo')).toBe('[7]'));
+  });
+
+  it('expande e recolhe ao clicar no cabeçalho do card', async () => {
+    const user = userEvent.setup();
+    api.listarProblemasAutomaticos.mockResolvedValue({
+      data: [{ problema_id: 18, venda_id: 90, venda_nome: 'Cabeçalho clicável', venda_resumo: { vendedoras: [], chips: [] }, dados_extraidos: { mensagem_operador: 'Detalhe pelo cabeçalho.' }, eventos: [] }],
+      total: 1, page: 1, per_page: 20, totals: { abertos: 1, resolvidos: 0 }
+    });
+    render(<ProblemasPage />);
+
+    const cabecalho = await screen.findByRole('button', { name: 'Expandir informações da venda #90' });
+    await user.click(cabecalho);
+    expect(screen.getByText('Detalhe pelo cabeçalho.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Recolher informações da venda #90' }));
+    expect(screen.queryByText('Detalhe pelo cabeçalho.')).not.toBeInTheDocument();
   });
 
   it('consulta o histórico resolvido e expõe responsável, data e observação', async () => {

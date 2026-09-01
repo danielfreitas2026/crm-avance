@@ -220,6 +220,14 @@ export default function ProblemasPage() {
             return (
               <article className={`automation-card problem-card ${aba === 'resolvidos' ? 'status-concluido' : 'status-revisao'}${expandido ? ' is-expanded' : ''}`} key={item.problema_id}>
                 <header className="problem-card__header">
+                  <button
+                    type="button"
+                    className="problem-card__header-click"
+                    aria-label={`${expandido ? 'Recolher' : 'Expandir'} informações da venda #${item.venda_id}`}
+                    aria-expanded={expandido}
+                    aria-controls={detalhesId}
+                    onClick={() => alternarDetalhes(item.problema_id)}
+                  />
                   <div className="problem-card__identity">
                     <span className="automation-status">{aba === 'resolvidos' ? 'Problema resolvido' : 'Correção necessária'}</span>
                     <h2>Venda #{item.venda_id} — {item.venda_nome || item.razao_social}</h2>
@@ -231,9 +239,9 @@ export default function ProblemasPage() {
                     <button type="button" className="btn btn-sm btn-ghost problem-card__toggle" aria-expanded={expandido} aria-controls={detalhesId} onClick={() => alternarDetalhes(item.problema_id)}><I.ChevronDown size={16} /> {expandido ? 'Recolher informações' : 'Expandir informações'}</button>
                   </div>
                 </header>
-                <ResumoVendaCard resumo={item.venda_resumo} />
                 {expandido && (
                   <div className="automation-detail" id={detalhesId}>
+                    <ResumoVendaCard resumo={item.venda_resumo} />
                     <div className="problem-message"><strong>Mensagem da operadora</strong><p>{item.dados_extraidos?.mensagem_operador || 'Mensagem não informada.'}</p></div>
                     {(item.eventos || []).length > 0 && (
                       <div className="problem-history"><strong>Histórico</strong>{item.eventos.map(evento => <div key={evento.id} className="problem-history__item"><span>{EVENTO_LABEL[evento.tipo] || evento.tipo} · {dataHora(evento.created_at)}</span><p>{evento.mensagem}</p></div>)}</div>

@@ -445,19 +445,24 @@
 .problems-tabs button span { min-width: 22px; padding: 2px 6px; border-radius: 999px; background: var(--surface-3); font-size: 11px; text-align: center; }
 
 .problem-card__header {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   padding: 16px 18px;
+  transition: background 150ms ease;
 }
 
-.problem-card__identity { min-width: 0; }
+.problem-card__header:hover { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+.problem-card__header-click { position: absolute; inset: 0; z-index: 1; width: 100%; border: 0; border-radius: inherit; background: transparent; cursor: pointer; }
+.problem-card__header-click:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.problem-card__identity { position: relative; z-index: 0; min-width: 0; pointer-events: none; }
 .problem-card__identity > span { color: var(--text-3); font-size: 12px; }
 .problem-card__dates { display: flex; flex-wrap: wrap; gap: 5px 16px; margin-top: 8px; }
 .problem-card__dates span { color: var(--text-3); font-size: 11px; }
 .problem-card__dates strong { color: var(--text-2); font-weight: 650; }
-.problem-card__header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.problem-card__header-actions { position: relative; z-index: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .problem-card__toggle svg { transition: transform 160ms ease; }
 .problem-card.is-expanded .problem-card__toggle svg { transform: rotate(180deg); }
 .problem-card.is-expanded .automation-detail { border-top: 1px solid var(--border); }
@@ -465,7 +470,7 @@
 .problem-sale-summary {
   display: grid;
   gap: 12px;
-  margin: 0 18px 16px;
+  margin: 0;
   padding: 13px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -589,7 +594,7 @@
   .problem-card__header-actions,
   .problem-card__header-actions .btn { width: 100%; }
   .problem-card__header-actions .btn { justify-content: center; }
-  .problem-sale-summary { margin: 0 12px 14px; padding: 10px; }
+  .problem-sale-summary { padding: 10px; }
   .problem-sale-summary__facts { grid-template-columns: 1fr; }
   .problem-sale-summary__facts > div { min-height: 0; }
   .problem-resolved { grid-template-columns: 1fr; }
