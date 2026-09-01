@@ -7,7 +7,8 @@ async function coletarHistorico(req, res) { try { return res.json(await service.
 async function revisar(req, res) { try { const item = await service.revisar(req.params.id, req.body, req.usuario.id); return item ? res.json(item) : res.status(404).json({ message: 'Execução não encontrada.' }); } catch (error) { return erro(res, error); } }
 async function repetir(req, res) { try { const item = await service.repetir(req.params.id); return item ? res.json(item) : res.status(404).json({ message: 'Execução não encontrada.' }); } catch (error) { return erro(res, error); } }
 async function descartar(req, res) { try { const item = await service.descartar(req.params.id, req.body?.justificativa, req.usuario.id); return item ? res.json(item) : res.status(404).json({ message: 'Execução não encontrada.' }); } catch (error) { return erro(res, error); } }
-async function problemas(req, res) { try { return res.json(await service.listarProblemas()); } catch (error) { return erro(res, error); } }
+async function problemas(req, res) { try { return res.json(await service.listarProblemas(req.query)); } catch (error) { return erro(res, error); } }
 async function resolverProblema(req, res) { try { const item = await service.resolverProblemaAutomatico(req.params.id, req.body?.mensagem, req.usuario.id); return item ? res.json(item) : res.status(404).json({ message: 'Problema automático não encontrado.' }); } catch (error) { return erro(res, error); } }
+async function vendaProblema(req, res) { try { const item = await service.obterVendaProblemaAutomatico(req.params.id); return item ? res.json(item) : res.status(404).json({ message: 'Venda vinculada ao problema não encontrada.' }); } catch (error) { return erro(res, error); } }
 
-module.exports = { index, resumo, coletarHistorico, revisar, repetir, descartar, problemas, resolverProblema };
+module.exports = { index, resumo, coletarHistorico, revisar, repetir, descartar, problemas, resolverProblema, vendaProblema };

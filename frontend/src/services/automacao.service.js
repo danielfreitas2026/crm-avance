@@ -6,5 +6,8 @@ export const coletarHistoricoAutomacoes = () => apiPost('/automacoes/coletar-his
 export const revisarAutomacao = (id, dados) => apiPost(`/automacoes/${id}/revisar`, dados);
 export const repetirAutomacao = id => apiPost(`/automacoes/${id}/repetir`, {});
 export const descartarAutomacao = (id, justificativa) => apiPost(`/automacoes/${id}/descartar`, { justificativa });
-export const listarProblemasAutomaticos = () => apiGet('/problemas');
+export const listarProblemasAutomaticos = ({ status = 'abertos', page = 1, perPage = 20 } = {}) => (
+  apiGet(`/problemas?status=${encodeURIComponent(status)}&page=${page}&per_page=${perPage}`)
+);
 export const resolverProblemaAutomatico = (id, mensagem) => apiPost(`/problemas/${id}/resolver`, { mensagem });
+export const obterVendaProblemaAutomatico = id => apiGet(`/problemas/${id}/venda`);

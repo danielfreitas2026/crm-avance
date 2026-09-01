@@ -10,7 +10,7 @@ vi.mock('./VendaProblemaPanel', () => ({
   default: () => <div>Fluxo de problemas isolado</div>
 }));
 
-import VendaModal from './VendaModal';
+import VendaModal, { VendaResumoProblema } from './VendaModal';
 
 const vendaResumo = {
   id: 7,
@@ -125,5 +125,35 @@ describe('VendaModal - resumo protegido da consultora', () => {
     expect(screen.getByRole('dialog', { name: 'Problemas da venda' })).toHaveTextContent('Fluxo de problemas isolado');
     expect(screen.queryByText('Documentos')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Registrar Reversão/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('VendaModal - resumo do contexto de problemas', () => {
+  it('mostra várias vendedoras, data comercial e tabela de chips', () => {
+    render(<VendaResumoProblema venda={{
+      id: 20,
+      data_venda: '2026-08-25',
+      operadora: { id: 2, nome: 'VIVO' },
+      vendedoras: [{ id: 7, nome: 'Ana' }, { id: 8, nome: 'Bia' }],
+      valores_unitarios_chips: [
+        { quantidade: 2, gb: 30, tipo_linha: 'portabilidade', operadora_atual_id: 1, operadora_id: 2, vendedora_id: 7, valor_unitario: 59.9 },
+        { quantidade: 1, gb: 50, tipo_linha: 'novo', operadora_id: 2, vendedora_id: 8, valor_unitario: 79.9 }
+      ]
+    }} />);
+
+    expect(screen.getByText('Ana, Bia')).toBeInTheDocument();
+    expect(screen.getByText('25/08/2026')).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Chips envolvidos na venda' })).toBeInTheDocument();
+    expect(screen.getAllByRole('row')).toHaveLength(3);
+    expect(screen.getByText('R$ 119,80')).toBeInTheDocument();
+  });
+
+  it('identifica o fallback da data de cadastro e a ausência de chips', () => {
+    render(<VendaResumoProblema venda={{ id: 21, created_at: '2026-08-26T12:00:00.000Z', vendedora: { id: 7, nome: 'Ana' }, valores_unitarios_chips: [] }} />);
+
+    expect(screen.getByText('Cadastro no CRM')).toBeInTheDocument();
+    expect(screen.getByText('Data comercial não informada')).toBeInTheDocument();
+    expect(screen.getByText('26/08/2026')).toBeInTheDocument();
+    expect(screen.getByText('Nenhum chip informado.')).toBeInTheDocument();
   });
 });

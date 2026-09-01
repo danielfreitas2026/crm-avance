@@ -35,6 +35,14 @@ class VendaProblema extends Model {
           to: 'usuarios.id'
         }
       },
+      resolvidoPor: {
+        relation: Model.BelongsToOneRelation,
+        modelClass: Usuario,
+        join: {
+          from: 'venda_problemas.resolvido_por_id',
+          to: 'usuarios.id'
+        }
+      },
       destinatarios: {
         relation: Model.HasManyRelation,
         modelClass: VendaProblemaDestinatario,

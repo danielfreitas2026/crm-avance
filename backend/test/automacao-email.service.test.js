@@ -5,6 +5,10 @@ const parser = require('../src/services/vivo-email-parser.service');
 const automacao = require('../src/services/automacao-email.service');
 const FunilEtapa = require('../src/models/FunilEtapa');
 const Venda = require('../src/models/Venda');
+const AutomacaoEmail = require('../src/models/AutomacaoEmail');
+const Usuario = require('../src/models/Usuario');
+const VendaProblema = require('../src/models/VendaProblema');
+const VendaProblemaEvento = require('../src/models/VendaProblemaEvento');
 const vendaService = require('../src/services/venda.service');
 
 const EMAIL_PROBLEMA = `Dados da Venda
@@ -229,6 +233,104 @@ test('usa especificamente o bot de aprovacoes para notificar problemas', () => {
     else process.env.TELEGRAM_APROVACOES_BOT_TOKEN = tokenAprovacoesAnterior;
     if (tokenGeralAnterior === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
     else process.env.TELEGRAM_BOT_TOKEN = tokenGeralAnterior;
+  }
+});
+
+test('valida os filtros e tamanhos permitidos da pagina de problemas', () => {
+  assert.equal(automacao._internals.filtroProblemas(), 'abertos');
+  assert.equal(automacao._internals.filtroProblemas('resolvidos'), 'resolvidos');
+  assert.throws(() => automacao._internals.filtroProblemas('qualquer'), /Status de problemas inválido/);
+  assert.equal(automacao._internals.porPaginaProblemas(50), 50);
+  assert.equal(automacao._internals.porPaginaProblemas(999), 20);
+});
+
+test('pagina problemas resolvidos e monta auditoria com eventos buscados em lote', async () => {
+  const queryAutomacaoOriginal = AutomacaoEmail.query;
+  const queryEventoOriginal = VendaProblemaEvento.query;
+  let consulta = 0;
+  const metodosFluentes = ['alias', 'join', 'where', 'whereIn', 'select', 'orderBy', 'count', 'withGraphFetched', 'modifyGraph'];
+
+  class QueryAutomacao {
+    constructor(indice) { this.indice = indice; }
+    async page(offset, limite) {
+      assert.equal(offset, 1);
+      assert.equal(limite, 50);
+      return {
+        total: 51,
+        results: [{
+          id: 30, problema_id: 9, venda_id: 55, problema_status: 'verificado',
+          resolvido_em: '2026-08-31 15:30:00', resolvido_por_id: 4, resolvido_por_nome: 'Maria Silva',
+          dados_extraidos: JSON.stringify({ mensagem_operador: 'Ajustar cadastro.' })
+        }]
+      };
+    }
+    async first() { return { total: this.indice === 1 ? 2 : 51 }; }
+  }
+  metodosFluentes.forEach(metodo => { QueryAutomacao.prototype[metodo] = function () { return this; }; });
+
+  const eventos = [{
+    id: 70, problema_id: 9, tipo: 'resolucao_automatica', mensagem: 'Cadastro atualizado.',
+    created_at: '2026-08-31 15:30:00', usuario: { id: 4, nome: 'Maria Silva' }
+  }];
+  class QueryEvento {
+    whereIn() { return this; }
+    withGraphFetched() { return this; }
+    modifyGraph() { return this; }
+    orderBy() { return this; }
+    then(resolve) { return Promise.resolve(eventos).then(resolve); }
+  }
+
+  AutomacaoEmail.query = () => new QueryAutomacao(consulta++);
+  VendaProblemaEvento.query = () => new QueryEvento();
+  try {
+    const resultado = await automacao.listarProblemas({ status: 'resolvidos', page: 2, per_page: 50 });
+    assert.equal(resultado.total, 51);
+    assert.deepEqual(resultado.totals, { abertos: 2, resolvidos: 51 });
+    assert.equal(resultado.data[0].dados_extraidos.mensagem_operador, 'Ajustar cadastro.');
+    assert.equal(resultado.data[0].resolucao.usuario.nome, 'Maria Silva');
+    assert.equal(resultado.data[0].resolucao.mensagem, 'Cadastro atualizado.');
+    assert.equal(consulta, 3);
+  } finally {
+    AutomacaoEmail.query = queryAutomacaoOriginal;
+    VendaProblemaEvento.query = queryEventoOriginal;
+  }
+});
+
+test('impede resolver novamente um problema automático já verificado', async () => {
+  const queryAutomacaoOriginal = AutomacaoEmail.query;
+  const queryProblemaOriginal = VendaProblema.query;
+  const transactionOriginal = VendaProblema.transaction;
+  const queryUsuarioOriginal = Usuario.query;
+  AutomacaoEmail.query = () => ({ findOne: async () => ({ id: 8, problema_id: 7 }) });
+  VendaProblema.query = () => ({ findById() { return this; }, forUpdate: async () => ({ id: 7, status: 'verificado' }) });
+  VendaProblema.transaction = async callback => callback({});
+  Usuario.query = () => { throw new Error('Não deveria consultar o usuário.'); };
+  try {
+    await assert.rejects(
+      automacao.resolverProblemaAutomatico(7, 'Tentativa duplicada.', 4),
+      error => error.statusCode === 409 && /já foi resolvido/.test(error.message)
+    );
+  } finally {
+    AutomacaoEmail.query = queryAutomacaoOriginal;
+    VendaProblema.query = queryProblemaOriginal;
+    VendaProblema.transaction = transactionOriginal;
+    Usuario.query = queryUsuarioOriginal;
+  }
+});
+
+test('carrega a venda completa somente a partir do vínculo do problema automático', async () => {
+  const queryAutomacaoOriginal = AutomacaoEmail.query;
+  const buscarVendaOriginal = vendaService.buscarVendaPorId;
+  let vendaConsultada = null;
+  AutomacaoEmail.query = () => ({ findOne: async () => ({ problema_id: 7, venda_id: 42 }) });
+  vendaService.buscarVendaPorId = async id => { vendaConsultada = id; return { id, nome: 'Venda completa' }; };
+  try {
+    const venda = await automacao.obterVendaProblemaAutomatico(7);
+    assert.equal(vendaConsultada, 42);
+    assert.equal(venda.nome, 'Venda completa');
+  } finally {
+    AutomacaoEmail.query = queryAutomacaoOriginal;
+    vendaService.buscarVendaPorId = buscarVendaOriginal;
   }
 });
 

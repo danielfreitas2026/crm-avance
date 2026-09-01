@@ -361,11 +361,95 @@ async function descartar(id, justificativa, usuarioId) { if (!String(justificati
 
 async function limparCorposExpirados() { const limite = new Date(); limite.setUTCFullYear(limite.getUTCFullYear() - 1); return AutomacaoEmail.query().whereNotNull('corpo_texto').where('recebido_em', '<', formatarSQL(limite)).patch({ corpo_texto: null, corpo_expirado_em: formatarSQL(), updated_at: new Date() }); }
 
-async function listarProblemas() {
-  const registros = await AutomacaoEmail.query().alias('a').join('venda_problemas as p', 'p.id', 'a.problema_id').join('vendas as v', 'v.id', 'a.venda_id')
-    .whereIn('p.status', ['aberto', 'resolvido', 'correcao_solicitada']).select('a.*', 'p.status as problema_status', 'p.aberto_em', 'v.nome as venda_nome', 'v.razao_social', 'v.cnpj').orderBy('p.aberto_em', 'desc');
-  for (const item of registros) item.eventos = await VendaProblemaEvento.query().where('problema_id', item.problema_id).orderBy('created_at');
-  return registros.map(item => ({ ...item, dados_extraidos: json(item.dados_extraidos) }));
+const STATUS_PROBLEMAS_ABERTOS = ['aberto', 'resolvido', 'correcao_solicitada'];
+
+function filtroProblemas(valor) {
+  const status = String(valor || 'abertos').toLowerCase();
+  if (!['abertos', 'resolvidos'].includes(status)) {
+    throw Object.assign(new Error('Status de problemas inválido.'), { statusCode: 400 });
+  }
+  return status;
+}
+
+function porPaginaProblemas(valor) {
+  const numero = Number(valor) || 20;
+  return [20, 50, 100].includes(numero) ? numero : 20;
+}
+
+function consultaProblemasPorStatus(status) {
+  const query = AutomacaoEmail.query().alias('a')
+    .join('venda_problemas as p', 'p.id', 'a.problema_id')
+    .join('vendas as v', 'v.id', 'a.venda_id');
+  return status === 'resolvidos'
+    ? query.where('p.status', 'verificado')
+    : query.whereIn('p.status', STATUS_PROBLEMAS_ABERTOS);
+}
+
+async function contarProblemasPorStatus(status) {
+  const resultado = await consultaProblemasPorStatus(status).count('a.id as total').first();
+  return Number(resultado?.total || 0);
+}
+
+async function listarProblemas(filtros = {}) {
+  const status = filtroProblemas(filtros.status);
+  const pagina = Math.max(1, Number(filtros.page) || 1);
+  const porPagina = porPaginaProblemas(filtros.per_page);
+  const colunaOrdenacao = status === 'resolvidos' ? 'p.resolvido_em' : 'p.aberto_em';
+  const query = consultaProblemasPorStatus(status)
+    .select(
+      'a.*',
+      'p.status as problema_status',
+      'p.aberto_em',
+      'p.resolvido_em',
+      'p.resolvido_por_id',
+      'p.resolvido_por_nome',
+      'v.nome as venda_nome',
+      'v.razao_social',
+      'v.cnpj'
+    )
+    .orderBy(colunaOrdenacao, 'desc')
+    .orderBy('p.id', 'desc');
+  const [resultado, abertos, resolvidos] = await Promise.all([
+    query.page(pagina - 1, porPagina),
+    contarProblemasPorStatus('abertos'),
+    contarProblemasPorStatus('resolvidos')
+  ]);
+  const ids = resultado.results.map(item => Number(item.problema_id)).filter(Boolean);
+  const eventos = ids.length
+    ? await VendaProblemaEvento.query()
+      .whereIn('problema_id', ids)
+      .withGraphFetched('usuario')
+      .modifyGraph('usuario', builder => builder.select('id', 'nome'))
+      .orderBy('created_at')
+      .orderBy('id')
+    : [];
+  const eventosPorProblema = new Map();
+  eventos.forEach(evento => {
+    const chave = Number(evento.problema_id);
+    if (!eventosPorProblema.has(chave)) eventosPorProblema.set(chave, []);
+    eventosPorProblema.get(chave).push(evento);
+  });
+  const data = resultado.results.map(item => {
+    const eventosItem = eventosPorProblema.get(Number(item.problema_id)) || [];
+    const eventoResolucao = [...eventosItem].reverse().find(evento => evento.tipo === 'resolucao_automatica');
+    const resolucao = item.problema_status === 'verificado' ? {
+      mensagem: eventoResolucao?.mensagem || '',
+      resolvido_em: item.resolvido_em || eventoResolucao?.created_at || null,
+      usuario: item.resolvido_por_id || item.resolvido_por_nome || eventoResolucao?.usuario
+        ? {
+          id: item.resolvido_por_id || eventoResolucao?.usuario?.id || null,
+          nome: item.resolvido_por_nome || eventoResolucao?.usuario?.nome || 'Usuário removido'
+        }
+        : null
+    } : null;
+    return {
+      ...item,
+      dados_extraidos: json(item.dados_extraidos),
+      eventos: eventosItem,
+      resolucao
+    };
+  });
+  return { data, total: resultado.total, page: pagina, per_page: porPagina, totals: { abertos, resolvidos } };
 }
 
 async function resolverProblemaAutomatico(problemaId, mensagem, usuarioId) {
@@ -373,7 +457,14 @@ async function resolverProblemaAutomatico(problemaId, mensagem, usuarioId) {
   const registro = await AutomacaoEmail.query().findOne({ problema_id: problemaId }); if (!registro) return null;
   const agora = formatarSQL();
   await VendaProblema.transaction(async trx => {
-    await VendaProblema.query(trx).patchAndFetchById(problemaId, { status: 'verificado', resolvido_em: agora, verificado_em: agora, updated_at: agora });
+    const problema = await VendaProblema.query(trx).findById(problemaId).forUpdate();
+    if (!problema) throw Object.assign(new Error('Problema automático não encontrado.'), { statusCode: 404 });
+    if (problema.status === 'verificado') throw Object.assign(new Error('Este problema já foi resolvido.'), { statusCode: 409 });
+    const usuario = await Usuario.query(trx).findById(usuarioId).select('id', 'nome');
+    await VendaProblema.query(trx).patchAndFetchById(problemaId, {
+      status: 'verificado', resolvido_em: agora, verificado_em: agora,
+      resolvido_por_id: usuario?.id || usuarioId, resolvido_por_nome: usuario?.nome || 'Usuário removido', updated_at: agora
+    });
     await VendaProblemaDestinatario.query(trx).where({ problema_id: problemaId, usuario_id: usuarioId }).patch({ resolvido_em: agora, updated_at: agora });
     await VendaProblemaEvento.query(trx).insert({ problema_id: problemaId, usuario_id: usuarioId, tipo: 'resolucao_automatica', mensagem: texto });
     await Notificacao.query(trx).where('source_key', `automacao_email:${registro.id}`).patch({ ativa: false, updated_at: new Date() });
@@ -381,4 +472,10 @@ async function resolverProblemaAutomatico(problemaId, mensagem, usuarioId) {
   return { ok: true };
 }
 
-module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro } };
+async function obterVendaProblemaAutomatico(problemaId) {
+  const registro = await AutomacaoEmail.query().findOne({ problema_id: problemaId });
+  if (!registro?.venda_id) return null;
+  return vendaService.buscarVendaPorId(registro.venda_id);
+}
+
+module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas } };

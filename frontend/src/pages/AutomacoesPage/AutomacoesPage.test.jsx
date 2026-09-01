@@ -12,7 +12,8 @@ const api = vi.hoisted(() => ({
   repetirAutomacao: vi.fn(),
   revisarAutomacao: vi.fn(),
   listarProblemasAutomaticos: vi.fn(),
-  resolverProblemaAutomatico: vi.fn()
+  resolverProblemaAutomatico: vi.fn(),
+  obterVendaProblemaAutomatico: vi.fn()
 }));
 
 vi.mock('../../layouts/LayoutPrivado/LayoutPrivado', () => ({
@@ -20,6 +21,16 @@ vi.mock('../../layouts/LayoutPrivado/LayoutPrivado', () => ({
 }));
 
 vi.mock('../../services/automacao.service', () => api);
+vi.mock('../VendasPage/VendaModal', () => ({
+  default: ({ venda, onClose }) => <section role="dialog" aria-label="Venda completa"><span>Modal da venda #{venda.id}</span><button type="button" onClick={onClose}>Fechar venda</button></section>
+}));
+vi.mock('../../services/cliente.service', () => ({ listarClientesSelect: vi.fn().mockResolvedValue([]) }));
+vi.mock('../../services/config.service', () => ({
+  listarOperadoras: vi.fn().mockResolvedValue([]),
+  listarServicos: vi.fn().mockResolvedValue([]),
+  listarTiposVenda: vi.fn().mockResolvedValue([])
+}));
+vi.mock('../../services/venda.service', () => ({ atualizarVenda: vi.fn(), listarVendedoras: vi.fn().mockResolvedValue([]) }));
 
 const resumo = {
   habilitada: false,
@@ -48,9 +59,10 @@ const execucao = {
 describe('Painéis da automação Gmail VIVO', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     api.listarAutomacoes.mockResolvedValue({ data: [] });
     api.obterResumoAutomacoes.mockResolvedValue(resumo);
-    api.listarProblemasAutomaticos.mockResolvedValue([]);
+    api.listarProblemasAutomaticos.mockResolvedValue({ data: [], total: 0, page: 1, per_page: 20, totals: { abertos: 0, resolvidos: 0 } });
     api.revisarAutomacao.mockResolvedValue({});
     api.repetirAutomacao.mockResolvedValue({});
     api.descartarAutomacao.mockResolvedValue({});
@@ -110,22 +122,82 @@ describe('Painéis da automação Gmail VIVO', () => {
   });
 
   it('renderiza o painel de problemas no layout e apresenta a pendência', async () => {
-    api.listarProblemasAutomaticos.mockResolvedValue([{
-      problema_id: 7,
-      venda_id: 42,
-      venda_nome: 'Empresa Exemplo',
-      cnpj: '11.143.938/0001-87',
-      aberto_em: '2026-08-31T12:00:00.000Z',
-      dados_extraidos: { mensagem_operador: 'Corrigir o pedido de venda.' },
-      eventos: [{ id: 1, tipo: 'abertura_automatica', mensagem: 'Auditoria não conseguiu contato.' }]
-    }]);
+    api.listarProblemasAutomaticos.mockResolvedValue({ data: [{
+        problema_id: 7,
+        venda_id: 42,
+        venda_nome: 'Empresa Exemplo',
+        cnpj: '11.143.938/0001-87',
+        recebido_em: '2026-08-31T11:58:00.000Z',
+        aberto_em: '2026-08-31T12:00:00.000Z',
+        dados_extraidos: { mensagem_operador: 'Corrigir o pedido de venda.' },
+        eventos: [{ id: 1, tipo: 'abertura_automatica', mensagem: 'Auditoria não conseguiu contato.', created_at: '2026-08-31T12:00:00.000Z' }]
+      }], total: 1, page: 1, per_page: 20, totals: { abertos: 1, resolvidos: 0 } });
 
     render(<ProblemasPage />);
 
     expect(await screen.findByText(/Venda #42 — Empresa Exemplo/)).toBeInTheDocument();
     expect(screen.getByTestId('layout-privado')).toBeInTheDocument();
+    expect(screen.queryByText('Corrigir o pedido de venda.')).not.toBeInTheDocument();
+    const expandir = screen.getByRole('button', { name: 'Expandir informações' });
+    expect(expandir).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(expandir);
     expect(screen.getByText('Corrigir o pedido de venda.')).toBeInTheDocument();
-    expect(screen.getByText('Problema identificado')).toBeInTheDocument();
+    expect(screen.getByText(/Problema identificado/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Resolver problema' })).toBeDisabled();
+    await waitFor(() => expect(localStorage.getItem('problemas-page:expandidos:v1:anonimo')).toBe('[7]'));
+  });
+
+  it('consulta o histórico resolvido e expõe responsável, data e observação', async () => {
+    const user = userEvent.setup();
+    api.listarProblemasAutomaticos
+      .mockResolvedValueOnce({ data: [], total: 0, page: 1, per_page: 20, totals: { abertos: 0, resolvidos: 1 } })
+      .mockResolvedValueOnce({
+        data: [{
+          problema_id: 9, venda_id: 55, venda_nome: 'Cliente resolvido', recebido_em: '2026-08-30T10:00:00.000Z', aberto_em: '2026-08-30T10:02:00.000Z',
+          dados_extraidos: { mensagem_operador: 'Ajustar cadastro.' }, eventos: [],
+          resolucao: { mensagem: 'Cadastro atualizado na operadora.', resolvido_em: '2026-08-31T15:30:00.000Z', usuario: { id: 4, nome: 'Maria Silva' } }
+        }], total: 1, page: 1, per_page: 20, totals: { abertos: 0, resolvidos: 1 }
+      });
+
+    render(<ProblemasPage />);
+    await user.click(await screen.findByRole('tab', { name: 'Problemas resolvidos 1' }));
+    await user.click(await screen.findByRole('button', { name: 'Expandir informações' }));
+
+    expect(screen.getByText('Maria Silva')).toBeInTheDocument();
+    expect(screen.getByText('Cadastro atualizado na operadora.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resolver problema' })).not.toBeInTheDocument();
+    expect(api.listarProblemasAutomaticos).toHaveBeenLastCalledWith({ status: 'resolvidos', page: 1, perPage: 20 });
+  });
+
+  it('restaura cartões expandidos e pagina sem carregar todos os registros', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('problemas-page:expandidos:v1:anonimo', '[7]');
+    const resposta = {
+      data: [{ problema_id: 7, venda_id: 42, venda_nome: 'Empresa Exemplo', dados_extraidos: { mensagem_operador: 'Detalhe restaurado.' }, eventos: [] }],
+      total: 21, page: 1, per_page: 20, totals: { abertos: 21, resolvidos: 0 }
+    };
+    api.listarProblemasAutomaticos.mockResolvedValue(resposta);
+
+    render(<ProblemasPage />);
+
+    expect(await screen.findByRole('button', { name: 'Recolher informações' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Detalhe restaurado.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Próxima página' }));
+    await waitFor(() => expect(api.listarProblemasAutomaticos).toHaveBeenLastCalledWith({ status: 'abertos', page: 2, perPage: 20 }));
+  });
+
+  it('abre e fecha a venda completa sem navegar para outra página', async () => {
+    const user = userEvent.setup();
+    api.listarProblemasAutomaticos.mockResolvedValue({
+      data: [{ problema_id: 12, venda_id: 81, venda_nome: 'Venda modal', eventos: [], dados_extraidos: {} }],
+      total: 1, page: 1, per_page: 20, totals: { abertos: 1, resolvidos: 0 }
+    });
+    api.obterVendaProblemaAutomatico.mockResolvedValue({ id: 81, cliente: null, vendedoras: [] });
+    render(<ProblemasPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Abrir venda completa' }));
+    expect(await screen.findByRole('dialog', { name: 'Venda completa' })).toHaveTextContent('Modal da venda #81');
+    await user.click(screen.getByRole('button', { name: 'Fechar venda' }));
+    expect(screen.queryByRole('dialog', { name: 'Venda completa' })).not.toBeInTheDocument();
   });
 });
