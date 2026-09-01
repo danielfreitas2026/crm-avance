@@ -3788,73 +3788,6 @@ export function VendaResumoConsultora({ venda }) {
   );
 }
 
-export function VendaResumoProblema({ venda }) {
-  const vendedorasVenda = Array.isArray(venda?.vendedoras) && venda.vendedoras.length
-    ? venda.vendedoras
-    : (venda?.vendedora ? [venda.vendedora] : []);
-  const vendedorasPorId = new Map(vendedorasVenda.map(item => [String(item.id), item.nome]));
-  let chipsOriginais = venda?.valores_unitarios_chips;
-  if (typeof chipsOriginais === 'string') {
-    try { chipsOriginais = JSON.parse(chipsOriginais); } catch { chipsOriginais = []; }
-  }
-  if (!Array.isArray(chipsOriginais)) chipsOriginais = [];
-  const chips = parseItensChips(
-    venda?.valores_unitarios_chips,
-    venda?.gb,
-    'novo',
-    venda?.operadora_atual_id,
-    venda?.operadora_id
-  ).map((item, index) => ({
-    ...item,
-    operadora_atual_nome: chipsOriginais[index]?.operadora_atual_nome || '',
-    operadora_nome: chipsOriginais[index]?.operadora_nome || '',
-    vendedora_nome: chipsOriginais[index]?.vendedora_nome || ''
-  })).filter(item => Number(item.quantidade || 0) > 0);
-  const dataComercialInformada = Boolean(venda?.data_venda);
-  const dataExibida = venda?.data_venda || venda?.created_at || venda?.criado_em;
-  const nomeOperadora = (item, tipo) => {
-    const atual = tipo === 'atual';
-    const nome = atual ? item.operadora_atual_nome : item.operadora_nome;
-    const id = atual ? item.operadora_atual_id : item.operadora_id;
-    if (nome) return nome;
-    if (!atual && Number(venda?.operadora?.id) === Number(id)) return venda.operadora.nome;
-    return id ? `#${id}` : '—';
-  };
-
-  return (
-    <section className="venda-problema-resumo" aria-labelledby="venda-problema-resumo-titulo">
-      <div className="venda-problema-resumo__heading">
-        <strong id="venda-problema-resumo-titulo">Informações principais da venda</strong>
-        <span>Resumo para conferência do problema pós-venda</span>
-      </div>
-      <dl className="venda-problema-resumo__dados">
-        <div><dt>Vendedora(s)</dt><dd>{vendedorasVenda.map(item => item.nome).filter(Boolean).join(', ') || 'Não informada(s)'}</dd></div>
-        <div><dt>{dataComercialInformada ? 'Data da venda' : 'Cadastro no CRM'}</dt><dd>{formatarData(dataExibida)}{!dataComercialInformada && <small>Data comercial não informada</small>}</dd></div>
-      </dl>
-      <div className="venda-problema-resumo__table-wrap">
-        <table className="venda-problema-resumo__table">
-          <caption>Chips envolvidos na venda</caption>
-          <thead><tr><th>Qtd.</th><th>Franquia</th><th>Tipo</th><th>Operadora atual</th><th>Operadora destino</th><th>Vendedora</th><th>Valor unitário</th><th>Subtotal</th></tr></thead>
-          <tbody>
-            {chips.length === 0 ? <tr><td colSpan="8" className="venda-problema-resumo__empty">Nenhum chip informado.</td></tr> : chips.map((chip, index) => {
-              const quantidade = Number(chip.quantidade || 0);
-              const valorUnitario = Number(String(chip.valor_unitario || 0).replace(',', '.')) || 0;
-              return (
-                <tr key={`${chip.operadora_id || 'chip'}-${index}`}>
-                  <td>{quantidade}</td><td>{chip.gb ? `${chip.gb} GB` : '—'}</td><td>{formatarTipoLinhaChipLabel(chip.tipo_linha)}</td>
-                  <td>{nomeOperadora(chip, 'atual')}</td><td>{nomeOperadora(chip, 'destino')}</td>
-                  <td>{chip.vendedora_nome || vendedorasPorId.get(String(chip.vendedora_id)) || (vendedorasVenda.length === 1 ? vendedorasVenda[0].nome : '—')}</td>
-                  <td>{formatarMoeda(valorUnitario)}</td><td>{formatarMoeda(quantidade * valorUnitario)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
 function VendaModal({
   venda,
   initialValues,
@@ -3891,8 +3824,7 @@ function VendaModal({
   clientePreenchido = null,
   clientesCarregados = true,
   initialDraft = null,
-  onDraftChange,
-  mostrarResumoProblema = false
+  onDraftChange
 }) {
   const editando = Boolean(venda?.id);
   const draftKey = 'venda_novo';
@@ -5133,8 +5065,6 @@ function VendaModal({
             </button>
           </div>
         </div>
-
-        {venda && mostrarResumoProblema && <VendaResumoProblema venda={venda} />}
 
         {venda?.integracao_dashboard && (
           <div className={venda.integracao_dashboard.status === 'enviada' ? 'alert-success' : 'alert-error'} style={{ margin: '12px 16px 0' }}>

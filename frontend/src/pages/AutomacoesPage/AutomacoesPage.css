@@ -462,6 +462,35 @@
 .problem-card.is-expanded .problem-card__toggle svg { transform: rotate(180deg); }
 .problem-card.is-expanded .automation-detail { border-top: 1px solid var(--border); }
 
+.problem-sale-summary {
+  display: grid;
+  gap: 12px;
+  margin: 0 18px 16px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.problem-sale-summary__facts { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(160px, 0.8fr) minmax(110px, 0.4fr); gap: 8px; }
+.problem-sale-summary__facts > div { display: grid; align-content: center; gap: 3px; min-height: 66px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 8px; background: var(--surface); }
+.problem-sale-summary__facts span { display: flex; align-items: center; gap: 6px; color: var(--text-3); font-size: 10px; font-weight: 750; text-transform: uppercase; }
+.problem-sale-summary__facts strong { font-size: 13px; overflow-wrap: anywhere; }
+.problem-sale-summary__facts small { color: var(--text-3); font-size: 10px; }
+.problem-sale-summary__chips { display: grid; gap: 7px; }
+.problem-sale-summary__chips > strong { font-size: 12px; }
+.problem-sale-summary__table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.problem-sale-summary table { width: 100%; min-width: 700px; border-collapse: collapse; font-size: 11px; }
+.problem-sale-summary th,
+.problem-sale-summary td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+.problem-sale-summary th { color: var(--text-3); background: color-mix(in srgb, var(--surface-2) 75%, var(--surface)); font-size: 9px; text-transform: uppercase; }
+.problem-sale-summary tbody tr:last-child td { border-bottom: 0; }
+.problem-sale-summary td:first-child { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 7px; }
+.problem-sale-summary td:first-child strong { grid-row: 1 / 3; font-size: 13px; }
+.problem-sale-summary td:first-child span { color: var(--text-2); }
+.problem-sale-summary__route { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.problem-sale-summary__route svg { color: var(--text-3); }
+.problem-sale-summary__empty { margin: 0; padding: 12px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-3); background: var(--surface); text-align: center; }
+
 .problem-resolved { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .problem-resolved > div { display: grid; gap: 3px; padding: 12px; border: 1px solid #bbf7d0; border-radius: 8px; background: #f0fdf4; }
 .problem-resolved span { color: #166534; font-size: 11px; font-weight: 700; text-transform: uppercase; }
@@ -560,6 +589,9 @@
   .problem-card__header-actions,
   .problem-card__header-actions .btn { width: 100%; }
   .problem-card__header-actions .btn { justify-content: center; }
+  .problem-sale-summary { margin: 0 12px 14px; padding: 10px; }
+  .problem-sale-summary__facts { grid-template-columns: 1fr; }
+  .problem-sale-summary__facts > div { min-height: 0; }
   .problem-resolved { grid-template-columns: 1fr; }
   .problem-resolved__note { grid-column: auto; }
 

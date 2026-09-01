@@ -390,6 +390,44 @@ async function contarProblemasPorStatus(status) {
   return Number(resultado?.total || 0);
 }
 
+async function resumirVendasProblemas(vendaIds) {
+  if (!vendaIds.length) return new Map();
+  const vendas = await Venda.query()
+    .whereIn('id', vendaIds)
+    .select('id', 'vendedora_id', 'operadora_id', 'operadora_atual_id', 'data_venda', 'created_at', 'valores_unitarios_chips')
+    .withGraphFetched('[vendedora, vendedoras, operadora, operadoraAtual]')
+    .modifyGraph('vendedora', builder => builder.select('id', 'nome'))
+    .modifyGraph('vendedoras', builder => builder.select('usuarios.id', 'usuarios.nome').orderBy('venda_vendedoras.ordem', 'asc'))
+    .modifyGraph('operadora', builder => builder.select('id', 'nome'))
+    .modifyGraph('operadoraAtual', builder => builder.select('id', 'nome'));
+  return new Map(vendas.map(venda => {
+    const vendedoras = Array.isArray(venda.vendedoras) && venda.vendedoras.length
+      ? venda.vendedoras
+      : (venda.vendedora ? [venda.vendedora] : []);
+    const vendedorasPorId = new Map(vendedoras.map(item => [Number(item.id), item.nome]));
+    const chips = json(venda.valores_unitarios_chips, []);
+    return [Number(venda.id), {
+      vendedoras: vendedoras.map(item => ({ id: item.id, nome: item.nome })),
+      data_venda: venda.data_venda || venda.created_at || null,
+      data_venda_origem: venda.data_venda ? 'comercial' : 'cadastro',
+      chips: (Array.isArray(chips) ? chips : []).map(item => {
+        const quantidade = Number(item.quantidade || 0);
+        const valorUnitario = Number(String(item.valor_unitario || 0).replace(',', '.')) || 0;
+        return {
+          quantidade,
+          gb: item.gb || null,
+          tipo_linha: item.tipo_linha || item.tipo || item.categoria || null,
+          operadora_atual: item.operadora_atual_nome || (Number(item.operadora_atual_id) === Number(venda.operadoraAtual?.id) ? venda.operadoraAtual.nome : null),
+          operadora_destino: item.operadora_nome || (Number(item.operadora_id) === Number(venda.operadora?.id) ? venda.operadora.nome : null),
+          vendedora: item.vendedora_nome || vendedorasPorId.get(Number(item.vendedora_id)) || (vendedoras.length === 1 ? vendedoras[0].nome : null),
+          valor_unitario: valorUnitario,
+          subtotal: quantidade * valorUnitario
+        };
+      }).filter(item => item.quantidade > 0)
+    }];
+  }));
+}
+
 async function listarProblemas(filtros = {}) {
   const status = filtroProblemas(filtros.status);
   const pagina = Math.max(1, Number(filtros.page) || 1);
@@ -415,14 +453,16 @@ async function listarProblemas(filtros = {}) {
     contarProblemasPorStatus('resolvidos')
   ]);
   const ids = resultado.results.map(item => Number(item.problema_id)).filter(Boolean);
-  const eventos = ids.length
-    ? await VendaProblemaEvento.query()
+  const vendaIds = [...new Set(resultado.results.map(item => Number(item.venda_id)).filter(Boolean))];
+  const [eventos, resumosVendas] = await Promise.all([
+    ids.length ? VendaProblemaEvento.query()
       .whereIn('problema_id', ids)
       .withGraphFetched('usuario')
       .modifyGraph('usuario', builder => builder.select('id', 'nome'))
       .orderBy('created_at')
-      .orderBy('id')
-    : [];
+      .orderBy('id') : [],
+    resumirVendasProblemas(vendaIds)
+  ]);
   const eventosPorProblema = new Map();
   eventos.forEach(evento => {
     const chave = Number(evento.problema_id);
@@ -446,7 +486,8 @@ async function listarProblemas(filtros = {}) {
       ...item,
       dados_extraidos: json(item.dados_extraidos),
       eventos: eventosItem,
-      resolucao
+      resolucao,
+      venda_resumo: resumosVendas.get(Number(item.venda_id)) || { vendedoras: [], data_venda: null, data_venda_origem: 'cadastro', chips: [] }
     };
   });
   return { data, total: resultado.total, page: pagina, per_page: porPagina, totals: { abertos, resolvidos } };
@@ -478,4 +519,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas } };
+module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas } };

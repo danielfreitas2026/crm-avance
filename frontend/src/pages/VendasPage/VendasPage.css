@@ -1206,39 +1206,12 @@
 }
 .venda-resumo-consultora__problemas { padding-top: 18px; border-top: 1px solid var(--border); }
 
-.venda-problema-resumo {
-  display: grid;
-  gap: 12px;
-  margin: 14px 18px 0;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-2);
-}
-.venda-problema-resumo__heading { display: grid; gap: 2px; }
-.venda-problema-resumo__heading strong { font-size: 14px; }
-.venda-problema-resumo__heading span { color: var(--text-3); font-size: 12px; }
-.venda-problema-resumo__dados { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
-.venda-problema-resumo__dados > div { display: grid; gap: 3px; padding: 10px; border-radius: 8px; background: var(--surface); }
-.venda-problema-resumo__dados dt { color: var(--text-3); font-size: 11px; font-weight: 700; text-transform: uppercase; }
-.venda-problema-resumo__dados dd { display: grid; gap: 2px; margin: 0; font-weight: 650; }
-.venda-problema-resumo__dados small { color: var(--text-3); font-size: 11px; font-weight: 400; }
-.venda-problema-resumo__table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
-.venda-problema-resumo__table { width: 100%; min-width: 820px; border-collapse: collapse; font-size: 12px; }
-.venda-problema-resumo__table caption { padding: 10px 12px; text-align: left; font-weight: 750; }
-.venda-problema-resumo__table th,
-.venda-problema-resumo__table td { padding: 9px 10px; border-top: 1px solid var(--border); text-align: left; white-space: nowrap; }
-.venda-problema-resumo__table th { color: var(--text-3); background: var(--surface-2); font-size: 10px; text-transform: uppercase; }
-.venda-problema-resumo__empty { color: var(--text-3); text-align: center !important; }
-
 @media (max-width: 639px) {
   .venda-resumo-consultora-modal {
     width: calc(100vw - 16px);
     max-height: calc(100dvh - 16px);
   }
   .venda-resumo-consultora__dados { grid-template-columns: 1fr; }
-  .venda-problema-resumo { margin: 10px 12px 0; }
-  .venda-problema-resumo__dados { grid-template-columns: 1fr; }
   .venda-resumo-consultora__chip-card { gap: 8px; }
 }
 

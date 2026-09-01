@@ -129,6 +129,10 @@ describe('Painéis da automação Gmail VIVO', () => {
         cnpj: '11.143.938/0001-87',
         recebido_em: '2026-08-31T11:58:00.000Z',
         aberto_em: '2026-08-31T12:00:00.000Z',
+        venda_resumo: {
+          vendedoras: [{ id: 3, nome: 'Thayara' }], data_venda: '2026-07-31', data_venda_origem: 'comercial',
+          chips: [{ quantidade: 2, gb: '30', tipo_linha: 'novo', operadora_atual: null, operadora_destino: 'VIVO', vendedora: 'Thayara', valor_unitario: 59.9, subtotal: 119.8 }]
+        },
         dados_extraidos: { mensagem_operador: 'Corrigir o pedido de venda.' },
         eventos: [{ id: 1, tipo: 'abertura_automatica', mensagem: 'Auditoria não conseguiu contato.', created_at: '2026-08-31T12:00:00.000Z' }]
       }], total: 1, page: 1, per_page: 20, totals: { abertos: 1, resolvidos: 0 } });
@@ -137,6 +141,10 @@ describe('Painéis da automação Gmail VIVO', () => {
 
     expect(await screen.findByText(/Venda #42 — Empresa Exemplo/)).toBeInTheDocument();
     expect(screen.getByTestId('layout-privado')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Informações principais da venda' })).toHaveTextContent('Thayara');
+    expect(screen.getByRole('region', { name: 'Informações principais da venda' })).toHaveTextContent('31/07/2026');
+    expect(screen.getByRole('table')).toHaveTextContent('2×30 GB · Novo');
+    expect(screen.getByRole('table')).toHaveTextContent('R$ 119,80');
     expect(screen.queryByText('Corrigir o pedido de venda.')).not.toBeInTheDocument();
     const expandir = screen.getByRole('button', { name: 'Expandir informações' });
     expect(expandir).toHaveAttribute('aria-expanded', 'false');

@@ -247,6 +247,7 @@ test('valida os filtros e tamanhos permitidos da pagina de problemas', () => {
 test('pagina problemas resolvidos e monta auditoria com eventos buscados em lote', async () => {
   const queryAutomacaoOriginal = AutomacaoEmail.query;
   const queryEventoOriginal = VendaProblemaEvento.query;
+  const queryVendaOriginal = Venda.query;
   let consulta = 0;
   const metodosFluentes = ['alias', 'join', 'where', 'whereIn', 'select', 'orderBy', 'count', 'withGraphFetched', 'modifyGraph'];
 
@@ -280,8 +281,28 @@ test('pagina problemas resolvidos e monta auditoria com eventos buscados em lote
     then(resolve) { return Promise.resolve(eventos).then(resolve); }
   }
 
+  class QueryVenda {
+    whereIn() { return this; }
+    select() { return this; }
+    withGraphFetched() { return this; }
+    modifyGraph() { return this; }
+    then(resolve) {
+      return Promise.resolve([{
+        id: 55,
+        data_venda: '2026-08-20',
+        created_at: '2026-08-19 10:00:00',
+        valores_unitarios_chips: JSON.stringify([{ quantidade: 2, gb: '30', tipo_linha: 'novo', vendedora_id: 4, operadora_id: 2, valor_unitario: 59.9 }]),
+        vendedora: { id: 4, nome: 'Maria Silva' },
+        vendedoras: [{ id: 4, nome: 'Maria Silva' }],
+        operadora: { id: 2, nome: 'VIVO' },
+        operadoraAtual: null
+      }]).then(resolve);
+    }
+  }
+
   AutomacaoEmail.query = () => new QueryAutomacao(consulta++);
   VendaProblemaEvento.query = () => new QueryEvento();
+  Venda.query = () => new QueryVenda();
   try {
     const resultado = await automacao.listarProblemas({ status: 'resolvidos', page: 2, per_page: 50 });
     assert.equal(resultado.total, 51);
@@ -289,10 +310,14 @@ test('pagina problemas resolvidos e monta auditoria com eventos buscados em lote
     assert.equal(resultado.data[0].dados_extraidos.mensagem_operador, 'Ajustar cadastro.');
     assert.equal(resultado.data[0].resolucao.usuario.nome, 'Maria Silva');
     assert.equal(resultado.data[0].resolucao.mensagem, 'Cadastro atualizado.');
+    assert.equal(resultado.data[0].venda_resumo.vendedoras[0].nome, 'Maria Silva');
+    assert.equal(resultado.data[0].venda_resumo.chips[0].operadora_destino, 'VIVO');
+    assert.equal(resultado.data[0].venda_resumo.chips[0].subtotal, 119.8);
     assert.equal(consulta, 3);
   } finally {
     AutomacaoEmail.query = queryAutomacaoOriginal;
     VendaProblemaEvento.query = queryEventoOriginal;
+    Venda.query = queryVendaOriginal;
   }
 });
 

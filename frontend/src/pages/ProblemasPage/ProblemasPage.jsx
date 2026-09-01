@@ -21,6 +21,9 @@ const ABAS = {
 };
 const PAGINACAO_INICIAL = { abertos: { page: 1, perPage: 20 }, resolvidos: { page: 1, perPage: 20 } };
 const dataHora = valor => valor ? new Date(valor).toLocaleString('pt-BR') : '—';
+const data = valor => valor ? new Date(`${String(valor).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '—';
+const moeda = valor => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const tipoLinha = valor => ({ novo: 'Novo', portabilidade: 'Portabilidade', migracao: 'Migração' }[String(valor || '').toLowerCase()] || valor || '—');
 
 function lerExpandidos(chave) {
   try {
@@ -42,6 +45,35 @@ function referenciasDaVenda(venda) {
     tiposVenda: venda?.tipoVenda ? [venda.tipoVenda] : [],
     servicos: venda?.servico ? [venda.servico] : []
   };
+}
+
+function ResumoVendaCard({ resumo }) {
+  const chips = Array.isArray(resumo?.chips) ? resumo.chips : [];
+  const nomesVendedoras = (resumo?.vendedoras || []).map(item => item.nome).filter(Boolean).join(', ');
+  return (
+    <section className="problem-sale-summary" aria-label="Informações principais da venda">
+      <div className="problem-sale-summary__facts">
+        <div><span><I.User size={14} /> Vendedora(s)</span><strong>{nomesVendedoras || 'Não informada(s)'}</strong></div>
+        <div><span><I.Calendar size={14} /> {resumo?.data_venda_origem === 'cadastro' ? 'Cadastro no CRM' : 'Data da venda'}</span><strong>{data(resumo?.data_venda)}</strong>{resumo?.data_venda_origem === 'cadastro' && <small>Data comercial não informada</small>}</div>
+        <div><span><I.SimCard size={14} /> Total de chips</span><strong>{chips.reduce((total, chip) => total + Number(chip.quantidade || 0), 0)}</strong></div>
+      </div>
+      <div className="problem-sale-summary__chips">
+        <strong>Chips envolvidos na venda</strong>
+        {chips.length === 0 ? <p className="problem-sale-summary__empty">Nenhum chip informado.</p> : (
+          <div className="problem-sale-summary__table-wrap">
+            <table>
+              <thead><tr><th>Chips</th><th>Operadoras</th><th>Vendedora</th><th>Valor unitário</th><th>Subtotal</th></tr></thead>
+              <tbody>{chips.map((chip, index) => <tr key={`${chip.operadora_destino || 'chip'}-${index}`}>
+                <td><strong>{chip.quantidade}×</strong><span>{chip.gb ? `${chip.gb} GB` : 'Franquia não informada'} · {tipoLinha(chip.tipo_linha)}</span></td>
+                <td><span className="problem-sale-summary__route">{chip.operadora_atual || '—'} <I.ArrowRight size={13} /> {chip.operadora_destino || '—'}</span></td>
+                <td>{chip.vendedora || '—'}</td><td>{moeda(chip.valor_unitario)}</td><td><strong>{moeda(chip.subtotal)}</strong></td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </section>
+  );
 }
 
 export default function ProblemasPage() {
@@ -199,6 +231,7 @@ export default function ProblemasPage() {
                     <button type="button" className="btn btn-sm btn-ghost problem-card__toggle" aria-expanded={expandido} aria-controls={detalhesId} onClick={() => alternarDetalhes(item.problema_id)}><I.ChevronDown size={16} /> {expandido ? 'Recolher informações' : 'Expandir informações'}</button>
                   </div>
                 </header>
+                <ResumoVendaCard resumo={item.venda_resumo} />
                 {expandido && (
                   <div className="automation-detail" id={detalhesId}>
                     <div className="problem-message"><strong>Mensagem da operadora</strong><p>{item.dados_extraidos?.mensagem_operador || 'Mensagem não informada.'}</p></div>
@@ -245,7 +278,6 @@ export default function ProblemasPage() {
           usuarioLogado={usuario}
           initialTab="venda"
           modoEdicao={modalModoEdicao}
-          mostrarResumoProblema
           onStartEdit={() => setModalModoEdicao(true)}
           onClose={() => { setVendaModal(null); setModalModoEdicao(false); setProblemaVendaModal(null); }}
           onSave={salvarVendaModal}
