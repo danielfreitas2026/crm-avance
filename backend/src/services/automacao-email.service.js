@@ -319,7 +319,7 @@ async function ciclo() { const coleta = await coletarEmails(); if (coleta.habili
 
 async function listar(filtros = {}) {
   const pagina = Math.max(1, Number(filtros.page) || 1); const porPagina = Math.min(100, Math.max(10, Number(filtros.per_page) || 25));
-  const query = AutomacaoEmail.query().orderBy('recebido_em', 'desc');
+  const query = AutomacaoEmail.query().orderBy('recebido_em', 'desc').orderBy('id', 'desc');
   if (filtros.status) query.where('status', filtros.status);
   const resultado = await query.page(pagina - 1, porPagina);
   return { data: resultado.results.map(item => ({ ...item, dados_extraidos: json(item.dados_extraidos) })), total: resultado.total, page: pagina, per_page: porPagina };

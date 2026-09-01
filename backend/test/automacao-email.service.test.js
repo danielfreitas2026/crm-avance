@@ -244,6 +244,35 @@ test('valida os filtros e tamanhos permitidos da pagina de problemas', () => {
   assert.equal(automacao._internals.porPaginaProblemas(999), 20);
 });
 
+test('pagina automacoes por status com ordenacao deterministica', async () => {
+  const queryOriginal = AutomacaoEmail.query;
+  const chamadas = [];
+  class QueryAutomacao {
+    orderBy(campo, direcao) { chamadas.push(['orderBy', campo, direcao]); return this; }
+    where(campo, valor) { chamadas.push(['where', campo, valor]); return this; }
+    async page(offset, limite) {
+      chamadas.push(['page', offset, limite]);
+      return { total: 121, results: [{ id: 7, dados_extraidos: '{"destino":"Entrega"}' }] };
+    }
+  }
+  AutomacaoEmail.query = () => new QueryAutomacao();
+  try {
+    const resultado = await automacao.listar({ status: 'revisao', page: 2, per_page: 100 });
+    assert.deepEqual(chamadas, [
+      ['orderBy', 'recebido_em', 'desc'],
+      ['orderBy', 'id', 'desc'],
+      ['where', 'status', 'revisao'],
+      ['page', 1, 100]
+    ]);
+    assert.equal(resultado.total, 121);
+    assert.equal(resultado.page, 2);
+    assert.equal(resultado.per_page, 100);
+    assert.deepEqual(resultado.data[0].dados_extraidos, { destino: 'Entrega' });
+  } finally {
+    AutomacaoEmail.query = queryOriginal;
+  }
+});
+
 test('pagina problemas resolvidos e monta auditoria com eventos buscados em lote', async () => {
   const queryAutomacaoOriginal = AutomacaoEmail.query;
   const queryEventoOriginal = VendaProblemaEvento.query;

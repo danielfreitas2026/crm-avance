@@ -60,7 +60,7 @@ describe('Painéis da automação Gmail VIVO', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    api.listarAutomacoes.mockResolvedValue({ data: [] });
+    api.listarAutomacoes.mockResolvedValue({ data: [], total: 0, page: 1, per_page: 20 });
     api.obterResumoAutomacoes.mockResolvedValue(resumo);
     api.listarProblemasAutomaticos.mockResolvedValue({ data: [], total: 0, page: 1, per_page: 20, totals: { abertos: 0, resolvidos: 0 } });
     api.revisarAutomacao.mockResolvedValue({});
@@ -86,9 +86,59 @@ describe('Painéis da automação Gmail VIVO', () => {
 
     await user.click(screen.getByRole('button', { name: 'Filtrar por Revisão manual: 2' }));
 
-    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith('revisao'));
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'revisao', page: 1, perPage: 20 }));
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('revisao');
     expect(screen.getByText('Não há execuções com o status “Revisão manual”.')).toBeInTheDocument();
+  });
+
+  it('pagina o histórico no servidor e permite alterar a quantidade por página', async () => {
+    const user = userEvent.setup();
+    api.listarAutomacoes.mockResolvedValue({ data: [execucao], total: 41, page: 1, per_page: 20 });
+    render(<AutomacoesPage />);
+
+    expect(await screen.findByText('1–20 de 41')).toBeInTheDocument();
+    expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: '', page: 1, perPage: 20 });
+
+    await user.click(screen.getByRole('button', { name: 'Próxima página' }));
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: '', page: 2, perPage: 20 }));
+    expect(await screen.findByText('21–40 de 41')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Por página'));
+    await user.click(screen.getByRole('option', { name: '50' }));
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: '', page: 1, perPage: 50 }));
+    expect(await screen.findByText('1–41 de 41')).toBeInTheDocument();
+  });
+
+  it('reinicia a paginação ao trocar o status', async () => {
+    const user = userEvent.setup();
+    api.listarAutomacoes.mockResolvedValue({ data: [execucao], total: 41, page: 1, per_page: 20 });
+    render(<AutomacoesPage />);
+    await screen.findByText('1–20 de 41');
+
+    await user.click(screen.getByRole('button', { name: 'Próxima página' }));
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: '', page: 2, perPage: 20 }));
+    await user.click(screen.getByRole('button', { name: 'Filtrar por Revisão manual: 2' }));
+
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'revisao', page: 1, perPage: 20 }));
+    expect(screen.getByRole('button', { name: 'Mostrar todas as 6 execuções' })).toBeInTheDocument();
+  });
+
+  it('volta para a última página válida quando o total diminui', async () => {
+    const user = userEvent.setup();
+    api.listarAutomacoes
+      .mockResolvedValueOnce({ data: [execucao], total: 21, page: 1, per_page: 20 })
+      .mockResolvedValueOnce({ data: [execucao], total: 21, page: 2, per_page: 20 })
+      .mockResolvedValueOnce({ data: [], total: 20, page: 2, per_page: 20 })
+      .mockResolvedValueOnce({ data: [execucao], total: 20, page: 1, per_page: 20 });
+    render(<AutomacoesPage />);
+    await screen.findByText('1–20 de 21');
+    await user.click(screen.getByRole('button', { name: 'Próxima página' }));
+    await screen.findByText('21–21 de 21');
+
+    await user.click(screen.getByRole('button', { name: 'Atualizar' }));
+
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: '', page: 1, perPage: 20 }));
+    expect(await screen.findByText('1–20 de 20')).toBeInTheDocument();
   });
 
   it('apresenta os detalhes extraídos e o formulário de revisão', async () => {

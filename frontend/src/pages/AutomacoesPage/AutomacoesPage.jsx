@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
+import Paginacao from '../../components/Paginacao/Paginacao';
 import {
   coletarHistoricoAutomacoes,
   descartarAutomacao,
@@ -96,6 +97,9 @@ function Revisao({ item, onAtualizar, onErro }) {
 
 export default function AutomacoesPage() {
   const [status, setStatus] = useState('');
+  const [pagina, setPagina] = useState(1);
+  const [porPagina, setPorPagina] = useState(20);
+  const [totalRegistros, setTotalRegistros] = useState(0);
   const [itens, setItens] = useState([]);
   const [resumo, setResumo] = useState({ contadores: {} });
   const [erro, setErro] = useState('');
@@ -104,21 +108,34 @@ export default function AutomacoesPage() {
   const [coletandoHistorico, setColetandoHistorico] = useState(false);
   const [sucesso, setSucesso] = useState('');
 
-  async function carregar(manual = false) {
+  const carregar = useCallback(async (manual = false, ativo = { valor: true }) => {
     if (manual) setAtualizando(true);
     else setCarregando(true);
     try {
       setErro('');
-      const [lista, dadosResumo] = await Promise.all([listarAutomacoes(status), obterResumoAutomacoes()]);
-      setItens(lista.data || []);
+      const [lista, dadosResumo] = await Promise.all([
+        listarAutomacoes({ status, page: pagina, perPage: porPagina }),
+        obterResumoAutomacoes()
+      ]);
+      if (!ativo.valor) return;
+      const totalLista = Number(lista.total || 0);
+      const totalPaginas = Math.max(1, Math.ceil(totalLista / porPagina));
+      setTotalRegistros(totalLista);
       setResumo(dadosResumo);
+      if (pagina > totalPaginas) {
+        setPagina(totalPaginas);
+        return;
+      }
+      setItens(lista.data || []);
     } catch (error) {
-      setErro(error.message);
+      if (ativo.valor) setErro(error.message);
     } finally {
-      setCarregando(false);
-      setAtualizando(false);
+      if (ativo.valor) {
+        setCarregando(false);
+        setAtualizando(false);
+      }
     }
-  }
+  }, [pagina, porPagina, status]);
 
   async function coletarHistorico() {
     setColetandoHistorico(true);
@@ -136,23 +153,16 @@ export default function AutomacoesPage() {
   }
 
   useEffect(() => {
-    let ativo = true;
-    Promise.all([listarAutomacoes(status), obterResumoAutomacoes()])
-      .then(([lista, dadosResumo]) => {
-        if (!ativo) return;
-        setItens(lista.data || []);
-        setResumo(dadosResumo);
-        setErro('');
-      })
-      .catch(error => { if (ativo) setErro(error.message); })
-      .finally(() => { if (ativo) setCarregando(false); });
-    return () => { ativo = false; };
-  }, [status]);
+    const ativo = { valor: true };
+    const agendamento = window.setTimeout(() => carregar(false, ativo), 0);
+    return () => { ativo.valor = false; window.clearTimeout(agendamento); };
+  }, [carregar]);
 
   const contadores = resumo.contadores || {};
   const total = Object.values(contadores).reduce((soma, quantidade) => soma + Number(quantidade || 0), 0);
   function alterarStatus(novoStatus) {
     if (novoStatus !== status) setCarregando(true);
+    setPagina(1);
     setStatus(novoStatus);
   }
 
@@ -207,6 +217,16 @@ export default function AutomacoesPage() {
             </details>
           ))}
         </section>
+
+        {!carregando && totalRegistros > 0 && (
+          <Paginacao
+            total={totalRegistros}
+            paginaAtual={pagina}
+            itensPorPagina={porPagina}
+            onPagina={setPagina}
+            onItensPorPagina={quantidade => { setPorPagina(quantidade); setPagina(1); }}
+          />
+        )}
       </main>
     </LayoutPrivado>
   );
