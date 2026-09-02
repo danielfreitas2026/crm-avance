@@ -190,6 +190,42 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByText('Corrija os dados abaixo antes de reprocessar esta execução.')).toBeInTheDocument();
   });
 
+  it('permite vincular manualmente uma venda do CNPJ e informa a etapa atual', async () => {
+    const user = userEvent.setup();
+    api.listarAutomacoes.mockResolvedValue({
+      data: [{
+        ...execucao,
+        venda_id: null,
+        dados_extraidos: {
+          ...execucao.dados_extraidos,
+          candidatas: [
+            { id: 51, nome: 'SONHO INFANTIL', status_funil: 'entrega', status_funil_nome: 'Entrega', elegivel: true, inelegibilidades: [] },
+            { id: 52, nome: 'SONHO INFANTIL', status_funil: 'concluido', status_funil_nome: 'Concluído', elegivel: false, inelegibilidades: ['venda concluída'] }
+          ]
+        }
+      }],
+      total: 1
+    });
+    render(<AutomacoesPage />);
+
+    await screen.findByText('Workflow de venda VIVO');
+    expect(screen.queryByRole('combobox', { name: /Venda vinculada ao CNPJ/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Vincular venda' }));
+
+    const seletor = screen.getByRole('combobox', { name: /Venda vinculada ao CNPJ 11143938000187/ });
+    expect(screen.getByRole('option', { name: '#51 — SONHO INFANTIL — Etapa: Entrega' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /#52 — SONHO INFANTIL — Etapa: Concluído — Indisponível: venda concluída/ })).toBeDisabled();
+
+    await user.selectOptions(seletor, '51');
+    await user.type(screen.getByRole('textbox', { name: 'Justificativa' }), 'Venda conferida manualmente.');
+    await user.click(screen.getByRole('button', { name: 'Corrigir e reprocessar' }));
+
+    await waitFor(() => expect(api.revisarAutomacao).toHaveBeenCalledWith(10, expect.objectContaining({
+      venda_id: 51,
+      justificativa: 'Venda conferida manualmente.'
+    })));
+  });
+
   it('identifica automacao sem acao e oferece a etapa final na revisao manual', async () => {
     api.listarAutomacoes.mockResolvedValue({
       data: [{

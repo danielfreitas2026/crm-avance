@@ -391,6 +391,7 @@
 
 .automation-review__heading,
 .automation-review .wide,
+.automation-review__link-sale,
 .automation-actions {
   grid-column: 1 / -1;
 }
@@ -403,6 +404,17 @@
 .automation-review__heading span {
   color: var(--text-3);
   font-size: 12px;
+}
+
+.automation-review__link-sale {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.automation-review label small {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .automation-review textarea,

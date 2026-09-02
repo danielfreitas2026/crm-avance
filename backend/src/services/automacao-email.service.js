@@ -124,7 +124,10 @@ async function buscarCandidatas(campos) {
   if (![11, 14].includes(doc.length)) return [];
   const exprVenda = "REPLACE(REPLACE(REPLACE(REPLACE(v.cnpj, '.', ''), '/', ''), '-', ''), ' ', '')";
   const exprCliente = "REPLACE(REPLACE(REPLACE(REPLACE(cliente.cnpj, '.', ''), '/', ''), '-', ''), ' ', '')";
-  return Venda.query().alias('v').leftJoinRelated('cliente').select('v.*')
+  return Venda.query().alias('v')
+    .leftJoinRelated('cliente')
+    .leftJoin('funil_etapas as etapa_atual', 'etapa_atual.codigo', 'v.status_funil')
+    .select('v.*', 'etapa_atual.nome as status_funil_nome')
     .where(builder => builder.whereRaw(`${exprVenda} = ?`, [doc]).orWhereRaw(`${exprCliente} = ?`, [doc]))
     .whereNull('v.excluido_em').withGraphFetched('[cliente, operadora]');
 }
@@ -163,6 +166,7 @@ function avaliarCandidatas(candidatas, campos, etapasFinais) {
         id: venda.id,
         nome: venda.nome,
         status_funil: venda.status_funil || null,
+        status_funil_nome: venda.status_funil_nome || venda.status_funil || 'Sem etapa',
         elegivel: inelegibilidades.length === 0,
         inelegibilidades,
         divergencias: divergenciasSecundarias(venda, campos)
@@ -388,12 +392,36 @@ async function repetirTelegrams() {
 
 async function ciclo() { const coleta = await coletarEmails(); if (coleta.habilitado) { await processarPendentes(); await repetirTelegrams(); } return coleta; }
 
+async function enriquecerEtapasCandidatas(itens) {
+  const codigos = [...new Set(itens.flatMap(item => (
+    Array.isArray(item.dados_extraidos?.candidatas)
+      ? item.dados_extraidos.candidatas.map(candidata => candidata.status_funil).filter(Boolean)
+      : []
+  )))];
+  if (!codigos.length) return itens;
+  const etapas = await FunilEtapa.query().whereIn('codigo', codigos).select('codigo', 'nome');
+  const nomes = new Map(etapas.map(etapa => [etapa.codigo, etapa.nome]));
+  return itens.map(item => ({
+    ...item,
+    dados_extraidos: {
+      ...item.dados_extraidos,
+      candidatas: Array.isArray(item.dados_extraidos?.candidatas)
+        ? item.dados_extraidos.candidatas.map(candidata => ({
+          ...candidata,
+          status_funil_nome: candidata.status_funil_nome || nomes.get(candidata.status_funil) || candidata.status_funil || 'Sem etapa'
+        }))
+        : item.dados_extraidos?.candidatas
+    }
+  }));
+}
+
 async function listar(filtros = {}) {
   const pagina = Math.max(1, Number(filtros.page) || 1); const porPagina = Math.min(100, Math.max(10, Number(filtros.per_page) || 25));
   const query = AutomacaoEmail.query().orderBy('recebido_em', 'desc').orderBy('id', 'desc');
   if (filtros.status) query.where('status', filtros.status);
   const resultado = await query.page(pagina - 1, porPagina);
-  return { data: resultado.results.map(item => ({ ...item, dados_extraidos: json(item.dados_extraidos) })), total: resultado.total, page: pagina, per_page: porPagina };
+  const data = await enriquecerEtapasCandidatas(resultado.results.map(item => ({ ...item, dados_extraidos: json(item.dados_extraidos) })));
+  return { data, total: resultado.total, page: pagina, per_page: porPagina };
 }
 
 async function resumo() {
@@ -406,8 +434,16 @@ async function revisar(id, dados, usuarioId) {
   const registro = await AutomacaoEmail.query().findById(id); if (!registro) return null;
   const justificativa = String(dados.justificativa || '').trim(); if (!justificativa) throw Object.assign(new Error('Informe a justificativa.'), { statusCode: 400 });
   const atuais = json(registro.dados_extraidos);
+  const vendaId = Number(dados.venda_id || registro.venda_id);
+  if (!Number.isInteger(vendaId) || vendaId <= 0) throw Object.assign(new Error('Selecione uma venda válida.'), { statusCode: 400 });
+  const candidatas = Array.isArray(atuais.candidatas) ? atuais.candidatas : [];
+  if (!registro.venda_id && atuais.documento && Array.isArray(atuais.candidatas)) {
+    const candidata = candidatas.find(item => Number(item.id) === vendaId);
+    if (!candidata) throw Object.assign(new Error('A venda selecionada não pertence ao documento desta execução.'), { statusCode: 400 });
+    if (!candidata.elegivel) throw Object.assign(new Error('A venda selecionada não está ativa para vinculação.'), { statusCode: 400 });
+  }
   const override = { classificacao: dados.classificacao, alvo: dados.etapa_destino || null, mensagem_operador: dados.mensagem_operador || atuais.mensagem_operador, destino: dados.destino || atuais.destino, documento: atuais.documento };
-  await AutomacaoEmail.query().patchAndFetchById(id, { venda_id: dados.venda_id || registro.venda_id, dados_extraidos: JSON.stringify({ ...atuais, _override: override }), revisado_por_id: usuarioId, justificativa_revisao: justificativa, status: 'pendente', erro: null });
+  await AutomacaoEmail.query().patchAndFetchById(id, { venda_id: vendaId, dados_extraidos: JSON.stringify({ ...atuais, _override: override }), revisado_por_id: usuarioId, justificativa_revisao: justificativa, status: 'pendente', erro: null });
   await processarPendentes(); return AutomacaoEmail.query().findById(id);
 }
 
@@ -614,4 +650,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, repetirRevisoes, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, processarPendente, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, resolverEtapaDestino, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas } };
+module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, repetirRevisoes, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, processarPendente, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, resolverEtapaDestino, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas } };

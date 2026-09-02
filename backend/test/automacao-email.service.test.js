@@ -399,7 +399,7 @@ test('registra as divergencias secundarias separadamente', () => {
 });
 
 test('CNPJ com uma unica venda ativa prevalece sobre divergencias secundarias', () => {
-  const venda = { id: 1, status_funil: 'ativacao', data_venda: '2026-08-25', quantidade_linhas: 2, valor_total: 100 };
+  const venda = { id: 1, status_funil: 'ativacao', status_funil_nome: 'Ativação', data_venda: '2026-08-25', quantidade_linhas: 2, valor_total: 100 };
   const resultado = automacao._internals.avaliarCandidatas(
     [venda],
     { data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99 },
@@ -408,6 +408,28 @@ test('CNPJ com uma unica venda ativa prevalece sobre divergencias secundarias', 
   assert.equal(resultado.venda, venda);
   assert.deepEqual(resultado.candidatas[0].divergencias, ['data da venda divergente', 'quantidade divergente', 'valor mensal divergente']);
   assert.equal(resultado.candidatas[0].elegivel, true);
+  assert.equal(resultado.candidatas[0].status_funil_nome, 'Ativação');
+});
+
+test('revisao manual rejeita venda fora das candidatas do documento', async () => {
+  const queryOriginal = AutomacaoEmail.query;
+  const registro = {
+    id: 10,
+    venda_id: null,
+    dados_extraidos: JSON.stringify({
+      documento: '11143938000187',
+      candidatas: [{ id: 51, nome: 'Venda correta', elegivel: true }]
+    })
+  };
+  AutomacaoEmail.query = () => ({ findById: async () => registro });
+  try {
+    await assert.rejects(
+      automacao.revisar(10, { venda_id: 99, justificativa: 'Conferência manual' }, 7),
+      error => error.statusCode === 400 && /não pertence ao documento/.test(error.message)
+    );
+  } finally {
+    AutomacaoEmail.query = queryOriginal;
+  }
 });
 
 test('varias vendas ativas exigem uma unica correspondencia secundaria completa', () => {
@@ -535,6 +557,27 @@ test('pagina automacoes por status com ordenacao deterministica', async () => {
     assert.deepEqual(resultado.data[0].dados_extraidos, { destino: 'Entrega' });
   } finally {
     AutomacaoEmail.query = queryOriginal;
+  }
+});
+
+test('enriquece candidatas antigas com o nome atual da etapa do funil', async () => {
+  const queryOriginal = FunilEtapa.query;
+  FunilEtapa.query = () => ({
+    whereIn(campo, codigos) {
+      assert.equal(campo, 'codigo');
+      assert.deepEqual(codigos, ['entrega']);
+      return this;
+    },
+    select: async () => [{ codigo: 'entrega', nome: 'Entrega' }]
+  });
+  try {
+    const [item] = await automacao._internals.enriquecerEtapasCandidatas([{
+      id: 10,
+      dados_extraidos: { candidatas: [{ id: 51, status_funil: 'entrega', elegivel: true }] }
+    }]);
+    assert.equal(item.dados_extraidos.candidatas[0].status_funil_nome, 'Entrega');
+  } finally {
+    FunilEtapa.query = queryOriginal;
   }
 });
 
@@ -774,6 +817,7 @@ test('logistica concluida finaliza venda nova e envia portabilidade para confirm
     findById() { this.porId = true; return this; },
     alias() { return this; },
     leftJoinRelated() { return this; },
+    leftJoin() { return this; },
     select() { return this; },
     where() { return this; },
     whereNull() { return this; },

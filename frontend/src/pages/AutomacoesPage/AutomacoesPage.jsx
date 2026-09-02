@@ -33,7 +33,9 @@ const dataHora = valor => valor ? new Date(valor).toLocaleString('pt-BR') : '—
 
 function Revisao({ item, onAtualizar, onErro }) {
   const extraidos = item.dados_extraidos || {};
+  const candidatas = Array.isArray(extraidos.candidatas) ? extraidos.candidatas : [];
   const [vendaId, setVendaId] = useState(item.venda_id || '');
+  const [vinculandoVenda, setVinculandoVenda] = useState(false);
   const [tipo, setTipo] = useState(item.classificacao || extraidos.classificacao || 'tipo_1');
   const [etapa, setEtapa] = useState(item.etapa_destino || extraidos.alvo || 'entrega');
   const [mensagem, setMensagem] = useState(extraidos.mensagem_operador || '');
@@ -69,7 +71,26 @@ function Revisao({ item, onAtualizar, onErro }) {
         <strong>Revisão manual</strong>
         <span>Corrija os dados abaixo antes de reprocessar esta execução.</span>
       </div>
-      <label>Venda ID<input value={vendaId} onChange={event => setVendaId(event.target.value)} inputMode="numeric" /></label>
+      {item.venda_id ? (
+        <label>Venda ID<input value={vendaId} onChange={event => setVendaId(event.target.value)} inputMode="numeric" /></label>
+      ) : vinculandoVenda ? (
+        <label className="wide">
+          Venda vinculada ao CNPJ {extraidos.documento || ''}
+          <select value={vendaId} onChange={event => setVendaId(event.target.value)}>
+            <option value="">Selecione uma venda</option>
+            {candidatas.map(candidata => (
+              <option key={candidata.id} value={candidata.id} disabled={!candidata.elegivel}>
+                {`#${candidata.id} — ${candidata.nome || 'Sem nome'} — Etapa: ${candidata.status_funil_nome || candidata.status_funil || 'Sem etapa'}${candidata.elegivel ? '' : ` — Indisponível: ${(candidata.inelegibilidades || []).join(', ')}`}`}
+              </option>
+            ))}
+          </select>
+          {candidatas.length === 0 && <small>Nenhuma venda foi encontrada para este CNPJ.</small>}
+        </label>
+      ) : (
+        <div className="automation-review__link-sale">
+          <button type="button" className="btn" onClick={() => setVinculandoVenda(true)}>Vincular venda</button>
+        </div>
+      )}
       <label>
         Tipo
         <select value={tipo} onChange={event => setTipo(event.target.value)}>
