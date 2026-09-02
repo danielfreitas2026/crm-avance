@@ -15,7 +15,7 @@ const VendaProblemaEvento = require('../models/VendaProblemaEvento');
 const vendaService = require('./venda.service');
 const { chamarApiComToken } = require('./telegram.service');
 const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
-const { interpretarEmail } = require('./vivo-email-parser.service');
+const { interpretarEmail, textoCanonico } = require('./vivo-email-parser.service');
 
 const PERMISSAO_RESPONSAVEL = 'problemas_pos_venda_responsavel';
 
@@ -229,6 +229,14 @@ async function resolverEtapaDestino(alvo) {
       erro: etapas.length === 1 ? null : 'Não foi encontrada uma única etapa final ativa configurada no funil.'
     };
   }
+  if (alvo === 'confirmacao_sms_portabilidade') {
+    const etapas = await FunilEtapa.query().where({ ativo: true });
+    const correspondentes = etapas.filter(etapa => textoCanonico(etapa.nome) === 'confirmacao sms portabilidade');
+    return {
+      etapa: correspondentes.length === 1 ? correspondentes[0] : null,
+      erro: correspondentes.length === 1 ? null : 'Não foi encontrada uma única etapa ativa chamada Confirmação SMS Portabilidade.'
+    };
+  }
   const etapa = await FunilEtapa.query().findOne({ codigo: alvo, ativo: true });
   return { etapa, erro: etapa ? null : 'Etapa de destino não encontrada.' };
 }
@@ -315,18 +323,10 @@ async function processarRegistro(registro) {
   if (campos.classificacao === 'sem_acao') {
     return { status: 'concluido', classificacao: 'sem_acao', venda_id: venda.id, etapa_destino: null, dados_extraidos: JSON.stringify(dadosExtraidos), erro: null, processado_em: formatarSQL() };
   }
-  const portabilidadeAprovadaManualmente = revisaoManual && override.alvo === 'etapa_final';
-  if (campos.alvo === 'etapa_final' && vendaTemPortabilidade(venda) && !portabilidadeAprovadaManualmente) {
-    return {
-      status: 'revisao',
-      classificacao: 'tipo_1',
-      erro: 'Venda com portabilidade: confirme o recebimento do SMS antes de concluir.',
-      venda_id: venda.id,
-      etapa_destino: null,
-      dados_extraidos: JSON.stringify(dadosExtraidos)
-    };
-  }
-  const destinoResolvido = await resolverEtapaDestino(campos.alvo);
+  const alvoEfetivo = campos.alvo === 'etapa_final' && vendaTemPortabilidade(venda)
+    ? 'confirmacao_sms_portabilidade'
+    : campos.alvo;
+  const destinoResolvido = await resolverEtapaDestino(alvoEfetivo);
   const etapa = destinoResolvido.etapa;
   if (!etapa) return { status: 'revisao', erro: destinoResolvido.erro, venda_id: venda.id, dados_extraidos: JSON.stringify(dadosExtraidos) };
   const atual = await FunilEtapa.query().findOne({ codigo: venda.status_funil });

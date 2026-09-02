@@ -263,6 +263,36 @@ test('resolve somente uma etapa final ativa configurada', async () => {
   }
 });
 
+test('resolve a etapa de confirmacao de SMS por nome normalizado e exige unicidade', async () => {
+  const queryOriginal = FunilEtapa.query;
+  let etapas = [{ codigo: 'sms_portabilidade', nome: 'Confirmação SMS Portabilidade', ativo: true }];
+  FunilEtapa.query = () => ({ where: async filtros => {
+    assert.deepEqual(filtros, { ativo: true });
+    return etapas;
+  } });
+
+  try {
+    let resultado = await automacao._internals.resolverEtapaDestino('confirmacao_sms_portabilidade');
+    assert.equal(resultado.etapa.codigo, 'sms_portabilidade');
+    assert.equal(resultado.erro, null);
+
+    etapas = [{ codigo: 'outra', nome: 'Outra etapa', ativo: true }];
+    resultado = await automacao._internals.resolverEtapaDestino('confirmacao_sms_portabilidade');
+    assert.equal(resultado.etapa, null);
+    assert.match(resultado.erro, /Confirmação SMS Portabilidade/);
+
+    etapas = [
+      { codigo: 'sms_a', nome: 'Confirmação SMS Portabilidade', ativo: true },
+      { codigo: 'sms_b', nome: 'Confirmacao SMS Portabilidade', ativo: true }
+    ];
+    resultado = await automacao._internals.resolverEtapaDestino('confirmacao_sms_portabilidade');
+    assert.equal(resultado.etapa, null);
+    assert.match(resultado.erro, /uma única etapa ativa/);
+  } finally {
+    FunilEtapa.query = queryOriginal;
+  }
+});
+
 test('registra as divergencias secundarias separadamente', () => {
   const campos = { data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99 };
   const venda = { data_venda: '2026-08-24', quantidade_linhas: 1, valor_total: 54.99, cancelada_em: null };
@@ -634,11 +664,12 @@ test('destino neutro conclui sem mover a venda nem abrir problema', async () => 
   }
 });
 
-test('logistica concluida finaliza venda nova e exige aprovacao de SMS para portabilidade', async () => {
+test('logistica concluida finaliza venda nova e envia portabilidade para confirmacao de SMS', async () => {
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
   const atualizarOriginal = vendaService.atualizarStatusVenda;
   const etapaFinal = { codigo: 'final_personalizado', ordem: 5, ativo: true, etapa_final: true };
+  const etapaSms = { codigo: 'sms_portabilidade', nome: 'Confirmação SMS Portabilidade', ordem: 4, ativo: true };
   let vendaAtual;
   const movimentos = [];
 
@@ -653,8 +684,8 @@ test('logistica concluida finaliza venda nova e exige aprovacao de SMS para port
     withGraphFetched() { return Promise.resolve(this.porId ? vendaAtual : [vendaAtual]); }
   });
   FunilEtapa.query = () => ({
-    where: async filtros => filtros?.etapa_final ? [etapaFinal] : [],
-    findOne: async filtros => filtros.codigo === etapaFinal.codigo ? etapaFinal : { codigo: 'ativacao', ordem: 2 }
+    where: async filtros => filtros?.etapa_final ? [etapaFinal] : [etapaSms, etapaFinal],
+    findOne: async filtros => [etapaFinal, etapaSms].find(etapa => etapa.codigo === filtros.codigo) || { codigo: 'ativacao', ordem: 2 }
   });
   vendaService.atualizarStatusVenda = async (...args) => { movimentos.push(args); return { status: 'ok' }; };
 
@@ -678,25 +709,10 @@ test('logistica concluida finaliza venda nova e exige aprovacao de SMS para port
     };
     const movimentosAntes = movimentos.length;
     resultado = await automacao._internals.processarRegistro(registroAutomatico());
-    assert.equal(resultado.status, 'revisao');
-    assert.match(resultado.erro, /confirme o recebimento do SMS/);
-    assert.equal(movimentos.length, movimentosAntes);
-
-    resultado = await automacao._internals.processarRegistro({
-      id: 91,
-      venda_id: 41,
-      revisado_por_id: 7,
-      justificativa_revisao: 'SMS confirmado com o cliente.',
-      corpo_texto: corpo(),
-      dados_extraidos: JSON.stringify({
-        _override: {
-          classificacao: 'tipo_1', alvo: 'etapa_final', destino: 'Vivocorp - Pedidos > Logística Concluída', documento: '11143938000187'
-        }
-      })
-    });
     assert.equal(resultado.status, 'concluido');
-    assert.equal(resultado.etapa_destino, etapaFinal.codigo);
+    assert.equal(resultado.etapa_destino, etapaSms.codigo);
     assert.equal(movimentos.length, movimentosAntes + 1);
+    assert.equal(movimentos.at(-1)[1].status_funil, etapaSms.codigo);
 
     assert.equal(automacao._internals.vendaTemPortabilidade({ valores_unitarios_chips: '[]', numeros_portados: '24999999999' }), true);
   } finally {

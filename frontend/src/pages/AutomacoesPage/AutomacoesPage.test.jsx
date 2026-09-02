@@ -179,6 +179,7 @@ describe('Painéis da automação Gmail VIVO', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Atualizar' }));
 
     expect(await screen.findByRole('option', { name: 'Etapa final configurada' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Confirmação SMS Portabilidade' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Destino' })).toHaveValue('etapa_final');
   });
 

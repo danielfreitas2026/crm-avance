@@ -84,6 +84,7 @@ function Revisao({ item, onAtualizar, onErro }) {
             <option value="entrega">Entrega</option>
             <option value="aceite_biometria">Aceite/Biometria</option>
             <option value="apos_aceite_biometria">Pedido na Operadora</option>
+            <option value="confirmacao_sms_portabilidade">Confirmação SMS Portabilidade</option>
             <option value="etapa_final">Etapa final configurada</option>
           </select>
         </label>
