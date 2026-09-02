@@ -8,6 +8,7 @@ import {
   listarAutomacoes,
   obterResumoAutomacoes,
   repetirAutomacao,
+  repetirAutomacoesEmRevisao,
   revisarAutomacao
 } from '../../services/automacao.service';
 import './AutomacoesPage.css';
@@ -111,6 +112,7 @@ export default function AutomacoesPage() {
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
   const [coletandoHistorico, setColetandoHistorico] = useState(false);
+  const [repetindoRevisoes, setRepetindoRevisoes] = useState(false);
   const [sucesso, setSucesso] = useState('');
 
   const carregar = useCallback(async (manual = false, ativo = { valor: true }) => {
@@ -157,6 +159,27 @@ export default function AutomacoesPage() {
     }
   }
 
+  async function repetirRevisoes() {
+    const quantidade = Number(resumo.contadores?.revisao || 0);
+    if (!quantidade || !window.confirm(`Repetir a execução das ${quantidade} automações em revisão manual? Isso pode movimentar vendas ou abrir problemas.`)) return;
+    setRepetindoRevisoes(true);
+    setErro('');
+    setSucesso('');
+    try {
+      const resultado = await repetirAutomacoesEmRevisao();
+      const repetidos = Number(resultado.repetidos || 0);
+      const falhas = Number(resultado.falhas || 0);
+      setSucesso(falhas
+        ? `${repetidos} execução(ões) em revisão repetida(s); ${falhas} falharam durante a preparação.`
+        : `${repetidos} execução(ões) em revisão repetida(s) com sucesso.`);
+      await carregar(true);
+    } catch (error) {
+      setErro(error.message);
+    } finally {
+      setRepetindoRevisoes(false);
+    }
+  }
+
   useEffect(() => {
     const ativo = { valor: true };
     const agendamento = window.setTimeout(() => carregar(false, ativo), 0);
@@ -165,6 +188,8 @@ export default function AutomacoesPage() {
 
   const contadores = resumo.contadores || {};
   const total = Object.values(contadores).reduce((soma, quantidade) => soma + Number(quantidade || 0), 0);
+  const totalRevisoes = Number(contadores.revisao || 0);
+  const barraOcupada = atualizando || coletandoHistorico || repetindoRevisoes;
   function alterarStatus(novoStatus) {
     if (novoStatus !== status) setCarregando(true);
     setPagina(1);
@@ -192,8 +217,11 @@ export default function AutomacoesPage() {
               {STATUS.map(item => <option key={item} value={item}>{item ? STATUS_LABEL[item] : 'Todos os status'}</option>)}
             </select>
           </label>
-          <button type="button" className="btn" disabled={coletandoHistorico || !resumo.habilitada} onClick={coletarHistorico}><I.History size={14} /> {coletandoHistorico ? 'Buscando histórico...' : 'Buscar e-mails anteriores'}</button>
-          <button type="button" className="btn automation-refresh" disabled={atualizando} onClick={() => carregar(true)}><I.Refresh size={14} /> {atualizando ? 'Atualizando...' : 'Atualizar'}</button>
+          <div className="automation-toolbar__actions">
+            <button type="button" className="btn" disabled={barraOcupada || totalRevisoes === 0} onClick={repetirRevisoes}><I.Refresh size={14} /> {repetindoRevisoes ? 'Reprocessando...' : `Repetir revisões (${totalRevisoes})`}</button>
+            <button type="button" className="btn" disabled={barraOcupada || !resumo.habilitada} onClick={coletarHistorico}><I.History size={14} /> {coletandoHistorico ? 'Buscando histórico...' : 'Buscar e-mails anteriores'}</button>
+            <button type="button" className="btn automation-refresh" disabled={barraOcupada} onClick={() => carregar(true)}><I.Refresh size={14} /> {atualizando ? 'Atualizando...' : 'Atualizar'}</button>
+          </div>
         </section>
 
         {erro && <div className="alert-error automation-alert" role="alert">{erro}</div>}

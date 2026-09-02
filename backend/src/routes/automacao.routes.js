@@ -8,6 +8,7 @@ router.use(authMiddleware, exigirPermissao('automacoes_gerenciar'));
 router.get('/resumo', controller.resumo);
 router.get('/', controller.index);
 router.post('/coletar-historico', controller.coletarHistorico);
+router.post('/repetir-revisoes', controller.repetirRevisoes);
 router.post('/:id/revisar', controller.revisar);
 router.post('/:id/repetir', controller.repetir);
 router.post('/:id/descartar', controller.descartar);

@@ -4,6 +4,8 @@ const { _internals } = require('../src/services/lead-planilha.service');
 const leadPlanilhaService = require('../src/services/lead-planilha.service');
 const leadPlanilhaController = require('../src/controllers/lead-planilha.controller');
 const leadPlanilhaRoutes = require('../src/routes/lead-planilha.routes');
+const LeadLinha = require('../src/models/LeadLinha');
+const Usuario = require('../src/models/Usuario');
 
 const { resolverEstadoAtualFuturoCliente, montarEventosHistoricoFuturoCliente } = _internals;
 
@@ -189,22 +191,79 @@ test('controllers preservam o contrato publico e repassam o contexto interno de 
   });
   const reqComum = { params: { id: '10' }, usuario: { id: 2 }, body: { notas: 'Nova nota' } };
   const reqAdmin = { params: { id: '11' }, usuario: { id: 3 }, body: {} };
+  const reqGlobal = { params: { id: '12' }, usuario: { id: 4 }, body: { notas: 'Global' } };
   const resComum = criarResposta();
   const resAdmin = criarResposta();
+  const resGlobal = criarResposta();
 
   try {
     await leadPlanilhaController.marcarFuturoCliente(reqComum, resComum);
     await leadPlanilhaController.adminMarcarFuturoCliente(reqAdmin, resAdmin);
+    await leadPlanilhaController.atualizarFuturoClienteGlobal(reqGlobal, resGlobal);
   } finally {
     leadPlanilhaService.marcarComoFuturoCliente = original;
   }
 
   assert.deepEqual(resComum.body, { linha: { id: 10, futuro_cliente: true } });
   assert.deepEqual(resAdmin.body, { linha: { id: 11, futuro_cliente: true } });
+  assert.deepEqual(resGlobal.body, { linha: { id: 12, futuro_cliente: true } });
   assert.equal(reqComum.contextoAuditoriaFuturoCliente.operacao, 'atualizacao');
   assert.equal(reqAdmin.contextoAuditoriaFuturoCliente.ocorrido_em, '2026-08-21 11:30:00');
   assert.equal(chamadas[0][3], undefined);
   assert.deepEqual(chamadas[1][3], { comoAdmin: true });
+  assert.deepEqual(chamadas[2][3], { comoAdmin: true, exigirFuturoClienteAtivo: true });
+});
+
+test('edicao global exige a permissao de visualizar todos os futuros clientes', async () => {
+  const rota = leadPlanilhaRoutes.stack.find(layer => (
+    layer.route?.path === '/futuros-clientes/:id' && layer.route.methods.put
+  )).route;
+  const originalQuery = Usuario.query;
+  let permissoes = {};
+  Usuario.query = () => ({
+    findById() { return this; },
+    withGraphFetched: async () => ({
+      id: 9,
+      ativo: true,
+      role: { nome: 'usuario', permissoes: {} },
+      permissoes
+    })
+  });
+  const executar = async () => {
+    const res = {
+      statusCode: 200,
+      status(code) { this.statusCode = code; return this; },
+      json() { return this; }
+    };
+    let avancou = false;
+    await rota.stack[0].handle({ usuario: { id: 9 } }, res, () => { avancou = true; });
+    return { avancou, statusCode: res.statusCode };
+  };
+
+  try {
+    assert.deepEqual(await executar(), { avancou: false, statusCode: 403 });
+    permissoes = { futuros_clientes_ver_todos: true };
+    assert.deepEqual(await executar(), { avancou: true, statusCode: 200 });
+  } finally {
+    Usuario.query = originalQuery;
+  }
+});
+
+test('edicao global nao transforma um lead comum em futuro cliente', async () => {
+  const originalQuery = LeadLinha.query;
+  LeadLinha.query = () => ({ findById: async () => ({ id: 19, futuro_cliente: false }) });
+
+  try {
+    await assert.rejects(
+      leadPlanilhaService.marcarComoFuturoCliente(19, 7, {}, {
+        comoAdmin: true,
+        exigirFuturoClienteAtivo: true
+      }),
+      /Futuro cliente ativo/
+    );
+  } finally {
+    LeadLinha.query = originalQuery;
+  }
 });
 
 test('auditoria usa a acao correta para cadastro e atualizacao nos dois fluxos', () => {

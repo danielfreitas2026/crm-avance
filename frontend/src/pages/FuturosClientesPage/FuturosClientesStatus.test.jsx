@@ -498,27 +498,54 @@ describe('modal de adição de lead', () => {
     expect(screen.getByText('A primeira ligação ainda não possui dados registrados.')).toBeVisible();
   });
 
-  it('permite ao gerente vincular venda na visao Todos sem liberar a edicao dos dados', () => {
+  it('permite editar todos os dados pela permissao de visualizar todos os futuros clientes', async () => {
     localStorage.setItem('usuario', JSON.stringify({
       id: 7,
-      permissoes: {
-        futuros_clientes_ver_todos: true,
-        gerenciar_leads: true
-      }
+      permissoes: { futuros_clientes_ver_todos: true }
     }));
+    const onAtualizado = vi.fn();
+    const atualizar = vi.spyOn(leadPlanilhaService, 'atualizarFuturoClienteGlobal')
+      .mockResolvedValue({ linha: { id: 13, futuro_cliente: 1 } });
 
     render(
       <FuturoClienteDetalheModal
-        linha={{ id: 13, futuro_cliente: 1, dados_json: {}, sondagem: { chips_itens: [] } }}
+        linha={{
+          id: 13,
+          futuro_cliente: 1,
+          dados_json: {},
+          sondagem: {
+            contato_nome: 'Maria',
+            contato_tipo: 'adm',
+            operadora_atual_id: 1,
+            chips_itens: [{ quantidade: 2, preco_por_chip: 49.9 }],
+            melhor_numero_contato: '31999999999',
+            whatsapp_ddd: '31',
+            whatsapp_numero: '988888888'
+          }
+        }}
         onClose={() => {}}
-        onAtualizado={() => {}}
+        onAtualizado={onAtualizado}
         somenteLeitura
-        permitirGerenciarVinculo
       />
     );
 
-    expect(screen.getByRole('button', { name: 'Vincular venda' })).toBeVisible();
-    expect(screen.getByLabelText('CNPJ')).toBeDisabled();
+    expect(screen.getByLabelText('CNPJ')).toBeEnabled();
+    expect(screen.getByLabelText('Razão social')).toBeEnabled();
+    expect(screen.getByLabelText('Melhor número para contato')).toBeEnabled();
+    expect(screen.getByLabelText('Operadora atual')).toBeEnabled();
+    expect(screen.getByLabelText('Anotações comerciais')).toBeEnabled();
+    expect(screen.getByLabelText('Data de retorno')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled();
+    expect(screen.queryByText('Venda recusada')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Razão social'), { target: { value: 'Empresa atualizada' } });
+    fireEvent.submit(screen.getByRole('dialog', { name: 'Detalhes do futuro cliente' }));
+
+    await waitFor(() => expect(atualizar).toHaveBeenCalledWith(13, expect.objectContaining({
+      razao_social: 'Empresa atualizada'
+    })));
+    expect(onAtualizado).toHaveBeenCalledWith({ id: 13, futuro_cliente: 1 });
+    atualizar.mockRestore();
     localStorage.removeItem('usuario');
   });
 
@@ -649,7 +676,7 @@ describe('modal de adição de lead', () => {
     render(<FuturoClienteDetalheModal {...props} onDistribuido={onDistribuido} />);
 
     const botao = screen.getByRole('button', { name: /Retornar ao Telegram/i });
-    expect(screen.getByLabelText('CNPJ')).toBeDisabled();
+    expect(screen.getByLabelText('CNPJ')).toBeEnabled();
     fireEvent.click(botao);
     expect(confirmar).toHaveBeenCalledTimes(1);
     expect(confirmar).toHaveBeenCalledWith(expect.stringMatching(/desvincular a consultora atual/i));

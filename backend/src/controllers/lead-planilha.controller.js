@@ -731,6 +731,21 @@ async function adminMarcarFuturoCliente(req, res) {
   }
 }
 
+async function atualizarFuturoClienteGlobal(req, res) {
+  try {
+    const resultado = await leadPlanilhaService.marcarComoFuturoCliente(
+      req.params.id,
+      req.usuario.id,
+      req.body || {},
+      { comoAdmin: true, exigirFuturoClienteAtivo: true }
+    );
+    return responderMarcacaoFuturoCliente(req, res, resultado);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao atualizar futuro cliente.' });
+  }
+}
+
 async function adminReverterFuturoCliente(req, res) {
   try {
     return res.json(await leadPlanilhaService.reverterFuturoClienteLead(req.params.id, req.usuario.id, { comoAdmin: true }));
@@ -863,6 +878,7 @@ module.exports = {
   excluirFuturoClienteDefinitivo,
   adminAtualizarCampoLead,
   adminMarcarFuturoCliente,
+  atualizarFuturoClienteGlobal,
   adminReverterFuturoCliente,
   adminMarcarVendaRecusada,
   adminReverterVendaRecusada,

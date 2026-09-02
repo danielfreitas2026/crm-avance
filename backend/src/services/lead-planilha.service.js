@@ -2850,6 +2850,9 @@ async function publicarFuturoClienteTelegram(linhaFormatada) {
 async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = {}) {
   const linha = await LeadLinha.query().findById(linhaId);
   if (!linha) throw criarHttpError(404, 'Lead nÃ£o encontrado.');
+  if (opcoes.exigirFuturoClienteAtivo && (!linha.futuro_cliente || linha.futuro_cliente_excluido_em)) {
+    throw criarHttpError(404, 'Futuro cliente ativo nÃ£o encontrado.');
+  }
   const atribuicaoVendaAceita = !opcoes.comoAdmin && linha.futuro_cliente
     ? await db('lead_atribuicoes')
       .where({

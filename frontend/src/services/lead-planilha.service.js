@@ -350,6 +350,11 @@ export function adminMarcarFuturoClienteLead(linhaId, dados) {
   return apiPost(`/lead-planilhas/linhas/${linhaId}/futuro-cliente`, dados);
 }
 
+/** Atualiza os dados de um futuro cliente existente na visao global. */
+export function atualizarFuturoClienteGlobal(linhaId, dados) {
+  return apiPut(`/lead-planilhas/futuros-clientes/${linhaId}`, dados);
+}
+
 export function adminReverterFuturoClienteLead(linhaId) {
   return apiPost(`/lead-planilhas/linhas/${linhaId}/futuro-cliente/reverter`, {});
 }

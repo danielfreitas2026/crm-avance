@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   listarAutomacoes: vi.fn(),
   obterResumoAutomacoes: vi.fn(),
   repetirAutomacao: vi.fn(),
+  repetirAutomacoesEmRevisao: vi.fn(),
   revisarAutomacao: vi.fn(),
   listarProblemasAutomaticos: vi.fn(),
   resolverProblemaAutomatico: vi.fn(),
@@ -65,6 +66,7 @@ describe('Painéis da automação Gmail VIVO', () => {
     api.listarProblemasAutomaticos.mockResolvedValue({ data: [], total: 0, page: 1, per_page: 20, totals: { abertos: 0, resolvidos: 0 } });
     api.revisarAutomacao.mockResolvedValue({});
     api.repetirAutomacao.mockResolvedValue({});
+    api.repetirAutomacoesEmRevisao.mockResolvedValue({ selecionados: 2, repetidos: 2, falhas: 0 });
     api.descartarAutomacao.mockResolvedValue({});
     api.coletarHistoricoAutomacoes.mockResolvedValue({ coletados: 4, processados: 4 });
     api.resolverProblemaAutomatico.mockResolvedValue({});
@@ -89,6 +91,42 @@ describe('Painéis da automação Gmail VIVO', () => {
     await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'revisao', page: 1, perPage: 20 }));
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('revisao');
     expect(screen.getByText('Não há execuções com o status “Revisão manual”.')).toBeInTheDocument();
+  });
+
+  it('cancela a repeticao em lote sem chamar a API e desabilita o botao quando nao ha revisoes', async () => {
+    const user = userEvent.setup();
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<AutomacoesPage />);
+    await screen.findByText('Nenhuma execução encontrada');
+
+    await user.click(screen.getByRole('button', { name: 'Repetir revisões (2)' }));
+    expect(confirmar).toHaveBeenCalledWith('Repetir a execução das 2 automações em revisão manual? Isso pode movimentar vendas ou abrir problemas.');
+    expect(api.repetirAutomacoesEmRevisao).not.toHaveBeenCalled();
+
+    api.obterResumoAutomacoes.mockResolvedValue({ ...resumo, contadores: { ...resumo.contadores, revisao: 0 } });
+    await user.click(screen.getByRole('button', { name: 'Atualizar' }));
+    expect(await screen.findByRole('button', { name: 'Repetir revisões (0)' })).toBeDisabled();
+    confirmar.mockRestore();
+  });
+
+  it('repete todas as revisoes, bloqueia a barra e atualiza o resultado', async () => {
+    const user = userEvent.setup();
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    let concluir;
+    api.repetirAutomacoesEmRevisao.mockReturnValue(new Promise(resolve => { concluir = resolve; }));
+    render(<AutomacoesPage />);
+    await screen.findByText('Nenhuma execução encontrada');
+
+    await user.click(screen.getByRole('button', { name: 'Repetir revisões (2)' }));
+    expect(api.repetirAutomacoesEmRevisao).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Reprocessando...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Buscar e-mails anteriores' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Atualizar' })).toBeDisabled();
+
+    concluir({ selecionados: 2, repetidos: 1, falhas: 1 });
+    expect(await screen.findByRole('status')).toHaveTextContent('1 execução(ões) em revisão repetida(s); 1 falharam durante a preparação.');
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenCalledTimes(2));
+    confirmar.mockRestore();
   });
 
   it('pagina o histórico no servidor e permite alterar a quantidade por página', async () => {

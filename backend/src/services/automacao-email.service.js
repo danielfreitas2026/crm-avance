@@ -308,7 +308,11 @@ async function processarRegistro(registro) {
   const override = json(registro.dados_extraidos)._override || {};
   const campos = { ...camposBase, ...override };
   const resolucao = await resolverVenda(registro, campos);
-  const dadosExtraidos = { ...campos, candidatas: resolucao.candidatas };
+  const dadosExtraidos = {
+    ...campos,
+    candidatas: resolucao.candidatas,
+    ...(Object.keys(override).length ? { _override: override } : {})
+  };
   const revisaoManual = Boolean(registro.revisado_por_id && registro.venda_id);
   const destinoDispensavel = campos.alvo === 'apos_aceite_biometria';
   if ((!revisaoManual && !campos.documento) || (!revisaoManual && !campos.destino && !destinoDispensavel)) return { status: 'revisao', erro: 'E-mail sem campos obrigatórios.', dados_extraidos: JSON.stringify(dadosExtraidos) };
@@ -350,17 +354,25 @@ async function processarRegistro(registro) {
   return { status: 'concluido', classificacao: 'tipo_1', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos), erro: null, processado_em: formatarSQL() };
 }
 
+async function processarPendente(item) {
+  const tentativas = Number(item.tentativas || 0) + 1;
+  const reclamado = await AutomacaoEmail.query()
+    .where({ id: item.id, status: 'pendente' })
+    .patch({ status: 'processando', tentativas, updated_at: new Date() });
+  if (!reclamado) return false;
+  const registro = { ...item, status: 'processando', tentativas };
+  try { await AutomacaoEmail.query().patchAndFetchById(item.id, await processarRegistro(registro)); }
+  catch (error) { await AutomacaoEmail.query().patchAndFetchById(item.id, { status: 'erro', erro: String(error.message || error).slice(0, 2000) }); }
+  return true;
+}
+
 async function processarPendentes(limite = 20) {
   const limiteTravado = new Date(Date.now() - 10 * 60 * 1000);
   await AutomacaoEmail.query().where('status', 'processando').where('updated_at', '<', formatarSQL(limiteTravado)).patch({ status: 'pendente', erro: 'Processamento anterior interrompido; item recuperado.', updated_at: new Date() });
   const pendentes = await AutomacaoEmail.query().where('status', 'pendente').orderBy('recebido_em').limit(limite);
   let processados = 0;
   for (const item of pendentes) {
-    const reclamado = await AutomacaoEmail.query().where({ id: item.id, status: 'pendente' }).patch({ status: 'processando', tentativas: Number(item.tentativas || 0) + 1, updated_at: new Date() });
-    if (!reclamado) continue;
-    try { await AutomacaoEmail.query().patchAndFetchById(item.id, await processarRegistro(item)); }
-    catch (error) { await AutomacaoEmail.query().patchAndFetchById(item.id, { status: 'erro', erro: String(error.message || error).slice(0, 2000) }); }
-    processados += 1;
+    if (await processarPendente(item)) processados += 1;
   }
   return processados;
 }
@@ -415,6 +427,30 @@ async function repetir(id) {
   await AutomacaoEmail.query().patchAndFetchById(id, await prepararRepeticao(item));
   await processarPendentes();
   return AutomacaoEmail.query().findById(id);
+}
+
+async function repetirRevisoes(carregarCorpo = carregarCorpoGmail) {
+  const itens = await AutomacaoEmail.query().where('status', 'revisao').orderBy('recebido_em').orderBy('id');
+  const resultado = { selecionados: itens.length, repetidos: 0, falhas: 0 };
+  for (const item of itens) {
+    try {
+      const atualizacao = await prepararRepeticao(item, carregarCorpo);
+      const preparado = await AutomacaoEmail.query()
+        .where({ id: item.id, status: 'revisao' })
+        .patch({ ...atualizacao, updated_at: new Date() });
+      if (!preparado) continue;
+      resultado.repetidos += 1;
+      await processarPendente({ ...item, ...atualizacao, status: 'pendente' });
+    } catch (error) {
+      resultado.falhas += 1;
+      try {
+        await AutomacaoEmail.query()
+          .where({ id: item.id, status: 'revisao' })
+          .patch({ erro: `Falha ao preparar repetição: ${String(error.message || error).slice(0, 1960)}`, updated_at: new Date() });
+      } catch {}
+    }
+  }
+  return resultado;
 }
 async function descartar(id, justificativa, usuarioId) { if (!String(justificativa || '').trim()) throw Object.assign(new Error('Informe a justificativa.'), { statusCode: 400 }); return AutomacaoEmail.query().patchAndFetchById(id, { status: 'descartado', justificativa_revisao: String(justificativa).trim(), revisado_por_id: usuarioId, processado_em: formatarSQL() }); }
 
@@ -578,4 +614,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, resolverEtapaDestino, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas } };
+module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, repetirRevisoes, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, processarPendente, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, resolverEtapaDestino, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas } };

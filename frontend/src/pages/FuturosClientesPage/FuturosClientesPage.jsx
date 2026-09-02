@@ -14,6 +14,7 @@ import {
   adminMarcarFuturoClienteLead,
   adminMarcarVendaRecusadaLead,
   adminVincularVendaLead,
+  atualizarFuturoClienteGlobal,
   avaliarPrimeiraLigacaoLead,
   atualizarCampoLeadRecebido,
   enviarFuturoClienteParaDistribuicao,
@@ -2804,6 +2805,7 @@ export function FuturoClienteDetalheModal({
 
   const usuario = useMemo(() => getUsuarioLocal(), []);
   const comoAdmin = useMemo(() => temPermissao(usuario, 'gerenciar_leads'), [usuario]);
+  const podeEditarTodos = useMemo(() => temPermissao(usuario, 'futuros_clientes_ver_todos'), [usuario]);
   const ehResponsavel = Number(linha.atribuido_para_id) === Number(usuario?.id);
   const ehDono = Number(linha.futuro_cliente_marcado_por_id) === Number(usuario?.id);
   const jaEnviadoTelegram = linha.futuro_cliente_destino === 'distribuicao' || Boolean(linha.distribuicao?.id);
@@ -2824,7 +2826,10 @@ export function FuturoClienteDetalheModal({
     && !linha.venda_recusada_em
     && !linha.cliente_recusou
     && !distribuicaoAtiva;
-  const podeEditar = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'futuros_clientes_registrar')));
+  const podeEditar = podeEditarTodos
+    || (!somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'futuros_clientes_registrar'))));
+  const podeMarcarVendaRecusada = !somenteLeitura
+    && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'futuros_clientes_registrar')));
   const podeRegistrarVenda = !somenteLeitura && (comoAdmin || (ehResponsavel && temPermissao(usuario, 'vendas_criar')));
   const podeGerenciarVinculo = comoAdmin && (!somenteLeitura || permitirGerenciarVinculo);
   const podeReverterVendaRecusada = vendaRecusada
@@ -2954,7 +2959,10 @@ export function FuturoClienteDetalheModal({
         return;
       }
 
-      const resultado = await (comoAdmin ? adminMarcarFuturoClienteLead : marcarFuturoClienteLead)(linha.id, {
+      const atualizarFuturoCliente = podeEditarTodos
+        ? atualizarFuturoClienteGlobal
+        : comoAdmin ? adminMarcarFuturoClienteLead : marcarFuturoClienteLead;
+      const resultado = await atualizarFuturoCliente(linha.id, {
         notas,
         retorno: retornoIso,
         razao_social: razaoSocial,
@@ -3248,7 +3256,7 @@ export function FuturoClienteDetalheModal({
                     <span>{linha.venda_recusada_motivo || 'Motivo nao informado.'}</span>
                     {linha.venda_recusada_em && <small>Marcada em {formatarDataHora(linha.venda_recusada_em)}</small>}
                   </div>
-                ) : !vendaRegistrada && podeEditar && (
+                ) : !vendaRegistrada && podeMarcarVendaRecusada && (
                   <div className="futuro-cliente-recusa">
                     <label>Venda recusada</label>
                     <textarea rows={3} value={motivoRecusa} onChange={event => setMotivoRecusa(event.target.value)} placeholder="Informe o motivo da recusa" disabled={salvando} />

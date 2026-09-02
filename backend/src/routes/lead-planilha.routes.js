@@ -491,6 +491,22 @@ router.post(
   }),
   leadPlanilhaController.adminReverterVendaRecusada
 );
+router.put(
+  '/futuros-clientes/:id',
+  exigirPermissao('futuros_clientes_ver_todos'),
+  auditar({
+    acao: req => acaoAuditoriaFuturoCliente(req, true),
+    entidade: 'lead_linhas',
+    entidade_id: (req, resultado) => resultado?.linha?.id || req.params.id,
+    dados: req => ({
+      linha_id: req.params.id,
+      ocorrido_em: req.contextoAuditoriaFuturoCliente?.ocorrido_em,
+      usuario_id: req.usuario?.id,
+      escopo: 'todos'
+    })
+  }),
+  leadPlanilhaController.atualizarFuturoClienteGlobal
+);
 router.get('/futuros-clientes', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.listarTodosFuturosClientes);
 router.get('/futuros-clientes/em-acompanhamento', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.listarFuturosClientesComConsultoras);
 router.get('/futuros-clientes/em-acompanhamento/:id', exigirUmaPermissao(['futuros_clientes_ver_todos']), leadPlanilhaController.obterFuturoClienteEmAcompanhamento);

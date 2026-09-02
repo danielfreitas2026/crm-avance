@@ -10,6 +10,8 @@ const Usuario = require('../src/models/Usuario');
 const VendaProblema = require('../src/models/VendaProblema');
 const VendaProblemaEvento = require('../src/models/VendaProblemaEvento');
 const vendaService = require('../src/services/venda.service');
+const automacaoController = require('../src/controllers/automacao.controller');
+const automacaoRoutes = require('../src/routes/automacao.routes');
 
 const EMAIL_PROBLEMA = `Dados da Venda
 ID: 301913
@@ -148,6 +150,100 @@ test('repeticao recarrega do Gmail um corpo armazenado sem dados uteis', async (
   assert.equal(atualizacao.erro, null);
   assert.equal(atualizacao.corpo_texto, EMAIL_INPUT_REALIZADO);
   assert.match(atualizacao.corpo_hash, /^[a-f0-9]{64}$/);
+});
+
+test('repete uma fotografia das revisoes, preserva overrides e isola falhas de preparacao', async () => {
+  const queryAutomacaoOriginal = AutomacaoEmail.query;
+  const queryVendaOriginal = Venda.query;
+  const queryEtapaOriginal = FunilEtapa.query;
+  const override = {
+    classificacao: 'sem_acao', alvo: 'sem_acao', destino: 'Antifraude - Processo Em Revisão Crítica', documento: '11143938000187'
+  };
+  const registros = [
+    { id: 1, status: 'revisao', recebido_em: '2026-09-01 10:00:00', tentativas: 2, venda_id: 41, revisado_por_id: 7, corpo_texto: '', dados_extraidos: JSON.stringify({ _override: override }) },
+    { id: 2, status: 'revisao', recebido_em: '2026-09-01 11:00:00', tentativas: 1, gmail_message_id: 'gmail-falha', corpo_texto: 'This is the plain text version of the email content', dados_extraidos: '{}' }
+  ];
+
+  class QueryAutomacao {
+    constructor() { this.filtros = {}; }
+    where(campo, valor) {
+      if (typeof campo === 'object') Object.assign(this.filtros, campo);
+      else this.filtros[campo] = valor;
+      return this;
+    }
+    orderBy() { return this; }
+    linhas() { return registros.filter(item => Object.entries(this.filtros).every(([campo, valor]) => item[campo] === valor)); }
+    then(resolve, reject) { return Promise.resolve(this.linhas().map(item => ({ ...item }))).then(resolve, reject); }
+    async patch(dados) {
+      const linhas = this.linhas();
+      linhas.forEach(item => Object.assign(item, dados));
+      return linhas.length;
+    }
+    async patchAndFetchById(id, dados) {
+      const item = registros.find(registro => registro.id === id);
+      if (item) Object.assign(item, dados);
+      return item || null;
+    }
+  }
+
+  AutomacaoEmail.query = () => new QueryAutomacao();
+  Venda.query = () => ({ findById() { return this; }, withGraphFetched: async () => ({ id: 41, status_funil: 'ativacao', excluido_em: null, cancelada_em: null }) });
+  FunilEtapa.query = () => ({ where: async () => [{ codigo: 'concluido' }] });
+
+  try {
+    const resultado = await automacao.repetirRevisoes(async gmailId => {
+      assert.equal(gmailId, 'gmail-falha');
+      throw new Error('Gmail indisponível');
+    });
+    assert.deepEqual(resultado, { selecionados: 2, repetidos: 1, falhas: 1 });
+    assert.equal(registros[0].status, 'concluido');
+    assert.equal(registros[0].tentativas, 3);
+    assert.deepEqual(JSON.parse(registros[0].dados_extraidos)._override, override);
+    assert.equal(registros[1].status, 'revisao');
+    assert.match(registros[1].erro, /Falha ao preparar repetição: Gmail indisponível/);
+
+    registros.length = 0;
+    assert.deepEqual(await automacao.repetirRevisoes(), { selecionados: 0, repetidos: 0, falhas: 0 });
+  } finally {
+    AutomacaoEmail.query = queryAutomacaoOriginal;
+    Venda.query = queryVendaOriginal;
+    FunilEtapa.query = queryEtapaOriginal;
+  }
+});
+
+test('claim concorrente impede processar novamente o mesmo pendente', async () => {
+  const queryOriginal = AutomacaoEmail.query;
+  let patchesFinais = 0;
+  AutomacaoEmail.query = () => ({
+    where() { return this; },
+    patch: async () => 0,
+    patchAndFetchById: async () => { patchesFinais += 1; }
+  });
+  try {
+    assert.equal(await automacao._internals.processarPendente({ id: 8, status: 'pendente', tentativas: 3 }), false);
+    assert.equal(patchesFinais, 0);
+  } finally {
+    AutomacaoEmail.query = queryOriginal;
+  }
+});
+
+test('endpoint em lote precede as rotas parametrizadas e repassa o contrato do servico', async () => {
+  const camadas = automacaoRoutes.stack;
+  const indicePermissao = camadas.findIndex(camada => camada.name === 'permissaoMiddleware');
+  const indiceLote = camadas.findIndex(camada => camada.route?.path === '/repetir-revisoes');
+  const indiceIndividual = camadas.findIndex(camada => camada.route?.path === '/:id/repetir');
+  assert.ok(indicePermissao >= 0 && indicePermissao < indiceLote);
+  assert.ok(indiceLote >= 0 && indiceLote < indiceIndividual);
+
+  const repetirOriginal = automacao.repetirRevisoes;
+  automacao.repetirRevisoes = async () => ({ selecionados: 4, repetidos: 3, falhas: 1 });
+  const res = { body: null, json(dados) { this.body = dados; return this; } };
+  try {
+    await automacaoController.repetirRevisoes({}, res);
+    assert.deepEqual(res.body, { selecionados: 4, repetidos: 3, falhas: 1 });
+  } finally {
+    automacao.repetirRevisoes = repetirOriginal;
+  }
 });
 
 test('mapeia os destinos de aceite e entrega com texto normal ou corrompido', () => {

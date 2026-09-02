@@ -8,10 +8,11 @@ vi.mock('./api', () => ({
   apiPut: vi.fn()
 }));
 
-import { apiDelete, apiGet, apiPost } from './api';
+import { apiDelete, apiGet, apiPost, apiPut } from './api';
 import {
   adminDesvincularVendaLead,
   adminVincularVendaLead,
+  atualizarFuturoClienteGlobal,
   enviarFuturoClienteParaDistribuicao,
   excluirFuturoCliente,
   excluirFuturoClienteDefinitivo,
@@ -133,5 +134,17 @@ describe('filtros de futuros clientes', () => {
 
     expect(apiGet).toHaveBeenNthCalledWith(1, '/lead-planilhas/me/futuros-clientes/em-acompanhamento/81');
     expect(apiGet).toHaveBeenNthCalledWith(2, '/lead-planilhas/futuros-clientes/em-acompanhamento/82');
+  });
+});
+
+describe('edicao global de futuro cliente', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('usa o endpoint restrito ao escopo Todos', async () => {
+    const dados = { razao_social: 'Empresa atualizada' };
+
+    await atualizarFuturoClienteGlobal(81, dados);
+
+    expect(apiPut).toHaveBeenCalledWith('/lead-planilhas/futuros-clientes/81', dados);
   });
 });
