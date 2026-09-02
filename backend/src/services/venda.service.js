@@ -4593,39 +4593,45 @@ async function contarVendasConcluidasPorCliente() {
 /**
  * Processa cancelar venda conforme as regras do dominio.
  */
-async function cancelarVenda(id, { motivo, usuarioId }) {
+async function cancelarVenda(id, {
+  motivo,
+  usuarioId,
+  sistema = false,
+  origemMovimentacao = null,
+  automacaoEmailId = null,
+  statusFunilEsperado = undefined
+}) {
   const motivoLimpo = String(motivo || '').trim();
 
   if (!motivoLimpo) {
     return { status: 'invalid', message: 'Informe o motivo do cancelamento.' };
   }
 
-  if (!await usuarioTemPermissao(usuarioId, 'vendas_cancelar')) {
+  if (!sistema && !await usuarioTemPermissao(usuarioId, 'vendas_cancelar')) {
     return { status: 'forbidden', message: 'Voce nao tem permissao para cancelar vendas.' };
   }
 
-  const permitido = await usuarioPodeAcessarVenda(id, usuarioId);
+  const permitido = sistema || await usuarioPodeAcessarVenda(id, usuarioId);
 
   if (!permitido) {
     return { status: 'not_found' };
   }
 
-  const venda = await Venda.query().findById(id);
-
-  if (!venda || venda.excluido_em) {
-    return { status: 'not_found' };
-  }
-
-  if (venda.cancelada_em) {
-    return { status: 'invalid', message: 'Venda ja esta cancelada.' };
-  }
-
-  const agora = formatarDateTimeSQL();
-
-  const vendaAtualizada = await Venda.transaction(async trx => {
+  return Venda.transaction(async trx => {
+    const venda = await Venda.query(trx).findById(id).forUpdate();
+    if (!venda || venda.excluido_em) return { status: 'not_found' };
+    if (venda.cancelada_em) {
+      return sistema
+        ? { status: 'ok', venda, alterada: false }
+        : { status: 'invalid', message: 'Venda ja esta cancelada.' };
+    }
+    if (sistema && statusFunilEsperado !== undefined && venda.status_funil !== statusFunilEsperado) {
+      return { status: 'invalid', message: 'A venda mudou de etapa durante o cancelamento automático.' };
+    }
+    const agora = formatarDateTimeSQL();
     const atualizada = await Venda.query(trx).patchAndFetchById(id, {
       cancelada_em: agora,
-      cancelada_por_id: usuarioId,
+      cancelada_por_id: sistema ? null : usuarioId,
       motivo_cancelamento: motivoLimpo,
       ultima_atividade_em: agora,
       updated_at: agora
@@ -4633,12 +4639,18 @@ async function cancelarVenda(id, { motivo, usuarioId }) {
 
     await registrarHistoricoVenda({
       vendaId: id,
-      usuarioId,
+      usuarioId: sistema ? null : usuarioId,
       acao: 'venda.cancelada',
       statusAnterior: venda.status_funil || null,
       statusNovo: venda.status_funil || null,
       observacao: motivoLimpo,
-      dados: { motivo_cancelamento: motivoLimpo },
+      dados: {
+        motivo_cancelamento: motivoLimpo,
+        ...(origemMovimentacao ? {
+          origem_movimentacao: origemMovimentacao,
+          automacao_email_id: Number(automacaoEmailId) || null
+        } : {})
+      },
       createdAt: agora,
       trx
     });
@@ -4646,14 +4658,12 @@ async function cancelarVenda(id, { motivo, usuarioId }) {
     await vendaNotificacaoCancelamentoService.criarNotificacaoCancelamento({
       venda: atualizada,
       motivo: motivoLimpo,
-      usuarioId,
+      usuarioId: sistema ? null : usuarioId,
       trx
     });
 
-    return atualizada;
+    return { status: 'ok', venda: atualizada, alterada: true };
   });
-
-  return { status: 'ok', venda: vendaAtualizada };
 }
 
 /**

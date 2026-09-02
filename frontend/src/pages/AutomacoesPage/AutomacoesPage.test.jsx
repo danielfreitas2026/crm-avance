@@ -267,6 +267,30 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByRole('combobox', { name: 'Destino' })).toHaveValue('etapa_final');
   });
 
+  it('exibe e permite revisar uma automacao como cancelamento de venda sem etapa de destino', async () => {
+    const user = userEvent.setup();
+    api.listarAutomacoes.mockResolvedValue({
+      data: [{
+        ...execucao,
+        classificacao: 'cancelamento',
+        dados_extraidos: { ...execucao.dados_extraidos, classificacao: 'cancelamento', alvo: 'cancelar_venda' }
+      }],
+      total: 1
+    });
+    render(<AutomacoesPage />);
+
+    expect((await screen.findAllByText('Cancelamento de venda')).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole('combobox', { name: 'Destino' })).not.toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Justificativa' }), 'Cancelamento confirmado.');
+    await user.click(screen.getByRole('button', { name: 'Corrigir e reprocessar' }));
+
+    await waitFor(() => expect(api.revisarAutomacao).toHaveBeenCalledWith(execucao.id, expect.objectContaining({
+      classificacao: 'cancelamento',
+      etapa_destino: null,
+      justificativa: 'Cancelamento confirmado.'
+    })));
+  });
+
   it('mantém o layout e exibe falhas de carregamento', async () => {
     api.listarAutomacoes.mockRejectedValue(new Error('Falha ao consultar automações.'));
     render(<AutomacoesPage />);

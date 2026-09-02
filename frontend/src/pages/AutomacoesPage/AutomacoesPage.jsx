@@ -27,7 +27,8 @@ const STATUS_LABEL = {
 const CLASSIFICACAO_LABEL = {
   tipo_1: 'Atualização de etapa',
   tipo_2: 'Problema pós-venda',
-  sem_acao: 'Sem ação'
+  sem_acao: 'Sem ação',
+  cancelamento: 'Cancelamento de venda'
 };
 
 const DATA_HORA_OPTIONS = {
@@ -103,6 +104,7 @@ function Revisao({ item, onAtualizar, onErro }) {
           <option value="tipo_1">Atualização de etapa</option>
           <option value="tipo_2">Problema</option>
           <option value="sem_acao">Sem ação</option>
+          <option value="cancelamento">Cancelamento de venda</option>
         </select>
       </label>
       {tipo === 'tipo_1' && (

@@ -9,7 +9,9 @@ const AutomacaoEmail = require('../src/models/AutomacaoEmail');
 const Usuario = require('../src/models/Usuario');
 const VendaProblema = require('../src/models/VendaProblema');
 const VendaProblemaEvento = require('../src/models/VendaProblemaEvento');
+const VendaHistorico = require('../src/models/VendaHistorico');
 const vendaService = require('../src/services/venda.service');
+const vendaNotificacaoCancelamentoService = require('../src/services/venda-notificacao-cancelamento.service');
 const automacaoController = require('../src/controllers/automacao.controller');
 const automacaoRoutes = require('../src/routes/automacao.routes');
 
@@ -63,6 +65,13 @@ Origem: Aguardando Aceite/Assinatura
 Mensagem ao Operador: Favor SUBIR PEDIDO agora
 Destino: Pend�ncia Pr�-Venda`;
 
+const EMAIL_CANCELAMENTO = `Dados da Venda
+CNPJ: 11.143.938/0001-87 (11143938000187)
+Workflow (tramita��o do pedido)
+Origem: Corre��o do Pedido de Venda Pelo Consultor
+Mensagem ao Operador: cancelar
+Destino: Pedido Cancelado pelo Consultor`;
+
 test('interpreta problema mesmo com acentos substituidos por caracteres invalidos', () => {
   assert.deepEqual(parser.interpretarEmail(EMAIL_PROBLEMA), {
     documento: '11143938000187', data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99,
@@ -94,6 +103,24 @@ test('destino prevalece sobre a mensagem subir pedido', () => {
   assert.equal(semDestino.alvo, null);
 
   assert.equal(parser.interpretarEmail(EMAIL_SUBIR_PEDIDO.replace('SUBIR PEDIDO', 'aguardar pedido')).classificacao, 'desconhecido');
+});
+
+test('classifica cancelamento pelo destino com texto corrompido e ignora origem e mensagem', () => {
+  const interpretado = parser.interpretarEmail(EMAIL_CANCELAMENTO);
+  assert.equal(interpretado.documento, '11143938000187');
+  assert.equal(interpretado.origem, 'Corre��o do Pedido de Venda Pelo Consultor');
+  assert.equal(interpretado.destino, 'Pedido Cancelado pelo Consultor');
+  assert.equal(interpretado.mensagem_operador, 'cancelar');
+  assert.equal(interpretado.classificacao, 'cancelamento');
+  assert.equal(interpretado.alvo, 'cancelar_venda');
+
+  const diferente = EMAIL_CANCELAMENTO
+    .replace('Corre��o do Pedido de Venda Pelo Consultor', 'Análise da Qualidade')
+    .replace('Mensagem ao Operador: cancelar', 'Mensagem ao Operador: conferir novamente');
+  assert.equal(parser.interpretarEmail(diferente).classificacao, 'cancelamento');
+  assert.deepEqual(parser.classificarDestino('Pedido Cancelado pelo Consultor'), {
+    classificacao: 'cancelamento', alvo: 'cancelar_venda'
+  });
 });
 
 test('usa o HTML quando a parte de texto do email contem apenas o placeholder', async () => {
@@ -466,6 +493,27 @@ test('vendas concluidas, canceladas e excluidas nao participam da correspondenci
   assert.deepEqual(resultado.candidatas[0].inelegibilidades, ['venda concluída']);
 });
 
+test('cancelamento prioriza venda ativa e aceita uma unica cancelada como repeticao idempotente', () => {
+  const ativa = { id: 1, status_funil: 'entrega', cancelada_em: null, excluido_em: null };
+  const cancelada = { id: 2, status_funil: 'entrega', cancelada_em: '2026-09-01', excluido_em: null };
+  let resultado = automacao._internals.avaliarCandidatas(
+    [cancelada, ativa], {}, ['concluido'], { cancelamento: true }
+  );
+  assert.equal(resultado.venda, ativa);
+
+  resultado = automacao._internals.avaliarCandidatas(
+    [cancelada], {}, ['concluido'], { cancelamento: true }
+  );
+  assert.equal(resultado.venda, cancelada);
+  assert.equal(resultado.candidatas[0].elegivel, true);
+
+  resultado = automacao._internals.avaliarCandidatas(
+    [{ ...ativa, status_funil: 'concluido' }], {}, ['concluido'], { cancelamento: true }
+  );
+  assert.equal(resultado.venda, null);
+  assert.deepEqual(resultado.candidatas[0].inelegibilidades, ['venda concluída']);
+});
+
 test('documento com somente vendas finalizadas segue para revisao', () => {
   const resultado = automacao._internals.avaliarCandidatas([
     { id: 1, status_funil: 'concluido' },
@@ -758,6 +806,152 @@ test('movimentacao processada pelo Gmail envia origem e id da automacao ao servi
     Venda.query = queryVendaOriginal;
     FunilEtapa.query = queryEtapaOriginal;
     vendaService.atualizarStatusVenda = atualizarOriginal;
+  }
+});
+
+test('cancelamento automatico usa mensagem, fallback e contexto do Gmail sem mover etapa', async () => {
+  const queryVendaOriginal = Venda.query;
+  const queryEtapaOriginal = FunilEtapa.query;
+  const cancelarOriginal = vendaService.cancelarVenda;
+  const chamadas = [];
+  let venda = { id: 41, status_funil: 'entrega', excluido_em: null, cancelada_em: null };
+
+  Venda.query = () => ({
+    findById() { return this; },
+    withGraphFetched: async () => venda
+  });
+  FunilEtapa.query = () => ({ where: async () => [{ codigo: 'concluido' }] });
+  vendaService.cancelarVenda = async (...args) => { chamadas.push(args); return { status: 'ok' }; };
+
+  const registro = mensagem => ({
+    id: 92,
+    venda_id: 41,
+    revisado_por_id: 7,
+    corpo_texto: '',
+    dados_extraidos: JSON.stringify({
+      _override: {
+        classificacao: 'cancelamento', alvo: 'cancelar_venda', documento: '11143938000187',
+        destino: 'Pedido Cancelado pelo Consultor', mensagem_operador: mensagem
+      }
+    })
+  });
+
+  try {
+    let resultado = await automacao._internals.processarRegistro(registro('cancelar'));
+    assert.equal(resultado.status, 'concluido');
+    assert.equal(resultado.classificacao, 'cancelamento');
+    assert.equal(resultado.etapa_destino, null);
+    assert.deepEqual(chamadas[0], [41, {
+      motivo: 'cancelar', usuarioId: null, sistema: true,
+      origemMovimentacao: 'automacao_gmail', automacaoEmailId: 92,
+      statusFunilEsperado: 'entrega'
+    }]);
+
+    resultado = await automacao._internals.processarRegistro(registro(''));
+    assert.equal(resultado.status, 'concluido');
+    assert.equal(chamadas[1][1].motivo, 'Pedido cancelado pelo consultor');
+
+    venda = { ...venda, status_funil: 'concluido' };
+    resultado = await automacao._internals.processarRegistro(registro('cancelar'));
+    assert.equal(resultado.status, 'revisao');
+    assert.match(resultado.erro, /concluída/);
+    assert.equal(chamadas.length, 2);
+  } finally {
+    Venda.query = queryVendaOriginal;
+    FunilEtapa.query = queryEtapaOriginal;
+    vendaService.cancelarVenda = cancelarOriginal;
+  }
+});
+
+test('cancelamento oficial por sistema bloqueia a venda e e idempotente com auditoria e notificacao unicas', async () => {
+  const queryVendaOriginal = Venda.query;
+  const transactionOriginal = Venda.transaction;
+  const queryHistoricoOriginal = VendaHistorico.query;
+  const notificarOriginal = vendaNotificacaoCancelamentoService.criarNotificacaoCancelamento;
+  const venda = { id: 41, status_funil: 'entrega', cancelada_em: null, excluido_em: null };
+  const historicos = [];
+  const notificacoes = [];
+  let bloqueios = 0;
+
+  Venda.transaction = async callback => callback({ id: 'trx' });
+  Venda.query = trx => ({
+    findById(id) { assert.equal(id, 41); return this; },
+    async forUpdate() { bloqueios += 1; return { ...venda }; },
+    async patchAndFetchById(id, patch) { assert.equal(id, 41); Object.assign(venda, patch); return { ...venda }; }
+  });
+  VendaHistorico.query = trx => ({
+    async insert(dados) { assert.deepEqual(trx, { id: 'trx' }); historicos.push(dados); return dados; }
+  });
+  vendaNotificacaoCancelamentoService.criarNotificacaoCancelamento = async dados => { notificacoes.push(dados); };
+
+  const opcoes = {
+    motivo: 'cancelar', usuarioId: null, sistema: true,
+    origemMovimentacao: 'automacao_gmail', automacaoEmailId: 92,
+    statusFunilEsperado: 'entrega'
+  };
+  try {
+    let resultado = await vendaService.cancelarVenda(41, opcoes);
+    assert.equal(resultado.status, 'ok');
+    assert.equal(resultado.alterada, true);
+    assert.equal(venda.cancelada_por_id, null);
+    assert.equal(historicos.length, 1);
+    assert.equal(historicos[0].usuario_id, null);
+    assert.deepEqual(JSON.parse(historicos[0].dados), {
+      motivo_cancelamento: 'cancelar', origem_movimentacao: 'automacao_gmail', automacao_email_id: 92
+    });
+    assert.equal(notificacoes.length, 1);
+    assert.equal(notificacoes[0].usuarioId, null);
+
+    resultado = await vendaService.cancelarVenda(41, opcoes);
+    assert.equal(resultado.status, 'ok');
+    assert.equal(resultado.alterada, false);
+    assert.equal(bloqueios, 2);
+    assert.equal(historicos.length, 1);
+    assert.equal(notificacoes.length, 1);
+  } finally {
+    Venda.query = queryVendaOriginal;
+    Venda.transaction = transactionOriginal;
+    VendaHistorico.query = queryHistoricoOriginal;
+    vendaNotificacaoCancelamentoService.criarNotificacaoCancelamento = notificarOriginal;
+  }
+});
+
+test('cancelamento manual continua exigindo a permissao existente', async () => {
+  const queryUsuarioOriginal = Usuario.query;
+  const transactionOriginal = Venda.transaction;
+  let abriuTransacao = false;
+  Usuario.query = () => ({
+    findById() { return this; },
+    withGraphFetched: async () => null
+  });
+  Venda.transaction = async () => { abriuTransacao = true; };
+  try {
+    const resultado = await vendaService.cancelarVenda(41, { motivo: 'cancelar', usuarioId: 7 });
+    assert.equal(resultado.status, 'forbidden');
+    assert.equal(abriuTransacao, false);
+  } finally {
+    Usuario.query = queryUsuarioOriginal;
+    Venda.transaction = transactionOriginal;
+  }
+});
+
+test('cancelamento automatico recusa mudanca concorrente de etapa', async () => {
+  const queryVendaOriginal = Venda.query;
+  const transactionOriginal = Venda.transaction;
+  Venda.transaction = async callback => callback({});
+  Venda.query = () => ({
+    findById() { return this; },
+    forUpdate: async () => ({ id: 41, status_funil: 'concluido', cancelada_em: null, excluido_em: null })
+  });
+  try {
+    const resultado = await vendaService.cancelarVenda(41, {
+      motivo: 'cancelar', usuarioId: null, sistema: true, statusFunilEsperado: 'entrega'
+    });
+    assert.equal(resultado.status, 'invalid');
+    assert.match(resultado.message, /mudou de etapa/);
+  } finally {
+    Venda.query = queryVendaOriginal;
+    Venda.transaction = transactionOriginal;
   }
 });
 

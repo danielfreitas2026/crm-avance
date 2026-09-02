@@ -149,17 +149,26 @@ function divergenciasSecundarias(venda, campos) {
   return divergencias;
 }
 
-function motivosInelegibilidade(venda, etapasFinais) {
+function motivosInelegibilidade(venda, etapasFinais, { cancelamento = false } = {}) {
   const motivos = [];
   if (venda.excluido_em) motivos.push('venda excluída');
-  if (venda.cancelada_em) motivos.push('venda cancelada');
-  if (etapasFinais.includes(venda.status_funil)) motivos.push('venda concluída');
+  if (venda.cancelada_em && !cancelamento) motivos.push('venda cancelada');
+  if (etapasFinais.includes(venda.status_funil) && !(cancelamento && venda.cancelada_em)) motivos.push('venda concluída');
   return motivos;
 }
 
-function avaliarCandidatas(candidatas, campos, etapasFinais) {
+function selecionarCandidataUnica(avaliadas) {
+  if (avaliadas.length === 1) return avaliadas[0].venda;
+  if (avaliadas.length > 1) {
+    const compativeis = avaliadas.filter(item => item.auditoria.divergencias.length === 0);
+    if (compativeis.length === 1) return compativeis[0].venda;
+  }
+  return null;
+}
+
+function avaliarCandidatas(candidatas, campos, etapasFinais, { cancelamento = false } = {}) {
   const avaliadas = candidatas.map(venda => {
-    const inelegibilidades = motivosInelegibilidade(venda, etapasFinais);
+    const inelegibilidades = motivosInelegibilidade(venda, etapasFinais, { cancelamento });
     return {
       venda,
       auditoria: {
@@ -174,12 +183,10 @@ function avaliarCandidatas(candidatas, campos, etapasFinais) {
     };
   });
   const elegiveis = avaliadas.filter(item => item.auditoria.elegivel);
-  let selecionada = null;
-  if (elegiveis.length === 1) selecionada = elegiveis[0].venda;
-  if (elegiveis.length > 1) {
-    const compativeis = elegiveis.filter(item => item.auditoria.divergencias.length === 0);
-    if (compativeis.length === 1) selecionada = compativeis[0].venda;
-  }
+  const ativas = elegiveis.filter(item => !item.venda.cancelada_em);
+  const canceladas = elegiveis.filter(item => item.venda.cancelada_em);
+  let selecionada = selecionarCandidataUnica(ativas);
+  if (!selecionada && ativas.length === 0 && cancelamento) selecionada = selecionarCandidataUnica(canceladas);
   let erro = null;
   if (!selecionada && avaliadas.length > 0 && elegiveis.length === 0) {
     erro = 'Todas as vendas encontradas para o documento estão concluídas, canceladas ou excluídas.';
@@ -191,16 +198,19 @@ function avaliarCandidatas(candidatas, campos, etapasFinais) {
 
 async function resolverVenda(registro, campos) {
   const etapasFinais = await codigosEtapasFinais();
+  const cancelamento = campos.classificacao === 'cancelamento' || campos.alvo === 'cancelar_venda';
   if (registro.revisado_por_id && registro.venda_id) {
     const escolhida = await Venda.query().findById(registro.venda_id).withGraphFetched('[cliente, operadora]');
     if (!escolhida) return { venda: null, candidatas: [], erro: 'A venda selecionada manualmente não foi encontrada.' };
-    const resultado = avaliarCandidatas([escolhida], campos, etapasFinais);
+    const resultado = avaliarCandidatas([escolhida], campos, etapasFinais, { cancelamento });
     resultado.candidatas[0].manual = true;
-    if (!resultado.venda) resultado.erro = 'A venda selecionada manualmente está concluída, cancelada ou excluída e não pode receber atualizações.';
+    if (!resultado.venda) resultado.erro = cancelamento
+      ? 'A venda selecionada manualmente está concluída ou excluída e não pode ser cancelada automaticamente.'
+      : 'A venda selecionada manualmente está concluída, cancelada ou excluída e não pode receber atualizações.';
     return resultado;
   }
   const candidatas = await buscarCandidatas(campos);
-  return avaliarCandidatas(candidatas, campos, etapasFinais);
+  return avaliarCandidatas(candidatas, campos, etapasFinais, { cancelamento });
 }
 
 async function resolverEtapaDestino(alvo) {
@@ -330,6 +340,21 @@ async function processarRegistro(registro) {
   }
   if (campos.classificacao === 'sem_acao') {
     return { status: 'concluido', classificacao: 'sem_acao', venda_id: venda.id, etapa_destino: null, dados_extraidos: JSON.stringify(dadosExtraidos), erro: null, processado_em: formatarSQL() };
+  }
+  if (campos.classificacao === 'cancelamento') {
+    const motivo = String(campos.mensagem_operador || '').trim() || 'Pedido cancelado pelo consultor';
+    const cancelamento = await vendaService.cancelarVenda(venda.id, {
+      motivo,
+      usuarioId: null,
+      sistema: true,
+      origemMovimentacao: 'automacao_gmail',
+      automacaoEmailId: registro.id,
+      statusFunilEsperado: venda.status_funil || null
+    });
+    if (cancelamento.status !== 'ok') {
+      return { status: 'revisao', erro: cancelamento.message || 'Cancelamento bloqueado pelas regras da venda.', venda_id: venda.id, dados_extraidos: JSON.stringify(dadosExtraidos) };
+    }
+    return { status: 'concluido', classificacao: 'cancelamento', venda_id: venda.id, etapa_destino: null, dados_extraidos: JSON.stringify(dadosExtraidos), erro: null, processado_em: formatarSQL() };
   }
   const alvoEfetivo = campos.alvo === 'etapa_final' && vendaTemPortabilidade(venda)
     ? 'confirmacao_sms_portabilidade'
