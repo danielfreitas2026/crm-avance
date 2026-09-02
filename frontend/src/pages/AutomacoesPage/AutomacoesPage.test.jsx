@@ -190,6 +190,16 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByText('Corrija os dados abaixo antes de reprocessar esta execução.')).toBeInTheDocument();
   });
 
+  it('interpreta o horário SQL da automação como UTC e exibe em São Paulo', async () => {
+    api.listarAutomacoes.mockResolvedValue({
+      data: [{ ...execucao, recebido_em: '2026-09-02 13:21:49' }],
+      total: 1
+    });
+    render(<AutomacoesPage />);
+
+    expect(await screen.findByText('02/09/2026, 10:21:49')).toBeInTheDocument();
+  });
+
   it('permite vincular manualmente uma venda do CNPJ e informa a etapa atual', async () => {
     const user = userEvent.setup();
     api.listarAutomacoes.mockResolvedValue({

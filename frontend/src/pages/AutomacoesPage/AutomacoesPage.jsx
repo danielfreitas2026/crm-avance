@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
 import Paginacao from '../../components/Paginacao/Paginacao';
+import { formatUtcDateTime } from '../../utils/datetime';
 import {
   coletarHistoricoAutomacoes,
   descartarAutomacao,
@@ -29,7 +30,12 @@ const CLASSIFICACAO_LABEL = {
   sem_acao: 'Sem ação'
 };
 
-const dataHora = valor => valor ? new Date(valor).toLocaleString('pt-BR') : '—';
+const DATA_HORA_OPTIONS = {
+  day: '2-digit', month: '2-digit', year: 'numeric',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  timeZone: 'America/Sao_Paulo'
+};
+const dataHora = valor => formatUtcDateTime(valor, DATA_HORA_OPTIONS, '—');
 
 function Revisao({ item, onAtualizar, onErro }) {
   const extraidos = item.dados_extraidos || {};

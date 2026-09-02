@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
 import Paginacao from '../../components/Paginacao/Paginacao';
+import { formatUtcDateTime } from '../../utils/datetime';
 import VendaModal from '../VendasPage/VendaModal';
 import {
   listarProblemasAutomaticos,
@@ -20,7 +21,12 @@ const ABAS = {
   resolvidos: { label: 'Problemas resolvidos', vazio: 'Nenhum problema resolvido no histórico' }
 };
 const PAGINACAO_INICIAL = { abertos: { page: 1, perPage: 20 }, resolvidos: { page: 1, perPage: 20 } };
-const dataHora = valor => valor ? new Date(valor).toLocaleString('pt-BR') : '—';
+const DATA_HORA_OPTIONS = {
+  day: '2-digit', month: '2-digit', year: 'numeric',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  timeZone: 'America/Sao_Paulo'
+};
+const dataHora = valor => formatUtcDateTime(valor, DATA_HORA_OPTIONS, '—');
 const data = valor => valor ? new Date(`${String(valor).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '—';
 const moeda = valor => Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const tipoLinha = valor => ({ novo: 'Novo', portabilidade: 'Portabilidade', migracao: 'Migração' }[String(valor || '').toLowerCase()] || valor || '—');
