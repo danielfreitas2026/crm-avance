@@ -342,7 +342,10 @@ async function processarRegistro(registro) {
     return { status: 'concluido', classificacao: 'sem_acao', venda_id: venda.id, etapa_destino: null, dados_extraidos: JSON.stringify(dadosExtraidos), erro: null, processado_em: formatarSQL() };
   }
   if (campos.classificacao === 'cancelamento') {
-    const motivo = String(campos.mensagem_operador || '').trim() || 'Pedido cancelado pelo consultor';
+    const motivoPadrao = /pedido\s+cancelado\s+pelo\s+cliente/.test(textoCanonico(campos.destino))
+      ? 'Pedido cancelado pelo cliente'
+      : 'Pedido cancelado pelo consultor';
+    const motivo = String(campos.mensagem_operador || '').trim() || motivoPadrao;
     const cancelamento = await vendaService.cancelarVenda(venda.id, {
       motivo,
       usuarioId: null,

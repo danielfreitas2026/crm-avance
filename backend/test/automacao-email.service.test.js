@@ -72,6 +72,20 @@ Origem: Corre��o do Pedido de Venda Pelo Consultor
 Mensagem ao Operador: cancelar
 Destino: Pedido Cancelado pelo Consultor`;
 
+const EMAIL_CANCELAMENTO_CLIENTE = `Dados da Venda
+Data da Venda: 03/08/2026 15:01:48
+CNPJ: 07.979.890/0001-74 (07979890000174)
+Raz�o Social: ATUAL SERVICOS CONTABEIS LTDA
+Nome Comercial:
+
+Resumo da Venda
+Indicador Quantidade Total Mensal Total Aparelho Total 2 R$ 109,98 R$ 30,00 Alta - Portabilidade 2 R$ 109,98 R$ 30,00
+
+Workflow (tramita��o do pedido)
+Origem: Corre��o do Pedido de Venda Pelo Consultor
+Mensagem ao Operador: cliente desistiu
+Destino: Pedido Cancelado pelo Cliente`;
+
 test('interpreta problema mesmo com acentos substituidos por caracteres invalidos', () => {
   assert.deepEqual(parser.interpretarEmail(EMAIL_PROBLEMA), {
     documento: '11143938000187', data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99,
@@ -119,6 +133,17 @@ test('classifica cancelamento pelo destino com texto corrompido e ignora origem 
     .replace('Mensagem ao Operador: cancelar', 'Mensagem ao Operador: conferir novamente');
   assert.equal(parser.interpretarEmail(diferente).classificacao, 'cancelamento');
   assert.deepEqual(parser.classificarDestino('Pedido Cancelado pelo Consultor'), {
+    classificacao: 'cancelamento', alvo: 'cancelar_venda'
+  });
+
+  const canceladoPeloCliente = parser.interpretarEmail(EMAIL_CANCELAMENTO_CLIENTE);
+  assert.equal(canceladoPeloCliente.documento, '07979890000174');
+  assert.equal(canceladoPeloCliente.origem, 'Corre��o do Pedido de Venda Pelo Consultor');
+  assert.equal(canceladoPeloCliente.mensagem_operador, 'cliente desistiu');
+  assert.equal(canceladoPeloCliente.destino, 'Pedido Cancelado pelo Cliente');
+  assert.equal(canceladoPeloCliente.classificacao, 'cancelamento');
+  assert.equal(canceladoPeloCliente.alvo, 'cancelar_venda');
+  assert.deepEqual(parser.classificarDestino('Pedido Cancelado pelo Cliente'), {
     classificacao: 'cancelamento', alvo: 'cancelar_venda'
   });
 });
@@ -823,7 +848,7 @@ test('cancelamento automatico usa mensagem, fallback e contexto do Gmail sem mov
   FunilEtapa.query = () => ({ where: async () => [{ codigo: 'concluido' }] });
   vendaService.cancelarVenda = async (...args) => { chamadas.push(args); return { status: 'ok' }; };
 
-  const registro = mensagem => ({
+  const registro = (mensagem, destino = 'Pedido Cancelado pelo Consultor') => ({
     id: 92,
     venda_id: 41,
     revisado_por_id: 7,
@@ -831,7 +856,7 @@ test('cancelamento automatico usa mensagem, fallback e contexto do Gmail sem mov
     dados_extraidos: JSON.stringify({
       _override: {
         classificacao: 'cancelamento', alvo: 'cancelar_venda', documento: '11143938000187',
-        destino: 'Pedido Cancelado pelo Consultor', mensagem_operador: mensagem
+        destino, mensagem_operador: mensagem
       }
     })
   });
@@ -851,11 +876,15 @@ test('cancelamento automatico usa mensagem, fallback e contexto do Gmail sem mov
     assert.equal(resultado.status, 'concluido');
     assert.equal(chamadas[1][1].motivo, 'Pedido cancelado pelo consultor');
 
+    resultado = await automacao._internals.processarRegistro(registro('', 'Pedido Cancelado pelo Cliente'));
+    assert.equal(resultado.status, 'concluido');
+    assert.equal(chamadas[2][1].motivo, 'Pedido cancelado pelo cliente');
+
     venda = { ...venda, status_funil: 'concluido' };
     resultado = await automacao._internals.processarRegistro(registro('cancelar'));
     assert.equal(resultado.status, 'revisao');
     assert.match(resultado.erro, /concluída/);
-    assert.equal(chamadas.length, 2);
+    assert.equal(chamadas.length, 3);
   } finally {
     Venda.query = queryVendaOriginal;
     FunilEtapa.query = queryEtapaOriginal;

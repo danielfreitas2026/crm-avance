@@ -53,7 +53,7 @@ function extrairResumo(texto) {
 
 function classificarDestino(destino) {
   const valor = textoCanonico(destino);
-  if (/pedido\s+cancelado\s+pelo\s+consultor/.test(valor)) return { classificacao: 'cancelamento', alvo: 'cancelar_venda' };
+  if (/pedido\s+cancelado\s+pelo\s+(?:consultor|cliente)/.test(valor)) return { classificacao: 'cancelamento', alvo: 'cancelar_venda' };
   if (/antifraude.*processo.*revis[a-z?]{0,6}o\s+cr[ai?]{1,4}tica/.test(valor)) return { classificacao: 'sem_acao', alvo: 'sem_acao' };
   if (/an[ai?]{1,4}lise\s+(?:da\s+)?ilha\s+de\s+auditoria/.test(valor)) return { classificacao: 'sem_acao', alvo: 'sem_acao' };
   if (/an[ai?]{1,4}lise\s+da\s+ilha\s+de\s+input/.test(valor)) return { classificacao: 'sem_acao', alvo: 'sem_acao' };
