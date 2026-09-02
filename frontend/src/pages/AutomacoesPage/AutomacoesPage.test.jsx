@@ -152,6 +152,36 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByText('Corrija os dados abaixo antes de reprocessar esta execução.')).toBeInTheDocument();
   });
 
+  it('identifica automacao sem acao e oferece a etapa final na revisao manual', async () => {
+    api.listarAutomacoes.mockResolvedValue({
+      data: [{
+        ...execucao,
+        status: 'concluido',
+        classificacao: 'sem_acao',
+        erro: null,
+        dados_extraidos: { ...execucao.dados_extraidos, classificacao: 'sem_acao', alvo: 'sem_acao' }
+      }],
+      total: 1
+    });
+    const { rerender } = render(<AutomacoesPage />);
+
+    expect(await screen.findByText('Sem ação')).toBeInTheDocument();
+
+    api.listarAutomacoes.mockResolvedValue({
+      data: [{
+        ...execucao,
+        classificacao: 'tipo_1',
+        dados_extraidos: { ...execucao.dados_extraidos, classificacao: 'tipo_1', alvo: 'etapa_final' }
+      }],
+      total: 1
+    });
+    rerender(<AutomacoesPage />);
+    await userEvent.click(screen.getByRole('button', { name: 'Atualizar' }));
+
+    expect(await screen.findByRole('option', { name: 'Etapa final configurada' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Destino' })).toHaveValue('etapa_final');
+  });
+
   it('mantém o layout e exibe falhas de carregamento', async () => {
     api.listarAutomacoes.mockRejectedValue(new Error('Falha ao consultar automações.'));
     render(<AutomacoesPage />);

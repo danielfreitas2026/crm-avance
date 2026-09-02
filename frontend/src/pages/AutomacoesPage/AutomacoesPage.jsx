@@ -24,7 +24,8 @@ const STATUS_LABEL = {
 };
 const CLASSIFICACAO_LABEL = {
   tipo_1: 'Atualização de etapa',
-  tipo_2: 'Problema pós-venda'
+  tipo_2: 'Problema pós-venda',
+  sem_acao: 'Sem ação'
 };
 
 const dataHora = valor => valor ? new Date(valor).toLocaleString('pt-BR') : '—';
@@ -73,6 +74,7 @@ function Revisao({ item, onAtualizar, onErro }) {
         <select value={tipo} onChange={event => setTipo(event.target.value)}>
           <option value="tipo_1">Atualização de etapa</option>
           <option value="tipo_2">Problema</option>
+          <option value="sem_acao">Sem ação</option>
         </select>
       </label>
       {tipo === 'tipo_1' && (
@@ -81,6 +83,8 @@ function Revisao({ item, onAtualizar, onErro }) {
           <select value={etapa} onChange={event => setEtapa(event.target.value)}>
             <option value="entrega">Entrega</option>
             <option value="aceite_biometria">Aceite/Biometria</option>
+            <option value="apos_aceite_biometria">Pedido na Operadora</option>
+            <option value="etapa_final">Etapa final configurada</option>
           </select>
         </label>
       )}

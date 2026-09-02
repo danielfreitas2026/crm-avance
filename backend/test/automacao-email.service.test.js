@@ -64,6 +64,7 @@ Destino: Pend�ncia Pr�-Venda`;
 test('interpreta problema mesmo com acentos substituidos por caracteres invalidos', () => {
   assert.deepEqual(parser.interpretarEmail(EMAIL_PROBLEMA), {
     documento: '11143938000187', data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99,
+    origem: 'An�lise da Qualidade e Auditoria',
     destino: 'Corre��o do Pedido de Venda Pelo Consultor',
     mensagem_operador: '37991490023 - Chama ate cair por VVN, e nao possui WPP.', classificacao: 'tipo_2', alvo: null
   });
@@ -72,22 +73,23 @@ test('interpreta problema mesmo com acentos substituidos por caracteres invalido
 test('interpreta input realizado com sucesso e direciona para aceite e biometria', () => {
   assert.deepEqual(parser.interpretarEmail(EMAIL_INPUT_REALIZADO), {
     documento: '29046034000107', data_venda: '2026-08-27', quantidade: 4, valor_mensal: 399.96,
+    origem: 'Aguardando Input Autom�tico',
     destino: 'Pend�ncia > Input Realizado com Sucesso',
-    mensagem_operador: '1-CG8LB6HL', classificacao: 'tipo_1', alvo: 'aceite_biometria'
+    mensagem_operador: '1-CG8LB6HL', classificacao: 'tipo_1', alvo: 'apos_aceite_biometria'
   });
 });
 
-test('subir pedido avanca para depois do aceite independentemente do destino', () => {
+test('destino prevalece sobre a mensagem subir pedido', () => {
   const interpretado = parser.interpretarEmail(EMAIL_SUBIR_PEDIDO);
   assert.equal(interpretado.mensagem_operador, 'Favor SUBIR PEDIDO agora');
   assert.equal(interpretado.destino, 'Pend�ncia Pr�-Venda');
-  assert.equal(interpretado.classificacao, 'tipo_1');
-  assert.equal(interpretado.alvo, 'apos_aceite_biometria');
+  assert.equal(interpretado.classificacao, 'desconhecido');
+  assert.equal(interpretado.alvo, null);
 
   const semDestino = parser.interpretarEmail(EMAIL_SUBIR_PEDIDO.replace(/\nDestino:.*$/, ''));
   assert.equal(semDestino.destino, null);
-  assert.equal(semDestino.classificacao, 'tipo_1');
-  assert.equal(semDestino.alvo, 'apos_aceite_biometria');
+  assert.equal(semDestino.classificacao, 'desconhecido');
+  assert.equal(semDestino.alvo, null);
 
   assert.equal(parser.interpretarEmail(EMAIL_SUBIR_PEDIDO.replace('SUBIR PEDIDO', 'aguardar pedido')).classificacao, 'desconhecido');
 });
@@ -125,8 +127,9 @@ Content-Type: text/html; charset=utf-8
   assert.equal(mime.text.trim(), 'This is the plain text version of the email content');
   assert.deepEqual(parser.interpretarEmail(automacao._internals.extrairCorpoMensagem(mime)), {
     documento: '29046034000107', data_venda: '2026-08-27', quantidade: 4, valor_mensal: 399.96,
+    origem: 'Aguardando Input Automático',
     destino: 'Pendência > Input Realizado com Sucesso',
-    mensagem_operador: '1-CG8LB6HL', classificacao: 'tipo_1', alvo: 'aceite_biometria'
+    mensagem_operador: '1-CG8LB6HL', classificacao: 'tipo_1', alvo: 'apos_aceite_biometria'
   });
 });
 
@@ -149,8 +152,34 @@ test('repeticao recarrega do Gmail um corpo armazenado sem dados uteis', async (
 
 test('mapeia os destinos de aceite e entrega com texto normal ou corrompido', () => {
   assert.deepEqual(parser.classificarDestino('Aguardando Aceite/Assinatura'), { classificacao: 'tipo_1', alvo: 'aceite_biometria' });
-  assert.deepEqual(parser.classificarDestino('Vivocorp - Pedidos > Log�stica Conclu�da'), { classificacao: 'tipo_1', alvo: 'entrega' });
+  assert.deepEqual(parser.classificarDestino('Vivocorp - Pedidos > Log�stica Conclu�da'), { classificacao: 'tipo_1', alvo: 'etapa_final' });
   assert.equal(parser.classificarDestino('Destino novo').classificacao, 'desconhecido');
+});
+
+test('classifica os exemplos de workflow pelo destino e preserva a origem para auditoria', () => {
+  const exemplos = [
+    ['Correção do Pedido de Venda Pelo Consultor', 'retornar', 'Antifraude - Processo Em Revisão Crítica (Qualidade e Auditoria)', 'sem_acao', 'sem_acao'],
+    ['Correção do Pedido de Venda Pelo Consultor', 'retornar', 'Análise Ilha de Auditoria', 'sem_acao', 'sem_acao'],
+    ['Análise da Qualidade e Auditoria', 'CONFIRMADO COM BRUNA NO Nº 35991294304 (WhatsApp)', 'Análise da Ilha de Input', 'sem_acao', 'sem_acao'],
+    ['Análise da Qualidade e Auditoria', 'retornar as 11:00', 'Aguardando Tratativas da Auditoria', 'sem_acao', 'sem_acao'],
+    ['Correção do Pedido de Venda Pelo Consultor', 'o ddd de contato é 24', 'Antifraude - Processo Em Revisão Crítica (Qualidade e Auditoria)', 'sem_acao', 'sem_acao'],
+    ['Vivocorp - Pedidos > Backoffice Aprovado', 'Processo de importação manual por Arquivo InfoB2B', 'Vivocorp - Pedidos > Logística Concluída', 'tipo_1', 'etapa_final'],
+    ['Suporte Pré-Venda', 'Nº da Simulação S000007186870', 'Aguardando Aceite/Assinatura', 'tipo_1', 'aceite_biometria'],
+    ['Correção do Pedido de Venda Pelo Consultor', '', 'Suporte Pré-Venda', 'tipo_1', 'aceite_biometria'],
+    ['Análise da Ilha de Input', 'Número da Simulação -->> S000007139006', 'Aguardando Input Automático', 'tipo_1', 'apos_aceite_biometria'],
+    ['Correção do Pedido de Venda Pelo Consultor', 'quem sobe TERMO não somos e o suporte deve verificar', 'Antifraude - Processo Em Revisão Crítica (Qualidade e Auditoria)', 'sem_acao', 'sem_acao'],
+    ['Aguardando Input Automático', '1-CG5PVC1B', 'Pendência > Input Realizado com Sucesso', 'tipo_1', 'apos_aceite_biometria'],
+    ['Inserção do Nº da Cotação Vivocorp', '1-975211614097', 'Vivocorp - Pedidos > Logística Concluída', 'tipo_1', 'etapa_final'],
+    ['Aguardando Aceite/Assinatura', 'Bom dia, favor verificar se o cliente ainda tem interesse no pedido.', 'Correção do Pedido de Venda Pelo Consultor', 'tipo_2', null]
+  ];
+
+  for (const [origem, mensagem, destino, classificacao, alvo] of exemplos) {
+    const resultado = parser.interpretarEmail(`Workflow (tramitação do pedido)\nOrigem: ${origem}\nMensagem ao Operador: ${mensagem}\nDestino: ${destino}`);
+    assert.equal(resultado.origem, origem);
+    assert.equal(resultado.destino, destino);
+    assert.equal(resultado.classificacao, classificacao, destino);
+    assert.equal(resultado.alvo, alvo, destino);
+  }
 });
 
 test('seleciona a primeira etapa ativa depois de aceite e biometria', async () => {
@@ -202,6 +231,33 @@ test('explica configuracao invalida para o avanco depois do aceite', async () =>
     etapas = [{ codigo: 'aceite', ordem: 2, aceite_biometria: true }];
     resultado = await automacao._internals.resolverEtapaDestino('apos_aceite_biometria');
     assert.match(resultado.erro, /Não há etapa ativa após Aceite\/Biometria/);
+  } finally {
+    FunilEtapa.query = queryOriginal;
+  }
+});
+
+test('resolve somente uma etapa final ativa configurada', async () => {
+  const queryOriginal = FunilEtapa.query;
+  let etapas = [{ codigo: 'final_personalizado', etapa_final: true, ativo: true }];
+  FunilEtapa.query = () => ({ where: async filtros => {
+    assert.deepEqual(filtros, { ativo: true, etapa_final: true });
+    return etapas;
+  } });
+
+  try {
+    let resultado = await automacao._internals.resolverEtapaDestino('etapa_final');
+    assert.equal(resultado.etapa.codigo, 'final_personalizado');
+    assert.equal(resultado.erro, null);
+
+    etapas = [];
+    resultado = await automacao._internals.resolverEtapaDestino('etapa_final');
+    assert.equal(resultado.etapa, null);
+    assert.match(resultado.erro, /uma única etapa final ativa/);
+
+    etapas = [{ codigo: 'final_a' }, { codigo: 'final_b' }];
+    resultado = await automacao._internals.resolverEtapaDestino('etapa_final');
+    assert.equal(resultado.etapa, null);
+    assert.match(resultado.erro, /uma única etapa final ativa/);
   } finally {
     FunilEtapa.query = queryOriginal;
   }
@@ -536,7 +592,121 @@ test('movimentacao processada pelo Gmail envia origem e id da automacao ao servi
   }
 });
 
-test('subir pedido avanca apos aceite sem repetir movimento nem regredir o funil', async () => {
+test('destino neutro conclui sem mover a venda nem abrir problema', async () => {
+  const queryVendaOriginal = Venda.query;
+  const queryEtapaOriginal = FunilEtapa.query;
+  const atualizarOriginal = vendaService.atualizarStatusVenda;
+  let tentouMover = false;
+
+  Venda.query = () => ({
+    findById() { return this; },
+    withGraphFetched: async () => ({ id: 41, status_funil: 'ativacao', excluido_em: null, cancelada_em: null })
+  });
+  FunilEtapa.query = () => ({ where: async () => [{ codigo: 'concluido' }] });
+  vendaService.atualizarStatusVenda = async () => { tentouMover = true; return { status: 'ok' }; };
+
+  try {
+    const resultado = await automacao._internals.processarRegistro({
+      id: 90,
+      venda_id: 41,
+      revisado_por_id: 7,
+      corpo_texto: '',
+      dados_extraidos: JSON.stringify({
+        _override: {
+          classificacao: 'sem_acao',
+          alvo: 'sem_acao',
+          destino: 'Antifraude - Processo Em Revisão Crítica',
+          documento: '11143938000187'
+        }
+      })
+    });
+
+    assert.equal(resultado.status, 'concluido');
+    assert.equal(resultado.classificacao, 'sem_acao');
+    assert.equal(resultado.venda_id, 41);
+    assert.equal(resultado.etapa_destino, null);
+    assert.equal(resultado.problema_id, undefined);
+    assert.equal(tentouMover, false);
+  } finally {
+    Venda.query = queryVendaOriginal;
+    FunilEtapa.query = queryEtapaOriginal;
+    vendaService.atualizarStatusVenda = atualizarOriginal;
+  }
+});
+
+test('logistica concluida finaliza venda nova e exige aprovacao de SMS para portabilidade', async () => {
+  const queryVendaOriginal = Venda.query;
+  const queryEtapaOriginal = FunilEtapa.query;
+  const atualizarOriginal = vendaService.atualizarStatusVenda;
+  const etapaFinal = { codigo: 'final_personalizado', ordem: 5, ativo: true, etapa_final: true };
+  let vendaAtual;
+  const movimentos = [];
+
+  Venda.query = () => ({
+    porId: false,
+    findById() { this.porId = true; return this; },
+    alias() { return this; },
+    leftJoinRelated() { return this; },
+    select() { return this; },
+    where() { return this; },
+    whereNull() { return this; },
+    withGraphFetched() { return Promise.resolve(this.porId ? vendaAtual : [vendaAtual]); }
+  });
+  FunilEtapa.query = () => ({
+    where: async filtros => filtros?.etapa_final ? [etapaFinal] : [],
+    findOne: async filtros => filtros.codigo === etapaFinal.codigo ? etapaFinal : { codigo: 'ativacao', ordem: 2 }
+  });
+  vendaService.atualizarStatusVenda = async (...args) => { movimentos.push(args); return { status: 'ok' }; };
+
+  const corpo = () => `Dados da Venda\nCNPJ: 11.143.938/0001-87\nWorkflow (tramitação do pedido)\nOrigem: Backoffice Aprovado\nMensagem ao Operador: importação manual\nDestino: Vivocorp - Pedidos > Logística Concluída`;
+  const registroAutomatico = () => ({ id: 91, corpo_texto: corpo(), dados_extraidos: null });
+
+  try {
+    vendaAtual = {
+      id: 41, status_funil: 'ativacao', excluido_em: null, cancelada_em: null,
+      cnpj: '11.143.938/0001-87', valores_unitarios_chips: JSON.stringify([{ quantidade: 1, tipo_linha: 'novo' }]), numeros_portados: null
+    };
+    let resultado = await automacao._internals.processarRegistro(registroAutomatico());
+    assert.equal(resultado.status, 'concluido');
+    assert.equal(resultado.etapa_destino, etapaFinal.codigo);
+    assert.equal(movimentos.at(-1)[1].status_funil, etapaFinal.codigo);
+
+    vendaAtual = {
+      ...vendaAtual,
+      valores_unitarios_chips: JSON.stringify([{ quantidade: 1, tipo_linha: 'portabilidade' }]),
+      numeros_portados: null
+    };
+    const movimentosAntes = movimentos.length;
+    resultado = await automacao._internals.processarRegistro(registroAutomatico());
+    assert.equal(resultado.status, 'revisao');
+    assert.match(resultado.erro, /confirme o recebimento do SMS/);
+    assert.equal(movimentos.length, movimentosAntes);
+
+    resultado = await automacao._internals.processarRegistro({
+      id: 91,
+      venda_id: 41,
+      revisado_por_id: 7,
+      justificativa_revisao: 'SMS confirmado com o cliente.',
+      corpo_texto: corpo(),
+      dados_extraidos: JSON.stringify({
+        _override: {
+          classificacao: 'tipo_1', alvo: 'etapa_final', destino: 'Vivocorp - Pedidos > Logística Concluída', documento: '11143938000187'
+        }
+      })
+    });
+    assert.equal(resultado.status, 'concluido');
+    assert.equal(resultado.etapa_destino, etapaFinal.codigo);
+    assert.equal(movimentos.length, movimentosAntes + 1);
+
+    assert.equal(automacao._internals.vendaTemPortabilidade({ valores_unitarios_chips: '[]', numeros_portados: '24999999999' }), true);
+  } finally {
+    Venda.query = queryVendaOriginal;
+    FunilEtapa.query = queryEtapaOriginal;
+    vendaService.atualizarStatusVenda = atualizarOriginal;
+  }
+});
+
+test('pedido na operadora avanca apos aceite sem repetir movimento nem regredir o funil', async () => {
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
   const atualizarOriginal = vendaService.atualizarStatusVenda;

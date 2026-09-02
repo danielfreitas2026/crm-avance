@@ -51,13 +51,17 @@ function extrairResumo(texto) {
   };
 }
 
-function classificarDestino(destino, mensagemOperador = null) {
-  const mensagem = textoCanonico(mensagemOperador);
-  if (/\bsubir\s+pedido\b/.test(mensagem)) return { classificacao: 'tipo_1', alvo: 'apos_aceite_biometria' };
+function classificarDestino(destino) {
   const valor = textoCanonico(destino);
+  if (/antifraude.*processo.*revis[a-z?]{0,6}o\s+cr[ai?]{1,4}tica/.test(valor)) return { classificacao: 'sem_acao', alvo: 'sem_acao' };
+  if (/an[ai?]{1,4}lise\s+(?:da\s+)?ilha\s+de\s+auditoria/.test(valor)) return { classificacao: 'sem_acao', alvo: 'sem_acao' };
+  if (/an[ai?]{1,4}lise\s+da\s+ilha\s+de\s+input/.test(valor)) return { classificacao: 'sem_acao', alvo: 'sem_acao' };
+  if (/aguardando\s+tratativas\s+da\s+auditoria/.test(valor)) return { classificacao: 'sem_acao', alvo: 'sem_acao' };
   if (/aguardando\s+aceite\s*[/ ]\s*assinatura/.test(valor)) return { classificacao: 'tipo_1', alvo: 'aceite_biometria' };
-  if (/\binput\s+realizado\s+com\s+sucesso\b/.test(valor)) return { classificacao: 'tipo_1', alvo: 'aceite_biometria' };
-  if (/log[ai?]{1,4}stica\s+conclu[ai?]{1,4}da/.test(valor)) return { classificacao: 'tipo_1', alvo: 'entrega' };
+  if (/suporte\s+pr[e?]{1,3}\s*-?\s*venda/.test(valor)) return { classificacao: 'tipo_1', alvo: 'aceite_biometria' };
+  if (/aguardando\s+input\s+autom[a?]{1,4}tico/.test(valor)) return { classificacao: 'tipo_1', alvo: 'apos_aceite_biometria' };
+  if (/\binput\s+realizado\s+com\s+sucesso\b/.test(valor)) return { classificacao: 'tipo_1', alvo: 'apos_aceite_biometria' };
+  if (/log[ai?]{1,4}stica\s+conclu[ai?]{1,4}da/.test(valor)) return { classificacao: 'tipo_1', alvo: 'etapa_final' };
   if (/corre[a-z?]{0,5}o\s+do\s+pedido\s+de\s+venda\s+pelo\s+consultor/.test(valor)) return { classificacao: 'tipo_2', alvo: null };
   return { classificacao: 'desconhecido', alvo: null };
 }
@@ -65,14 +69,16 @@ function classificarDestino(destino, mensagemOperador = null) {
 function interpretarEmail(texto) {
   const corpo = String(texto || '').replace(/\r/g, '');
   const destino = extrairLinha(corpo, 'Destino', ['Vivocorp', 'Cotação', 'Pedido']);
+  const origem = extrairLinha(corpo, 'Origem', ['Mensagem ao Operador', 'Destino']);
   const mensagem = extrairLinha(corpo, 'Mensagem ao Operador', ['Destino']);
   const resumo = extrairResumo(corpo);
-  const resultado = classificarDestino(destino, mensagem);
+  const resultado = classificarDestino(destino);
   return {
     documento: numeroDocumento(extrairLinha(corpo, 'CNPJ', ['Razão Social', 'Nome Comercial'])),
     data_venda: parseData(extrairLinha(corpo, 'Data da Venda', ['CNPJ'])),
     quantidade: resumo.quantidade,
     valor_mensal: resumo.valor_mensal,
+    origem,
     destino,
     mensagem_operador: mensagem,
     ...resultado

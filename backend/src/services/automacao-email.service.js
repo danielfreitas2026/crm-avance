@@ -222,8 +222,31 @@ async function resolverEtapaDestino(alvo) {
       erro: etapas.length === 1 ? null : 'Não foi encontrada uma única etapa ativa configurada como Aceite/Biometria.'
     };
   }
+  if (alvo === 'etapa_final') {
+    const etapas = await FunilEtapa.query().where({ ativo: true, etapa_final: true });
+    return {
+      etapa: etapas.length === 1 ? etapas[0] : null,
+      erro: etapas.length === 1 ? null : 'Não foi encontrada uma única etapa final ativa configurada no funil.'
+    };
+  }
   const etapa = await FunilEtapa.query().findOne({ codigo: alvo, ativo: true });
   return { etapa, erro: etapa ? null : 'Etapa de destino não encontrada.' };
+}
+
+function valorPreenchido(valor) {
+  if (Array.isArray(valor)) return valor.length > 0;
+  if (valor && typeof valor === 'object') return Object.keys(valor).length > 0;
+  const texto = String(valor || '').trim().toLowerCase();
+  return Boolean(texto && !['[]', '{}', 'null'].includes(texto));
+}
+
+function vendaTemPortabilidade(venda) {
+  const itens = json(venda?.valores_unitarios_chips, []);
+  const temItemPortado = Array.isArray(itens) && itens.some(item => {
+    const tipo = String(item?.tipo_linha || item?.tipo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return tipo.includes('porta') && Number(item?.quantidade ?? 1) > 0;
+  });
+  return temItemPortado || valorPreenchido(json(venda?.numeros_portados, venda?.numeros_portados));
 }
 
 async function responsaveisProblemas(trx) {
@@ -288,6 +311,20 @@ async function processarRegistro(registro) {
     if (!campos.mensagem_operador) return { status: 'revisao', erro: 'Mensagem ao operador não encontrada.', dados_extraidos: JSON.stringify(dadosExtraidos), venda_id: venda.id };
     const problema = await abrirProblemaAutomatico(registro, venda, campos.mensagem_operador);
     return { status: 'concluido', classificacao: 'tipo_2', venda_id: venda.id, problema_id: problema.id, dados_extraidos: JSON.stringify(dadosExtraidos), erro: null, processado_em: formatarSQL() };
+  }
+  if (campos.classificacao === 'sem_acao') {
+    return { status: 'concluido', classificacao: 'sem_acao', venda_id: venda.id, etapa_destino: null, dados_extraidos: JSON.stringify(dadosExtraidos), erro: null, processado_em: formatarSQL() };
+  }
+  const portabilidadeAprovadaManualmente = revisaoManual && override.alvo === 'etapa_final';
+  if (campos.alvo === 'etapa_final' && vendaTemPortabilidade(venda) && !portabilidadeAprovadaManualmente) {
+    return {
+      status: 'revisao',
+      classificacao: 'tipo_1',
+      erro: 'Venda com portabilidade: confirme o recebimento do SMS antes de concluir.',
+      venda_id: venda.id,
+      etapa_destino: null,
+      dados_extraidos: JSON.stringify(dadosExtraidos)
+    };
   }
   const destinoResolvido = await resolverEtapaDestino(campos.alvo);
   const etapa = destinoResolvido.etapa;
@@ -541,4 +578,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, resolverEtapaDestino, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas } };
+module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, resolverEtapaDestino, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas } };
