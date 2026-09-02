@@ -4,6 +4,11 @@ const telegramService = require('./telegram.service');
 const leadTelegramPublicacaoService = require('./lead-telegram-publicacao.service');
 const leadTelegramReconciliacaoService = require('./lead-telegram-reconciliacao.service');
 const { parseUtcDateTime } = require('../utils/datetime');
+const {
+  botaoCancelarEnvio,
+  botaoEnvioCancelado,
+  botaoVendaRegistrada
+} = require('./telegram-botoes.util');
 
 const ACEITE_AGUARDANDO = 'aguardando_aceite';
 const ACEITE_ACEITO = 'aceito';
@@ -488,14 +493,6 @@ function montarMensagemRetornoAgendadoTelegram(atribuicao, linha = {}, retorno) 
   ].join('\n');
 }
 
-function botaoCancelarEnvio(linhaId, nomeConsultora) {
-  const nome = String(nomeConsultora || '').trim();
-  return {
-    text: nome ? `Cancelar envio ${nome}` : 'Cancelar envio',
-    callback_data: `fc:cancelar:${linhaId}`
-  };
-}
-
 function normalizarItensChipsVenda(valor) {
   if (Array.isArray(valor)) return valor;
   try {
@@ -569,17 +566,17 @@ async function enviarNotificacaoVendaFechada(venda, atribuicao, opcoes = {}) {
   if (!chatId || !messageId) return { enviado: false, motivo: 'mensagem_telegram_nao_encontrada' };
 
   const chamarApi = opcoes.chamarApi || telegramService.chamarApi;
-  const resultado = { enviado: false, botao_removido: false, erros: [] };
+  const resultado = { enviado: false, botao_atualizado: false, erros: [] };
   try {
     await chamarApi('editMessageReplyMarkup', {
       chat_id: chatId,
       message_id: messageId,
-      reply_markup: { inline_keyboard: [] }
+      reply_markup: { inline_keyboard: [[botaoVendaRegistrada(atribuicao.lead_linha_id)]] }
     });
-    resultado.botao_removido = true;
+    resultado.botao_atualizado = true;
   } catch (error) {
-    resultado.erros.push({ operacao: 'remover_botao', mensagem: error.message });
-    console.error('Erro ao remover botao de cancelamento da venda fechada no Telegram:', error.message);
+    resultado.erros.push({ operacao: 'atualizar_botao', mensagem: error.message });
+    console.error('Erro ao sinalizar venda registrada no Telegram:', error.message);
   }
 
   try {
@@ -605,18 +602,20 @@ async function enviarNotificacaoRetornoAgendado(atribuicao, linha, retorno, opco
   if (!chatId) return { enviado: false, motivo: 'chat_telegram_nao_encontrado' };
 
   const chamarApi = opcoes.chamarApi || telegramService.chamarApi;
-  const resultado = { enviado: false, botao_removido: false, erros: [] };
+  const resultado = { enviado: false, botao_atualizado: false, erros: [] };
   if (atribuicao.telegram_message_id) {
     try {
       await chamarApi('editMessageReplyMarkup', {
         chat_id: chatId,
         message_id: String(atribuicao.telegram_message_id),
-        reply_markup: { inline_keyboard: [] }
+        reply_markup: {
+          inline_keyboard: [[botaoCancelarEnvio(atribuicao.lead_linha_id, atribuicao.consultora_nome)]]
+        }
       });
-      resultado.botao_removido = true;
+      resultado.botao_atualizado = true;
     } catch (error) {
-      resultado.erros.push({ operacao: 'remover_botao', mensagem: error.message });
-      console.error('Erro ao remover botao de cancelamento do retorno agendado no Telegram:', error.message);
+      resultado.erros.push({ operacao: 'atualizar_botao', mensagem: error.message });
+      console.error('Erro ao manter botao de cancelamento do retorno agendado no Telegram:', error.message);
     }
   }
 
@@ -675,6 +674,45 @@ async function notificarVendaFechadaTelegram(vendaId, atribuicaoId, opcoes = {})
   }, atribuicao, opcoes);
 }
 
+/** Mantem um selo informativo no envio cancelado; demais encerramentos ficam sem botao. */
+function tecladoEncerramento(atribuicao, aceiteStatusFinal) {
+  if (aceiteStatusFinal !== ACEITE_CANCELADO) return [];
+  return [[botaoEnvioCancelado(atribuicao.lead_linha_id)]];
+}
+
+/** Retorna a venda vinculada a esta linha e a esta consultora, ou null. */
+async function vendaVinculadaAtribuicao(atribuicao, database = db) {
+  const linhaId = Number(atribuicao?.lead_linha_id);
+  if (!linhaId) return null;
+  const venda = await database('vendas')
+    .where('origem_lead_linha_id', linhaId)
+    .orderBy('id', 'desc')
+    .first();
+  if (!venda) return null;
+  const vendedoras = await database('venda_vendedoras')
+    .where('venda_id', Number(venda.id))
+    .select('usuario_id');
+  const completa = { ...venda, vendedoras_ids: vendedoras.map(item => Number(item.usuario_id)) };
+  return vendaCorrespondeAtribuicao(completa, atribuicao) ? completa : null;
+}
+
+/**
+ * Teclado da mensagem de distribuicao: o botao de cancelar acompanha o envio ate o fim,
+ * cedendo lugar apenas ao selo de venda registrada.
+ */
+async function montarTecladoAtribuicao(atribuicao, opcoes = {}) {
+  const buscarVenda = opcoes.buscarVendaVinculada || vendaVinculadaAtribuicao;
+  if (atribuicao.aceite_status === ACEITE_ACEITO && await buscarVenda(atribuicao)) {
+    return { inline_keyboard: [[botaoVendaRegistrada(atribuicao.lead_linha_id)]] };
+  }
+  if ([ACEITE_AGUARDANDO, ACEITE_ACEITO].includes(atribuicao.aceite_status)) {
+    return {
+      inline_keyboard: [[botaoCancelarEnvio(atribuicao.lead_linha_id, atribuicao.consultora_nome)]]
+    };
+  }
+  return { inline_keyboard: tecladoEncerramento(atribuicao, atribuicao.aceite_status) };
+}
+
 async function encerrarMensagemTelegram(atribuicao, textoStatus, aceiteStatusFinal, opcoes = {}) {
   const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
   if (!chatId || !atribuicao.telegram_message_id) return;
@@ -713,7 +751,7 @@ async function encerrarMensagemTelegram(atribuicao, textoStatus, aceiteStatusFin
       message_id: atribuicao.telegram_message_id,
       text: texto,
       disable_web_page_preview: true,
-      reply_markup: { inline_keyboard: [] }
+      reply_markup: { inline_keyboard: tecladoEncerramento(atribuicao, aceiteStatusFinal) }
     });
     return { atualizada: true };
   } catch (error) {
@@ -757,27 +795,19 @@ async function reconciliarMensagemTelegram(atribuicaoId) {
     await editarMensagemTelegram('editMessageReplyMarkup', {
       chat_id: chatId,
       message_id: atribuicao.telegram_message_id,
-      reply_markup: { inline_keyboard: [[botaoCancelarEnvio(atribuicao.lead_linha_id, atribuicao.consultora_nome)]] }
+      reply_markup: await montarTecladoAtribuicao(atribuicao)
     });
     return { sincronizado: true };
   }
 
   if (atribuicao.aceite_status === ACEITE_ACEITO) {
-    if (atribuicao.acao_registrada_tipo === 'retorno_agendado') {
-      await editarMensagemTelegram('editMessageReplyMarkup', {
-        chat_id: chatId,
-        message_id: atribuicao.telegram_message_id,
-        reply_markup: { inline_keyboard: [] }
-      });
-      return { sincronizado: true };
-    }
     const linha = await carregarLinhaTelegram(atribuicao.lead_linha_id);
     await editarMensagemTelegram('editMessageText', {
       chat_id: chatId,
       message_id: atribuicao.telegram_message_id,
       text: montarMensagemAceiteTelegram(atribuicao, atribuicao.consultora_nome, linha || {}),
       disable_web_page_preview: true,
-      reply_markup: { inline_keyboard: [[botaoCancelarEnvio(atribuicao.lead_linha_id, atribuicao.consultora_nome)]] }
+      reply_markup: await montarTecladoAtribuicao(atribuicao)
     });
     return { sincronizado: true };
   }
@@ -1086,7 +1116,12 @@ module.exports = {
     enviarNotificacaoVendaFechada,
     enviarNotificacaoRetornoAgendado,
     vendaCorrespondeAtribuicao,
+    vendaVinculadaAtribuicao,
     botaoCancelarEnvio,
+    botaoEnvioCancelado,
+    botaoVendaRegistrada,
+    montarTecladoAtribuicao,
+    tecladoEncerramento,
     acaoRegistradaImpedeFinalizacao,
     encerrarMensagemTelegram,
     futuroClientePodeSerDevolvido,

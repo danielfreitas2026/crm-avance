@@ -14,10 +14,12 @@ const atribuicaoAtiva = {
   consultora_nome: 'Ana Consultora'
 };
 
-test('seleciona somente atribuicoes ativas com mensagem do Telegram', () => {
+test('seleciona atribuicoes reparaveis com mensagem do Telegram', () => {
   assert.equal(_internals.atribuicaoElegivel(atribuicaoAtiva), true);
   assert.equal(_internals.atribuicaoElegivel({ ...atribuicaoAtiva, aceite_status: 'aceito' }), true);
-  assert.equal(_internals.atribuicaoElegivel({ ...atribuicaoAtiva, aceite_status: 'cancelado' }), false);
+  assert.equal(_internals.atribuicaoElegivel({ ...atribuicaoAtiva, aceite_status: 'cancelado' }), true);
+  assert.equal(_internals.atribuicaoElegivel({ ...atribuicaoAtiva, aceite_status: 'recusado' }), false);
+  assert.equal(_internals.atribuicaoElegivel({ ...atribuicaoAtiva, aceite_status: 'expirado_sem_acao' }), false);
   assert.equal(_internals.atribuicaoElegivel({ ...atribuicaoAtiva, telegram_chat_id: '  ' }), false);
   assert.equal(_internals.atribuicaoElegivel({ ...atribuicaoAtiva, telegram_message_id: null }), false);
 });
@@ -83,6 +85,20 @@ test('continua atualizando quando uma mensagem falha', async () => {
   assert.equal(resumo.falhas, 1);
   assert.deepEqual(resumo.erros, [{ atribuicao_id: 15, lead_linha_id: 42, mensagem: 'Mensagem não encontrada' }]);
   assert.equal(chamadas[1].reply_markup.inline_keyboard[0][0].text, 'Cancelar envio Bia Consultora');
+});
+
+test('marca o envio cancelado antigo com o selo informativo', async () => {
+  const chamadas = [];
+  await _internals.atualizarBotoesCancelamento([
+    { ...atribuicaoAtiva, aceite_status: 'cancelado' }
+  ], {
+    chamarApi: async (_metodo, dados) => { chamadas.push(dados); }
+  });
+
+  assert.deepEqual(chamadas[0].reply_markup.inline_keyboard, [[{
+    text: '⛔ Envio cancelado',
+    callback_data: 'fc:info:42:cancelado'
+  }]]);
 });
 
 test('trata como sucesso quando a mensagem antiga ja possui o mesmo botao', async () => {

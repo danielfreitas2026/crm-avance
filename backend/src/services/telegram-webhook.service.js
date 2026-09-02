@@ -5,6 +5,7 @@ const telegramService = require('./telegram.service');
 const leadDistribuicaoService = require('./lead-distribuicao.service');
 const leadTelegramPublicacaoService = require('./lead-telegram-publicacao.service');
 const leadTelegramReconciliacaoService = require('./lead-telegram-reconciliacao.service');
+const { botaoCancelarEnvio, textoInfoBotao } = require('./telegram-botoes.util');
 
 function grupoAutorizado(chatId) {
   return String(chatId || '') === String(process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID || '').trim();
@@ -37,14 +38,6 @@ function botoesVendedoras(vendedoras, linhaId) {
 
 function botaoEncaminhar(linhaId) {
   return [[{ text: 'Encaminhar', callback_data: `fc:selecionar:${linhaId}` }]];
-}
-
-function botaoCancelarEnvio(linhaId, nomeConsultora) {
-  const nome = String(nomeConsultora || '').trim();
-  return {
-    text: nome ? `Cancelar envio ${nome}` : 'Cancelar envio',
-    callback_data: `fc:cancelar:${linhaId}`
-  };
 }
 
 async function garantirBotaoCancelarEnvio(linhaId, nomeConsultora, telegramContexto = {}, opcoes = {}) {
@@ -159,13 +152,15 @@ async function cancelarEnvio(linhaId) {
   return leadDistribuicaoService.finalizarAtribuicao(linhaId, {
     aceiteStatus: leadDistribuicaoService.ACEITE_CANCELADO,
     motivo: 'Envio cancelado pelo gerente no Telegram',
-    republicar: true
+    republicar: true,
+    ignorarAcaoRegistrada: true
   });
 }
 async function processarCallback(query) {
   const telegramId = query?.from?.id;
   if (!grupoAutorizado(query?.message?.chat?.id)) return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: 'Este grupo nao pode encaminhar futuros clientes.', show_alert: true });
-  const [, acao, linhaId, vendedoraId] = callbackPartes(query.data);
+  const [, acao, linhaId, complemento] = callbackPartes(query.data);
+  const vendedoraId = complemento;
   if (acao === 'selecionar') {
     await leadTelegramPublicacaoService.registrar(Number(linhaId), {
       telegram_chat_id: query.message.chat.id,
@@ -205,8 +200,23 @@ async function processarCallback(query) {
     }
   }
   if (acao === 'cancelar') {
-    await cancelarEnvio(Number(linhaId));
-    return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: 'Envio cancelado. Uma nova mensagem foi publicada para encaminhamento.' });
+    try {
+      await cancelarEnvio(Number(linhaId));
+      return telegramService.chamarApi('answerCallbackQuery', { callback_query_id: query.id, text: 'Envio cancelado. Uma nova mensagem foi publicada para encaminhamento.' });
+    } catch (error) {
+      return telegramService.chamarApi('answerCallbackQuery', {
+        callback_query_id: query.id,
+        text: error.message || 'Nao foi possivel cancelar este envio.',
+        show_alert: true
+      });
+    }
+  }
+  if (acao === 'info') {
+    return telegramService.chamarApi('answerCallbackQuery', {
+      callback_query_id: query.id,
+      text: textoInfoBotao(complemento),
+      show_alert: true
+    });
   }
   return null;
 }

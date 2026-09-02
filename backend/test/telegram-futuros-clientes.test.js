@@ -5,7 +5,8 @@ const {
   processarCallback,
   _internals: telegramInternals
 } = require('../src/services/telegram-webhook.service');
-const { _internals: distribuicaoInternals } = require('../src/services/lead-distribuicao.service');
+const leadDistribuicaoService = require('../src/services/lead-distribuicao.service');
+const { _internals: distribuicaoInternals } = leadDistribuicaoService;
 
 test('inclui Josilaine entre os destinos ativos de encaminhamento', () => {
   const botoes = telegramInternals.botoesVendedoras([
@@ -146,4 +147,96 @@ test('republica somente futuro cliente antigo qualificado e nunca encaminhado', 
   assert.equal(distribuicaoInternals.deveRepublicarPendenteAntiga({ ...linhaPendente, futuro_cliente_excluido_em: new Date() }, false), false);
   assert.equal(distribuicaoInternals.deveRepublicarPendenteAntiga({ ...linhaPendente, futuro_cliente_destino: 'carteira' }, false), false);
   assert.equal(distribuicaoInternals.deveRepublicarPendenteAntiga({ ...linhaPendente, futuro_cliente_destino: 'distribuicao' }, false), true);
+});
+
+test('o botao informativo apenas responde ao gerente, sem alterar o envio', async t => {
+  const chatIdAnterior = process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
+  process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID = '-1001';
+  t.after(() => {
+    if (chatIdAnterior === undefined) delete process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
+    else process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID = chatIdAnterior;
+  });
+
+  const chamadas = [];
+  t.mock.method(telegramService, 'chamarApi', async (metodo, dados) => {
+    chamadas.push({ metodo, dados });
+    return { ok: true };
+  });
+
+  await processarCallback({
+    id: 'cb-info',
+    data: 'fc:info:42:venda',
+    from: { id: 555 },
+    message: { chat: { id: '-1001' }, message_id: 777 }
+  });
+
+  assert.deepEqual(chamadas.map(item => item.metodo), ['answerCallbackQuery']);
+  assert.match(chamadas[0].dados.text, /venda registrada/i);
+
+  chamadas.length = 0;
+  await processarCallback({
+    id: 'cb-info-2',
+    data: 'fc:info:42:cancelado',
+    from: { id: 555 },
+    message: { chat: { id: '-1001' }, message_id: 777 }
+  });
+
+  assert.deepEqual(chamadas.map(item => item.metodo), ['answerCallbackQuery']);
+  assert.match(chamadas[0].dados.text, /ja foi cancelado/i);
+});
+
+test('o clique em cancelar ignora acao registrada e avisa o gerente quando falha', async t => {
+  const chatIdAnterior = process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
+  process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID = '-1001';
+  t.after(() => {
+    if (chatIdAnterior === undefined) delete process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
+    else process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID = chatIdAnterior;
+  });
+
+  const chamadas = [];
+  t.mock.method(telegramService, 'chamarApi', async (metodo, dados) => {
+    chamadas.push({ metodo, dados });
+    return { ok: true };
+  });
+
+  const opcoesRecebidas = [];
+  t.mock.method(leadDistribuicaoService, 'finalizarAtribuicao', async (linhaId, opcoes) => {
+    opcoesRecebidas.push({ linhaId, opcoes });
+    return { atribuicao: { id: 15 }, linhaId };
+  });
+
+  await processarCallback({
+    id: 'cb-cancelar',
+    data: 'fc:cancelar:42',
+    from: { id: 555 },
+    message: { chat: { id: '-1001' }, message_id: 777 }
+  });
+
+  assert.equal(opcoesRecebidas[0].linhaId, 42);
+  assert.equal(opcoesRecebidas[0].opcoes.ignorarAcaoRegistrada, true);
+  assert.equal(opcoesRecebidas[0].opcoes.republicar, true);
+  assert.match(chamadas[0].dados.text, /Envio cancelado/);
+
+  chamadas.length = 0;
+  t.mock.restoreAll();
+  t.mock.method(telegramService, 'chamarApi', async (metodo, dados) => {
+    chamadas.push({ metodo, dados });
+    return { ok: true };
+  });
+  t.mock.method(leadDistribuicaoService, 'finalizarAtribuicao', async () => {
+    const erro = new Error('Este futuro cliente nao possui um envio ativo.');
+    erro.statusCode = 409;
+    throw erro;
+  });
+
+  await processarCallback({
+    id: 'cb-cancelar-falha',
+    data: 'fc:cancelar:42',
+    from: { id: 555 },
+    message: { chat: { id: '-1001' }, message_id: 777 }
+  });
+
+  assert.deepEqual(chamadas.map(item => item.metodo), ['answerCallbackQuery']);
+  assert.equal(chamadas[0].dados.show_alert, true);
+  assert.match(chamadas[0].dados.text, /nao possui um envio ativo/);
 });

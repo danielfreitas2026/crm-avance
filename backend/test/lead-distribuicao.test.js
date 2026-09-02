@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const leadDistribuicaoService = require('../src/services/lead-distribuicao.service');
 const { _internals: leadPlanilhaInternals } = require('../src/services/lead-planilha.service');
+const { _internals: distribuicaoInternals } = leadDistribuicaoService;
 
 const {
   adicionarMinutos,
@@ -356,10 +357,11 @@ test('monta mensagem de retorno com razao social, CNPJ, consultora e horario', (
   ].join('\n'));
 });
 
-test('remove o cancelamento e envia o retorno ao grupo da atribuicao aceita', async () => {
+test('mantem o botao de cancelamento e envia o retorno ao grupo da atribuicao aceita', async () => {
   const chamadas = [];
   const resultado = await enviarNotificacaoRetornoAgendado({
     aceite_status: leadDistribuicaoService.ACEITE_ACEITO,
+    lead_linha_id: 42,
     telegram_chat_id: '-100123',
     telegram_message_id: '777',
     consultora_nome: 'Ana Consultora'
@@ -374,9 +376,13 @@ test('remove o cancelamento e envia o retorno ao grupo da atribuicao aceita', as
   });
 
   assert.equal(resultado.enviado, true);
-  assert.equal(resultado.botao_removido, true);
+  assert.equal(resultado.botao_atualizado, true);
   assert.equal(resultado.message_id, 889);
   assert.deepEqual(chamadas.map(item => item.metodo), ['editMessageReplyMarkup', 'sendMessage']);
+  assert.deepEqual(chamadas[0].dados.reply_markup.inline_keyboard, [[{
+    text: 'Cancelar envio Ana Consultora',
+    callback_data: 'fc:cancelar:42'
+  }]]);
   assert.match(chamadas[1].dados.text, /Consultora: Ana Consultora/);
   assert.match(chamadas[1].dados.text, /Retorno: 31\/07\/2026, 12:30/);
 });
@@ -401,8 +407,8 @@ test('nao envia retorno sem atribuicao aceita e isola falhas do Telegram', async
       chamarApi: async () => { throw new Error('Telegram indisponivel'); }
     });
     assert.equal(resultado.enviado, false);
-    assert.equal(resultado.botao_removido, false);
-    assert.deepEqual(resultado.erros.map(item => item.operacao), ['remover_botao', 'enviar_mensagem']);
+    assert.equal(resultado.botao_atualizado, false);
+    assert.deepEqual(resultado.erros.map(item => item.operacao), ['atualizar_botao', 'enviar_mensagem']);
   } finally {
     console.error = erroAnterior;
   }
@@ -506,7 +512,7 @@ test('usa quantidade de linhas como fallback quando nao ha itens de chips', () =
   assert.match(texto, /Valor total da venda: Não informado/);
 });
 
-test('remove o botao e envia o aviso de venda fechada ao mesmo grupo', async () => {
+test('sinaliza venda registrada e envia o aviso de venda fechada ao mesmo grupo', async () => {
   const chamadas = [];
   const venda = {
     id: 91,
@@ -533,12 +539,14 @@ test('remove o botao e envia o aviso de venda fechada ao mesmo grupo', async () 
   });
 
   assert.equal(resultado.enviado, true);
-  assert.equal(resultado.botao_removido, true);
+  assert.equal(resultado.botao_atualizado, true);
   assert.equal(resultado.message_id, 888);
   assert.deepEqual(chamadas.map(item => item.metodo), ['editMessageReplyMarkup', 'sendMessage']);
   assert.equal(chamadas[0].dados.chat_id, '-100123');
   assert.equal(chamadas[0].dados.message_id, '777');
-  assert.deepEqual(chamadas[0].dados.reply_markup, { inline_keyboard: [] });
+  assert.deepEqual(chamadas[0].dados.reply_markup, {
+    inline_keyboard: [[{ text: '✅ Venda registrada', callback_data: 'fc:info:42:venda' }]]
+  });
   assert.equal(chamadas[1].dados.chat_id, '-100123');
   assert.match(chamadas[1].dados.text, /Ana Consultora fechou uma venda/);
 });
@@ -598,8 +606,8 @@ test('falhas do Telegram nao interrompem o processamento da venda fechada', asyn
     });
 
     assert.equal(resultado.enviado, false);
-    assert.equal(resultado.botao_removido, false);
-    assert.deepEqual(resultado.erros.map(item => item.operacao), ['remover_botao', 'enviar_mensagem']);
+    assert.equal(resultado.botao_atualizado, false);
+    assert.deepEqual(resultado.erros.map(item => item.operacao), ['atualizar_botao', 'enviar_mensagem']);
   } finally {
     console.error = erroAnterior;
   }
@@ -717,4 +725,69 @@ test('lista indicacao pendente sem permitir busca pelos detalhes protegidos', ()
   assert.equal(leadPlanilhaInternals.filtrosPermitemIndicacaoPendente({ status: 'futuro_cliente' }), true);
   assert.equal(leadPlanilhaInternals.filtrosPermitemIndicacaoPendente({ status: 'venda_registrada' }), false);
   assert.equal(leadPlanilhaInternals.filtrosPermitemIndicacaoPendente({ busca: 'empresa sigilosa' }), false);
+});
+
+test('mantem o botao de cancelar apos o aceite, inclusive com retorno agendado', async () => {
+  const teclado = await distribuicaoInternals.montarTecladoAtribuicao({
+    lead_linha_id: 42,
+    aceite_status: leadDistribuicaoService.ACEITE_ACEITO,
+    acao_registrada_tipo: 'retorno_agendado',
+    consultora_nome: 'Ana Consultora'
+  }, { buscarVendaVinculada: async () => null });
+
+  assert.deepEqual(teclado, {
+    inline_keyboard: [[{ text: 'Cancelar envio Ana Consultora', callback_data: 'fc:cancelar:42' }]]
+  });
+});
+
+test('troca o cancelamento pelo selo quando a venda esta vinculada a consultora', async () => {
+  const teclado = await distribuicaoInternals.montarTecladoAtribuicao({
+    lead_linha_id: 42,
+    aceite_status: leadDistribuicaoService.ACEITE_ACEITO,
+    consultora_nome: 'Ana Consultora'
+  }, { buscarVendaVinculada: async () => ({ id: 91 }) });
+
+  assert.deepEqual(teclado, {
+    inline_keyboard: [[{ text: '✅ Venda registrada', callback_data: 'fc:info:42:venda' }]]
+  });
+});
+
+test('aguardando aceite nao consulta vendas e mantem o cancelamento', async () => {
+  let consultas = 0;
+  const teclado = await distribuicaoInternals.montarTecladoAtribuicao({
+    lead_linha_id: 42,
+    aceite_status: leadDistribuicaoService.ACEITE_AGUARDANDO,
+    consultora_nome: 'Ana Consultora'
+  }, { buscarVendaVinculada: async () => { consultas += 1; return { id: 91 }; } });
+
+  assert.equal(consultas, 0);
+  assert.equal(teclado.inline_keyboard[0][0].callback_data, 'fc:cancelar:42');
+});
+
+test('envio cancelado conserva o selo informativo na mensagem encerrada', async () => {
+  const chamadas = [];
+  const resultado = await encerrarMensagemTelegram({
+    lead_linha_id: 42,
+    telegram_chat_id: '-100123',
+    telegram_message_id: '777',
+    telegram_mensagem_texto: 'NOVO FUTURO CLIENTE'
+  }, 'cancelado para Ana Consultora', leadDistribuicaoService.ACEITE_CANCELADO, {
+    chamarApi: async (metodo, dados) => {
+      chamadas.push({ metodo, dados });
+      return true;
+    },
+    propagarErro: true
+  });
+
+  assert.deepEqual(resultado, { atualizada: true });
+  assert.deepEqual(chamadas.map(item => item.metodo), ['editMessageText']);
+  assert.match(chamadas[0].dados.text, /ENVIO CANCELADO/);
+  assert.deepEqual(chamadas[0].dados.reply_markup, {
+    inline_keyboard: [[{ text: '⛔ Envio cancelado', callback_data: 'fc:info:42:cancelado' }]]
+  });
+});
+
+test('recusa e expiracao continuam encerrando a mensagem sem botoes', async () => {
+  assert.deepEqual(distribuicaoInternals.tecladoEncerramento({ lead_linha_id: 42 }, leadDistribuicaoService.ACEITE_RECUSADO), []);
+  assert.deepEqual(distribuicaoInternals.tecladoEncerramento({ lead_linha_id: 42 }, leadDistribuicaoService.ACEITE_EXPIRADO), []);
 });

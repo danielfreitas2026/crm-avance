@@ -1,19 +1,15 @@
 const db = require('../database/connection');
 const telegramService = require('./telegram.service');
-const { ACEITE_AGUARDANDO, ACEITE_ACEITO } = require('./lead-distribuicao.service');
+const leadDistribuicaoService = require('./lead-distribuicao.service');
+const { botaoCancelarEnvio: montarBotaoCancelarEnvio } = require('./telegram-botoes.util');
 
+const { ACEITE_AGUARDANDO, ACEITE_ACEITO, ACEITE_CANCELADO } = leadDistribuicaoService;
 const ACEITES_ATIVOS = [ACEITE_AGUARDANDO, ACEITE_ACEITO];
-
-function montarBotaoCancelarEnvio(linhaId, nomeConsultora) {
-  const nome = String(nomeConsultora || '').trim();
-  return {
-    text: nome ? `Cancelar envio ${nome}` : 'Cancelar envio',
-    callback_data: `fc:cancelar:${linhaId}`
-  };
-}
+/** Cancelados tambem sao reparados: recebem o selo informativo no lugar do teclado vazio. */
+const ACEITES_REPARAVEIS = [...ACEITES_ATIVOS, ACEITE_CANCELADO];
 
 function atribuicaoElegivel(atribuicao = {}) {
-  return ACEITES_ATIVOS.includes(atribuicao.aceite_status)
+  return ACEITES_REPARAVEIS.includes(atribuicao.aceite_status)
     && Boolean(String(atribuicao.telegram_chat_id || '').trim())
     && Boolean(String(atribuicao.telegram_message_id || '').trim());
 }
@@ -35,11 +31,14 @@ async function listarAtribuicoesElegiveis() {
     .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
     .leftJoin('lead_telegram_republicacoes as ltr', 'ltr.lead_linha_id', 'la.lead_linha_id')
     .where('la.etapa', 'venda')
-    .whereIn('la.aceite_status', ACEITES_ATIVOS)
+    .whereIn('la.aceite_status', ACEITES_REPARAVEIS)
     .select(
       'la.id',
       'la.lead_linha_id',
       'la.aceite_status',
+      'la.acao_registrada_tipo',
+      'la.usuario_id',
+      'la.etapa',
       'la.telegram_chat_id',
       'la.telegram_message_id',
       'ltr.telegram_chat_id as publicacao_telegram_chat_id',
@@ -53,6 +52,8 @@ async function listarAtribuicoesElegiveis() {
 async function atualizarBotoesCancelamento(atribuicoes, opcoes = {}) {
   const preview = Boolean(opcoes.preview);
   const chamarApi = opcoes.chamarApi || telegramService.chamarApi;
+  const montarTeclado = opcoes.montarTeclado
+    || (atribuicao => leadDistribuicaoService._internals.montarTecladoAtribuicao(atribuicao));
   const resumo = { encontrados: 0, atualizados: 0, ignorados: 0, falhas: 0, erros: [] };
 
   for (const atribuicao of atribuicoes || []) {
@@ -68,9 +69,7 @@ async function atualizarBotoesCancelamento(atribuicoes, opcoes = {}) {
       await chamarApi('editMessageReplyMarkup', {
         chat_id: String(atribuicao.telegram_chat_id),
         message_id: String(atribuicao.telegram_message_id),
-        reply_markup: {
-          inline_keyboard: [[montarBotaoCancelarEnvio(atribuicao.lead_linha_id, atribuicao.consultora_nome)]]
-        }
+        reply_markup: await montarTeclado(atribuicao)
       });
       resumo.atualizados += 1;
     } catch (error) {
@@ -99,6 +98,7 @@ module.exports = {
   corrigirBotoesCancelamento,
   _internals: {
     ACEITES_ATIVOS,
+    ACEITES_REPARAVEIS,
     atribuicaoElegivel,
     atualizarBotoesCancelamento,
     listarAtribuicoesElegiveis,
