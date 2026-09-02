@@ -199,12 +199,31 @@ async function resolverVenda(registro, campos) {
   return avaliarCandidatas(candidatas, campos, etapasFinais);
 }
 
-async function etapaDestino(alvo) {
+async function resolverEtapaDestino(alvo) {
+  if (alvo === 'apos_aceite_biometria') {
+    const etapas = await FunilEtapa.query()
+      .where({ ativo: true })
+      .orderBy('ordem', 'asc')
+      .orderBy('nome', 'asc');
+    const etapasAceite = etapas.filter(etapa => Boolean(etapa.aceite_biometria));
+    if (etapasAceite.length !== 1) {
+      return { etapa: null, erro: 'Não foi encontrada uma única etapa ativa configurada como Aceite/Biometria.' };
+    }
+    const aceite = etapasAceite[0];
+    const etapa = etapas.find(item => Number(item.ordem) > Number(aceite.ordem)) || null;
+    return etapa
+      ? { etapa, erro: null }
+      : { etapa: null, erro: 'Não há etapa ativa após Aceite/Biometria.' };
+  }
   if (alvo === 'aceite_biometria') {
     const etapas = await FunilEtapa.query().where({ ativo: true, aceite_biometria: true });
-    return etapas.length === 1 ? etapas[0] : null;
+    return {
+      etapa: etapas.length === 1 ? etapas[0] : null,
+      erro: etapas.length === 1 ? null : 'Não foi encontrada uma única etapa ativa configurada como Aceite/Biometria.'
+    };
   }
-  return FunilEtapa.query().findOne({ codigo: alvo, ativo: true });
+  const etapa = await FunilEtapa.query().findOne({ codigo: alvo, ativo: true });
+  return { etapa, erro: etapa ? null : 'Etapa de destino não encontrada.' };
 }
 
 async function responsaveisProblemas(trx) {
@@ -260,7 +279,9 @@ async function processarRegistro(registro) {
   const resolucao = await resolverVenda(registro, campos);
   const dadosExtraidos = { ...campos, candidatas: resolucao.candidatas };
   const revisaoManual = Boolean(registro.revisado_por_id && registro.venda_id);
-  if ((!revisaoManual && !campos.documento) || (!revisaoManual && !campos.destino) || campos.classificacao === 'desconhecido') return { status: 'revisao', erro: 'E-mail não reconhecido ou sem campos obrigatórios.', dados_extraidos: JSON.stringify(dadosExtraidos) };
+  const destinoDispensavel = campos.alvo === 'apos_aceite_biometria';
+  if ((!revisaoManual && !campos.documento) || (!revisaoManual && !campos.destino && !destinoDispensavel)) return { status: 'revisao', erro: 'E-mail sem campos obrigatórios.', dados_extraidos: JSON.stringify(dadosExtraidos) };
+  if (campos.classificacao === 'desconhecido') return { status: 'revisao', erro: 'Destino do e-mail não reconhecido.', dados_extraidos: JSON.stringify(dadosExtraidos) };
   if (!resolucao.venda) return { status: 'revisao', erro: resolucao.erro || 'Não foi possível identificar uma única venda ativa para o documento.', dados_extraidos: JSON.stringify(dadosExtraidos) };
   const venda = resolucao.venda;
   if (campos.classificacao === 'tipo_2') {
@@ -268,8 +289,9 @@ async function processarRegistro(registro) {
     const problema = await abrirProblemaAutomatico(registro, venda, campos.mensagem_operador);
     return { status: 'concluido', classificacao: 'tipo_2', venda_id: venda.id, problema_id: problema.id, dados_extraidos: JSON.stringify(dadosExtraidos), erro: null, processado_em: formatarSQL() };
   }
-  const etapa = await etapaDestino(campos.alvo);
-  if (!etapa) return { status: 'revisao', erro: 'Etapa de destino não encontrada ou ambígua.', venda_id: venda.id, dados_extraidos: JSON.stringify(dadosExtraidos) };
+  const destinoResolvido = await resolverEtapaDestino(campos.alvo);
+  const etapa = destinoResolvido.etapa;
+  if (!etapa) return { status: 'revisao', erro: destinoResolvido.erro, venda_id: venda.id, dados_extraidos: JSON.stringify(dadosExtraidos) };
   const atual = await FunilEtapa.query().findOne({ codigo: venda.status_funil });
   if (atual && Number(etapa.ordem) < Number(atual.ordem)) return { status: 'revisao', erro: 'O e-mail tentaria regredir o funil.', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos) };
   if (venda.status_funil !== etapa.codigo) {
@@ -277,7 +299,7 @@ async function processarRegistro(registro) {
       venda.id,
       {
         status_funil: etapa.codigo,
-        observacao: `Atualização automática pelo Gmail: ${campos.destino}`
+        observacao: `Atualização automática pelo Gmail: ${campos.destino || campos.mensagem_operador}`
       },
       null,
       {
@@ -519,4 +541,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas } };
+module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, resolverEtapaDestino, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas } };

@@ -51,7 +51,9 @@ function extrairResumo(texto) {
   };
 }
 
-function classificarDestino(destino) {
+function classificarDestino(destino, mensagemOperador = null) {
+  const mensagem = textoCanonico(mensagemOperador);
+  if (/\bsubir\s+pedido\b/.test(mensagem)) return { classificacao: 'tipo_1', alvo: 'apos_aceite_biometria' };
   const valor = textoCanonico(destino);
   if (/aguardando\s+aceite\s*[/ ]\s*assinatura/.test(valor)) return { classificacao: 'tipo_1', alvo: 'aceite_biometria' };
   if (/\binput\s+realizado\s+com\s+sucesso\b/.test(valor)) return { classificacao: 'tipo_1', alvo: 'aceite_biometria' };
@@ -65,7 +67,7 @@ function interpretarEmail(texto) {
   const destino = extrairLinha(corpo, 'Destino', ['Vivocorp', 'Cotação', 'Pedido']);
   const mensagem = extrairLinha(corpo, 'Mensagem ao Operador', ['Destino']);
   const resumo = extrairResumo(corpo);
-  const resultado = classificarDestino(destino);
+  const resultado = classificarDestino(destino, mensagem);
   return {
     documento: numeroDocumento(extrairLinha(corpo, 'CNPJ', ['Razão Social', 'Nome Comercial'])),
     data_venda: parseData(extrairLinha(corpo, 'Data da Venda', ['CNPJ'])),

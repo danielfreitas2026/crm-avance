@@ -47,6 +47,20 @@ Origem: Aguardando Input Autom�tico
 Mensagem ao Operador: 1-CG8LB6HL
 Destino: Pend�ncia > Input Realizado com Sucesso`;
 
+const EMAIL_SUBIR_PEDIDO = `Dados da Venda
+ID: 303048
+Data da Venda: 27/08/2026 14:30:59
+CNPJ: 29.046.034/0001-07 (29046034000107)
+Raz�o Social: SINDICATO RURAL DE PIRAI
+
+Resumo da Venda
+Total 4 R$ 399,96 R$ 60,00
+
+Workflow (tramita��o do pedido)
+Origem: Aguardando Aceite/Assinatura
+Mensagem ao Operador: Favor SUBIR PEDIDO agora
+Destino: Pend�ncia Pr�-Venda`;
+
 test('interpreta problema mesmo com acentos substituidos por caracteres invalidos', () => {
   assert.deepEqual(parser.interpretarEmail(EMAIL_PROBLEMA), {
     documento: '11143938000187', data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99,
@@ -61,6 +75,21 @@ test('interpreta input realizado com sucesso e direciona para aceite e biometria
     destino: 'Pend�ncia > Input Realizado com Sucesso',
     mensagem_operador: '1-CG8LB6HL', classificacao: 'tipo_1', alvo: 'aceite_biometria'
   });
+});
+
+test('subir pedido avanca para depois do aceite independentemente do destino', () => {
+  const interpretado = parser.interpretarEmail(EMAIL_SUBIR_PEDIDO);
+  assert.equal(interpretado.mensagem_operador, 'Favor SUBIR PEDIDO agora');
+  assert.equal(interpretado.destino, 'Pend�ncia Pr�-Venda');
+  assert.equal(interpretado.classificacao, 'tipo_1');
+  assert.equal(interpretado.alvo, 'apos_aceite_biometria');
+
+  const semDestino = parser.interpretarEmail(EMAIL_SUBIR_PEDIDO.replace(/\nDestino:.*$/, ''));
+  assert.equal(semDestino.destino, null);
+  assert.equal(semDestino.classificacao, 'tipo_1');
+  assert.equal(semDestino.alvo, 'apos_aceite_biometria');
+
+  assert.equal(parser.interpretarEmail(EMAIL_SUBIR_PEDIDO.replace('SUBIR PEDIDO', 'aguardar pedido')).classificacao, 'desconhecido');
 });
 
 test('usa o HTML quando a parte de texto do email contem apenas o placeholder', async () => {
@@ -122,6 +151,60 @@ test('mapeia os destinos de aceite e entrega com texto normal ou corrompido', ()
   assert.deepEqual(parser.classificarDestino('Aguardando Aceite/Assinatura'), { classificacao: 'tipo_1', alvo: 'aceite_biometria' });
   assert.deepEqual(parser.classificarDestino('Vivocorp - Pedidos > Log�stica Conclu�da'), { classificacao: 'tipo_1', alvo: 'entrega' });
   assert.equal(parser.classificarDestino('Destino novo').classificacao, 'desconhecido');
+});
+
+test('seleciona a primeira etapa ativa depois de aceite e biometria', async () => {
+  const queryOriginal = FunilEtapa.query;
+  const etapas = [
+    { codigo: 'analise', nome: 'Análise', ordem: 1, ativo: true, aceite_biometria: false },
+    { codigo: 'aceite', nome: 'Aceite', ordem: 2, ativo: true, aceite_biometria: true },
+    { codigo: 'ignorada', nome: 'Ignorada', ordem: 3, ativo: false, aceite_biometria: false },
+    { codigo: 'pos_aceite', nome: 'Pós-aceite', ordem: 4, ativo: true, aceite_biometria: false }
+  ];
+  FunilEtapa.query = () => ({
+    where(filtros) {
+      assert.deepEqual(filtros, { ativo: true });
+      return this;
+    },
+    orderBy() { return this; },
+    then(resolve) { return Promise.resolve(etapas.filter(etapa => etapa.ativo)).then(resolve); }
+  });
+
+  try {
+    const resultado = await automacao._internals.resolverEtapaDestino('apos_aceite_biometria');
+    assert.equal(resultado.etapa.codigo, 'pos_aceite');
+    assert.equal(resultado.erro, null);
+  } finally {
+    FunilEtapa.query = queryOriginal;
+  }
+});
+
+test('explica configuracao invalida para o avanco depois do aceite', async () => {
+  const queryOriginal = FunilEtapa.query;
+  let etapas = [];
+  FunilEtapa.query = () => ({
+    where() { return this; },
+    orderBy() { return this; },
+    then(resolve) { return Promise.resolve(etapas).then(resolve); }
+  });
+
+  try {
+    let resultado = await automacao._internals.resolverEtapaDestino('apos_aceite_biometria');
+    assert.match(resultado.erro, /uma única etapa ativa.*Aceite\/Biometria/);
+
+    etapas = [
+      { codigo: 'aceite_a', ordem: 1, aceite_biometria: true },
+      { codigo: 'aceite_b', ordem: 2, aceite_biometria: true }
+    ];
+    resultado = await automacao._internals.resolverEtapaDestino('apos_aceite_biometria');
+    assert.match(resultado.erro, /uma única etapa ativa.*Aceite\/Biometria/);
+
+    etapas = [{ codigo: 'aceite', ordem: 2, aceite_biometria: true }];
+    resultado = await automacao._internals.resolverEtapaDestino('apos_aceite_biometria');
+    assert.match(resultado.erro, /Não há etapa ativa após Aceite\/Biometria/);
+  } finally {
+    FunilEtapa.query = queryOriginal;
+  }
 });
 
 test('registra as divergencias secundarias separadamente', () => {
@@ -446,6 +529,91 @@ test('movimentacao processada pelo Gmail envia origem e id da automacao ao servi
       origemMovimentacao: 'automacao_gmail',
       automacaoEmailId: 88
     });
+  } finally {
+    Venda.query = queryVendaOriginal;
+    FunilEtapa.query = queryEtapaOriginal;
+    vendaService.atualizarStatusVenda = atualizarOriginal;
+  }
+});
+
+test('subir pedido avanca apos aceite sem repetir movimento nem regredir o funil', async () => {
+  const queryVendaOriginal = Venda.query;
+  const queryEtapaOriginal = FunilEtapa.query;
+  const atualizarOriginal = vendaService.atualizarStatusVenda;
+  const etapas = [
+    { codigo: 'analise', nome: 'Análise', ordem: 1, ativo: true, aceite_biometria: false },
+    { codigo: 'aceite', nome: 'Aceite', ordem: 2, ativo: true, aceite_biometria: true },
+    { codigo: 'pos_aceite', nome: 'Pós-aceite', ordem: 3, ativo: true, aceite_biometria: false },
+    { codigo: 'entrega', nome: 'Entrega', ordem: 4, ativo: true, aceite_biometria: false }
+  ];
+  let statusAtual = 'aceite';
+  let movimentos = [];
+
+  Venda.query = () => ({
+    findById() { return this; },
+    withGraphFetched: async () => ({
+      id: 41,
+      status_funil: statusAtual,
+      excluido_em: null,
+      cancelada_em: null
+    })
+  });
+  FunilEtapa.query = () => ({
+    where(filtros) {
+      if (filtros?.etapa_final) return Promise.resolve([{ codigo: 'final' }]);
+      this.filtros = filtros;
+      return this;
+    },
+    orderBy() { return this; },
+    then(resolve) {
+      return Promise.resolve(etapas.filter(etapa => etapa.ativo)).then(resolve);
+    },
+    findOne: async filtros => etapas.find(etapa => etapa.codigo === filtros.codigo) || null
+  });
+  vendaService.atualizarStatusVenda = async (...args) => {
+    movimentos.push(args);
+    return { status: 'ok' };
+  };
+
+  const registro = () => ({
+    id: 88,
+    venda_id: 41,
+    revisado_por_id: 7,
+    corpo_texto: '',
+    dados_extraidos: JSON.stringify({
+      _override: {
+        classificacao: 'tipo_1',
+        alvo: 'apos_aceite_biometria',
+        destino: 'Pendência Pré-Venda',
+        mensagem_operador: 'subir pedido',
+        documento: '29046034000107'
+      }
+    })
+  });
+
+  try {
+    let resultado = await automacao._internals.processarRegistro(registro());
+    assert.equal(resultado.status, 'concluido');
+    assert.equal(resultado.etapa_destino, 'pos_aceite');
+    assert.equal(movimentos.length, 1);
+    assert.equal(movimentos[0][1].status_funil, 'pos_aceite');
+    assert.deepEqual(movimentos[0][3], {
+      sistema: true,
+      origemMovimentacao: 'automacao_gmail',
+      automacaoEmailId: 88
+    });
+
+    statusAtual = 'pos_aceite';
+    movimentos = [];
+    resultado = await automacao._internals.processarRegistro(registro());
+    assert.equal(resultado.status, 'concluido');
+    assert.equal(movimentos.length, 0);
+
+    statusAtual = 'entrega';
+    resultado = await automacao._internals.processarRegistro(registro());
+    assert.equal(resultado.status, 'revisao');
+    assert.match(resultado.erro, /regredir o funil/);
+    assert.equal(movimentos.length, 0);
   } finally {
     Venda.query = queryVendaOriginal;
     FunilEtapa.query = queryEtapaOriginal;
