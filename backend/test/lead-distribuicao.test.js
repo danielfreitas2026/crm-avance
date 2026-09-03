@@ -545,7 +545,7 @@ test('sinaliza venda registrada e envia o aviso de venda fechada ao mesmo grupo'
   assert.equal(chamadas[0].dados.chat_id, '-100123');
   assert.equal(chamadas[0].dados.message_id, '777');
   assert.deepEqual(chamadas[0].dados.reply_markup, {
-    inline_keyboard: [[{ text: '✅ Venda registrada', callback_data: 'fc:info:42:venda' }]]
+    inline_keyboard: [[{ text: '✅ Venda feita', callback_data: 'fc:info:42:venda' }]]
   });
   assert.equal(chamadas[1].dados.chat_id, '-100123');
   assert.match(chamadas[1].dados.text, /Ana Consultora fechou uma venda/);
@@ -748,7 +748,7 @@ test('troca o cancelamento pelo selo quando a venda esta vinculada a consultora'
   }, { buscarVendaVinculada: async () => ({ id: 91 }) });
 
   assert.deepEqual(teclado, {
-    inline_keyboard: [[{ text: '✅ Venda registrada', callback_data: 'fc:info:42:venda' }]]
+    inline_keyboard: [[{ text: '✅ Venda feita', callback_data: 'fc:info:42:venda' }]]
   });
 });
 

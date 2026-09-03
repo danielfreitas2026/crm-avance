@@ -8,7 +8,7 @@ function botaoCancelarEnvio(linhaId, nomeConsultora) {
 
 function botaoVendaRegistrada(linhaId) {
   return {
-    text: '✅ Venda registrada',
+    text: '✅ Venda feita',
     callback_data: `fc:info:${linhaId}:venda`
   };
 }
