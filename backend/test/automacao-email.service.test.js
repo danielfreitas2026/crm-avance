@@ -108,15 +108,15 @@ test('destino prevalece sobre a mensagem subir pedido', () => {
   const interpretado = parser.interpretarEmail(EMAIL_SUBIR_PEDIDO);
   assert.equal(interpretado.mensagem_operador, 'Favor SUBIR PEDIDO agora');
   assert.equal(interpretado.destino, 'Pend�ncia Pr�-Venda');
-  assert.equal(interpretado.classificacao, 'desconhecido');
-  assert.equal(interpretado.alvo, null);
+  assert.equal(interpretado.classificacao, 'tipo_1');
+  assert.equal(interpretado.alvo, 'aceite_biometria');
 
   const semDestino = parser.interpretarEmail(EMAIL_SUBIR_PEDIDO.replace(/\nDestino:.*$/, ''));
   assert.equal(semDestino.destino, null);
   assert.equal(semDestino.classificacao, 'desconhecido');
   assert.equal(semDestino.alvo, null);
 
-  assert.equal(parser.interpretarEmail(EMAIL_SUBIR_PEDIDO.replace('SUBIR PEDIDO', 'aguardar pedido')).classificacao, 'desconhecido');
+  assert.equal(parser.interpretarEmail(EMAIL_SUBIR_PEDIDO.replace('SUBIR PEDIDO', 'aguardar pedido')).classificacao, 'tipo_1');
 });
 
 test('classifica cancelamento pelo destino com texto corrompido e ignora origem e mensagem', () => {
@@ -375,7 +375,12 @@ test('classifica os exemplos de workflow pelo destino e preserva a origem para a
     ['Correção do Pedido de Venda Pelo Consultor', 'quem sobe TERMO não somos e o suporte deve verificar', 'Antifraude - Processo Em Revisão Crítica (Qualidade e Auditoria)', 'sem_acao', 'sem_acao'],
     ['Aguardando Input Automático', '1-CG5PVC1B', 'Pendência > Input Realizado com Sucesso', 'tipo_1', 'apos_aceite_biometria'],
     ['Inserção do Nº da Cotação Vivocorp', '1-975211614097', 'Vivocorp - Pedidos > Logística Concluída', 'tipo_1', 'etapa_final'],
-    ['Aguardando Aceite/Assinatura', 'Bom dia, favor verificar se o cliente ainda tem interesse no pedido.', 'Correção do Pedido de Venda Pelo Consultor', 'tipo_2', null]
+    ['Aguardando Aceite/Assinatura', 'Bom dia, favor verificar se o cliente ainda tem interesse no pedido.', 'Correção do Pedido de Venda Pelo Consultor', 'tipo_2', null],
+    ['Aguardando Aceite/Assinatura', 'seguir', 'Análise da Qualidade e Auditoria', 'tipo_1', 'apos_aceite_biometria'],
+    ['Correção do Pedido de Venda Pelo Consultor', 'ignorar esta mensagem e manter a venda', 'Vivocorp - Pedidos > Backoffice Aprovado', 'tipo_1', 'apos_aceite_biometria'],
+    ['Aguardando Aceite/Assinatura', 'Fase de Contrato Aguardando Carteirização', 'Pendência Pré-Venda', 'tipo_1', 'aceite_biometria'],
+    ['Correção do Pedido de Venda Pelo Consultor', 'pode enviar, cliente tem aceite', 'Suporte Pré-Venda', 'tipo_1', 'aceite_biometria'],
+    ['Vivocorp - Pedidos > Backoffice Aprovado', 'Processo de importação manual por Arquivo InfoB2B', 'Vivocorp - Pedidos > Cancelado Manualmente', 'cancelamento', 'cancelar_venda']
   ];
 
   for (const [origem, mensagem, destino, classificacao, alvo] of exemplos) {
@@ -384,6 +389,20 @@ test('classifica os exemplos de workflow pelo destino e preserva a origem para a
     assert.equal(resultado.destino, destino);
     assert.equal(resultado.classificacao, classificacao, destino);
     assert.equal(resultado.alvo, alvo, destino);
+  }
+});
+
+test('classifica os novos destinos mesmo quando os acentos chegam corrompidos', () => {
+  const exemplos = [
+    ['An lise da Qualidade e Auditoria', 'tipo_1', 'apos_aceite_biometria'],
+    ['Vivocorp - Pedidos > Backoffice Aprovado', 'tipo_1', 'apos_aceite_biometria'],
+    ['Pend ncia Pr -Venda', 'tipo_1', 'aceite_biometria'],
+    ['Suporte Pr -Venda', 'tipo_1', 'aceite_biometria'],
+    ['Vivocorp - Pedidos > Cancelado Manualmente', 'cancelamento', 'cancelar_venda']
+  ];
+
+  for (const [destino, classificacao, alvo] of exemplos) {
+    assert.deepEqual(parser.classificarDestino(destino), { classificacao, alvo }, destino);
   }
 });
 

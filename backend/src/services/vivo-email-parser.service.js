@@ -54,12 +54,16 @@ function extrairResumo(texto) {
 function classificarDestino(destino) {
   const valor = textoCanonico(destino);
   if (/pedido\s+cancelado\s+pelo\s+(?:consultor|cliente)/.test(valor)) return { classificacao: 'cancelamento', alvo: 'cancelar_venda' };
+  if (/vivocorp\s*-\s*pedidos\s*>\s*cancelado\s+manualmente/.test(valor)) return { classificacao: 'cancelamento', alvo: 'cancelar_venda' };
   if (/antifraude.*processo.*revis[a-z?]{0,6}o\s+cr[ai?]{1,4}tica/.test(valor)) return { classificacao: 'sem_acao', alvo: 'sem_acao' };
   if (/an[ai?]{1,4}lise\s+(?:da\s+)?ilha\s+de\s+auditoria/.test(valor)) return { classificacao: 'sem_acao', alvo: 'sem_acao' };
   if (/an[ai?]{1,4}lise\s+da\s+ilha\s+de\s+input/.test(valor)) return { classificacao: 'sem_acao', alvo: 'sem_acao' };
   if (/aguardando\s+tratativas\s+da\s+auditoria/.test(valor)) return { classificacao: 'sem_acao', alvo: 'sem_acao' };
+  if (/an(?:[ai?]{1,4}|\s+)lise\s+da\s+qualidade\s+e\s+auditoria/.test(valor)) return { classificacao: 'tipo_1', alvo: 'apos_aceite_biometria' };
+  if (/vivocorp\s*-\s*pedidos\s*>\s*backoffice\s+aprovado/.test(valor)) return { classificacao: 'tipo_1', alvo: 'apos_aceite_biometria' };
   if (/aguardando\s+aceite\s*[/ ]\s*assinatura/.test(valor)) return { classificacao: 'tipo_1', alvo: 'aceite_biometria' };
-  if (/suporte\s+pr[e?]{1,3}\s*-?\s*venda/.test(valor)) return { classificacao: 'tipo_1', alvo: 'aceite_biometria' };
+  if (/pend(?:[e?]{1,3}|\s+)ncia\s+pr(?:[e?]{1,3}|\s+)\s*-?\s*venda/.test(valor)) return { classificacao: 'tipo_1', alvo: 'aceite_biometria' };
+  if (/suporte\s+pr(?:[e?]{1,3}|\s+)\s*-?\s*venda/.test(valor)) return { classificacao: 'tipo_1', alvo: 'aceite_biometria' };
   if (/aguardando\s+input\s+autom[a?]{1,4}tico/.test(valor)) return { classificacao: 'tipo_1', alvo: 'apos_aceite_biometria' };
   if (/\binput\s+realizado\s+com\s+sucesso\b/.test(valor)) return { classificacao: 'tipo_1', alvo: 'apos_aceite_biometria' };
   if (/log[ai?]{1,4}stica\s+conclu[ai?]{1,4}da/.test(valor)) return { classificacao: 'tipo_1', alvo: 'etapa_final' };
