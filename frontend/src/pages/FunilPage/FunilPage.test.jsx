@@ -112,6 +112,7 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
 
   it('exibe Aceite e Biometria em cinza ou verde somente na etapa marcada', () => {
     const { rerender } = renderCard(criarSale({
+      operator: 'Claro',
       aceiteConcluido: false,
       biometriaConcluida: true
     }));
@@ -120,7 +121,7 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
 
     rerender(
       <SaleCard
-        sale={criarSale({ aceiteConcluido: false, biometriaConcluida: true })}
+        sale={criarSale({ operator: 'Claro', aceiteConcluido: false, biometriaConcluida: true })}
         aceiteBiometria
         onClick={vi.fn()}
         onEmail={vi.fn()}
@@ -133,6 +134,17 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
 
     expect(screen.getByRole('button', { name: 'Aceite' })).not.toHaveClass('is-complete');
     expect(screen.getByRole('button', { name: 'Biometria' })).toHaveClass('is-complete');
+    expect(screen.getByLabelText('Conclusão de Aceite e Biometria')).toBeInTheDocument();
+  });
+
+  it.each(['Vivo', 'TIM'])('exibe somente Aceite para venda %s', operator => {
+    renderCard(criarSale({ operator, aceiteConcluido: false, biometriaConcluida: true }), {
+      aceiteBiometria: true
+    });
+
+    expect(screen.getByRole('button', { name: 'Aceite' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Biometria' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Conclusão de Aceite')).toBeInTheDocument();
   });
 
   it('alterna a tag sem abrir o cartao', async () => {
@@ -153,7 +165,7 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
     const onClick = vi.fn();
     const onToggleMarcador = vi.fn();
 
-    renderCard(criarSale(), {
+    renderCard(criarSale({ operator: 'Claro' }), {
       aceiteBiometria: true,
       marcadorSaving: '1:aceite',
       onClick,
@@ -176,7 +188,7 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
   });
 
   it('desabilita os marcadores de uma venda cancelada', () => {
-    renderCard(criarSale({ canceladaEm: '2026-08-28' }), { aceiteBiometria: true });
+    renderCard(criarSale({ operator: 'Claro', canceladaEm: '2026-08-28' }), { aceiteBiometria: true });
 
     expect(screen.getByRole('button', { name: 'Aceite' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Biometria' })).toBeDisabled();

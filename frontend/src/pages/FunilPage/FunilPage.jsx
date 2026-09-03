@@ -1740,6 +1740,11 @@ export function SaleCard({ sale, finalizada = false, aceiteBiometria = false, ma
   const priorityInfo = getPriorityInfo(sale.priority);
   const cancelada = Boolean(sale.canceladaEm);
   const semDocumento = sale.semDocumento ?? vendaSemDocumento(sale);
+  const biometriaAplicavel = String(sale.operator || '').trim().toLowerCase() === 'claro';
+  const marcadoresAceite = [
+    ['aceite', 'Aceite', sale.aceiteConcluido],
+    ...(biometriaAplicavel ? [['biometria', 'Biometria', sale.biometriaConcluida]] : [])
+  ];
   const classeStatus = cancelada ? ' sale-card-cancelada' : finalizada ? ' sale-card-finalizada' : '';
   const classeDocumento = semDocumento ? ' sale-card-sem-documento' : '';
   const cardRef = useRef(null);
@@ -1813,11 +1818,8 @@ export function SaleCard({ sale, finalizada = false, aceiteBiometria = false, ma
         </span>
       </div>
       {aceiteBiometria && (
-        <div className="sale-card-markers" aria-label="Conclusão de Aceite e Biometria">
-          {[
-            ['aceite', 'Aceite', sale.aceiteConcluido],
-            ['biometria', 'Biometria', sale.biometriaConcluida]
-          ].map(([marcador, rotulo, concluido]) => {
+        <div className="sale-card-markers" aria-label={biometriaAplicavel ? 'Conclusão de Aceite e Biometria' : 'Conclusão de Aceite'}>
+          {marcadoresAceite.map(([marcador, rotulo, concluido]) => {
             const chave = `${sale.id}:${marcador}`;
             const vendaSalvando = marcadorSaving.startsWith(`${sale.id}:`);
             const salvando = marcadorSaving === chave;

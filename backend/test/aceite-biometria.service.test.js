@@ -16,7 +16,12 @@ const ETAPAS = [
 ];
 
 test('bloqueia somente o avanco com marcadores pendentes', async () => {
-  const venda = { status_funil: 'aceite', aceite_concluido: false, biometria_concluida: false };
+  const venda = {
+    status_funil: 'aceite',
+    aceite_concluido: false,
+    biometria_concluida: false,
+    operadora: { nome: 'Claro' }
+  };
 
   assert.equal(
     await validarAceiteBiometria(venda, 'ativacao', ETAPAS),
@@ -27,6 +32,26 @@ test('bloqueia somente o avanco com marcadores pendentes', async () => {
   assert.equal(await validarAceiteBiometria(venda, 'aceite', ETAPAS), null);
   assert.equal(await validarAceiteBiometria(venda, 'aprovacao', ETAPAS), null);
   assert.equal(await validarAceiteBiometria(venda, 'retorno', ETAPAS), null);
+});
+
+test('exige somente aceite para vendas nao Claro', async () => {
+  for (const operadora of [{ nome: 'Vivo' }, { nome: 'TIM' }, null]) {
+    const venda = {
+      status_funil: 'aceite',
+      aceite_concluido: false,
+      biometria_concluida: false,
+      operadora
+    };
+
+    assert.equal(
+      await validarAceiteBiometria(venda, 'ativacao', ETAPAS),
+      'Conclua Aceite antes de avançar para outra etapa.'
+    );
+    assert.equal(
+      await validarAceiteBiometria({ ...venda, aceite_concluido: true }, 'ativacao', ETAPAS),
+      null
+    );
+  }
 });
 
 function mockAdmin() {
@@ -51,15 +76,32 @@ function mockUsuarioSemAcesso() {
   return () => { Usuario.query = original; };
 }
 
+function resultadoQueryVenda(venda) {
+  return {
+    withGraphFetched: async () => venda,
+    then(resolve, reject) {
+      return Promise.resolve(venda).then(resolve, reject);
+    }
+  };
+}
+
 test('altera somente o marcador solicitado quando a venda esta na etapa configurada', async () => {
   const restaurarUsuario = mockAdmin();
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
-  const venda = { id: 12, status_funil: 'aceite', aceite_concluido: false, biometria_concluida: false, excluido_em: null, cancelada_em: null };
+  const venda = {
+    id: 12,
+    status_funil: 'aceite',
+    aceite_concluido: false,
+    biometria_concluida: false,
+    excluido_em: null,
+    cancelada_em: null,
+    operadora: { nome: 'Claro' }
+  };
   let patch = null;
 
   Venda.query = () => ({
-    findById: async () => venda,
+    findById: () => resultadoQueryVenda(venda),
     where(filtros) {
       assert.deepEqual(filtros, { id: 12, status_funil: 'aceite' });
       return this;
@@ -89,6 +131,51 @@ test('altera somente o marcador solicitado quando a venda esta na etapa configur
   }
 });
 
+test('rejeita alteracao de biometria para venda nao Claro', async () => {
+  const restaurarUsuario = mockAdmin();
+  const queryVendaOriginal = Venda.query;
+  const queryEtapaOriginal = FunilEtapa.query;
+  const venda = {
+    id: 12,
+    status_funil: 'aceite',
+    aceite_concluido: false,
+    biometria_concluida: false,
+    excluido_em: null,
+    cancelada_em: null,
+    operadora: { nome: 'Vivo' }
+  };
+  let alterouVenda = false;
+
+  Venda.query = () => ({
+    findById: () => resultadoQueryVenda(venda),
+    where() { return this; },
+    whereNull() { return this; },
+    patch: async () => {
+      alterouVenda = true;
+      return 1;
+    }
+  });
+  FunilEtapa.query = () => ({
+    findOne() { return this; },
+    select: async () => ({ id: 2, aceite_biometria: true })
+  });
+
+  try {
+    const resultado = await vendaService.atualizarAceiteBiometriaVenda(
+      12,
+      { marcador: 'biometria', concluido: true },
+      7
+    );
+
+    assert.equal(resultado.status, 'invalid');
+    assert.equal(alterouVenda, false);
+  } finally {
+    restaurarUsuario();
+    Venda.query = queryVendaOriginal;
+    FunilEtapa.query = queryEtapaOriginal;
+  }
+});
+
 test('rejeita payload invalido, venda cancelada e etapa sem a marcacao', async () => {
   const restaurarUsuario = mockAdmin();
   const queryVendaOriginal = Venda.query;
@@ -97,10 +184,10 @@ test('rejeita payload invalido, venda cancelada e etapa sem a marcacao', async (
   try {
     assert.equal((await vendaService.atualizarAceiteBiometriaVenda(12, { marcador: 'outro', concluido: true }, 7)).status, 'invalid');
 
-    Venda.query = () => ({ findById: async () => ({ id: 12, status_funil: 'aceite', cancelada_em: '2026-08-28', excluido_em: null }) });
+    Venda.query = () => ({ findById: () => resultadoQueryVenda({ id: 12, status_funil: 'aceite', cancelada_em: '2026-08-28', excluido_em: null }) });
     assert.equal((await vendaService.atualizarAceiteBiometriaVenda(12, { marcador: 'aceite', concluido: true }, 7)).status, 'invalid');
 
-    Venda.query = () => ({ findById: async () => ({ id: 12, status_funil: 'aceite', cancelada_em: null, excluido_em: null }) });
+    Venda.query = () => ({ findById: () => resultadoQueryVenda({ id: 12, status_funil: 'aceite', cancelada_em: null, excluido_em: null }) });
     FunilEtapa.query = () => ({ findOne() { return this; }, select: async () => ({ id: 2, aceite_biometria: false }) });
     assert.equal((await vendaService.atualizarAceiteBiometriaVenda(12, { marcador: 'biometria', concluido: true }, 7)).status, 'invalid');
   } finally {
@@ -129,7 +216,7 @@ test('nao altera venda fora do escopo ou excluida', async () => {
   }
 
   const restaurarAdmin = mockAdmin();
-  Venda.query = () => ({ findById: async () => ({ id: 12, excluido_em: '2026-08-28 10:00:00' }) });
+  Venda.query = () => ({ findById: () => resultadoQueryVenda({ id: 12, excluido_em: '2026-08-28 10:00:00' }) });
   try {
     const excluida = await vendaService.atualizarAceiteBiometriaVenda(12, { marcador: 'aceite', concluido: true }, 7);
     assert.equal(excluida.status, 'not_found');

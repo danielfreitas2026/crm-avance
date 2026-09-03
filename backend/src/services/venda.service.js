@@ -3814,6 +3814,11 @@ async function validarBarreiraConferencia(venda, statusDestino) {
   return `Conclua as etapas de conferência antes de avançar: ${pendentes.map(etapa => etapa.titulo).join(', ')}.`;
 }
 
+/** Indica se a venda exige o marcador de biometria. */
+function biometriaAplicavelVenda(venda) {
+  return String(venda?.operadora?.nome || '').trim().toLowerCase() === 'claro';
+}
+
 /** Retorna as etapas de origem e intermediarias atravessadas em um avanco. */
 function obterEtapasAtravessadas(etapasFunil, statusOrigem, statusDestino) {
   const origem = etapasFunil.findIndex(etapa => etapa.id === statusOrigem);
@@ -3897,7 +3902,7 @@ async function validarAceiteBiometria(venda, statusDestino, etapasInformadas = n
 
   const pendentes = [];
   if (!venda.aceite_concluido) pendentes.push('Aceite');
-  if (!venda.biometria_concluida) pendentes.push('Biometria');
+  if (biometriaAplicavelVenda(venda) && !venda.biometria_concluida) pendentes.push('Biometria');
 
   return pendentes.length
     ? `Conclua ${pendentes.join(' e ')} antes de avançar para outra etapa.`
@@ -3918,7 +3923,7 @@ async function atualizarAceiteBiometriaVenda(id, dados, usuarioId) {
     return { status: 'invalid', message: 'Informe um marcador e um estado válidos.' };
   }
 
-  const venda = await Venda.query().findById(id);
+  const venda = await Venda.query().findById(id).withGraphFetched('operadora');
   if (!venda || venda.excluido_em) return { status: 'not_found' };
   if (venda.cancelada_em) {
     return { status: 'invalid', message: 'Os marcadores de uma venda cancelada não podem ser alterados.' };
@@ -3930,6 +3935,10 @@ async function atualizarAceiteBiometriaVenda(id, dados, usuarioId) {
 
   if (!etapa?.aceite_biometria) {
     return { status: 'invalid', message: 'A venda não está em uma etapa de Aceite/Biometria.' };
+  }
+
+  if (marcador === 'biometria' && !biometriaAplicavelVenda(venda)) {
+    return { status: 'invalid', message: 'Biometria está disponível apenas para vendas Claro.' };
   }
 
   const coluna = marcador === 'aceite' ? 'aceite_concluido' : 'biometria_concluida';
@@ -3964,7 +3973,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
     return { status: 'not_found' };
   }
 
-  const venda = await Venda.query().findById(id);
+  const venda = await Venda.query().findById(id).withGraphFetched('operadora');
 
   if (!venda || venda.excluido_em) {
     return { status: 'not_found' };
