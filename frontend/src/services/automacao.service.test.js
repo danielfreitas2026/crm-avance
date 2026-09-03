@@ -3,9 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./api', () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 
 import { apiGet, apiPost } from './api';
-import { listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterVendaProblemaAutomatico, resolverProblemaAutomatico } from './automacao.service';
+import { listarAutomacoes, listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterVendaProblemaAutomatico, resolverProblemaAutomatico } from './automacao.service';
 
-describe('automacao.service - problemas', () => {
+describe('automacao.service', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('envia status e paginação ao listar problemas', async () => {
@@ -26,5 +26,11 @@ describe('automacao.service - problemas', () => {
 
     expect(apiGet).toHaveBeenNthCalledWith(1, '/automacoes/10/vendas-candidatas');
     expect(apiGet).toHaveBeenNthCalledWith(2, '/automacoes/10/vendas-candidatas?cnpj=17025544000704');
+  });
+
+  it('envia classificacao de cancelamento na listagem de automacoes', async () => {
+    await listarAutomacoes({ classificacao: 'cancelamento', page: 2, perPage: 50 });
+
+    expect(apiGet).toHaveBeenCalledWith('/automacoes?page=2&per_page=50&classificacao=cancelamento');
   });
 });

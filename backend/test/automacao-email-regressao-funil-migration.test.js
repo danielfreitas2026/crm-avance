@@ -10,7 +10,8 @@ test('migration adiciona regressao de funil e reclassifica somente a revisao cor
   assert.ok(migration, 'migration de regressao do funil deve existir');
   const operacoes = [];
   const knex = tabela => ({
-    where(filtros) { operacoes.push(['where', tabela, filtros]); return this; },
+    where(...filtros) { operacoes.push(['where', tabela, ...filtros]); return this; },
+    whereRaw(sql, parametros) { operacoes.push(['whereRaw', tabela, sql, parametros]); return this; },
     async update(dados) { operacoes.push(['update', tabela, dados]); }
   });
   knex.raw = async sql => { operacoes.push(['raw', sql]); };
@@ -19,10 +20,8 @@ test('migration adiciona regressao de funil e reclassifica somente a revisao cor
 
   assert.match(operacoes[0][1], /'revisao', 'regressao_funil', 'erro'/);
   assert.deepEqual(operacoes.slice(1), [
-    ['where', 'automacao_emails', {
-      status: 'revisao',
-      erro: 'O e-mail tentaria regredir o funil.'
-    }],
+    ['where', 'automacao_emails', 'status', 'revisao'],
+    ['whereRaw', 'automacao_emails', 'BINARY ?? = BINARY ?', ['erro', 'O e-mail tentaria regredir o funil.']],
     ['update', 'automacao_emails', { status: 'regressao_funil' }]
   ]);
 });
@@ -31,7 +30,7 @@ test('rollback devolve todas as regressoes para revisao antes de restaurar o enu
   assert.ok(migration, 'migration de regressao do funil deve existir');
   const operacoes = [];
   const knex = tabela => ({
-    where(filtros) { operacoes.push(['where', tabela, filtros]); return this; },
+    where(...filtros) { operacoes.push(['where', tabela, ...filtros]); return this; },
     async update(dados) { operacoes.push(['update', tabela, dados]); }
   });
   knex.raw = async sql => { operacoes.push(['raw', sql]); };

@@ -280,6 +280,22 @@ test('claim concorrente impede processar novamente o mesmo pendente', async () =
   }
 });
 
+test('claim de nova tentativa limpa classificacao anterior antes do processamento', async () => {
+  const queryOriginal = AutomacaoEmail.query;
+  let dadosClaim = null;
+  AutomacaoEmail.query = () => ({
+    where() { return this; },
+    async patch(dados) { dadosClaim = dados; return 0; }
+  });
+  try {
+    await automacao._internals.processarPendente({ id: 9, status: 'pendente', tentativas: 1, classificacao: 'cancelamento' });
+    assert.equal(dadosClaim.status, 'processando');
+    assert.equal(dadosClaim.classificacao, null);
+  } finally {
+    AutomacaoEmail.query = queryOriginal;
+  }
+});
+
 test('endpoint em lote precede as rotas parametrizadas e repassa o contrato do servico', async () => {
   const camadas = automacaoRoutes.stack;
   const indicePermissao = camadas.findIndex(camada => camada.name === 'permissaoMiddleware');
@@ -754,7 +770,7 @@ test('valida os filtros e tamanhos permitidos da pagina de problemas', () => {
   assert.equal(automacao._internals.porPaginaProblemas(999), 20);
 });
 
-test('pagina automacoes por status com ordenacao deterministica', async () => {
+test('pagina automacoes por status e classificacao com ordenacao deterministica', async () => {
   const queryOriginal = AutomacaoEmail.query;
   const chamadas = [];
   class QueryAutomacao {
@@ -767,11 +783,12 @@ test('pagina automacoes por status com ordenacao deterministica', async () => {
   }
   AutomacaoEmail.query = () => new QueryAutomacao();
   try {
-    const resultado = await automacao.listar({ status: 'revisao', page: 2, per_page: 100 });
+    const resultado = await automacao.listar({ status: 'concluido', classificacao: 'cancelamento', page: 2, per_page: 100 });
     assert.deepEqual(chamadas, [
       ['orderBy', 'recebido_em', 'desc'],
       ['orderBy', 'id', 'desc'],
-      ['where', 'status', 'revisao'],
+      ['where', 'status', 'concluido'],
+      ['where', 'classificacao', 'cancelamento'],
       ['page', 1, 100]
     ]);
     assert.equal(resultado.total, 121);
@@ -781,6 +798,40 @@ test('pagina automacoes por status com ordenacao deterministica', async () => {
   } finally {
     AutomacaoEmail.query = queryOriginal;
   }
+});
+
+test('resume status e cancelamentos sem incluir a classificacao no total por status', async () => {
+  let consulta = 0;
+  const banco = () => {
+    consulta += 1;
+    if (consulta === 1) {
+      return {
+        select(campo) { assert.equal(campo, 'status'); return this; },
+        count(expressao) { assert.equal(expressao, '* as total'); return this; },
+        async groupBy(campo) {
+          assert.equal(campo, 'status');
+          return [{ status: 'concluido', total: '4' }, { status: 'revisao', total: '1' }];
+        }
+      };
+    }
+    if (consulta === 2) {
+      return {
+        where(campo, valor) { assert.deepEqual([campo, valor], ['classificacao', 'cancelamento']); return this; },
+        count(expressao) { assert.equal(expressao, '* as total'); return this; },
+        async first() { return { total: '2' }; }
+      };
+    }
+    return {
+      max(expressao) { assert.equal(expressao, 'recebido_em as recebido_em'); return this; },
+      async first() { return { recebido_em: '2026-09-03 12:00:00' }; }
+    };
+  };
+
+  const resultado = await automacao.resumo(banco);
+
+  assert.deepEqual(resultado.contadores, { concluido: 4, revisao: 1 });
+  assert.deepEqual(resultado.contadores_classificacao, { cancelamento: 2 });
+  assert.equal(Object.values(resultado.contadores).reduce((total, valor) => total + valor, 0), 5);
 });
 
 test('enriquece candidatas antigas com o nome atual da etapa do funil', async () => {

@@ -108,6 +108,10 @@
   color: var(--warn);
 }
 
+.automation-metric.classification-cancelamento strong {
+  color: var(--danger);
+}
+
 .automation-metric.status-concluido strong {
   color: #15803d;
 }

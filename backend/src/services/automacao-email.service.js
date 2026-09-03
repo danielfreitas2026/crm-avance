@@ -459,7 +459,7 @@ async function processarPendente(item) {
   const tentativas = Number(item.tentativas || 0) + 1;
   const reclamado = await AutomacaoEmail.query()
     .where({ id: item.id, status: 'pendente' })
-    .patch({ status: 'processando', tentativas, updated_at: new Date() });
+    .patch({ status: 'processando', classificacao: null, tentativas, updated_at: new Date() });
   if (!reclamado) return false;
   const registro = { ...item, status: 'processando', tentativas };
   try { await AutomacaoEmail.query().patchAndFetchById(item.id, await processarRegistro(registro)); }
@@ -516,15 +516,24 @@ async function listar(filtros = {}) {
   const pagina = Math.max(1, Number(filtros.page) || 1); const porPagina = Math.min(100, Math.max(10, Number(filtros.per_page) || 25));
   const query = AutomacaoEmail.query().orderBy('recebido_em', 'desc').orderBy('id', 'desc');
   if (filtros.status) query.where('status', filtros.status);
+  if (filtros.classificacao) query.where('classificacao', filtros.classificacao);
   const resultado = await query.page(pagina - 1, porPagina);
   const data = await enriquecerEtapasCandidatas(resultado.results.map(item => ({ ...item, dados_extraidos: json(item.dados_extraidos) })));
   return { data, total: resultado.total, page: pagina, per_page: porPagina };
 }
 
-async function resumo() {
-  const linhas = await db('automacao_emails').select('status').count('* as total').groupBy('status');
-  const ultima = await db('automacao_emails').max('recebido_em as recebido_em').first();
-  return { habilitada: configurado(), ultima_mensagem_em: ultima?.recebido_em || null, contadores: Object.fromEntries(linhas.map(item => [item.status, Number(item.total)])) };
+async function resumo(database = db) {
+  const [linhas, cancelamentos, ultima] = await Promise.all([
+    database('automacao_emails').select('status').count('* as total').groupBy('status'),
+    database('automacao_emails').where('classificacao', 'cancelamento').count('* as total').first(),
+    database('automacao_emails').max('recebido_em as recebido_em').first()
+  ]);
+  return {
+    habilitada: configurado(),
+    ultima_mensagem_em: ultima?.recebido_em || null,
+    contadores: Object.fromEntries(linhas.map(item => [item.status, Number(item.total)])),
+    contadores_classificacao: { cancelamento: Number(cancelamentos?.total || 0) }
+  };
 }
 
 async function revisar(id, dados, usuarioId, dependencias = {}) {

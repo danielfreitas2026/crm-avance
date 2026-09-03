@@ -37,7 +37,8 @@ vi.mock('../../services/venda.service', () => ({ atualizarVenda: vi.fn(), listar
 const resumo = {
   habilitada: false,
   ultima_mensagem_em: null,
-  contadores: { concluido: 3, revisao: 2, regressao_funil: 1, erro: 1 }
+  contadores: { concluido: 3, revisao: 2, regressao_funil: 1, erro: 1 },
+  contadores_classificacao: { cancelamento: 2 }
 };
 
 const execucao = {
@@ -170,7 +171,7 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByRole('button', { name: 'Mostrar todas as 7 execuções' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('usa os contadores como filtros e traduz os estados', async () => {
+  it('usa status e cancelamentos como filtros mutuamente exclusivos', async () => {
     const user = userEvent.setup();
     render(<AutomacoesPage />);
     await screen.findByText('Nenhuma execução encontrada');
@@ -178,12 +179,19 @@ describe('Painéis da automação Gmail VIVO', () => {
     await user.click(screen.getByRole('button', { name: 'Filtrar por Revisão manual: 2' }));
 
     await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'revisao', page: 1, perPage: 20 }));
-    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('revisao');
+    expect(screen.getByRole('combobox', { name: 'Status ou classificação' })).toHaveValue('revisao');
     expect(screen.getByText('Não há execuções com o status “Revisão manual”.')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Filtrar por Regressão de funil: 1' }));
     await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'regressao_funil', page: 1, perPage: 20 }));
-    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('regressao_funil');
+    expect(screen.getByRole('combobox', { name: 'Status ou classificação' })).toHaveValue('regressao_funil');
+
+    const cancelamentos = screen.getByRole('button', { name: 'Filtrar por Vendas canceladas: 2' });
+    expect(cancelamentos).toHaveClass('classification-cancelamento');
+    await user.click(cancelamentos);
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ classificacao: 'cancelamento', status: '', page: 1, perPage: 20 }));
+    expect(screen.getByRole('combobox', { name: 'Status ou classificação' })).toHaveValue('cancelamento');
+    expect(screen.getByText('Não há execuções com a classificação “Vendas canceladas”.')).toBeInTheDocument();
   });
 
   it('cancela a repeticao em lote sem chamar a API e desabilita o botao quando nao ha revisoes', async () => {
@@ -240,7 +248,7 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(await screen.findByText('1–41 de 41')).toBeInTheDocument();
   });
 
-  it('reinicia a paginação ao trocar o status', async () => {
+  it('reinicia a paginação ao trocar status ou classificacao', async () => {
     const user = userEvent.setup();
     api.listarAutomacoes.mockResolvedValue({ data: [execucao], total: 41, page: 1, per_page: 20 });
     render(<AutomacoesPage />);
@@ -248,6 +256,9 @@ describe('Painéis da automação Gmail VIVO', () => {
 
     await user.click(screen.getByRole('button', { name: 'Próxima página' }));
     await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: '', page: 2, perPage: 20 }));
+    await user.click(screen.getByRole('button', { name: 'Filtrar por Vendas canceladas: 2' }));
+
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ classificacao: 'cancelamento', status: '', page: 1, perPage: 20 }));
     await user.click(screen.getByRole('button', { name: 'Filtrar por Revisão manual: 2' }));
 
     await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'revisao', page: 1, perPage: 20 }));

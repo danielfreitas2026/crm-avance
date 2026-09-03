@@ -329,6 +329,7 @@ function Revisao({ item, onAtualizar, onErro }) {
 
 export default function AutomacoesPage() {
   const [status, setStatus] = useState('');
+  const [classificacao, setClassificacao] = useState('');
   const [pagina, setPagina] = useState(1);
   const [porPagina, setPorPagina] = useState(20);
   const [totalRegistros, setTotalRegistros] = useState(0);
@@ -347,7 +348,7 @@ export default function AutomacoesPage() {
     try {
       setErro('');
       const [lista, dadosResumo] = await Promise.all([
-        listarAutomacoes({ status, page: pagina, perPage: porPagina }),
+        listarAutomacoes({ status, ...(classificacao ? { classificacao } : {}), page: pagina, perPage: porPagina }),
         obterResumoAutomacoes()
       ]);
       if (!ativo.valor) return;
@@ -368,7 +369,7 @@ export default function AutomacoesPage() {
         setAtualizando(false);
       }
     }
-  }, [pagina, porPagina, status]);
+  }, [classificacao, pagina, porPagina, status]);
 
   async function coletarHistorico() {
     setColetandoHistorico(true);
@@ -413,13 +414,17 @@ export default function AutomacoesPage() {
   }, [carregar]);
 
   const contadores = resumo.contadores || {};
+  const totalCancelamentos = Number(resumo.contadores_classificacao?.cancelamento || 0);
   const total = Object.values(contadores).reduce((soma, quantidade) => soma + Number(quantidade || 0), 0);
   const totalRevisoes = Number(contadores.revisao || 0) + Number(contadores.regressao_funil || 0);
   const barraOcupada = atualizando || coletandoHistorico || repetindoRevisoes;
-  function alterarStatus(novoStatus) {
-    if (novoStatus !== status) setCarregando(true);
+  function alterarFiltro(novoFiltro) {
+    const novaClassificacao = novoFiltro === 'cancelamento' ? 'cancelamento' : '';
+    const novoStatus = novaClassificacao ? '' : novoFiltro;
+    if (novoStatus !== status || novaClassificacao !== classificacao) setCarregando(true);
     setPagina(1);
     setStatus(novoStatus);
+    setClassificacao(novaClassificacao);
   }
 
   return (
@@ -430,17 +435,19 @@ export default function AutomacoesPage() {
             <span className="automation-summary__icon"><I.Mail size={18} /></span>
             <div><strong>{resumo.habilitada ? 'Gmail ativo' : 'Gmail desabilitado'}</strong><span>Última mensagem: {dataHora(resumo.ultima_mensagem_em)}</span></div>
           </div>
-          <button type="button" className={`automation-metric ${status === '' ? 'is-selected' : ''}`} aria-label={`Mostrar todas as ${total} execuções`} aria-pressed={status === ''} onClick={() => alterarStatus('')}><strong>{total}</strong><span>Todas</span></button>
+          <button type="button" className={`automation-metric ${status === '' && classificacao === '' ? 'is-selected' : ''}`} aria-label={`Mostrar todas as ${total} execuções`} aria-pressed={status === '' && classificacao === ''} onClick={() => alterarFiltro('')}><strong>{total}</strong><span>Todas</span></button>
           {STATUS.filter(Boolean).map(chave => (
-            <button type="button" key={chave} className={`automation-metric status-${chave} ${status === chave ? 'is-selected' : ''}`} aria-label={`Filtrar por ${STATUS_LABEL[chave]}: ${Number(contadores[chave] || 0)}`} aria-pressed={status === chave} onClick={() => alterarStatus(chave)}><strong>{Number(contadores[chave] || 0)}</strong><span>{STATUS_LABEL[chave]}</span></button>
+            <button type="button" key={chave} className={`automation-metric status-${chave} ${status === chave ? 'is-selected' : ''}`} aria-label={`Filtrar por ${STATUS_LABEL[chave]}: ${Number(contadores[chave] || 0)}`} aria-pressed={status === chave} onClick={() => alterarFiltro(chave)}><strong>{Number(contadores[chave] || 0)}</strong><span>{STATUS_LABEL[chave]}</span></button>
           ))}
+          <button type="button" className={`automation-metric classification-cancelamento ${classificacao === 'cancelamento' ? 'is-selected' : ''}`} aria-label={`Filtrar por Vendas canceladas: ${totalCancelamentos}`} aria-pressed={classificacao === 'cancelamento'} onClick={() => alterarFiltro('cancelamento')}><strong>{totalCancelamentos}</strong><span>Vendas canceladas</span></button>
         </section>
 
         <section className="automation-toolbar" aria-label="Filtros das automações">
           <label>
-            Status
-            <select value={status} onChange={event => alterarStatus(event.target.value)}>
-              {STATUS.map(item => <option key={item} value={item}>{item ? STATUS_LABEL[item] : 'Todos os status'}</option>)}
+            Status ou classificação
+            <select value={classificacao || status} onChange={event => alterarFiltro(event.target.value)}>
+              {STATUS.map(item => <option key={item} value={item}>{item ? STATUS_LABEL[item] : 'Todas as execuções'}</option>)}
+              <option value="cancelamento">Vendas canceladas</option>
             </select>
           </label>
           <div className="automation-toolbar__actions">
@@ -455,7 +462,7 @@ export default function AutomacoesPage() {
 
         <section className="automation-list" aria-busy={carregando}>
           {carregando && <div className="automation-empty"><span className="automation-spinner" aria-hidden="true" /><strong>Carregando execuções</strong><span>Consultando o histórico da automação.</span></div>}
-          {!carregando && itens.length === 0 && <div className="automation-empty"><span className="automation-empty__icon"><I.History size={24} /></span><strong>Nenhuma execução encontrada</strong><span>{status ? `Não há execuções com o status “${STATUS_LABEL[status]}”.` : 'Os novos e-mails processados aparecerão aqui.'}</span></div>}
+          {!carregando && itens.length === 0 && <div className="automation-empty"><span className="automation-empty__icon"><I.History size={24} /></span><strong>Nenhuma execução encontrada</strong><span>{classificacao === 'cancelamento' ? 'Não há execuções com a classificação “Vendas canceladas”.' : status ? `Não há execuções com o status “${STATUS_LABEL[status]}”.` : 'Os novos e-mails processados aparecerão aqui.'}</span></div>}
           {!carregando && itens.map(item => (
             <details key={item.id} className={`automation-card status-${item.status}`}>
               <summary>

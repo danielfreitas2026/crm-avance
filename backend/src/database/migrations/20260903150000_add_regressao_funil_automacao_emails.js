@@ -6,7 +6,8 @@ const ENUM_ANTERIOR = "ENUM('pendente', 'processando', 'concluido', 'revisao', '
 exports.up = async function (knex) {
   await knex.raw(`ALTER TABLE automacao_emails MODIFY status ${ENUM_COM_REGRESSAO}`);
   await knex('automacao_emails')
-    .where({ status: 'revisao', erro: ERRO_REGRESSAO_FUNIL })
+    .where('status', 'revisao')
+    .whereRaw('BINARY ?? = BINARY ?', ['erro', ERRO_REGRESSAO_FUNIL])
     .update({ status: 'regressao_funil' });
 };
 
