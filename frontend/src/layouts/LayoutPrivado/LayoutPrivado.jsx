@@ -636,7 +636,9 @@ function LayoutPrivado({ children }) {
         <div className="content">
           {sucessoNovaVenda && <div className="alert-success alert-timed alert-timed--success" style={{ marginBottom: 16 }}>{sucessoNovaVenda}</div>}
           {erroNovaVenda && <div className="alert-error alert-timed alert-timed--error" style={{ marginBottom: 16 }}>{erroNovaVenda}</div>}
-          {children}
+          <div className="content__viewport">
+            {children}
+          </div>
         </div>
       </div>
 

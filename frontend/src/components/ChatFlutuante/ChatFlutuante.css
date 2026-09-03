@@ -6,13 +6,9 @@
   z-index: 1300;
 }
 
-/* O chat permanece encaixado no rodapé. Em páginas paginadas, o controlador
-   reserva a faixa à direita ocupada pelo atalho, em vez de o chat "flutuar". */
-@media (min-width: 641px) {
-  body:has(.chat-flutuante) .paginacao,
-  body:has(.chat-flutuante) .lead-pagination {
-    margin-right: clamp(284px, calc(19vw + 24px), 324px);
-  }
+body:has(.chat-flutuante) .content__viewport {
+  min-height: calc(100% + 72px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
 
 .chat-flutuante button,

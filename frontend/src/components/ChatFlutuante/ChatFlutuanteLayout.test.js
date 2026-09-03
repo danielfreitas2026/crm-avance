@@ -18,4 +18,10 @@ describe('layout do chat acoplado', () => {
     expect(estilos).toMatch(/@media \(max-width:\s*1100px\), \(max-height:\s*700px\)[\s\S]*?\.chat-flutuante__painel\s*\{[^}]*width:\s*min\(340px,\s*calc\(100vw - 24px\)\)/);
     expect(estilos).toMatch(/body:has\(\.modal-overlay\) \.chat-flutuante:has\(\.chat-flutuante__atalho\)\s*\{[^}]*display:\s*none/);
   });
+
+  it('adiciona area rolavel abaixo das paginas sem deslocar paginacoes', () => {
+    expect(estilos).toMatch(/body:has\(\.chat-flutuante\) \.content__viewport\s*\{[^}]*min-height:\s*calc\(100% \+ 72px \+ env\(safe-area-inset-bottom, 0px\)\)[^}]*padding-bottom:\s*calc\(72px \+ env\(safe-area-inset-bottom, 0px\)\)/s);
+    expect(estilos).not.toMatch(/body:has\(\.chat-flutuante\) \.paginacao/);
+    expect(estilos).not.toMatch(/body:has\(\.chat-flutuante\) \.lead-pagination/);
+  });
 });
