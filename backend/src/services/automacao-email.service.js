@@ -435,7 +435,7 @@ async function processarRegistro(registro) {
   const etapa = destinoResolvido.etapa;
   if (!etapa) return { status: 'revisao', erro: destinoResolvido.erro, venda_id: venda.id, dados_extraidos: JSON.stringify(dadosExtraidos) };
   const atual = await FunilEtapa.query().findOne({ codigo: venda.status_funil });
-  if (atual && Number(etapa.ordem) < Number(atual.ordem)) return { status: 'revisao', erro: 'O e-mail tentaria regredir o funil.', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos) };
+  if (atual && Number(etapa.ordem) < Number(atual.ordem)) return { status: 'regressao_funil', erro: 'O e-mail tentaria regredir o funil.', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos) };
   if (venda.status_funil !== etapa.codigo) {
     const movimento = await vendaService.atualizarStatusVenda(
       venda.id,
@@ -557,13 +557,14 @@ async function repetir(id) {
 }
 
 async function repetirRevisoes(carregarCorpo = carregarCorpoGmail) {
-  const itens = await AutomacaoEmail.query().where('status', 'revisao').orderBy('recebido_em').orderBy('id');
+  const itens = await AutomacaoEmail.query().whereIn('status', ['revisao', 'regressao_funil']).orderBy('recebido_em').orderBy('id');
   const resultado = { selecionados: itens.length, repetidos: 0, falhas: 0 };
   for (const item of itens) {
+    const statusOriginal = item.status;
     try {
       const atualizacao = await prepararRepeticao(item, carregarCorpo);
       const preparado = await AutomacaoEmail.query()
-        .where({ id: item.id, status: 'revisao' })
+        .where({ id: item.id, status: statusOriginal })
         .patch({ ...atualizacao, updated_at: new Date() });
       if (!preparado) continue;
       resultado.repetidos += 1;
@@ -572,7 +573,7 @@ async function repetirRevisoes(carregarCorpo = carregarCorpoGmail) {
       resultado.falhas += 1;
       try {
         await AutomacaoEmail.query()
-          .where({ id: item.id, status: 'revisao' })
+          .where({ id: item.id, status: statusOriginal })
           .patch({ erro: `Falha ao preparar repetição: ${String(error.message || error).slice(0, 1960)}`, updated_at: new Date() });
       } catch {}
     }

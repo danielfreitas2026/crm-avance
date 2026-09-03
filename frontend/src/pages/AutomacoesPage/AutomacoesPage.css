@@ -104,6 +104,10 @@
   color: var(--danger);
 }
 
+.automation-metric.status-regressao_funil strong {
+  color: var(--warn);
+}
+
 .automation-metric.status-concluido strong {
   color: #15803d;
 }
@@ -228,6 +232,10 @@
   border-left-color: var(--danger);
 }
 
+.automation-card.status-regressao_funil {
+  border-left-color: var(--warn);
+}
+
 .automation-card.status-concluido {
   border-left-color: #22c55e;
 }
@@ -305,6 +313,17 @@
 .status-erro .automation-status {
   background: var(--danger-bg);
   color: var(--danger);
+}
+
+.status-regressao_funil .automation-status {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.automation-regression-alert {
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  background: var(--warn-bg);
+  color: var(--warn);
 }
 
 .status-concluido .automation-status {

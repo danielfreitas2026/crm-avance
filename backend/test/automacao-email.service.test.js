@@ -213,7 +213,7 @@ test('repete uma fotografia das revisoes, preserva overrides e isola falhas de p
   };
   const registros = [
     { id: 1, status: 'revisao', recebido_em: '2026-09-01 10:00:00', tentativas: 2, venda_id: 41, revisado_por_id: 7, corpo_texto: '', dados_extraidos: JSON.stringify({ _override: override }) },
-    { id: 2, status: 'revisao', recebido_em: '2026-09-01 11:00:00', tentativas: 1, gmail_message_id: 'gmail-falha', corpo_texto: 'This is the plain text version of the email content', dados_extraidos: '{}' }
+    { id: 2, status: 'regressao_funil', recebido_em: '2026-09-01 11:00:00', tentativas: 1, gmail_message_id: 'gmail-falha', corpo_texto: 'This is the plain text version of the email content', dados_extraidos: '{}' }
   ];
 
   class QueryAutomacao {
@@ -223,8 +223,9 @@ test('repete uma fotografia das revisoes, preserva overrides e isola falhas de p
       else this.filtros[campo] = valor;
       return this;
     }
+    whereIn(campo, valores) { this.filtros[campo] = valores; return this; }
     orderBy() { return this; }
-    linhas() { return registros.filter(item => Object.entries(this.filtros).every(([campo, valor]) => item[campo] === valor)); }
+    linhas() { return registros.filter(item => Object.entries(this.filtros).every(([campo, valor]) => Array.isArray(valor) ? valor.includes(item[campo]) : item[campo] === valor)); }
     then(resolve, reject) { return Promise.resolve(this.linhas().map(item => ({ ...item }))).then(resolve, reject); }
     async patch(dados) {
       const linhas = this.linhas();
@@ -251,7 +252,7 @@ test('repete uma fotografia das revisoes, preserva overrides e isola falhas de p
     assert.equal(registros[0].status, 'concluido');
     assert.equal(registros[0].tentativas, 3);
     assert.deepEqual(JSON.parse(registros[0].dados_extraidos)._override, override);
-    assert.equal(registros[1].status, 'revisao');
+    assert.equal(registros[1].status, 'regressao_funil');
     assert.match(registros[1].erro, /Falha ao preparar repetição: Gmail indisponível/);
 
     registros.length = 0;
@@ -1309,7 +1310,7 @@ test('pedido na operadora avanca apos aceite sem repetir movimento nem regredir 
 
     statusAtual = 'entrega';
     resultado = await automacao._internals.processarRegistro(registro());
-    assert.equal(resultado.status, 'revisao');
+    assert.equal(resultado.status, 'regressao_funil');
     assert.match(resultado.erro, /regredir o funil/);
     assert.equal(movimentos.length, 0);
   } finally {

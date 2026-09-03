@@ -15,12 +15,13 @@ import {
 } from '../../services/automacao.service';
 import './AutomacoesPage.css';
 
-const STATUS = ['', 'pendente', 'processando', 'concluido', 'revisao', 'erro', 'rejeitado', 'descartado'];
+const STATUS = ['', 'pendente', 'processando', 'concluido', 'revisao', 'regressao_funil', 'erro', 'rejeitado', 'descartado'];
 const STATUS_LABEL = {
   pendente: 'Pendente',
   processando: 'Processando',
   concluido: 'Concluído',
   revisao: 'Revisão manual',
+  regressao_funil: 'Regressão de funil',
   erro: 'Erro',
   rejeitado: 'Rejeitado',
   descartado: 'Descartado'
@@ -385,8 +386,8 @@ export default function AutomacoesPage() {
   }
 
   async function repetirRevisoes() {
-    const quantidade = Number(resumo.contadores?.revisao || 0);
-    if (!quantidade || !window.confirm(`Repetir a execução das ${quantidade} automações em revisão manual? Isso pode movimentar vendas ou abrir problemas.`)) return;
+    const quantidade = Number(resumo.contadores?.revisao || 0) + Number(resumo.contadores?.regressao_funil || 0);
+    if (!quantidade || !window.confirm(`Repetir a execução das ${quantidade} automações em revisão ou regressão de funil? Isso pode movimentar vendas ou abrir problemas.`)) return;
     setRepetindoRevisoes(true);
     setErro('');
     setSucesso('');
@@ -395,8 +396,8 @@ export default function AutomacoesPage() {
       const repetidos = Number(resultado.repetidos || 0);
       const falhas = Number(resultado.falhas || 0);
       setSucesso(falhas
-        ? `${repetidos} execução(ões) em revisão repetida(s); ${falhas} falharam durante a preparação.`
-        : `${repetidos} execução(ões) em revisão repetida(s) com sucesso.`);
+        ? `${repetidos} execução(ões) em revisão/regressão repetida(s); ${falhas} falharam durante a preparação.`
+        : `${repetidos} execução(ões) em revisão/regressão repetida(s) com sucesso.`);
       await carregar(true);
     } catch (error) {
       setErro(error.message);
@@ -413,7 +414,7 @@ export default function AutomacoesPage() {
 
   const contadores = resumo.contadores || {};
   const total = Object.values(contadores).reduce((soma, quantidade) => soma + Number(quantidade || 0), 0);
-  const totalRevisoes = Number(contadores.revisao || 0);
+  const totalRevisoes = Number(contadores.revisao || 0) + Number(contadores.regressao_funil || 0);
   const barraOcupada = atualizando || coletandoHistorico || repetindoRevisoes;
   function alterarStatus(novoStatus) {
     if (novoStatus !== status) setCarregando(true);
@@ -443,7 +444,7 @@ export default function AutomacoesPage() {
             </select>
           </label>
           <div className="automation-toolbar__actions">
-            <button type="button" className="btn" disabled={barraOcupada || totalRevisoes === 0} onClick={repetirRevisoes}><I.Refresh size={14} /> {repetindoRevisoes ? 'Reprocessando...' : `Repetir revisões (${totalRevisoes})`}</button>
+            <button type="button" className="btn" disabled={barraOcupada || totalRevisoes === 0} onClick={repetirRevisoes}><I.Refresh size={14} /> {repetindoRevisoes ? 'Reprocessando...' : `Repetir revisões e regressões (${totalRevisoes})`}</button>
             <button type="button" className="btn" disabled={barraOcupada || !resumo.habilitada} onClick={coletarHistorico}><I.History size={14} /> {coletandoHistorico ? 'Buscando histórico...' : 'Buscar e-mails anteriores'}</button>
             <button type="button" className="btn automation-refresh" disabled={barraOcupada} onClick={() => carregar(true)}><I.Refresh size={14} /> {atualizando ? 'Atualizando...' : 'Atualizar'}</button>
           </div>
@@ -468,9 +469,9 @@ export default function AutomacoesPage() {
                   <div><dt>Destino</dt><dd>{item.dados_extraidos?.destino || '—'}</dd></div>
                   <div><dt>Documento</dt><dd>{item.dados_extraidos?.documento || '—'}</dd></div>
                 </dl>
-                {item.erro && <div className="alert-error automation-alert" role="alert">{item.erro}</div>}
+                {item.erro && <div className={`alert-error automation-alert ${item.status === 'regressao_funil' ? 'automation-regression-alert' : ''}`} role="alert">{item.erro}</div>}
                 <div className="automation-email-body"><strong>Conteúdo recebido</strong><pre>{item.corpo_texto || 'Corpo removido ou não armazenado.'}</pre></div>
-                {['revisao', 'erro'].includes(item.status) && <Revisao item={item} onAtualizar={() => carregar(true)} onErro={setErro} />}
+                {['revisao', 'regressao_funil', 'erro'].includes(item.status) && <Revisao item={item} onAtualizar={() => carregar(true)} onErro={setErro} />}
               </div>
             </details>
           ))}

@@ -37,7 +37,7 @@ vi.mock('../../services/venda.service', () => ({ atualizarVenda: vi.fn(), listar
 const resumo = {
   habilitada: false,
   ultima_mensagem_em: null,
-  contadores: { concluido: 3, revisao: 2, erro: 1 }
+  contadores: { concluido: 3, revisao: 2, regressao_funil: 1, erro: 1 }
 };
 
 const execucao = {
@@ -167,7 +167,7 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByTestId('layout-privado')).toBeInTheDocument();
     expect(await screen.findByText('Nenhuma execução encontrada')).toBeInTheDocument();
     expect(screen.getByText('Gmail desabilitado')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Mostrar todas as 6 execuções' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Mostrar todas as 7 execuções' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('usa os contadores como filtros e traduz os estados', async () => {
@@ -180,6 +180,10 @@ describe('Painéis da automação Gmail VIVO', () => {
     await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'revisao', page: 1, perPage: 20 }));
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('revisao');
     expect(screen.getByText('Não há execuções com o status “Revisão manual”.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Filtrar por Regressão de funil: 1' }));
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'regressao_funil', page: 1, perPage: 20 }));
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('regressao_funil');
   });
 
   it('cancela a repeticao em lote sem chamar a API e desabilita o botao quando nao ha revisoes', async () => {
@@ -188,13 +192,13 @@ describe('Painéis da automação Gmail VIVO', () => {
     render(<AutomacoesPage />);
     await screen.findByText('Nenhuma execução encontrada');
 
-    await user.click(screen.getByRole('button', { name: 'Repetir revisões (2)' }));
-    expect(confirmar).toHaveBeenCalledWith('Repetir a execução das 2 automações em revisão manual? Isso pode movimentar vendas ou abrir problemas.');
+    await user.click(screen.getByRole('button', { name: 'Repetir revisões e regressões (3)' }));
+    expect(confirmar).toHaveBeenCalledWith('Repetir a execução das 3 automações em revisão ou regressão de funil? Isso pode movimentar vendas ou abrir problemas.');
     expect(api.repetirAutomacoesEmRevisao).not.toHaveBeenCalled();
 
-    api.obterResumoAutomacoes.mockResolvedValue({ ...resumo, contadores: { ...resumo.contadores, revisao: 0 } });
+    api.obterResumoAutomacoes.mockResolvedValue({ ...resumo, contadores: { ...resumo.contadores, revisao: 0, regressao_funil: 0 } });
     await user.click(screen.getByRole('button', { name: 'Atualizar' }));
-    expect(await screen.findByRole('button', { name: 'Repetir revisões (0)' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Repetir revisões e regressões (0)' })).toBeDisabled();
     confirmar.mockRestore();
   });
 
@@ -206,14 +210,14 @@ describe('Painéis da automação Gmail VIVO', () => {
     render(<AutomacoesPage />);
     await screen.findByText('Nenhuma execução encontrada');
 
-    await user.click(screen.getByRole('button', { name: 'Repetir revisões (2)' }));
+    await user.click(screen.getByRole('button', { name: 'Repetir revisões e regressões (3)' }));
     expect(api.repetirAutomacoesEmRevisao).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: 'Reprocessando...' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Buscar e-mails anteriores' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Atualizar' })).toBeDisabled();
 
     concluir({ selecionados: 2, repetidos: 1, falhas: 1 });
-    expect(await screen.findByRole('status')).toHaveTextContent('1 execução(ões) em revisão repetida(s); 1 falharam durante a preparação.');
+    expect(await screen.findByRole('status')).toHaveTextContent('1 execução(ões) em revisão/regressão repetida(s); 1 falharam durante a preparação.');
     await waitFor(() => expect(api.listarAutomacoes).toHaveBeenCalledTimes(2));
     confirmar.mockRestore();
   });
@@ -247,7 +251,7 @@ describe('Painéis da automação Gmail VIVO', () => {
     await user.click(screen.getByRole('button', { name: 'Filtrar por Revisão manual: 2' }));
 
     await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'revisao', page: 1, perPage: 20 }));
-    expect(screen.getByRole('button', { name: 'Mostrar todas as 6 execuções' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mostrar todas as 7 execuções' })).toBeInTheDocument();
   });
 
   it('volta para a última página válida quando o total diminui', async () => {
@@ -277,6 +281,27 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByText('Correção do Pedido de Venda Pelo Consultor')).toBeInTheDocument();
     expect(screen.getByText('Mensagem original da operadora')).toBeInTheDocument();
     expect(screen.getByText('Corrija os dados abaixo antes de reprocessar esta execução.')).toBeInTheDocument();
+  });
+
+  it('destaca regressao de funil em ambar e mantem a revisao manual disponivel', async () => {
+    api.listarAutomacoes.mockResolvedValue({
+      data: [{
+        ...execucao,
+        status: 'regressao_funil',
+        classificacao: 'tipo_1',
+        erro: 'O e-mail tentaria regredir o funil.',
+        dados_extraidos: { ...execucao.dados_extraidos, classificacao: 'tipo_1', alvo: 'aceite_biometria' }
+      }],
+      total: 1
+    });
+    render(<AutomacoesPage />);
+
+    const assunto = await screen.findByText('Workflow de venda VIVO');
+    const cartao = assunto.closest('details');
+    expect(cartao).toHaveClass('status-regressao_funil');
+    expect(cartao.querySelector('.automation-status')).toHaveTextContent('Regressão de funil');
+    expect(cartao.querySelector('[role="alert"]')).toHaveClass('automation-regression-alert');
+    expect(screen.getByRole('button', { name: 'Corrigir e reprocessar' })).toBeInTheDocument();
   });
 
   it('interpreta o horário SQL da automação como UTC e exibe em São Paulo', async () => {
