@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./api', () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 
 import { apiGet, apiPost } from './api';
-import { listarProblemasAutomaticos, obterVendaProblemaAutomatico, resolverProblemaAutomatico } from './automacao.service';
+import { listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterVendaProblemaAutomatico, resolverProblemaAutomatico } from './automacao.service';
 
 describe('automacao.service - problemas', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -18,5 +18,13 @@ describe('automacao.service - problemas', () => {
     await resolverProblemaAutomatico(7, 'Cadastro corrigido.');
     expect(apiGet).toHaveBeenCalledWith('/problemas/7/venda');
     expect(apiPost).toHaveBeenCalledWith('/problemas/7/resolver', { mensagem: 'Cadastro corrigido.' });
+  });
+
+  it('busca vendas candidatas da automação com CNPJ opcional', async () => {
+    await listarVendasCandidatasAutomacao(10);
+    await listarVendasCandidatasAutomacao(10, '17.025.544/0007-04');
+
+    expect(apiGet).toHaveBeenNthCalledWith(1, '/automacoes/10/vendas-candidatas');
+    expect(apiGet).toHaveBeenNthCalledWith(2, '/automacoes/10/vendas-candidatas?cnpj=17025544000704');
   });
 });

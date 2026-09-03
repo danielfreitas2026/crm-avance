@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
 import Paginacao from '../../components/Paginacao/Paginacao';
@@ -7,6 +7,7 @@ import {
   coletarHistoricoAutomacoes,
   descartarAutomacao,
   listarAutomacoes,
+  listarVendasCandidatasAutomacao,
   obterResumoAutomacoes,
   repetirAutomacao,
   repetirAutomacoesEmRevisao,
@@ -38,10 +39,205 @@ const DATA_HORA_OPTIONS = {
 };
 const dataHora = valor => formatUtcDateTime(valor, DATA_HORA_OPTIONS, '—');
 
+function formatarCnpj(valor) {
+  const digitos = String(valor || '').replace(/\D/g, '').slice(0, 14);
+  return digitos
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2');
+}
+
+function formatarData(valor) {
+  if (!valor) return '—';
+  const [ano, mes, dia] = String(valor).slice(0, 10).split('-');
+  return ano && mes && dia ? `${dia}/${mes}/${ano}` : valor;
+}
+
+function useDialogAcessivel(onClose, bloqueado = false) {
+  const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const bloqueadoRef = useRef(bloqueado);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    bloqueadoRef.current = bloqueado;
+  });
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return undefined;
+    const anterior = document.activeElement;
+    dialog.focus();
+    function aoTeclado(event) {
+      if (event.key === 'Escape' && !bloqueadoRef.current) onCloseRef.current();
+    }
+    document.addEventListener('keydown', aoTeclado);
+    return () => {
+      document.removeEventListener('keydown', aoTeclado);
+      anterior?.focus?.();
+    };
+  }, []);
+  return dialogRef;
+}
+
+export function VincularVendaAutomacaoModal({ item, onClose, onSelecionar }) {
+  const dialogRef = useDialogAcessivel(onClose);
+  const buscaSequenciaRef = useRef(0);
+  const documentoOriginal = String(item.dados_extraidos?.documento || '').replace(/\D/g, '');
+  const [dados, setDados] = useState(null);
+  const [cnpjInput, setCnpjInput] = useState(formatarCnpj(documentoOriginal));
+  const [cnpjPesquisado, setCnpjPesquisado] = useState('');
+  const [buscaPendente, setBuscaPendente] = useState(false);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [confirmacao, setConfirmacao] = useState(null);
+
+  useEffect(() => {
+    let ativo = true;
+    listarVendasCandidatasAutomacao(item.id)
+      .then(resultado => {
+        if (!ativo) return;
+        setDados(resultado);
+        setCnpjInput(formatarCnpj(resultado.cnpj));
+        setCnpjPesquisado(resultado.cnpj);
+        setBuscaPendente(false);
+      })
+      .catch(error => {
+        if (ativo) setErro(error.message || 'Erro ao localizar vendas do CNPJ.');
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+    return () => {
+      ativo = false;
+      buscaSequenciaRef.current += 1;
+    };
+  }, [item.id]);
+
+  function alterarCnpj(event) {
+    const valor = formatarCnpj(event.target.value);
+    setCnpjInput(valor);
+    setBuscaPendente(valor.replace(/\D/g, '') !== cnpjPesquisado);
+    setConfirmacao(null);
+    setErro('');
+  }
+
+  async function buscarOutroCnpj(event) {
+    event.preventDefault();
+    const cnpj = cnpjInput.replace(/\D/g, '');
+    if (cnpj.length !== 14) {
+      setErro('Informe um CNPJ com 14 dígitos.');
+      return;
+    }
+    const sequencia = buscaSequenciaRef.current + 1;
+    buscaSequenciaRef.current = sequencia;
+    setCarregando(true);
+    setErro('');
+    setConfirmacao(null);
+    try {
+      const resultado = await listarVendasCandidatasAutomacao(item.id, cnpj);
+      if (buscaSequenciaRef.current !== sequencia) return;
+      setDados(resultado);
+      setCnpjInput(formatarCnpj(resultado.cnpj));
+      setCnpjPesquisado(resultado.cnpj);
+      setBuscaPendente(false);
+    } catch (error) {
+      if (buscaSequenciaRef.current === sequencia) setErro(error.message || 'Erro ao localizar vendas do CNPJ.');
+    } finally {
+      if (buscaSequenciaRef.current === sequencia) setCarregando(false);
+    }
+  }
+
+  function confirmarVenda() {
+    onSelecionar(confirmacao, cnpjPesquisado);
+    onClose();
+  }
+
+  const cnpjOriginal = dados?.cnpj_original || (documentoOriginal.length === 14 ? documentoOriginal : null);
+  const cnpjDiferente = Boolean(cnpjOriginal && cnpjPesquisado && cnpjOriginal !== cnpjPesquisado);
+  return (
+    <div className="modal-overlay">
+      <div ref={dialogRef} tabIndex={-1} className="modal automation-sale-modal" role="dialog" aria-modal="true" aria-label="Vincular venda">
+        <div className="modal-header">
+          <div className="modal-header-row">
+            <div>
+              <div className="modal-client">Selecionar venda para a automação</div>
+              <div className="modal-sub">Execução #{item.id}</div>
+            </div>
+            <button type="button" className="btn btn-icon btn-ghost" title="Fechar" onClick={onClose}><I.Close size={14} /></button>
+          </div>
+        </div>
+
+        <div className="modal-body automation-sale-modal__body">
+          <form className="automation-sale-search" onSubmit={buscarOutroCnpj}>
+            <label htmlFor="automation-sale-cnpj">CNPJ para buscar vendas</label>
+            <div>
+              <input id="automation-sale-cnpj" inputMode="numeric" maxLength="18" placeholder="00.000.000/0000-00" value={cnpjInput} onChange={alterarCnpj} disabled={carregando} />
+              <button type="submit" className="btn btn-primary" disabled={carregando || cnpjInput.replace(/\D/g, '').length !== 14 || !buscaPendente}>{carregando ? 'Buscando...' : 'Buscar'}</button>
+            </div>
+            {cnpjOriginal && <small>CNPJ extraído do e-mail: {formatarCnpj(cnpjOriginal)}</small>}
+          </form>
+
+          {carregando && <div className="automation-sale-state">Buscando vendas do mesmo CNPJ...</div>}
+          {erro && <div className="alert-error" role="alert">{erro}</div>}
+          {!carregando && buscaPendente && !erro && <div className="automation-sale-state">Clique em Buscar para atualizar as vendas deste CNPJ.</div>}
+
+          {!carregando && dados && !buscaPendente && (
+            <>
+              {cnpjDiferente && <div className="automation-sale-warning" role="status"><I.AlertTriangle size={16} />O CNPJ pesquisado será usado somente para selecionar a venda. O documento extraído do e-mail não será alterado.</div>}
+              {!dados.vendas.length ? (
+                <div className="automation-sale-state">Nenhuma venda foi encontrada para este CNPJ.</div>
+              ) : (
+                <div className="automation-sale-list">
+                  {dados.vendas.map(venda => (
+                    <article className={`automation-sale-item${venda.elegivel ? '' : ' is-blocked'}`} key={venda.id}>
+                      <div className="automation-sale-item__heading">
+                        <div><strong>Venda #{venda.id}</strong><span>{venda.razao_social || venda.nome || 'Razão social não informada'}</span></div>
+                        <strong>{Number(venda.valor_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                      </div>
+                      <div className="automation-sale-item__details">
+                        <span>Data<strong>{formatarData(venda.data_venda)}</strong></span>
+                        <span>Etapa<strong>{venda.status_funil_nome || 'Sem etapa'}</strong></span>
+                        <span>Vendedores<strong>{venda.vendedores?.map(vendedor => vendedor.nome).join(', ') || '—'}</strong></span>
+                        <span>Criador<strong>{venda.criador?.nome || '—'}</strong></span>
+                      </div>
+                      {venda.divergencias?.length > 0 && <div className="automation-sale-divergences"><strong>Divergências do e-mail</strong>{venda.divergencias.map(divergencia => <span key={divergencia}>{divergencia}</span>)}</div>}
+                      {!venda.elegivel ? (
+                        <div className="automation-sale-block"><I.AlertTriangle size={14} />{venda.motivo_bloqueio || venda.inelegibilidades?.join(', ') || 'Venda indisponível'}</div>
+                      ) : (
+                        <button type="button" className="btn btn-primary" onClick={() => setConfirmacao(venda)}>Selecionar venda</button>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {confirmacao && (
+            <div className="automation-sale-confirmation" role="alertdialog" aria-label="Confirmar vínculo">
+              <strong>Vincular a venda #{confirmacao.id}?</strong>
+              <span>A venda será apenas selecionada. A automação somente será reprocessada após informar a justificativa e confirmar a revisão.</span>
+              <div>
+                <button type="button" className="btn" onClick={() => setConfirmacao(null)}>Cancelar</button>
+                <button type="button" className="btn btn-primary" onClick={confirmarVenda}>Confirmar</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer"><button type="button" className="btn" onClick={onClose}>Fechar</button></div>
+      </div>
+    </div>
+  );
+}
+
 function Revisao({ item, onAtualizar, onErro }) {
   const extraidos = item.dados_extraidos || {};
-  const candidatas = Array.isArray(extraidos.candidatas) ? extraidos.candidatas : [];
   const [vendaId, setVendaId] = useState(item.venda_id || '');
+  const [vendaSelecionada, setVendaSelecionada] = useState(null);
+  const [cnpjVenda, setCnpjVenda] = useState(extraidos.documento || '');
   const [vinculandoVenda, setVinculandoVenda] = useState(false);
   const [tipo, setTipo] = useState(item.classificacao || extraidos.classificacao || 'tipo_1');
   const [etapa, setEtapa] = useState(item.etapa_destino || extraidos.alvo || 'entrega');
@@ -56,6 +252,7 @@ function Revisao({ item, onAtualizar, onErro }) {
       if (acao === 'revisar') {
         await revisarAutomacao(item.id, {
           venda_id: Number(vendaId),
+          cnpj_venda: cnpjVenda,
           classificacao: tipo,
           etapa_destino: tipo === 'tipo_1' ? etapa : null,
           mensagem_operador: mensagem,
@@ -80,23 +277,22 @@ function Revisao({ item, onAtualizar, onErro }) {
       </div>
       {item.venda_id ? (
         <label>Venda ID<input value={vendaId} onChange={event => setVendaId(event.target.value)} inputMode="numeric" /></label>
-      ) : vinculandoVenda ? (
-        <label className="wide">
-          Venda vinculada ao CNPJ {extraidos.documento || ''}
-          <select value={vendaId} onChange={event => setVendaId(event.target.value)}>
-            <option value="">Selecione uma venda</option>
-            {candidatas.map(candidata => (
-              <option key={candidata.id} value={candidata.id} disabled={!candidata.elegivel}>
-                {`#${candidata.id} — ${candidata.nome || 'Sem nome'} — Etapa: ${candidata.status_funil_nome || candidata.status_funil || 'Sem etapa'}${candidata.elegivel ? '' : ` — Indisponível: ${(candidata.inelegibilidades || []).join(', ')}`}`}
-              </option>
-            ))}
-          </select>
-          {candidatas.length === 0 && <small>Nenhuma venda foi encontrada para este CNPJ.</small>}
-        </label>
       ) : (
         <div className="automation-review__link-sale">
-          <button type="button" className="btn" onClick={() => setVinculandoVenda(true)}>Vincular venda</button>
+          {vendaSelecionada && <span><strong>Venda #{vendaSelecionada.id}</strong>{vendaSelecionada.razao_social || vendaSelecionada.nome} · {vendaSelecionada.status_funil_nome}</span>}
+          <button type="button" className="btn" onClick={() => setVinculandoVenda(true)}>{vendaSelecionada ? 'Trocar venda' : 'Vincular venda'}</button>
         </div>
+      )}
+      {vinculandoVenda && (
+        <VincularVendaAutomacaoModal
+          item={item}
+          onClose={() => setVinculandoVenda(false)}
+          onSelecionar={(venda, cnpj) => {
+            setVendaId(venda.id);
+            setVendaSelecionada(venda);
+            setCnpjVenda(cnpj);
+          }}
+        />
       )}
       <label>
         Tipo

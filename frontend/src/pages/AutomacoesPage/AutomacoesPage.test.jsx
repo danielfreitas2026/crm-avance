@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import AutomacoesPage from './AutomacoesPage';
+import AutomacoesPage, { VincularVendaAutomacaoModal } from './AutomacoesPage';
 import ProblemasPage from '../ProblemasPage/ProblemasPage';
 
 const api = vi.hoisted(() => ({
@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   repetirAutomacao: vi.fn(),
   repetirAutomacoesEmRevisao: vi.fn(),
   revisarAutomacao: vi.fn(),
+  listarVendasCandidatasAutomacao: vi.fn(),
   listarProblemasAutomaticos: vi.fn(),
   resolverProblemaAutomatico: vi.fn(),
   obterVendaProblemaAutomatico: vi.fn()
@@ -57,6 +58,23 @@ const execucao = {
   }
 };
 
+const vendaCandidata = {
+  id: 51,
+  nome: 'SONHO INFANTIL',
+  razao_social: 'SONHO INFANTIL LTDA',
+  data_venda: '2026-08-24',
+  valor_total: 1500,
+  quantidade_linhas: 2,
+  status_funil: 'entrega',
+  status_funil_nome: 'Entrega',
+  vendedores: [{ id: 3, nome: 'Consultora A' }],
+  criador: { id: 4, nome: 'Gerente B' },
+  elegivel: true,
+  inelegibilidades: [],
+  divergencias: ['quantidade divergente'],
+  motivo_bloqueio: null
+};
+
 describe('Painéis da automação Gmail VIVO', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -70,6 +88,77 @@ describe('Painéis da automação Gmail VIVO', () => {
     api.descartarAutomacao.mockResolvedValue({});
     api.coletarHistoricoAutomacoes.mockResolvedValue({ coletados: 4, processados: 4 });
     api.resolverProblemaAutomatico.mockResolvedValue({});
+    api.listarVendasCandidatasAutomacao.mockResolvedValue({
+      automacao_id: 10,
+      cnpj: '11143938000187',
+      cnpj_original: '11143938000187',
+      vendas: [vendaCandidata]
+    });
+  });
+
+  it('modal pesquisa outro CNPJ, exibe detalhes e confirma somente a seleção', async () => {
+    const user = userEvent.setup();
+    const onSelecionar = vi.fn();
+    const onClose = vi.fn();
+    api.listarVendasCandidatasAutomacao
+      .mockResolvedValueOnce({
+        automacao_id: 10,
+        cnpj: '11143938000187',
+        cnpj_original: '11143938000187',
+        vendas: [
+          vendaCandidata,
+          { ...vendaCandidata, id: 52, elegivel: false, motivo_bloqueio: 'venda concluída' }
+        ]
+      })
+      .mockResolvedValueOnce({
+        automacao_id: 10,
+        cnpj: '17025544000704',
+        cnpj_original: '11143938000187',
+        vendas: [{ ...vendaCandidata, id: 61, razao_social: 'EMPRESA ALTERNATIVA' }]
+      });
+
+    render(<VincularVendaAutomacaoModal item={execucao} onClose={onClose} onSelecionar={onSelecionar} />);
+
+    expect(await screen.findAllByText('SONHO INFANTIL LTDA')).toHaveLength(2);
+    expect(screen.getAllByText('Consultora A')).toHaveLength(2);
+    expect(screen.getAllByText('Gerente B')).toHaveLength(2);
+    expect(screen.getAllByText('quantidade divergente')).toHaveLength(2);
+    expect(screen.getByText('venda concluída')).toBeVisible();
+    expect(screen.getAllByRole('button', { name: 'Selecionar venda' })).toHaveLength(1);
+
+    const input = screen.getByRole('textbox', { name: 'CNPJ para buscar vendas' });
+    await user.clear(input);
+    await user.type(input, '17025544000704');
+    expect(screen.queryAllByText('SONHO INFANTIL LTDA')).toHaveLength(0);
+    expect(screen.getByText('Clique em Buscar para atualizar as vendas deste CNPJ.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+
+    expect(await screen.findByText('EMPRESA ALTERNATIVA')).toBeVisible();
+    expect(api.listarVendasCandidatasAutomacao).toHaveBeenLastCalledWith(10, '17025544000704');
+    await user.click(screen.getByRole('button', { name: 'Selecionar venda' }));
+    expect(screen.getByText('Vincular a venda #61?')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(onSelecionar).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Selecionar venda' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+
+    expect(onSelecionar).toHaveBeenCalledWith(expect.objectContaining({ id: 61 }), '17025544000704');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(api.revisarAutomacao).not.toHaveBeenCalled();
+  });
+
+  it('modal apresenta carregamento, lista vazia e erro de busca', async () => {
+    let concluir;
+    api.listarVendasCandidatasAutomacao.mockReturnValueOnce(new Promise(resolve => { concluir = resolve; }));
+    const { unmount } = render(<VincularVendaAutomacaoModal item={execucao} onClose={vi.fn()} onSelecionar={vi.fn()} />);
+    expect(screen.getByText('Buscando vendas do mesmo CNPJ...')).toBeVisible();
+    concluir({ automacao_id: 10, cnpj: '11143938000187', cnpj_original: '11143938000187', vendas: [] });
+    expect(await screen.findByText('Nenhuma venda foi encontrada para este CNPJ.')).toBeVisible();
+    unmount();
+
+    api.listarVendasCandidatasAutomacao.mockRejectedValueOnce(new Error('CNPJ inválido.'));
+    render(<VincularVendaAutomacaoModal item={execucao} onClose={vi.fn()} onSelecionar={vi.fn()} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('CNPJ inválido.');
   });
 
   it('renderiza automações no layout privado e apresenta o estado vazio', async () => {
@@ -219,19 +308,19 @@ describe('Painéis da automação Gmail VIVO', () => {
     render(<AutomacoesPage />);
 
     await screen.findByText('Workflow de venda VIVO');
-    expect(screen.queryByRole('combobox', { name: /Venda vinculada ao CNPJ/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Vincular venda' }));
-
-    const seletor = screen.getByRole('combobox', { name: /Venda vinculada ao CNPJ 11143938000187/ });
-    expect(screen.getByRole('option', { name: '#51 — SONHO INFANTIL — Etapa: Entrega' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /#52 — SONHO INFANTIL — Etapa: Concluído — Indisponível: venda concluída/ })).toBeDisabled();
-
-    await user.selectOptions(seletor, '51');
+    expect(await screen.findByText('SONHO INFANTIL LTDA')).toBeInTheDocument();
+    expect(screen.getByText('Entrega')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Selecionar venda' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    expect(screen.queryByRole('dialog', { name: 'Vincular venda' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Venda #51/)).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: 'Justificativa' }), 'Venda conferida manualmente.');
     await user.click(screen.getByRole('button', { name: 'Corrigir e reprocessar' }));
 
     await waitFor(() => expect(api.revisarAutomacao).toHaveBeenCalledWith(10, expect.objectContaining({
       venda_id: 51,
+      cnpj_venda: '11143938000187',
       justificativa: 'Venda conferida manualmente.'
     })));
   });

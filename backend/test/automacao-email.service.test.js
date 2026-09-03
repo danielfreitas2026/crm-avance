@@ -298,6 +298,63 @@ test('endpoint em lote precede as rotas parametrizadas e repassa o contrato do s
   }
 });
 
+test('endpoint de candidatas fica protegido e repassa execucao e CNPJ ao servico', async () => {
+  const camadas = automacaoRoutes.stack;
+  const indicePermissao = camadas.findIndex(camada => camada.name === 'permissaoMiddleware');
+  const camadaCandidatas = camadas.find(camada => camada.route?.path === '/:id/vendas-candidatas');
+  assert.ok(indicePermissao >= 0);
+  assert.ok(camadaCandidatas);
+  assert.ok(camadas.indexOf(camadaCandidatas) > indicePermissao);
+  assert.equal(camadaCandidatas.route.methods.get, true);
+
+  const listarOriginal = automacao.listarVendasCandidatas;
+  automacao.listarVendasCandidatas = async (id, cnpj) => ({ automacao_id: Number(id), cnpj, vendas: [] });
+  const res = { body: null, json(dados) { this.body = dados; return this; } };
+  try {
+    await automacaoController.vendasCandidatas({ params: { id: '10' }, query: { cnpj: '11143938000187' } }, res);
+    assert.deepEqual(res.body, { automacao_id: 10, cnpj: '11143938000187', vendas: [] });
+  } finally {
+    automacao.listarVendasCandidatas = listarOriginal;
+  }
+});
+
+test('consulta de candidatas valida execução e CNPJ antes de avaliar vendas atuais', async () => {
+  const queryOriginal = AutomacaoEmail.query;
+  const registro = {
+    id: 10,
+    classificacao: 'tipo_1',
+    dados_extraidos: JSON.stringify({ documento: '11143938000187', quantidade: 2 })
+  };
+  try {
+    AutomacaoEmail.query = () => ({ findById: async id => (Number(id) === 10 ? registro : null) });
+    assert.equal(await automacao.listarVendasCandidatas(99), null);
+    await assert.rejects(
+      automacao.listarVendasCandidatas(10, '123'),
+      error => error.statusCode === 422 && /14 digitos/.test(error.message)
+    );
+
+    const resultado = await automacao.listarVendasCandidatas(10, '17025544000704', {
+      buscar: async campos => [{
+        id: 51,
+        nome: 'Empresa atual',
+        razao_social: 'Empresa Atual LTDA',
+        status_funil: 'entrega',
+        data_venda: '2026-08-25',
+        quantidade_linhas: 2,
+        valor_total: 100
+      }],
+      etapasFinais: async () => ['concluido']
+    });
+
+    assert.equal(resultado.cnpj, '17025544000704');
+    assert.equal(resultado.cnpj_original, '11143938000187');
+    assert.equal(resultado.vendas[0].razao_social, 'Empresa Atual LTDA');
+    assert.equal(resultado.vendas[0].elegivel, true);
+  } finally {
+    AutomacaoEmail.query = queryOriginal;
+  }
+});
+
 test('mapeia os destinos de aceite e entrega com texto normal ou corrompido', () => {
   assert.deepEqual(parser.classificarDestino('Aguardando Aceite/Assinatura'), { classificacao: 'tipo_1', alvo: 'aceite_biometria' });
   assert.deepEqual(parser.classificarDestino('Vivocorp - Pedidos > Log�stica Conclu�da'), { classificacao: 'tipo_1', alvo: 'etapa_final' });
@@ -451,7 +508,19 @@ test('registra as divergencias secundarias separadamente', () => {
 });
 
 test('CNPJ com uma unica venda ativa prevalece sobre divergencias secundarias', () => {
-  const venda = { id: 1, status_funil: 'ativacao', status_funil_nome: 'Ativação', data_venda: '2026-08-25', quantidade_linhas: 2, valor_total: 100 };
+  const venda = {
+    id: 1,
+    nome: 'Empresa Exemplo',
+    razao_social: 'Empresa Exemplo LTDA',
+    status_funil: 'ativacao',
+    status_funil_nome: 'Ativação',
+    data_venda: '2026-08-25',
+    quantidade_linhas: 2,
+    valor_total: 100,
+    vendedora: { id: 3, nome: 'Consultora Principal' },
+    vendedoras: [{ id: 4, nome: 'Consultora Compartilhada' }],
+    criador: { id: 7, nome: 'Gerente' }
+  };
   const resultado = automacao._internals.avaliarCandidatas(
     [venda],
     { data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99 },
@@ -461,6 +530,59 @@ test('CNPJ com uma unica venda ativa prevalece sobre divergencias secundarias', 
   assert.deepEqual(resultado.candidatas[0].divergencias, ['data da venda divergente', 'quantidade divergente', 'valor mensal divergente']);
   assert.equal(resultado.candidatas[0].elegivel, true);
   assert.equal(resultado.candidatas[0].status_funil_nome, 'Ativação');
+  assert.equal(resultado.candidatas[0].razao_social, 'Empresa Exemplo LTDA');
+  assert.equal(resultado.candidatas[0].data_venda, '2026-08-25');
+  assert.equal(resultado.candidatas[0].valor_total, 100);
+  assert.deepEqual(resultado.candidatas[0].vendedores, [
+    { id: 3, nome: 'Consultora Principal' },
+    { id: 4, nome: 'Consultora Compartilhada' }
+  ]);
+  assert.deepEqual(resultado.candidatas[0].criador, { id: 7, nome: 'Gerente' });
+});
+
+test('revalida venda manual no CNPJ pesquisado e nas regras atuais da automacao', async () => {
+  const registro = {
+    venda_id: null,
+    dados_extraidos: JSON.stringify({
+      documento: '11143938000187',
+      classificacao: 'tipo_1',
+      data_venda: '2026-08-24',
+      candidatas: [{ id: 99, elegivel: true }]
+    })
+  };
+  const venda = { id: 51, status_funil: 'entrega', cancelada_em: null, excluido_em: null };
+  const chamadas = [];
+
+  const resultado = await automacao._internals.validarVendaSelecionada(
+    registro,
+    { venda_id: 51, cnpj_venda: '17025544000704', classificacao: 'tipo_1' },
+    {
+      buscar: async campos => { chamadas.push(campos.documento); return [venda]; },
+      etapasFinais: async () => ['concluido']
+    }
+  );
+
+  assert.equal(resultado.venda, venda);
+  assert.equal(resultado.cnpj, '17025544000704');
+  assert.deepEqual(chamadas, ['17025544000704']);
+
+  await assert.rejects(
+    automacao._internals.validarVendaSelecionada(
+      registro,
+      { venda_id: 99, cnpj_venda: '17025544000704', classificacao: 'tipo_1' },
+      { buscar: async () => [venda], etapasFinais: async () => ['concluido'] }
+    ),
+    error => error.statusCode === 400 && /não pertence ao CNPJ/.test(error.message)
+  );
+
+  await assert.rejects(
+    automacao._internals.validarVendaSelecionada(
+      registro,
+      { venda_id: 51, cnpj_venda: '17025544000704', classificacao: 'tipo_1' },
+      { buscar: async () => [{ ...venda, status_funil: 'concluido' }], etapasFinais: async () => ['concluido'] }
+    ),
+    error => error.statusCode === 400 && /não está ativa/.test(error.message)
+  );
 });
 
 test('revisao manual rejeita venda fora das candidatas do documento', async () => {
@@ -476,8 +598,16 @@ test('revisao manual rejeita venda fora das candidatas do documento', async () =
   AutomacaoEmail.query = () => ({ findById: async () => registro });
   try {
     await assert.rejects(
-      automacao.revisar(10, { venda_id: 99, justificativa: 'Conferência manual' }, 7),
-      error => error.statusCode === 400 && /não pertence ao documento/.test(error.message)
+      automacao.revisar(
+        10,
+        { venda_id: 99, justificativa: 'Conferência manual' },
+        7,
+        {
+          buscar: async () => [{ id: 51, status_funil: 'entrega' }],
+          etapasFinais: async () => ['concluido']
+        }
+      ),
+      error => error.statusCode === 400 && /não pertence ao CNPJ/.test(error.message)
     );
   } finally {
     AutomacaoEmail.query = queryOriginal;

@@ -13,6 +13,7 @@ const VendaProblema = require('../models/VendaProblema');
 const VendaProblemaDestinatario = require('../models/VendaProblemaDestinatario');
 const VendaProblemaEvento = require('../models/VendaProblemaEvento');
 const vendaService = require('./venda.service');
+const { validarCnpj } = require('./cnpj.service');
 const { chamarApiComToken } = require('./telegram.service');
 const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
 const { interpretarEmail, textoCanonico } = require('./vivo-email-parser.service');
@@ -129,7 +130,15 @@ async function buscarCandidatas(campos) {
     .leftJoin('funil_etapas as etapa_atual', 'etapa_atual.codigo', 'v.status_funil')
     .select('v.*', 'etapa_atual.nome as status_funil_nome')
     .where(builder => builder.whereRaw(`${exprVenda} = ?`, [doc]).orWhereRaw(`${exprCliente} = ?`, [doc]))
-    .whereNull('v.excluido_em').withGraphFetched('[cliente, operadora]');
+    .whereNull('v.excluido_em').withGraphFetched('[cliente, operadora, vendedora, vendedoras, criador]');
+}
+
+function cnpjValido(valor) {
+  try {
+    return validarCnpj(valor);
+  } catch (error) {
+    throw Object.assign(new Error(error.message || 'Informe um CNPJ válido.'), { statusCode: 422 });
+  }
 }
 
 async function codigosEtapasFinais() {
@@ -169,15 +178,26 @@ function selecionarCandidataUnica(avaliadas) {
 function avaliarCandidatas(candidatas, campos, etapasFinais, { cancelamento = false } = {}) {
   const avaliadas = candidatas.map(venda => {
     const inelegibilidades = motivosInelegibilidade(venda, etapasFinais, { cancelamento });
+    const vendedores = [venda.vendedora, ...(Array.isArray(venda.vendedoras) ? venda.vendedoras : [])]
+      .filter(Boolean)
+      .filter((item, indice, lista) => lista.findIndex(outro => Number(outro.id) === Number(item.id)) === indice)
+      .map(item => ({ id: Number(item.id), nome: item.nome || 'Não informado' }));
     return {
       venda,
       auditoria: {
         id: venda.id,
         nome: venda.nome,
+        razao_social: venda.razao_social || venda.nome || '',
+        data_venda: venda.data_venda || null,
+        valor_total: venda.valor_total ?? null,
+        quantidade_linhas: venda.quantidade_linhas ?? null,
         status_funil: venda.status_funil || null,
         status_funil_nome: venda.status_funil_nome || venda.status_funil || 'Sem etapa',
+        vendedores,
+        criador: venda.criador ? { id: Number(venda.criador.id), nome: venda.criador.nome || 'Não informado' } : null,
         elegivel: inelegibilidades.length === 0,
         inelegibilidades,
+        motivo_bloqueio: inelegibilidades.join(', ') || null,
         divergencias: divergenciasSecundarias(venda, campos)
       }
     };
@@ -194,6 +214,55 @@ function avaliarCandidatas(candidatas, campos, etapasFinais, { cancelamento = fa
     erro = 'Não foi possível identificar uma única venda ativa para o documento.';
   }
   return { venda: selecionada, candidatas: avaliadas.map(item => item.auditoria), erro };
+}
+
+async function validarVendaSelecionada(registro, dados, dependencias = {}) {
+  const atuais = json(registro.dados_extraidos);
+  const vendaId = Number(dados.venda_id || registro.venda_id);
+  if (!Number.isInteger(vendaId) || vendaId <= 0) {
+    throw Object.assign(new Error('Selecione uma venda válida.'), { statusCode: 400 });
+  }
+
+  const cnpj = cnpjValido(dados.cnpj_venda || atuais.documento);
+  const campos = {
+    ...atuais,
+    documento: cnpj,
+    classificacao: dados.classificacao || registro.classificacao || atuais.classificacao,
+    alvo: dados.etapa_destino || atuais.alvo
+  };
+  const buscar = dependencias.buscar || buscarCandidatas;
+  const obterEtapas = dependencias.etapasFinais || codigosEtapasFinais;
+  const candidatas = await buscar(campos);
+  const venda = candidatas.find(item => Number(item.id) === vendaId);
+  if (!venda) {
+    throw Object.assign(new Error('A venda selecionada não pertence ao CNPJ pesquisado.'), { statusCode: 400 });
+  }
+
+  const cancelamento = campos.classificacao === 'cancelamento' || campos.alvo === 'cancelar_venda';
+  const avaliacao = avaliarCandidatas([venda], campos, await obterEtapas(), { cancelamento });
+  if (!avaliacao.candidatas[0]?.elegivel) {
+    throw Object.assign(new Error('A venda selecionada não está ativa para vinculação.'), { statusCode: 400 });
+  }
+  return { venda, cnpj };
+}
+
+async function listarVendasCandidatas(id, cnpjInformado, dependencias = {}) {
+  const registro = await AutomacaoEmail.query().findById(id);
+  if (!registro) return null;
+  const atuais = json(registro.dados_extraidos);
+  const original = documento(atuais.documento);
+  const cnpj = cnpjValido(cnpjInformado || original);
+  const campos = { ...atuais, documento: cnpj };
+  const cancelamento = (registro.classificacao || atuais.classificacao) === 'cancelamento' || atuais.alvo === 'cancelar_venda';
+  const buscar = dependencias.buscar || buscarCandidatas;
+  const obterEtapas = dependencias.etapasFinais || codigosEtapasFinais;
+  const resultado = avaliarCandidatas(await buscar(campos), campos, await obterEtapas(), { cancelamento });
+  return {
+    automacao_id: Number(registro.id),
+    cnpj,
+    cnpj_original: original.length === 14 ? original : null,
+    vendas: resultado.candidatas
+  };
 }
 
 async function resolverVenda(registro, campos) {
@@ -458,20 +527,14 @@ async function resumo() {
   return { habilitada: configurado(), ultima_mensagem_em: ultima?.recebido_em || null, contadores: Object.fromEntries(linhas.map(item => [item.status, Number(item.total)])) };
 }
 
-async function revisar(id, dados, usuarioId) {
+async function revisar(id, dados, usuarioId, dependencias = {}) {
   const registro = await AutomacaoEmail.query().findById(id); if (!registro) return null;
   const justificativa = String(dados.justificativa || '').trim(); if (!justificativa) throw Object.assign(new Error('Informe a justificativa.'), { statusCode: 400 });
   const atuais = json(registro.dados_extraidos);
-  const vendaId = Number(dados.venda_id || registro.venda_id);
-  if (!Number.isInteger(vendaId) || vendaId <= 0) throw Object.assign(new Error('Selecione uma venda válida.'), { statusCode: 400 });
-  const candidatas = Array.isArray(atuais.candidatas) ? atuais.candidatas : [];
-  if (!registro.venda_id && atuais.documento && Array.isArray(atuais.candidatas)) {
-    const candidata = candidatas.find(item => Number(item.id) === vendaId);
-    if (!candidata) throw Object.assign(new Error('A venda selecionada não pertence ao documento desta execução.'), { statusCode: 400 });
-    if (!candidata.elegivel) throw Object.assign(new Error('A venda selecionada não está ativa para vinculação.'), { statusCode: 400 });
-  }
+  const { venda, cnpj } = await validarVendaSelecionada(registro, dados, dependencias);
+  const vendaId = Number(venda.id);
   const override = { classificacao: dados.classificacao, alvo: dados.etapa_destino || null, mensagem_operador: dados.mensagem_operador || atuais.mensagem_operador, destino: dados.destino || atuais.destino, documento: atuais.documento };
-  await AutomacaoEmail.query().patchAndFetchById(id, { venda_id: vendaId, dados_extraidos: JSON.stringify({ ...atuais, _override: override }), revisado_por_id: usuarioId, justificativa_revisao: justificativa, status: 'pendente', erro: null });
+  await AutomacaoEmail.query().patchAndFetchById(id, { venda_id: vendaId, dados_extraidos: JSON.stringify({ ...atuais, cnpj_venda_manual: cnpj, _override: override }), revisado_por_id: usuarioId, justificativa_revisao: justificativa, status: 'pendente', erro: null });
   await processarPendentes(); return AutomacaoEmail.query().findById(id);
 }
 
@@ -678,4 +741,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, resumo, revisar, repetir, repetirRevisoes, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, processarPendente, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, resolverVenda, resolverEtapaDestino, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas } };
+module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, processarPendente, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverEtapaDestino, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas } };

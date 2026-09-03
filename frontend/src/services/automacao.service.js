@@ -7,6 +7,10 @@ export const listarAutomacoes = ({ status = '', page = 1, perPage = 20 } = {}) =
   return apiGet(`/automacoes?${params.toString()}`);
 };
 export const coletarHistoricoAutomacoes = () => apiPost('/automacoes/coletar-historico', {});
+export const listarVendasCandidatasAutomacao = (id, cnpj) => {
+  const digitos = String(cnpj || '').replace(/\D/g, '');
+  return apiGet(`/automacoes/${id}/vendas-candidatas${digitos ? `?cnpj=${digitos}` : ''}`);
+};
 export const revisarAutomacao = (id, dados) => apiPost(`/automacoes/${id}/revisar`, dados);
 export const repetirAutomacao = id => apiPost(`/automacoes/${id}/repetir`, {});
 export const repetirAutomacoesEmRevisao = () => apiPost('/automacoes/repetir-revisoes', {});
