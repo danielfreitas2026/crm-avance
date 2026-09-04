@@ -10,6 +10,7 @@ const {
   filtrarVendasRelatorioPorVendedora,
   montarDadosSincronizacaoClienteVenda,
   montarDetalhesChipsExportacao,
+  statusVendaExportacao,
   montarAtribuicoesVendedorasVenda,
   montarAlteracoesReversao,
   validarBloqueioEdicaoPosVenda,
@@ -634,6 +635,34 @@ test('normaliza chips de array, JSON e texto legado', () => {
     { quantidade: 2, gb: '', tipo_linha: 'novo', valor_unitario: 49.9 },
     { quantidade: 1, gb: '', tipo_linha: 'novo', valor_unitario: 39.9 }
   ]);
+});
+
+test('exporta o nome configurado da etapa mesmo quando o codigo diverge do nome', () => {
+  const mapaEtapas = new Map([
+    ['envio', 'Aceite/Biometria'],
+    ['concluido', 'Concluído']
+  ]);
+
+  assert.equal(statusVendaExportacao({ status_funil: 'envio' }, mapaEtapas), 'Aceite/Biometria');
+  assert.equal(statusVendaExportacao({ status_funil: 'concluido' }, mapaEtapas), 'Concluído');
+});
+
+test('exporta rotulo de retorno e mantem o codigo quando a etapa nao existe mais', () => {
+  const mapaEtapas = new Map([['envio', 'Aceite/Biometria']]);
+
+  assert.equal(statusVendaExportacao({ status_funil: 'retorno' }, mapaEtapas), 'Retorno');
+  assert.equal(statusVendaExportacao({ status_funil: 'etapa_removida' }, mapaEtapas), 'etapa_removida');
+  assert.equal(statusVendaExportacao({ status_funil: '' }, mapaEtapas), '');
+});
+
+test('indica cancelamento sem esconder a etapa da venda na exportacao', () => {
+  const mapaEtapas = new Map([['envio', 'Aceite/Biometria']]);
+
+  assert.equal(
+    statusVendaExportacao({ status_funil: 'envio', cancelada_em: '2026-08-01' }, mapaEtapas),
+    'Aceite/Biometria (Cancelada)'
+  );
+  assert.equal(statusVendaExportacao({ status_funil: '', cancelada_em: '2026-08-01' }, mapaEtapas), 'Cancelada');
 });
 
 test('monta uma linha de exportacao para cada vendedora com sua quantidade de chips', () => {

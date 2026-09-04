@@ -2447,11 +2447,24 @@ function montarDetalhesChipsExportacao(venda = {}) {
 }
 
 /**
+ * Monta o mapa de codigo para nome das etapas usado na exportacao.
+ */
+async function montarMapaEtapasExportacao() {
+  const etapas = await listarEtapasFunilOrdenadas({ incluirInativas: true });
+  return new Map(etapas.filter(etapa => etapa.id).map(etapa => [String(etapa.id), etapa.nome]));
+}
+
+/**
  * Retorna status venda exportacao no formato esperado pelo fluxo.
  */
-function statusVendaExportacao(venda) {
-  if (venda.cancelada_em) return 'Cancelada';
-  return venda.status_funil || '';
+function statusVendaExportacao(venda, mapaEtapas = new Map()) {
+  const codigo = venda.status_funil || '';
+  const nome = codigo === 'retorno'
+    ? 'Retorno'
+    : mapaEtapas.get(String(codigo)) || codigo;
+
+  if (venda.cancelada_em) return nome ? `${nome} (Cancelada)` : 'Cancelada';
+  return nome;
 }
 
 /**
@@ -2464,7 +2477,10 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
 
   const vendas = await listarVendas(filtrosExportacao, usuarioId);
   const usuario = await vendaVisibilidadeService.buscarUsuario(usuarioId);
-  const etapaFinal = await obterCodigoEtapaFinal();
+  const [etapaFinal, mapaEtapas] = await Promise.all([
+    obterCodigoEtapaFinal(),
+    montarMapaEtapasExportacao()
+  ]);
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Vendas');
 
@@ -2525,7 +2541,7 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
         data_ativacao: vendaRestrita ? null : valorDataExcel(venda.data_ativacao),
         status: vendaRestrita
           ? (venda.status_funil === etapaFinal ? 'Concluída' : 'Não concluída')
-          : statusVendaExportacao(venda),
+          : statusVendaExportacao(venda, mapaEtapas),
         prioridade: vendaRestrita ? '' : venda.prioridade_funil || '',
         protocolo: vendaRestrita ? '' : venda.protocolo || '',
         uf: vendaRestrita ? '' : venda.uf || '',
@@ -4765,6 +4781,7 @@ module.exports = {
     adicionarMesesDataISO,
     calcularTotalChips,
     montarDetalhesChipsExportacao,
+    statusVendaExportacao,
     limparValor,
     montarDadosSincronizacaoClienteVenda,
     montarAtribuicoesVendedorasVenda,

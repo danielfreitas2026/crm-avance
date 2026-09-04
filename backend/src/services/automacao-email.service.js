@@ -584,7 +584,7 @@ async function repetirRevisoes(carregarCorpo = carregarCorpoGmail) {
         await AutomacaoEmail.query()
           .where({ id: item.id, status: statusOriginal })
           .patch({ erro: `Falha ao preparar repetição: ${String(error.message || error).slice(0, 1960)}`, updated_at: new Date() });
-      } catch {}
+      } catch { }
     }
   }
   return resultado;

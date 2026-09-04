@@ -180,7 +180,8 @@
       "Bash(node --test)",
       "Bash(node -e \"require\\('./src/database/connection'\\).raw\\('PRAGMA table_info\\(vendas\\)'\\).then\\(r=>{const c=r.filter\\(x=>x.name==='possui_doc_na_casa'\\);console.log\\('col:',JSON.stringify\\(c\\)\\);process.exit\\(0\\)}\\).catch\\(e=>{console.log\\('sqlite check skipped:',e.message\\);process.exit\\(0\\)}\\)\")",
       "Bash(node -e \"require\\('./src/database/connection'\\).raw\\('PRAGMA table_info\\(vendas\\)'\\).then\\(r=>{const c=r.filter\\(x=>x.name==='possui_doc_na_casa'\\);console.log\\('col:',JSON.stringify\\(c\\)\\);process.exit\\(0\\)}\\).catch\\(e=>{console.log\\('check skipped:',e.message\\);process.exit\\(0\\)}\\)\")",
-      "Bash(node -e \"const db=require\\('./src/database/connection'\\);db.raw\\('SHOW COLUMNS FROM vendas LIKE \\\\'possui_doc_na_casa\\\\''\\).then\\(r=>{console.log\\('col:',JSON.stringify\\(r[0]\\)\\);process.exit\\(0\\)}\\).catch\\(e=>{console.log\\('err:',e.message\\);process.exit\\(1\\)}\\)\")"
+      "Bash(node -e \"const db=require\\('./src/database/connection'\\);db.raw\\('SHOW COLUMNS FROM vendas LIKE \\\\'possui_doc_na_casa\\\\''\\).then\\(r=>{console.log\\('col:',JSON.stringify\\(r[0]\\)\\);process.exit\\(0\\)}\\).catch\\(e=>{console.log\\('err:',e.message\\);process.exit\\(1\\)}\\)\")",
+      "Bash(node --require ./test/setup-env.js --test test/venda.service.test.js)"
     ],
     "additionalDirectories": [
       "\\tmp"

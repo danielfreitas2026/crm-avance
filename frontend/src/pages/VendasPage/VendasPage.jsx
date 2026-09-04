@@ -74,7 +74,7 @@ function normalizarStatusFunilFiltros(etapas = []) {
   const normalizados = etapas
     .map(etapa => ({
       id: etapa.codigo || etapa.id,
-      label: STATUS_FUNIL_FILTROS_LABELS[etapa.codigo || etapa.id] || etapa.nome || etapa.name
+      label: etapa.nome || etapa.name || STATUS_FUNIL_FILTROS_LABELS[etapa.codigo || etapa.id]
     }))
     .filter(etapa => etapa.id && etapa.label);
 
