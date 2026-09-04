@@ -6,6 +6,7 @@ const FunilEtapa = require('../models/FunilEtapa');
 const RegraComissao = require('../models/RegraComissao');
 const ExcelJS = require('exceljs');
 const vendaService = require('./venda.service');
+const { FORMATO_MOEDA_BR, FORMATO_INTEIRO_BR } = require('../utils/formato-planilha');
 
 const STATUS_FINAL_FALLBACK = 'concluido';
 const CODIGO_RETORNO_HISTORICO = '__retorno_historico';
@@ -1672,13 +1673,13 @@ async function gerarXlsxVendasPeriodo(filtros = {}) {
     { header: 'CNPJ', key: 'cnpj', width: 20 },
     { header: 'CIDADE', key: 'cidade', width: 18 },
     { header: 'UF', key: 'uf', width: 8 },
-    { header: 'QUANTIDADE', key: 'quantidade', width: 13 },
+    { header: 'QUANTIDADE', key: 'quantidade', width: 13, style: { numFmt: FORMATO_INTEIRO_BR } },
     { header: 'SERVICO', key: 'servico', width: 18 },
     { header: 'GIGAS', key: 'gigas', width: 14 },
     { header: 'CATEGORIA', key: 'categoria', width: 14 },
-    { header: 'VALOR TOTAL', key: 'valor_total', width: 14, style: { numFmt: 'R$ #,##0.00' } },
-    { header: 'NOVO', key: 'novo', width: 10 },
-    { header: 'PORTABILIDADE', key: 'portabilidade', width: 16 },
+    { header: 'VALOR TOTAL', key: 'valor_total', width: 14, style: { numFmt: FORMATO_MOEDA_BR } },
+    { header: 'NOVO', key: 'novo', width: 10, style: { numFmt: FORMATO_INTEIRO_BR } },
+    { header: 'PORTABILIDADE', key: 'portabilidade', width: 16, style: { numFmt: FORMATO_INTEIRO_BR } },
     { header: 'VENDEDORA', key: 'vendedora', width: 22 },
     { header: 'OPERADORA', key: 'operadora', width: 18 },
     { header: 'DATA DA VENDA', key: 'data_venda', width: 16 },
@@ -1708,7 +1709,10 @@ async function gerarXlsxVendasPeriodo(filtros = {}) {
 
   aplicarEstiloPlanilha(worksheet);
 
-  worksheet.getColumn('valor_total').numFmt = 'R$ #,##0.00';
+  worksheet.getColumn('valor_total').numFmt = FORMATO_MOEDA_BR;
+  ['quantidade', 'novo', 'portabilidade'].forEach(key => {
+    worksheet.getColumn(key).numFmt = FORMATO_INTEIRO_BR;
+  });
   ['data_venda', 'data_input', 'data_ativacao'].forEach(key => {
     worksheet.getColumn(key).numFmt = 'dd/mm/yyyy';
   });

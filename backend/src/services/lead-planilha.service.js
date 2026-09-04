@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const Busboy = require('busboy');
 const ExcelJS = require('exceljs');
+const { FORMATO_MOEDA_BR, FORMATO_PERCENTUAL_BR } = require('../utils/formato-planilha');
 /**
  * Servico de importacao, distribuicao e acompanhamento de planilhas de leads.
  */
@@ -3554,8 +3555,8 @@ async function gerarXlsxProdutividadePrimeiraLigacao(filtros = {}) {
   wsResumo.columns = [
     { width: 30 }, { width: 18 }, { width: 21 }, { width: 21 }, { width: 23 }, { width: 23 }, { width: 21 }, { width: 18 }, { width: 14 }, { width: 20 }
   ];
-  wsResumo.getColumn(9).numFmt = '0.0%';
-  wsResumo.getColumn(10).numFmt = 'R$ #,##0.00';
+  wsResumo.getColumn(9).numFmt = FORMATO_PERCENTUAL_BR;
+  wsResumo.getColumn(10).numFmt = FORMATO_MOEDA_BR;
   estilizarPlanilhaProdutividade(wsResumo, 10);
   linhaTotal.font = { bold: true };
   linhaTotal.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
@@ -3588,8 +3589,8 @@ async function gerarXlsxProdutividadePrimeiraLigacao(filtros = {}) {
   wsDiario.columns = [
     { width: 14 }, { width: 30 }, { width: 18 }, { width: 21 }, { width: 21 }, { width: 23 }, { width: 23 }, { width: 21 }, { width: 18 }, { width: 14 }, { width: 20 }
   ];
-  wsDiario.getColumn(10).numFmt = '0.0%';
-  wsDiario.getColumn(11).numFmt = 'R$ #,##0.00';
+  wsDiario.getColumn(10).numFmt = FORMATO_PERCENTUAL_BR;
+  wsDiario.getColumn(11).numFmt = FORMATO_MOEDA_BR;
   estilizarPlanilhaProdutividade(wsDiario, 11);
   const sufixo = filtros.data_inicio || filtros.data_fim
     ? `${filtros.data_inicio || 'inicio'}-a-${filtros.data_fim || 'hoje'}`

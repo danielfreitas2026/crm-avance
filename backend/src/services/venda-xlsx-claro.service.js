@@ -7,6 +7,7 @@ const ExcelJS = require('exceljs');
 const { _internals } = require('./venda-email-template.service');
 
 const { parseItensChips, parsePortados } = _internals;
+const { FORMATO_MOEDA_BR, numeroPlanilha } = require('../utils/formato-planilha');
 
 const RED    = 'FF0000';
 const WHITE  = 'FFFFFF';
@@ -403,7 +404,8 @@ async function gerarXlsxClaro(venda) {
   chipRows.forEach((chip, index) => {
     const portabilidade = chip.tipoLinha === 'portabilidade' || index >= chipRows.length - qtdPortados;
     const numeroPortado = portabilidade ? (portados[portadoIndex++] || '') : '';
-    dataRows.push([chip.plano, chip.preco, 'Avulso', chip.preco, portabilidade ? operadoraOrigem : '', numeroPortado]);
+    const preco = numeroPlanilha(chip.preco);
+    dataRows.push([chip.plano, preco, 'Avulso', preco, portabilidade ? operadoraOrigem : '', numeroPortado]);
   });
   while (dataRows.length < 10) {
     dataRows.push(['', null, '', null, '', '']);
@@ -416,9 +418,9 @@ async function gerarXlsxClaro(venda) {
     ws.getRow(r).height = 15;
 
     w(ws, r, 1, plano, { bg: bgRow });
-    w(ws, r, 2, vPlano, { bg: bgRow, numFmt: vPlano !== null ? 'R$ #,##0.00' : undefined });
+    w(ws, r, 2, vPlano, { bg: bgRow, numFmt: vPlano !== null ? FORMATO_MOEDA_BR : undefined });
     w(ws, r, 3, aparel, { bg: bgRow });
-    w(ws, r, 4, vUnit,  { bg: bgRow, numFmt: vUnit  !== null ? 'R$ #,##0.00' : undefined });
+    w(ws, r, 4, vUnit,  { bg: bgRow, numFmt: vUnit  !== null ? FORMATO_MOEDA_BR : undefined });
     w(ws, r, 5, oper,   { bg: bgRow });
     w(ws, r, 6, porto,  { bg: bgRow });
   }

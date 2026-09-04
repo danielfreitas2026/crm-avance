@@ -7,6 +7,7 @@ const Busboy = require('busboy');
 const ExcelJS = require('exceljs');
 const notificacaoService = require('./notificacao.service');
 const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
+const { FORMATO_MOEDA_BR, FORMATO_INTEIRO_BR } = require('../utils/formato-planilha');
 
 const CAMPOS = [
   'nome',
@@ -1193,8 +1194,8 @@ async function gerarXlsxClientes(filtros = {}, usuarioId) {
     { header: 'WHATSAPP', key: 'whatsapp', width: 18 },
     { header: 'FIXO', key: 'fixo', width: 18 },
     { header: 'OPERADORAS', key: 'operadoras', width: 32 },
-    { header: 'CHIPS', key: 'quantidade_chips', width: 10 },
-    { header: 'VALOR PAGO', key: 'valor_pago', width: 14, style: { numFmt: 'R$ #,##0.00' } },
+    { header: 'CHIPS', key: 'quantidade_chips', width: 10, style: { numFmt: FORMATO_INTEIRO_BR } },
+    { header: 'VALOR PAGO', key: 'valor_pago', width: 14, style: { numFmt: FORMATO_MOEDA_BR } },
     { header: 'FIDELIDADE FIM', key: 'fidelidade_fim', width: 16, style: { numFmt: 'dd/mm/yyyy' } },
     { header: 'BASE ANTERIOR', key: 'base_anterior_sistema', width: 16 },
     { header: 'REGISTRADO POR', key: 'criado_por', width: 22 },
@@ -1223,7 +1224,8 @@ async function gerarXlsxClientes(filtros = {}, usuarioId) {
   });
 
   aplicarEstiloExportacao(worksheet);
-  worksheet.getColumn('valor_pago').numFmt = 'R$ #,##0.00';
+  worksheet.getColumn('valor_pago').numFmt = FORMATO_MOEDA_BR;
+  worksheet.getColumn('quantidade_chips').numFmt = FORMATO_INTEIRO_BR;
   worksheet.getColumn('fidelidade_fim').numFmt = 'dd/mm/yyyy';
   worksheet.getColumn('created_at').numFmt = 'dd/mm/yyyy';
 

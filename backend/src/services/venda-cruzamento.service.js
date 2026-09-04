@@ -1,5 +1,6 @@
 const Busboy = require('busboy');
 const ExcelJS = require('exceljs');
+const { FORMATO_DECIMAL_BR, numeroPlanilha } = require('../utils/formato-planilha');
 
 const LIMITE_VALORES_DISTINTOS = 50;
 const LIMITE_AMOSTRAS = 5;
@@ -844,7 +845,7 @@ function escreverAba(workbook, titulo, cabecalho, linhas, opcoes = {}) {
     header: nome,
     key: nome,
     width: Math.min(Math.max(nome.length + 4, 12), 40),
-    ...(COLUNAS_MONETARIAS.has(nome) ? { style: { numFmt: '#,##0.00' } } : {})
+    ...(COLUNAS_MONETARIAS.has(nome) ? { style: { numFmt: FORMATO_DECIMAL_BR } } : {})
   }));
 
   const colunaStatus = cabecalho.indexOf('Status_Conciliacao') + 1;
@@ -1477,8 +1478,8 @@ function cruzarMultiplasPlanilhas(linhasPrincipal, indicesOperadoras, config) {
       __mes: chip.mes || '',
       Tipo: chip.tipo || '',
       Tipo_Documento: rotuloTipoDocumento(chip.documento?.tipo),
-      Valor_Chip: chip.valor != null ? chip.valor : '',
-      Valor_Confirmacao: chip.confirmacao?.valorTotal != null ? chip.confirmacao.valorTotal : '',
+      Valor_Chip: numeroPlanilha(chip.valor) ?? '',
+      Valor_Confirmacao: numeroPlanilha(chip.confirmacao?.valorTotal) ?? '',
       Status_Conciliacao: statusConciliacao(chip),
       Arquivo_Confirmacao: chip.confirmacao?.arquivo || '',
       Aba_Confirmacao: chip.confirmacao?.dados?.__abaOrigem || '',

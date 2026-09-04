@@ -24,6 +24,7 @@ const vendaVisibilidadeService = require('./venda-visibilidade.service');
 const auditLogService = require('./audit-log.service');
 const { parseUtcDateTime } = require('../utils/datetime');
 const { listarPermissoesEfetivas, usuarioTemPermissaoLocal } = require('../utils/permissoes');
+const { FORMATO_MOEDA_BR, FORMATO_INTEIRO_BR } = require('../utils/formato-planilha');
 const ExcelJS = require('exceljs');
 
 const CAMPOS = [
@@ -2493,14 +2494,14 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
     { header: 'RAZAO SOCIAL', key: 'razao_social', width: 34 },
     { header: 'CNPJ/CPF', key: 'cnpj', width: 20 },
     { header: 'VENDEDORA', key: 'vendedora', width: 28 },
-    { header: 'QUANTIDADE DE CHIPS', key: 'quantidade_chips_vendedora', width: 20 },
+    { header: 'QUANTIDADE DE CHIPS', key: 'quantidade_chips_vendedora', width: 20, style: { numFmt: FORMATO_INTEIRO_BR } },
     { header: 'OPERADORA', key: 'operadora', width: 18 },
     { header: 'TIPO', key: 'tipo', width: 18 },
     { header: 'PRODUTO', key: 'produto', width: 20 },
-    { header: 'LINHAS', key: 'quantidade_linhas', width: 10 },
+    { header: 'LINHAS', key: 'quantidade_linhas', width: 10, style: { numFmt: FORMATO_INTEIRO_BR } },
     { header: 'GB', key: 'gb', width: 12 },
     { header: 'VALORES UNITÁRIOS', key: 'valores_unitarios_chips', width: 28 },
-    { header: 'VALOR TOTAL', key: 'valor_total', width: 14, style: { numFmt: 'R$ #,##0.00' } },
+    { header: 'VALOR TOTAL', key: 'valor_total', width: 14, style: { numFmt: FORMATO_MOEDA_BR } },
     { header: 'VENCIMENTO', key: 'dia_vencimento', width: 12 },
     { header: 'DATA VENDA', key: 'data_venda', width: 16, style: { numFmt: 'dd/mm/yyyy' } },
     { header: 'DATA ATIVACAO', key: 'data_ativacao', width: 16, style: { numFmt: 'dd/mm/yyyy' } },
@@ -2559,7 +2560,10 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
   });
 
   aplicarEstiloExportacao(worksheet);
-  worksheet.getColumn('valor_total').numFmt = 'R$ #,##0.00';
+  worksheet.getColumn('valor_total').numFmt = FORMATO_MOEDA_BR;
+  ['quantidade_chips_vendedora', 'quantidade_linhas'].forEach(key => {
+    worksheet.getColumn(key).numFmt = FORMATO_INTEIRO_BR;
+  });
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
 
