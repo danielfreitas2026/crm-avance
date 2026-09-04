@@ -2460,12 +2460,15 @@ async function montarMapaEtapasExportacao() {
  */
 function statusVendaExportacao(venda, mapaEtapas = new Map()) {
   const codigo = venda.status_funil || '';
-  const nome = codigo === 'retorno'
+  const nomeEtapa = codigo === 'retorno'
     ? 'Retorno'
     : mapaEtapas.get(String(codigo)) || codigo;
 
-  if (venda.cancelada_em) return nome ? `${nome} (Cancelada)` : 'Cancelada';
-  return nome;
+  if (venda.cancelada_em) return nomeEtapa ? `${nomeEtapa} (Cancelada)` : 'Cancelada';
+  if (nomeEtapa) return nomeEtapa;
+
+  // status_funil e nulo ate a venda entrar no funil: mesmo aviso exibido na tela.
+  return venda.enviada_pos_venda_em ? 'Sem etapa' : 'Falta enviar ao pós-venda';
 }
 
 /**

@@ -652,7 +652,19 @@ test('exporta rotulo de retorno e mantem o codigo quando a etapa nao existe mais
 
   assert.equal(statusVendaExportacao({ status_funil: 'retorno' }, mapaEtapas), 'Retorno');
   assert.equal(statusVendaExportacao({ status_funil: 'etapa_removida' }, mapaEtapas), 'etapa_removida');
-  assert.equal(statusVendaExportacao({ status_funil: '' }, mapaEtapas), '');
+});
+
+test('avisa que falta enviar ao pos-venda em vez de exportar status vazio', () => {
+  const mapaEtapas = new Map([['envio', 'Aceite/Biometria']]);
+
+  // status_funil e nulo ate a venda ser enviada ao pos-venda
+  assert.equal(statusVendaExportacao({ status_funil: null }, mapaEtapas), 'Falta enviar ao pós-venda');
+  assert.equal(statusVendaExportacao({ status_funil: '' }, mapaEtapas), 'Falta enviar ao pós-venda');
+  assert.equal(
+    statusVendaExportacao({ status_funil: null, enviada_pos_venda_em: '2026-09-01' }, mapaEtapas),
+    'Sem etapa'
+  );
+  assert.equal(statusVendaExportacao({ status_funil: null, cancelada_em: '2026-08-01' }, mapaEtapas), 'Cancelada');
 });
 
 test('indica cancelamento sem esconder a etapa da venda na exportacao', () => {
