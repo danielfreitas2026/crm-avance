@@ -47,6 +47,30 @@ test('combina destino, periodo e retornos futuros nos filtros avancados', () => 
   assert.ok(consulta.bindings.includes('2026-08-20'));
 });
 
+test('filtra pelo consultor que fez a primeira ligacao usando o mesmo COALESCE das metricas', () => {
+  const consulta = compilar(query => aplicarFiltrosFuturosClientes(query, { primeira_ligacao_id: '7' }));
+
+  assert.match(
+    consulta.sql,
+    /COALESCE\(lead_linhas\.primeira_ligacao_usuario_id, lead_linhas\.futuro_cliente_marcado_por_id, lead_linhas\.retorno_agendado_por_id, lead_linhas\.cliente_recusou_por_id, lead_linhas\.chamada_nao_atendida_por_id\) = \?/i
+  );
+  assert.ok(consulta.bindings.includes(7));
+});
+
+test('permite localizar futuros clientes sem primeira ligacao registrada', () => {
+  const consulta = compilar(query => aplicarFiltrosFuturosClientes(query, {
+    primeira_ligacao_id: 'sem_primeira_ligacao'
+  }));
+
+  assert.match(consulta.sql, /COALESCE\(lead_linhas\.primeira_ligacao_usuario_id.*\) is null/i);
+});
+
+test('ignora filtro de primeira ligacao com valor invalido', () => {
+  const consulta = compilar(query => aplicarFiltrosFuturosClientes(query, { primeira_ligacao_id: 'abc' }));
+
+  assert.doesNotMatch(consulta.sql, /primeira_ligacao_usuario_id/i);
+});
+
 test('permite localizar futuros clientes sem responsavel atual', () => {
   const consulta = compilar(query => aplicarFiltrosFuturosClientes(query, {
     responsavel_id: 'sem_responsavel'

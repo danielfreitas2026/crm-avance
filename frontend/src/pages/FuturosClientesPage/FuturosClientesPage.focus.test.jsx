@@ -74,6 +74,7 @@ describe('busca de futuros clientes', () => {
     await user.click(screen.getByRole('button', { name: 'Todos' }));
     await user.click(screen.getByRole('button', { name: /Mais filtros/ }));
     await user.selectOptions(await screen.findByLabelText('Filtrar pelo usuário responsável atual'), '7');
+    await user.selectOptions(screen.getByLabelText('Filtrar pelo usuário que fez a primeira ligação'), '7');
     await user.selectOptions(screen.getByLabelText('Filtrar destino dos futuros clientes'), 'distribuicao');
     await user.type(screen.getByText('Marcado a partir de').parentElement.querySelector('input'), '2026-08-01');
     await user.type(screen.getByText('Marcado até').parentElement.querySelector('input'), '2026-08-20');
@@ -81,12 +82,13 @@ describe('busca de futuros clientes', () => {
     await waitFor(() => expect(listarQuadroFuturosClientes).toHaveBeenLastCalledWith(
       expect.objectContaining({
         responsavel_id: '7',
+        primeira_ligacao_id: '7',
         destino: 'distribuicao',
         marcado_de: '2026-08-01',
         marcado_ate: '2026-08-20'
       })
     ));
-    expect(screen.getByRole('button', { name: 'Mais filtros (4)' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Mais filtros (5)' })).toBeVisible();
   });
 
   it('revalida silenciosamente a lista a cada 30 segundos', async () => {

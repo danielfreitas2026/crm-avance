@@ -3822,6 +3822,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
   const [filtroSituacao, setFiltroSituacao] = useState('');
   const [filtroRetorno, setFiltroRetorno] = useState('');
   const [filtroResponsavel, setFiltroResponsavel] = useState('');
+  const [filtroPrimeiraLigacao, setFiltroPrimeiraLigacao] = useState('');
   const [filtroDestino, setFiltroDestino] = useState('');
   const [marcadoDe, setMarcadoDe] = useState('');
   const [marcadoAte, setMarcadoAte] = useState('');
@@ -3864,6 +3865,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     filtroSituacao,
     filtroRetorno,
     filtroResponsavel,
+    filtroPrimeiraLigacao,
     filtroDestino,
     marcadoDe,
     marcadoAte,
@@ -3872,12 +3874,13 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     filtroRecebidos,
     linhaNotificacaoId,
     escopoTodos
-  }), [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroResponsavel, filtroDestino, marcadoDe, marcadoAte, modoLixeira, modoRecebidos, filtroRecebidos, linhaNotificacaoId, escopoTodos]);
+  }), [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroResponsavel, filtroPrimeiraLigacao, filtroDestino, marcadoDe, marcadoAte, modoLixeira, modoRecebidos, filtroRecebidos, linhaNotificacaoId, escopoTodos]);
   const carregando = consultaConcluida !== chaveConsulta;
   const periodoMetricasInvalido = tipoPeriodoMetricas === 'periodo'
     && Boolean(dataInicioMetricas && dataFimMetricas && dataInicioMetricas > dataFimMetricas);
   const quantidadeFiltrosAvancados = [
     escopoTodos && filtroResponsavel,
+    escopoTodos && filtroPrimeiraLigacao,
     filtroDestino,
     marcadoDe,
     marcadoAte
@@ -3930,6 +3933,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
       situacao: filtroSituacao || undefined,
       retorno: filtroRetorno || undefined,
       responsavel_id: escopoTodos ? filtroResponsavel || undefined : undefined,
+      primeira_ligacao_id: escopoTodos ? filtroPrimeiraLigacao || undefined : undefined,
       destino: filtroDestino || undefined,
       marcado_de: marcadoDe || undefined,
       marcado_ate: marcadoAte || undefined,
@@ -3977,7 +3981,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
         if (!cancelado) setConsultaConcluida(chaveConsulta);
       });
     return () => { cancelado = true; };
-  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroResponsavel, filtroDestino, marcadoDe, marcadoAte, filtroRecebidos, modoLixeira, modoRecebidos, escopoTodos, linhaNotificacaoId, chaveConsulta, notificacaoId, revalidacao, agora]);
+  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroResponsavel, filtroPrimeiraLigacao, filtroDestino, marcadoDe, marcadoAte, filtroRecebidos, modoLixeira, modoRecebidos, escopoTodos, linhaNotificacaoId, chaveConsulta, notificacaoId, revalidacao, agora]);
 
   useEffect(() => {
     if (!exibirMetricas || modoLixeira || periodoMetricasInvalido) return;
@@ -4103,6 +4107,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     setFiltroSituacao('');
     setFiltroRetorno('');
     setFiltroResponsavel('');
+    setFiltroPrimeiraLigacao('');
     setFiltroDestino('');
     setMarcadoDe('');
     setMarcadoAte('');
@@ -4391,7 +4396,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
             <I.Filter size={14} /> Mais filtros{quantidadeFiltrosAvancados ? ` (${quantidadeFiltrosAvancados})` : ''}
           </button>
         )}
-        {(busca || filtroSituacao || filtroRetorno || filtroResponsavel || filtroDestino || marcadoDe || marcadoAte || (modoRecebidos && filtroRecebidos !== 'acao')) && (
+        {(busca || filtroSituacao || filtroRetorno || filtroResponsavel || filtroPrimeiraLigacao || filtroDestino || marcadoDe || marcadoAte || (modoRecebidos && filtroRecebidos !== 'acao')) && (
           <button type="button" className="btn btn-sm" onClick={limparFiltros}>Limpar filtros</button>
         )}
         <div className="clientes-leads-actions">
@@ -4411,20 +4416,36 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
         {!modoRecebidos && filtrosAbertos && (
           <div className="clientes-filtros-avancados" id="futuros-clientes-filtros-avancados">
             {escopoTodos && (
-              <label>
-                <span>Com quem está</span>
-                <select
-                  value={filtroResponsavel}
-                  onChange={event => { setFiltroResponsavel(event.target.value); setPagina(1); }}
-                  aria-label="Filtrar pelo usuário responsável atual"
-                >
-                  <option value="">Todos os responsáveis</option>
-                  <option value="sem_responsavel">Sem responsável</option>
-                  {responsaveis.map(item => (
-                    <option key={item.id} value={item.id}>{item.nome}{item.ativo ? '' : ' (inativo)'}</option>
-                  ))}
-                </select>
-              </label>
+              <>
+                <label>
+                  <span>Com quem está</span>
+                  <select
+                    value={filtroResponsavel}
+                    onChange={event => { setFiltroResponsavel(event.target.value); setPagina(1); }}
+                    aria-label="Filtrar pelo usuário responsável atual"
+                  >
+                    <option value="">Todos os responsáveis</option>
+                    <option value="sem_responsavel">Sem responsável</option>
+                    {responsaveis.map(item => (
+                      <option key={item.id} value={item.id}>{item.nome}{item.ativo ? '' : ' (inativo)'}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Primeira ligação</span>
+                  <select
+                    value={filtroPrimeiraLigacao}
+                    onChange={event => { setFiltroPrimeiraLigacao(event.target.value); setPagina(1); }}
+                    aria-label="Filtrar pelo usuário que fez a primeira ligação"
+                  >
+                    <option value="">Todas as primeiras ligações</option>
+                    <option value="sem_primeira_ligacao">Sem primeira ligação</option>
+                    {responsaveis.map(item => (
+                      <option key={item.id} value={item.id}>{item.nome}{item.ativo ? '' : ' (inativo)'}</option>
+                    ))}
+                  </select>
+                </label>
+              </>
             )}
             <label>
               <span>Destino</span>

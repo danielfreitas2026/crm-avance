@@ -454,6 +454,31 @@ function aplicarFiltroResponsavelAtual(query, responsavelId) {
         .whereRaw('COALESCE(lead_linhas.atribuido_para_id, lead_linhas.futuro_cliente_marcado_por_id) = ?', [usuarioId]));
   });
 }
+
+/**
+ * Expressao canonica de "quem fez a primeira ligacao".
+ * `primeira_ligacao_usuario_id` so e preenchido no reenvio, entao as colunas
+ * seguintes cobrem as linhas que nunca passaram por esse fluxo.
+ */
+function expressaoPrimeiraLigacao(alias = 'lead_linhas') {
+  return `COALESCE(${alias}.primeira_ligacao_usuario_id, ${alias}.futuro_cliente_marcado_por_id, ${alias}.retorno_agendado_por_id, ${alias}.cliente_recusou_por_id, ${alias}.chamada_nao_atendida_por_id)`;
+}
+
+/** Filtra pelo consultor que realizou a primeira ligacao (mesma regra das metricas). */
+function aplicarFiltroPrimeiraLigacao(query, primeiraLigacaoId) {
+  const valor = String(primeiraLigacaoId || '').trim();
+  if (!valor) return query;
+
+  if (valor === 'sem_primeira_ligacao') {
+    return query.whereRaw(`${expressaoPrimeiraLigacao('lead_linhas')} IS NULL`);
+  }
+
+  const usuarioId = Number(valor);
+  if (!Number.isInteger(usuarioId) || usuarioId <= 0) return query;
+
+  return query.whereRaw(`${expressaoPrimeiraLigacao('lead_linhas')} = ?`, [usuarioId]);
+}
+
 /**
  * Applies filters specific to the future-clients list.
  */
@@ -534,6 +559,7 @@ function aplicarFiltrosFuturosClientes(query, filtros = {}) {
   }
 
   aplicarFiltroResponsavelAtual(query, filtros.responsavel_id);
+  aplicarFiltroPrimeiraLigacao(query, filtros.primeira_ligacao_id);
 
   return query;
 }
@@ -3400,7 +3426,7 @@ async function listarFuturosClientesComConsultoras(filtros = {}, usuarioId = nul
 }
 
 async function obterMetricasFuturosClientes(filtros = {}) {
-  const usuarioResponsavel = 'COALESCE(ll.primeira_ligacao_usuario_id, ll.futuro_cliente_marcado_por_id, ll.retorno_agendado_por_id, ll.cliente_recusou_por_id, ll.chamada_nao_atendida_por_id)';
+  const usuarioResponsavel = expressaoPrimeiraLigacao('ll');
   // O histórico é preenchido no reenvio para que a métrica continue refletindo a
   // primeira tentativa, mesmo que o status operacional da linha seja reaberto.
   const dataPrimeiroContato = 'COALESCE(ll.primeira_ligacao_em, ll.futuro_cliente_marcado_em, ll.cliente_recusou_em, ll.chamada_nao_atendida_em, ll.updated_at)';
@@ -4037,7 +4063,7 @@ async function listarResponsaveisFuturosClientes() {
         LeadLinha.query()
           .select(1)
           .whereRaw('lead_linhas.futuro_cliente = true')
-          .whereRaw('(lead_linhas.atribuido_para_id = usuarios.id OR lead_linhas.futuro_cliente_marcado_por_id = usuarios.id)')
+          .whereRaw(`(lead_linhas.atribuido_para_id = usuarios.id OR lead_linhas.futuro_cliente_marcado_por_id = usuarios.id OR ${expressaoPrimeiraLigacao('lead_linhas')} = usuarios.id)`)
       )
       .orWhereExists(
         db('lead_atribuicoes as la_responsaveis')
