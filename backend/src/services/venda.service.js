@@ -4227,6 +4227,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
         ...(origemGmail ? {
           origem_movimentacao: 'automacao_gmail',
           automacao_email_id: Number(opcoes.automacaoEmailId) || null,
+          ...(opcoes.automacaoRecebidaEm ? { automacao_recebida_em: opcoes.automacaoRecebidaEm } : {}),
           requisitos_concluidos_automaticamente: requisitosAutomaticos.concluidos
         } : {})
       },
@@ -4631,6 +4632,7 @@ async function cancelarVenda(id, {
   sistema = false,
   origemMovimentacao = null,
   automacaoEmailId = null,
+  automacaoRecebidaEm = null,
   statusFunilEsperado = undefined
 }) {
   const motivoLimpo = String(motivo || '').trim();
@@ -4680,7 +4682,8 @@ async function cancelarVenda(id, {
         motivo_cancelamento: motivoLimpo,
         ...(origemMovimentacao ? {
           origem_movimentacao: origemMovimentacao,
-          automacao_email_id: Number(automacaoEmailId) || null
+          automacao_email_id: Number(automacaoEmailId) || null,
+          ...(automacaoRecebidaEm ? { automacao_recebida_em: automacaoRecebidaEm } : {})
         } : {})
       },
       createdAt: agora,

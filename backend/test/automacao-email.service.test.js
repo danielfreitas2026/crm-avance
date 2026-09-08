@@ -543,7 +543,7 @@ test('registra as divergencias secundarias separadamente', () => {
   assert.deepEqual(automacao._internals.divergenciasSecundarias({ ...venda, valor_total: 55 }, campos), ['valor mensal divergente']);
 });
 
-test('CNPJ com uma unica venda ativa prevalece sobre divergencias secundarias', () => {
+test('CNPJ com uma unica venda ativa e divergencias segue para revisao', () => {
   const venda = {
     id: 1,
     nome: 'Empresa Exemplo',
@@ -562,9 +562,11 @@ test('CNPJ com uma unica venda ativa prevalece sobre divergencias secundarias', 
     { data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99 },
     ['concluido']
   );
-  assert.equal(resultado.venda, venda);
+  assert.equal(resultado.venda, null);
   assert.deepEqual(resultado.candidatas[0].divergencias, ['data da venda divergente', 'quantidade divergente', 'valor mensal divergente']);
   assert.equal(resultado.candidatas[0].elegivel, true);
+  assert.equal(resultado.candidatas[0].automaticamente_compativel, false);
+  assert.match(resultado.erro, /revisão manual/);
   assert.equal(resultado.candidatas[0].status_funil_nome, 'Ativação');
   assert.equal(resultado.candidatas[0].razao_social, 'Empresa Exemplo LTDA');
   assert.equal(resultado.candidatas[0].data_venda, '2026-08-25');
@@ -574,6 +576,19 @@ test('CNPJ com uma unica venda ativa prevalece sobre divergencias secundarias', 
     { id: 4, nome: 'Consultora Compartilhada' }
   ]);
   assert.deepEqual(resultado.candidatas[0].criador, { id: 7, nome: 'Gerente' });
+});
+
+test('email anterior ao cadastro nunca seleciona a venda automaticamente', () => {
+  const venda = { id: 1, status_funil: 'ativacao', criado_em: '2026-09-08 12:00:00', data_venda: '2026-09-08' };
+  const resultado = automacao._internals.avaliarCandidatas(
+    [venda],
+    { data_venda: '2026-09-08' },
+    ['concluido'],
+    { recebidoEm: '2026-09-02 12:00:00' }
+  );
+  assert.equal(resultado.venda, null);
+  assert.deepEqual(resultado.candidatas[0].divergencias, ['e-mail recebido antes da criação da venda']);
+  assert.equal(resultado.candidatas[0].automaticamente_compativel, false);
 });
 
 test('revalida venda manual no CNPJ pesquisado e nas regras atuais da automacao', async () => {
@@ -674,7 +689,7 @@ test('varias vendas ativas exigem uma unica correspondencia secundaria completa'
 
 test('vendas concluidas, canceladas e excluidas nao participam da correspondencia', () => {
   const campos = { data_venda: '2026-08-24', quantidade: 1, valor_mensal: 54.99 };
-  const ativa = { id: 1, status_funil: 'entrega', data_venda: '2026-08-25', quantidade_linhas: 2, valor_total: 100 };
+  const ativa = { id: 1, status_funil: 'entrega', data_venda: '2026-08-24', quantidade_linhas: 1, valor_total: 54.99 };
   const concluida = { ...ativa, id: 2, status_funil: 'final_personalizado' };
   const cancelada = { ...ativa, id: 3, cancelada_em: '2026-08-30' };
   const excluida = { ...ativa, id: 4, excluido_em: '2026-08-30' };

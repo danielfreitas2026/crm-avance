@@ -6,8 +6,11 @@ import { formatUtcDateTime } from '../../utils/datetime';
 import {
   coletarHistoricoAutomacoes,
   descartarAutomacao,
+  corrigirHistoricoAutomacao,
   listarAutomacoes,
+  listarInconsistenciasHistoricoAutomacoes,
   listarVendasCandidatasAutomacao,
+  obterPreviaCorrecaoHistoricoAutomacao,
   obterResumoAutomacoes,
   repetirAutomacao,
   repetirAutomacoesEmRevisao,
@@ -327,6 +330,69 @@ function Revisao({ item, onAtualizar, onErro }) {
   );
 }
 
+function CorrecaoHistoricoModal({ item, onClose, onCorrigido, onErro }) {
+  const dialogRef = useDialogAcessivel(onClose);
+  const [previa, setPrevia] = useState(null);
+  const [statusDestino, setStatusDestino] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [reverterEfeitos, setReverterEfeitos] = useState(false);
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    let ativo = true;
+    obterPreviaCorrecaoHistoricoAutomacao(item.historico_id)
+      .then(resultado => {
+        if (!ativo) return;
+        setPrevia(resultado);
+        setStatusDestino(resultado.status_sugerido || resultado.venda_status_atual || '');
+      })
+      .catch(error => { if (ativo) onErro(error.message); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
+  }, [item.historico_id, onErro]);
+
+  async function confirmar() {
+    if (!previa || !statusDestino || !motivo.trim()) return;
+    setSalvando(true);
+    onErro('');
+    try {
+      await corrigirHistoricoAutomacao(item.historico_id, {
+        status_destino: statusDestino,
+        motivo,
+        versao_venda: previa.venda_updated_at,
+        reverter_efeitos_derivados: reverterEfeitos
+      });
+      await onCorrigido();
+      onClose();
+    } catch (error) {
+      onErro(error.message);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div ref={dialogRef} tabIndex={-1} className="modal automation-history-modal" role="dialog" aria-modal="true" aria-label="Corrigir histórico da automação">
+        <div className="modal-header"><div className="modal-header-row"><div><div className="modal-client">Corrigir histórico da venda #{item.venda_id}</div><div className="modal-sub">Evento #{item.historico_id} · Automação {item.automacao_id ? `#${item.automacao_id}` : 'não encontrada'}</div></div><button type="button" className="btn btn-icon btn-ghost" title="Fechar" disabled={salvando} onClick={onClose}><I.Close size={14} /></button></div></div>
+        <div className="modal-body automation-history-modal__body">
+          {carregando && <div className="automation-sale-state">Gerando prévia segura...</div>}
+          {previa && <>
+            <div className="automation-history-reasons"><strong>Por que foi sinalizado</strong>{previa.motivos.map(motivoItem => <span key={motivoItem}>{motivoItem}</span>)}</div>
+            <dl className="automation-history-dates"><div><dt>E-mail recebido</dt><dd>{dataHora(previa.email_recebido_em)}</dd></div><div><dt>Venda criada</dt><dd>{dataHora(previa.venda_criada_em)}</dd></div><div><dt>Evento gravado</dt><dd>{dataHora(previa.historico_em)}</dd></div></dl>
+            <label>Etapa que deve permanecer<select value={statusDestino} onChange={event => setStatusDestino(event.target.value)}>{previa.etapas.map(etapa => <option key={etapa.codigo} value={etapa.codigo}>{etapa.nome}</option>)}</select></label>
+            {previa.efeitos_derivados_comprovados.length > 0 && <label className="automation-history-effects"><input type="checkbox" checked={reverterEfeitos} onChange={event => setReverterEfeitos(event.target.checked)} />Reverter também efeitos comprovadamente produzidos por esta automação: {previa.efeitos_derivados_comprovados.join(', ')}</label>}
+            {previa.efeitos_nao_revertidos_automaticamente.length > 0 && <div className="automation-sale-warning" role="status"><I.AlertTriangle size={16} />Não serão revertidos automaticamente: {previa.efeitos_nao_revertidos_automaticamente.join(', ')}.</div>}
+            <label>Justificativa<textarea value={motivo} onChange={event => setMotivo(event.target.value)} placeholder="Explique por que o vínculo está incorreto" /></label>
+          </>}
+        </div>
+        <div className="modal-footer"><button type="button" className="btn" disabled={salvando} onClick={onClose}>Cancelar</button><button type="button" className="btn btn-primary" disabled={carregando || salvando || !statusDestino || !motivo.trim()} onClick={confirmar}>{salvando ? 'Corrigindo...' : 'Confirmar correção'}</button></div>
+      </div>
+    </div>
+  );
+}
+
 export default function AutomacoesPage() {
   const [status, setStatus] = useState('');
   const [classificacao, setClassificacao] = useState('');
@@ -341,6 +407,9 @@ export default function AutomacoesPage() {
   const [coletandoHistorico, setColetandoHistorico] = useState(false);
   const [repetindoRevisoes, setRepetindoRevisoes] = useState(false);
   const [sucesso, setSucesso] = useState('');
+  const [inconsistencias, setInconsistencias] = useState(null);
+  const [auditandoHistorico, setAuditandoHistorico] = useState(false);
+  const [correcaoHistorico, setCorrecaoHistorico] = useState(null);
 
   const carregar = useCallback(async (manual = false, ativo = { valor: true }) => {
     if (manual) setAtualizando(true);
@@ -407,6 +476,20 @@ export default function AutomacoesPage() {
     }
   }
 
+  async function auditarHistoricos() {
+    setAuditandoHistorico(true);
+    setErro('');
+    try {
+      const resultado = await listarInconsistenciasHistoricoAutomacoes();
+      setInconsistencias(resultado);
+      setSucesso(`${Number(resultado.total || 0)} histórico(s) potencialmente inconsistente(s) encontrado(s).`);
+    } catch (error) {
+      setErro(error.message);
+    } finally {
+      setAuditandoHistorico(false);
+    }
+  }
+
   useEffect(() => {
     const ativo = { valor: true };
     const agendamento = window.setTimeout(() => carregar(false, ativo), 0);
@@ -417,7 +500,7 @@ export default function AutomacoesPage() {
   const totalCancelamentos = Number(resumo.contadores_classificacao?.cancelamento || 0);
   const total = Object.values(contadores).reduce((soma, quantidade) => soma + Number(quantidade || 0), 0);
   const totalRevisoes = Number(contadores.revisao || 0) + Number(contadores.regressao_funil || 0);
-  const barraOcupada = atualizando || coletandoHistorico || repetindoRevisoes;
+  const barraOcupada = atualizando || coletandoHistorico || repetindoRevisoes || auditandoHistorico;
   function alterarFiltro(novoFiltro) {
     const novaClassificacao = novoFiltro === 'cancelamento' ? 'cancelamento' : '';
     const novoStatus = novaClassificacao ? '' : novoFiltro;
@@ -452,6 +535,7 @@ export default function AutomacoesPage() {
           </label>
           <div className="automation-toolbar__actions">
             <button type="button" className="btn" disabled={barraOcupada || totalRevisoes === 0} onClick={repetirRevisoes}><I.Refresh size={14} /> {repetindoRevisoes ? 'Reprocessando...' : `Repetir revisões e regressões (${totalRevisoes})`}</button>
+            <button type="button" className="btn" disabled={barraOcupada} onClick={auditarHistoricos}><I.AlertTriangle size={14} /> {auditandoHistorico ? 'Auditando...' : 'Auditar históricos'}</button>
             <button type="button" className="btn" disabled={barraOcupada || !resumo.habilitada} onClick={coletarHistorico}><I.History size={14} /> {coletandoHistorico ? 'Buscando histórico...' : 'Buscar e-mails anteriores'}</button>
             <button type="button" className="btn automation-refresh" disabled={barraOcupada} onClick={() => carregar(true)}><I.Refresh size={14} /> {atualizando ? 'Atualizando...' : 'Atualizar'}</button>
           </div>
@@ -459,6 +543,13 @@ export default function AutomacoesPage() {
 
         {erro && <div className="alert-error automation-alert" role="alert">{erro}</div>}
         {sucesso && <div className="alert-success automation-alert" role="status">{sucesso}</div>}
+
+        {inconsistencias && <section className="automation-history-audit" aria-label="Históricos potencialmente inconsistentes">
+          <div className="automation-history-audit__heading"><div><strong>Auditoria de históricos</strong><span>{inconsistencias.total} caso(s) aguardando análise individual.</span></div><button type="button" className="btn btn-icon btn-ghost" title="Fechar auditoria" onClick={() => setInconsistencias(null)}><I.Close size={14} /></button></div>
+          {inconsistencias.data.length === 0 ? <div className="automation-sale-state">Nenhuma inconsistência encontrada.</div> : inconsistencias.data.map(item => <article key={item.historico_id} className="automation-history-item"><div><strong>Venda #{item.venda_id}</strong><span>Evento #{item.historico_id} · {item.status_anterior || 'sem etapa'} → {item.status_novo || 'sem etapa'}</span>{item.motivos.map(motivo => <small key={motivo}>{motivo}</small>)}</div><button type="button" className="btn btn-primary" onClick={() => setCorrecaoHistorico(item)}>Revisar correção</button></article>)}
+        </section>}
+
+        {correcaoHistorico && <CorrecaoHistoricoModal item={correcaoHistorico} onClose={() => setCorrecaoHistorico(null)} onErro={setErro} onCorrigido={async () => { await auditarHistoricos(); await carregar(true); }} />}
 
         <section className="automation-list" aria-busy={carregando}>
           {carregando && <div className="automation-empty"><span className="automation-spinner" aria-hidden="true" /><strong>Carregando execuções</strong><span>Consultando o histórico da automação.</span></div>}

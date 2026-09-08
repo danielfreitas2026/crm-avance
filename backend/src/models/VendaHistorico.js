@@ -28,7 +28,11 @@ class VendaHistorico extends Model {
         created_at: { type: 'string' },
         deleted_at: { type: ['string', 'null'] },
         deleted_by_id: { type: ['integer', 'null'] },
-        deleted_reason: { type: ['string', 'null'], maxLength: 1000 }
+        deleted_reason: { type: ['string', 'null'], maxLength: 1000 },
+        invalidated_at: { type: ['string', 'null'] },
+        invalidated_by_id: { type: ['integer', 'null'] },
+        invalidation_reason: { type: ['string', 'null'] },
+        correction_automation_id: { type: ['integer', 'null'] }
       }
     };
   }

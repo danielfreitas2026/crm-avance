@@ -2217,6 +2217,15 @@ button.urgent-alert-panel__header {
   border-color: #a7f3d0;
 }
 
+.sale-event-list__item.is-invalidated {
+  border-color: #f59e0b;
+  opacity: .78;
+}
+
+.sale-event-list__item.is-invalidated .sale-event-list__head strong {
+  text-decoration: line-through;
+}
+
 .sale-delivery {
   display: grid;
   grid-template-columns: 152px minmax(0, 1fr);

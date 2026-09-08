@@ -577,7 +577,9 @@ function mapHistoricoVenda(venda, stage, updated, created, sellerName, stageLabe
     data: parseDate(item.created_at),
     tipo: getHistoryType(item),
     statusAnterior: item.status_anterior || null,
-    statusNovo: item.status_novo || null
+    statusNovo: item.status_novo || null,
+    invalidadoEm: item.invalidated_at || null,
+    motivoInvalidacao: item.invalidation_reason || null
   }));
 }
 
@@ -639,6 +641,7 @@ function buildSaleDeliveryProgress(sale, stages) {
   const skipped = new Set();
 
   sale.historico.forEach(item => {
+    if (item.invalidadoEm) return;
     if (item.tipo === 'create' && etapas[0] && !reached.has(etapas[0].id)) {
       reached.set(etapas[0].id, { data: item.data, autor: item.autor });
     }
@@ -707,15 +710,16 @@ function SaleEventItem({ item }) {
         ? <I.Plus size={11} />
         : <I.ChevronDown size={11} />;
   const titulo = item.titulo || item.acao || 'Atualização';
+  const invalidado = Boolean(item.invalidadoEm);
   const temObservacao = Boolean(item.observacao);
 
   return (
-    <li className={`sale-event-list__item sale-event-list__item--${variant}${aberto ? ' is-open' : ''}`}>
+    <li className={`sale-event-list__item sale-event-list__item--${variant}${aberto ? ' is-open' : ''}${invalidado ? ' is-invalidated' : ''}`}>
       <div className="sale-event-list__row">
         <span className="sale-event-list__icon">{icon}</span>
         <div className="sale-event-list__body">
           <div className="sale-event-list__head">
-            <strong>{titulo}</strong>
+            <strong>{titulo}{invalidado ? ' (invalidado)' : ''}</strong>
             <span className="sale-event-list__date">
               {item.data ? formatDateTime(item.data) : ''}
             </span>
@@ -740,6 +744,7 @@ function SaleEventItem({ item }) {
           <p className="sale-event-list__comment-text">{item.observacao}</p>
         </div>
       )}
+      {invalidado && <div className="sale-event-list__comment"><div className="sale-event-list__comment-label">Correção auditada</div><p className="sale-event-list__comment-text">{item.motivoInvalidacao || 'Vínculo de automação invalidado.'}</p></div>}
     </li>
   );
 }
