@@ -11,8 +11,43 @@ const {
   isRetornoLeadAgendadoElegivel,
   deveRearmarPopupRetornoFuturo,
   popupRetornoFuturoDisponivel,
-  resolverResponsavelAtualFuturoCliente
+  resolverResponsavelAtualFuturoCliente,
+  DIAS_RETENCAO_RETORNO_LIGACAO,
+  retornoLigacaoExpirou,
+  aplicarJanelaRetencaoRetorno,
+  selecionarIdsRetornosExpirados
 } = _internals;
+
+test('expira notificacao sete dias completos depois da ligacao marcada', () => {
+  const retorno = '2026-08-01T12:00:00.000Z';
+
+  assert.equal(DIAS_RETENCAO_RETORNO_LIGACAO, 7);
+  assert.equal(retornoLigacaoExpirou(retorno, new Date('2026-08-08T11:59:59.999Z')), false);
+  assert.equal(retornoLigacaoExpirou(retorno, new Date('2026-08-08T12:00:00.000Z')), true);
+  assert.equal(retornoLigacaoExpirou(null, new Date('2026-08-08T12:00:00.000Z')), false);
+});
+
+test('produtores ignoram ligacoes que ja atingiram o prazo de exclusao', () => {
+  const consulta = aplicarJanelaRetencaoRetorno(
+    db('lead_linhas').select('id'),
+    'retorno_agendado_em',
+    new Date('2026-08-08T12:00:00.000Z')
+  ).toSQL();
+
+  assert.match(consulta.sql, /retorno_agendado_em.*>/i);
+  assert.equal(new Date(consulta.bindings.at(-1)).toISOString(), '2026-08-01T12:00:00.000Z');
+});
+
+test('seleciona para exclusao somente notificacoes de ligacao vencidas ha sete dias', () => {
+  const agora = new Date('2026-08-08T12:00:00.000Z');
+  const notificacoes = [
+    { id: 1, dados: JSON.stringify({ retorno_agendado_para: '2026-08-01T12:00:00.000Z' }) },
+    { id: 2, dados: { retorno_agendado_para: '2026-08-01T12:00:00.001Z' } },
+    { id: 3, dados: '{}' }
+  ];
+
+  assert.deepEqual(selecionarIdsRetornosExpirados(notificacoes, agora), [1]);
+});
 
 test('considera estados finais inelegiveis para retorno pendente', () => {
   const ativa = {

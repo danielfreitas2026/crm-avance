@@ -31,6 +31,14 @@ const TIPO_FUTURO_CLIENTE_DISTRIBUIDO = 'futuro_cliente_distribuido';
 const TIPO_LEAD_RETORNO_PRE = 'lead_retorno_pre';
 const TIPO_LEAD_RETORNO_DUE = 'lead_retorno_due';
 const TIPOS_LEAD_RETORNO = [TIPO_LEAD_RETORNO_PRE, TIPO_LEAD_RETORNO_DUE];
+const TIPOS_RETORNO_LIGACAO = [
+  TIPO_NOTA_RETORNO_PRE,
+  TIPO_NOTA_RETORNO_DUE,
+  ...TIPOS_FUTURO_RETORNO,
+  ...TIPOS_LEAD_RETORNO
+];
+const DIAS_RETENCAO_RETORNO_LIGACAO = 7;
+const RETENCAO_RETORNO_LIGACAO_MS = DIAS_RETENCAO_RETORNO_LIGACAO * 24 * 60 * 60 * 1000;
 const TIPOS_PROBLEMA_VENDA = [
   'venda_problema_aberto',
   'venda_problema_resolvido',
@@ -140,6 +148,20 @@ function montarNivel(diasRestantes) {
  */
 function parseDataHora(valor) {
   return parseUtcDateTime(valor);
+}
+
+/** Indica se ja passaram sete dias completos desde o horario marcado. */
+function retornoLigacaoExpirou(valor, agora = new Date()) {
+  const retorno = parseDataHora(valor);
+  const instanteAtual = parseDataHora(agora);
+  if (!retorno || !instanteAtual) return false;
+
+  return instanteAtual.getTime() - retorno.getTime() >= RETENCAO_RETORNO_LIGACAO_MS;
+}
+
+/** Mantem nos produtores somente ligacoes ainda dentro da janela de retencao. */
+function aplicarJanelaRetencaoRetorno(query, coluna, agora = new Date()) {
+  return query.where(coluna, '>', new Date(agora.getTime() - RETENCAO_RETORNO_LIGACAO_MS));
 }
 
 /** Verifica se uma notificacao ativa voltou a exigir atencao. */
@@ -429,6 +451,8 @@ async function sincronizarRetornosNotas(usuarioId = null) {
     .whereNull('retorno_realizado_em')
     .select('id', 'entidade_tipo', 'entidade_id', 'usuario_id', 'titulo', 'retorno_agendado_para', 'retorno_realizado_em');
 
+  aplicarJanelaRetencaoRetorno(query, 'retorno_agendado_para', agora);
+
   if (usuarioId) {
     query.where('usuario_id', Number(usuarioId));
   }
@@ -643,6 +667,7 @@ async function sincronizarRetornosFuturosClientes() {
     .whereNull('ll.retorno_agendado_em')
     .whereNull('ll.futuro_cliente_retorno_realizado_em')
     .whereNotNull('ls.retorno_em');
+  aplicarJanelaRetencaoRetorno(linhasQuery, 'ls.retorno_em', agora);
   aplicarCondicaoLinhaLeadNaoFinalizada(linhasQuery, 'll');
   const linhas = await linhasQuery
     .select(
@@ -740,6 +765,7 @@ async function sincronizarRetornosLeads() {
       .orWhere(subquery => subquery
         .where('futuro_cliente', true)
         .where('status_operacional', 'distribuido_venda')));
+  aplicarJanelaRetencaoRetorno(linhasQuery, 'retorno_agendado_em', agora);
   aplicarCondicaoLinhaLeadNaoFinalizada(linhasQuery);
   const linhas = await linhasQuery
     .select('id', 'atribuido_para_id', 'retorno_agendado_em', 'retorno_agendado_realizado_em', 'dados_json', 'futuro_cliente', 'status_operacional', 'venda_id', 'venda_recusada_em', 'cliente_recusou');
@@ -805,6 +831,11 @@ async function sincronizarRetornoNota(notaId) {
     return null;
   }
 
+  if (retornoLigacaoExpirou(retorno, agora)) {
+    await excluirNotificacoesRetornoExpiradas(agora);
+    return null;
+  }
+
   if (retorno <= agora) {
     return salvarNotificacaoRetornoNota(nota, TIPO_NOTA_RETORNO_DUE, agora);
   }
@@ -836,6 +867,11 @@ async function sincronizarRetornoLead(linhaId) {
 
   const retorno = parseDataHora(linha.retorno_agendado_em);
   if (!retorno) return null;
+
+  if (retornoLigacaoExpirou(retorno, agora)) {
+    await excluirNotificacoesRetornoExpiradas(agora);
+    return null;
+  }
 
   if (retorno <= agora) {
     return salvarNotificacaoRetornoLead(linha, TIPO_LEAD_RETORNO_DUE, agora);
@@ -935,6 +971,31 @@ async function excluirNotificacoesPorIds(notificacaoIds, trx) {
     .delete();
 
   return ids.length;
+}
+
+/** Seleciona notificacoes de ligacao cujo horario marcado venceu ha sete dias. */
+function selecionarIdsRetornosExpirados(notificacoes, agora = new Date()) {
+  return (notificacoes || [])
+    .filter(notificacao => retornoLigacaoExpirou(
+      parseDados(notificacao.dados).retorno_agendado_para,
+      agora
+    ))
+    .map(notificacao => Number(notificacao.id))
+    .filter(Boolean);
+}
+
+/** Exclui definitivamente notificacoes de ligacoes fora da janela de retencao. */
+async function excluirNotificacoesRetornoExpiradas(agora = new Date()) {
+  return db.transaction(async trx => {
+    const notificacoes = await trx('notificacoes')
+      .whereIn('tipo', TIPOS_RETORNO_LIGACAO)
+      .select('id', 'dados');
+
+    return excluirNotificacoesPorIds(
+      selecionarIdsRetornosExpirados(notificacoes, agora),
+      trx
+    );
+  });
 }
 
 /**
@@ -1068,6 +1129,7 @@ async function sincronizarNotificacoesPendentes() {
   await sincronizarRetornosLeads();
   await sincronizarDistribuicoesResolvidas();
   await vendaNotificacaoParadaService.sincronizarVendasParadas();
+  await excluirNotificacoesRetornoExpiradas();
   await limparNotificacoesSemObjetoReferente();
 }
 
@@ -1339,8 +1401,13 @@ module.exports = {
   sincronizarRetornoLead,
   sincronizarRetornosLeads,
   sincronizarNotificacoesPendentes,
+  excluirNotificacoesRetornoExpiradas,
   limparNotificacoesSemObjetoReferente,
   _internals: {
+    DIAS_RETENCAO_RETORNO_LIGACAO,
+    retornoLigacaoExpirou,
+    aplicarJanelaRetencaoRetorno,
+    selecionarIdsRetornosExpirados,
     isLinhaLeadFinalizada,
     aplicarCondicaoLinhaLeadNaoFinalizada,
     aplicarFiltroRetornosLeadPendentes,
