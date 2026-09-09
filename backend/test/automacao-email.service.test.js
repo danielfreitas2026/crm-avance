@@ -749,6 +749,82 @@ test('revisao manual bloqueia venda concluida', async () => {
   }
 });
 
+test('endpoints administrativos de historico ficam protegidos e preservam seus contratos', async () => {
+  const camadas = automacaoRoutes.stack;
+  const indicePermissao = camadas.findIndex(camada => camada.name === 'permissaoMiddleware');
+  const contratos = [
+    ['/inconsistencias-historico', 'get'],
+    ['/inconsistencias-historico/:historicoId', 'get'],
+    ['/inconsistencias-historico/:historicoId/corrigir', 'post']
+  ];
+  for (const [caminho, metodo] of contratos) {
+    const camada = camadas.find(item => item.route?.path === caminho);
+    assert.ok(camada, caminho);
+    assert.ok(camadas.indexOf(camada) > indicePermissao, caminho);
+    assert.equal(camada.route.methods[metodo], true, caminho);
+  }
+
+  const listarOriginal = automacao.listarInconsistenciasHistorico;
+  const previaOriginal = automacao.obterPreviaCorrecaoHistorico;
+  const corrigirOriginal = automacao.corrigirInconsistenciaHistorico;
+  const chamadas = [];
+  automacao.listarInconsistenciasHistorico = async filtros => { chamadas.push(['listar', filtros]); return { data: [], total: 0 }; };
+  automacao.obterPreviaCorrecaoHistorico = async id => { chamadas.push(['previa', id]); return { historico_id: Number(id) }; };
+  automacao.corrigirInconsistenciaHistorico = async (id, dados, usuarioId) => { chamadas.push(['corrigir', id, dados, usuarioId]); return { status: 'ok' }; };
+  const resposta = () => ({ body: null, json(dados) { this.body = dados; return this; }, status() { return this; } });
+  try {
+    await automacaoController.inconsistenciasHistorico({ query: { page: '2' } }, resposta());
+    await automacaoController.previaCorrecaoHistorico({ params: { historicoId: '70' } }, resposta());
+    await automacaoController.corrigirHistorico({ params: { historicoId: '70' }, body: { motivo: 'Incorreto' }, usuario: { id: 7 } }, resposta());
+    assert.deepEqual(chamadas, [
+      ['listar', { page: '2' }],
+      ['previa', '70'],
+      ['corrigir', '70', { motivo: 'Incorreto' }, 7]
+    ]);
+  } finally {
+    automacao.listarInconsistenciasHistorico = listarOriginal;
+    automacao.obterPreviaCorrecaoHistorico = previaOriginal;
+    automacao.corrigirInconsistenciaHistorico = corrigirOriginal;
+  }
+});
+
+test('revisao manual aceita divergencias depois da selecao humana auditada', async () => {
+  const queryVendaOriginal = Venda.query;
+  const queryEtapaOriginal = FunilEtapa.query;
+  const escolhida = {
+    id: 9,
+    status_funil: 'entrega',
+    criado_em: '2026-09-08 12:00:00',
+    data_venda: '2026-09-08',
+    quantidade_linhas: 2,
+    valor_total: 100,
+    excluido_em: null,
+    cancelada_em: null
+  };
+  Venda.query = () => ({ findById: () => ({ withGraphFetched: async () => escolhida }) });
+  FunilEtapa.query = () => ({ where: async () => [{ codigo: 'concluido' }] });
+  try {
+    const resultado = await automacao._internals.resolverVenda({
+      revisado_por_id: 3,
+      venda_id: 9,
+      recebido_em: '2026-09-02 12:00:00'
+    }, { data_venda: '2026-09-01', quantidade: 1, valor_mensal: 54.99 });
+    assert.equal(resultado.venda, escolhida);
+    assert.equal(resultado.erro, null);
+    assert.equal(resultado.candidatas[0].manual, true);
+    assert.equal(resultado.candidatas[0].automaticamente_compativel, false);
+    assert.deepEqual(resultado.candidatas[0].divergencias, [
+      'data da venda divergente',
+      'quantidade divergente',
+      'valor mensal divergente',
+      'e-mail recebido antes da criação da venda'
+    ]);
+  } finally {
+    Venda.query = queryVendaOriginal;
+    FunilEtapa.query = queryEtapaOriginal;
+  }
+});
+
 test('normaliza endereco do remetente sem aceitar nome de exibicao', () => {
   assert.equal(automacao._internals.emailRemetente('MS Gestor <workflow@vivo.example>'), 'workflow@vivo.example');
 });

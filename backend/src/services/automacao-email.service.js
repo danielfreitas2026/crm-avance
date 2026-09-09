@@ -286,9 +286,15 @@ async function resolverVenda(registro, campos) {
     if (!escolhida) return { venda: null, candidatas: [], erro: 'A venda selecionada manualmente não foi encontrada.' };
     const resultado = avaliarCandidatas([escolhida], campos, etapasFinais, { cancelamento, recebidoEm: registro.recebido_em });
     resultado.candidatas[0].manual = true;
-    if (!resultado.venda) resultado.erro = cancelamento
-      ? 'A venda selecionada manualmente está concluída ou excluída e não pode ser cancelada automaticamente.'
-      : 'A venda selecionada manualmente está concluída, cancelada ou excluída e não pode receber atualizações.';
+    if (resultado.candidatas[0].elegivel) {
+      resultado.venda = escolhida;
+      resultado.erro = null;
+    } else {
+      resultado.venda = null;
+      resultado.erro = cancelamento
+        ? 'A venda selecionada manualmente está concluída ou excluída e não pode ser cancelada automaticamente.'
+        : 'A venda selecionada manualmente está concluída, cancelada ou excluída e não pode receber atualizações.';
+    }
     return resultado;
   }
   const candidatas = await buscarCandidatas(campos);
