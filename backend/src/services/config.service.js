@@ -10,6 +10,7 @@ const Servico = require('../models/Servico');
 const FunilEtapa = require('../models/FunilEtapa');
 const RegraComissao = require('../models/RegraComissao');
 const Venda = require('../models/Venda');
+const VendaFunilAutomacao = require('../models/VendaFunilAutomacao');
 
 /**
  * Processa order config conforme as regras do dominio.
@@ -452,9 +453,11 @@ async function excluirFunilEtapa(id) {
     return null;
   }
 
-  const vendasCount = await Venda.query()
-    .where('status_funil', etapa.codigo)
-    .resultSize();
+  const [vendasReaisCount, vendasAutomacaoCount] = await Promise.all([
+    Venda.query().where('status_funil', etapa.codigo).resultSize(),
+    VendaFunilAutomacao.query().where('status_funil', etapa.codigo).resultSize()
+  ]);
+  const vendasCount = vendasReaisCount + vendasAutomacaoCount;
 
   if (vendasCount > 0) {
     const etapaDesativada = await FunilEtapa.query().patchAndFetchById(id, { ativo: false });

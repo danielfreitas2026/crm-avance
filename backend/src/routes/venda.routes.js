@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const vendaController = require('../controllers/venda.controller');
+const vendaFunilAutomacaoController = require('../controllers/venda-funil-automacao.controller');
 const vendaCruzamentoController = require('../controllers/venda-cruzamento.controller');
 const vendaArquivoController = require('../controllers/venda-arquivo.controller');
 const vendaEtapaController = require('../controllers/venda-etapa.controller');
@@ -9,7 +10,7 @@ const vendaProblemaController = require('../controllers/venda-problema.controlle
 const vendaAprovacaoController = require('../controllers/venda-aprovacao.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const { auditar } = require('../middlewares/audit.middleware');
-const { exigirUmaPermissao } = require('../middlewares/permissao.middleware');
+const { exigirPermissao, exigirUmaPermissao } = require('../middlewares/permissao.middleware');
 
 /**
  * Obtem movimentacao status a partir dos dados informados.
@@ -39,6 +40,7 @@ router.get('/lixeira', exigirUmaPermissao(['vendas_ver_proprias', 'ver_vendas_co
 router.get('/contagem-por-cliente', exigirUmaPermissao(['clientes_ver_proprios', 'clientes_ver_todos']), vendaController.contagemPorCliente);
 router.get('/referencias-clientes', exigirUmaPermissao(['vendas_ver_proprias', 'ver_vendas_compartilhadas', 'vendas_ver_todas']), vendaController.referenciasClientes);
 router.get('/exportar', exigirUmaPermissao(['vendas_ver_proprias', 'ver_vendas_compartilhadas', 'vendas_ver_todas']), vendaController.exportar);
+router.get('/funil-automacoes', exigirPermissao('funil_automacoes'), vendaFunilAutomacaoController.index);
 router.post('/importar-empresas/preview', exigirUmaPermissao(['clientes_importar_planilhas']), vendaController.previewImportacaoEmpresas);
 router.post(
   '/importar-empresas',
@@ -227,6 +229,11 @@ router.patch(
     })
   }),
   vendaController.updateStatus
+);
+router.patch(
+  '/:id/funil-automacoes/status',
+  exigirPermissao('funil_automacoes'),
+  vendaFunilAutomacaoController.updateStatus
 );
 router.post(
   '/:id/cancelar',

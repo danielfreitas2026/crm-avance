@@ -9,11 +9,13 @@ const Notificacao = require('../models/Notificacao');
 const NotificacaoDestinatario = require('../models/NotificacaoDestinatario');
 const Usuario = require('../models/Usuario');
 const Venda = require('../models/Venda');
+const VendaFunilAutomacao = require('../models/VendaFunilAutomacao');
 const VendaHistorico = require('../models/VendaHistorico');
 const VendaProblema = require('../models/VendaProblema');
 const VendaProblemaDestinatario = require('../models/VendaProblemaDestinatario');
 const VendaProblemaEvento = require('../models/VendaProblemaEvento');
 const vendaService = require('./venda.service');
+const vendaFunilAutomacaoService = require('./venda-funil-automacao.service');
 const auditLogService = require('./audit-log.service');
 const { validarCnpj } = require('./cnpj.service');
 const { chamarApiComToken } = require('./telegram.service');
@@ -30,6 +32,20 @@ function remetentesPermitidos() { return new Set(String(process.env.GMAIL_VIVO_A
 function emailRemetente(valor) { return String(valor || '').match(/<([^>]+)>/)?.[1]?.toLowerCase() || String(valor || '').trim().toLowerCase(); }
 function configurado() { return String(process.env.GMAIL_VIVO_AUTOMATION_ENABLED || '').toLowerCase() === 'true'; }
 function tokenTelegramProblemas() { return String(process.env.TELEGRAM_APROVACOES_BOT_TOKEN || '').trim(); }
+
+function aplicarEstadoFunilAutomacao(venda, estado = null) {
+  if (!venda) return venda;
+  const statusAutomacao = estado?.status_funil ?? venda.status_funil_automacao ?? venda.status_funil ?? null;
+  return {
+    ...venda,
+    status_funil_real: venda.status_funil_real ?? venda.status_funil ?? null,
+    cancelada_em_real: venda.cancelada_em_real ?? venda.cancelada_em ?? null,
+    status_funil: statusAutomacao,
+    prioridade_funil: estado?.prioridade_funil || venda.prioridade_funil_automacao || venda.prioridade_funil || 'media',
+    cancelada_em: estado?.cancelada_em || venda.cancelada_automacao_em || null,
+    motivo_cancelamento: estado?.motivo_cancelamento || venda.motivo_cancelamento_automacao || null
+  };
+}
 
 function pontuarCorpoEmail(corpo) {
   const campos = interpretarEmail(corpo);
@@ -127,12 +143,21 @@ async function buscarCandidatas(campos) {
   if (![11, 14].includes(doc.length)) return [];
   const exprVenda = "REPLACE(REPLACE(REPLACE(REPLACE(v.cnpj, '.', ''), '/', ''), '-', ''), ' ', '')";
   const exprCliente = "REPLACE(REPLACE(REPLACE(REPLACE(cliente.cnpj, '.', ''), '/', ''), '-', ''), ' ', '')";
-  return Venda.query().alias('v')
+  const vendas = await Venda.query().alias('v')
     .leftJoinRelated('cliente')
-    .leftJoin('funil_etapas as etapa_atual', 'etapa_atual.codigo', 'v.status_funil')
-    .select('v.*', 'etapa_atual.nome as status_funil_nome')
+    .leftJoin('venda_funil_automacoes as vfa', 'vfa.venda_id', 'v.id')
+    .leftJoin('funil_etapas as etapa_atual', 'etapa_atual.codigo', 'vfa.status_funil')
+    .select(
+      'v.*',
+      'vfa.status_funil as status_funil_automacao',
+      'vfa.prioridade_funil as prioridade_funil_automacao',
+      'vfa.cancelada_em as cancelada_automacao_em',
+      'vfa.motivo_cancelamento as motivo_cancelamento_automacao',
+      'etapa_atual.nome as status_funil_nome'
+    )
     .where(builder => builder.whereRaw(`${exprVenda} = ?`, [doc]).orWhereRaw(`${exprCliente} = ?`, [doc]))
     .whereNull('v.excluido_em').withGraphFetched('[cliente, operadora, vendedora, vendedoras, criador]');
+  return vendas.map(venda => aplicarEstadoFunilAutomacao(venda));
 }
 
 function cnpjValido(valor) {
@@ -282,8 +307,10 @@ async function resolverVenda(registro, campos) {
   const etapasFinais = await codigosEtapasFinais();
   const cancelamento = campos.classificacao === 'cancelamento' || campos.alvo === 'cancelar_venda';
   if (registro.revisado_por_id && registro.venda_id) {
-    const escolhida = await Venda.query().findById(registro.venda_id).withGraphFetched('[cliente, operadora]');
-    if (!escolhida) return { venda: null, candidatas: [], erro: 'A venda selecionada manualmente não foi encontrada.' };
+    const vendaReal = await Venda.query().findById(registro.venda_id).withGraphFetched('[cliente, operadora]');
+    if (!vendaReal) return { venda: null, candidatas: [], erro: 'A venda selecionada manualmente não foi encontrada.' };
+    const estado = await VendaFunilAutomacao.query().findById(registro.venda_id);
+    const escolhida = aplicarEstadoFunilAutomacao(vendaReal, estado);
     const resultado = avaliarCandidatas([escolhida], campos, etapasFinais, { cancelamento, recebidoEm: registro.recebido_em });
     resultado.candidatas[0].manual = true;
     if (resultado.candidatas[0].elegivel) {
@@ -445,14 +472,10 @@ async function processarRegistro(registro) {
       ? 'Pedido cancelado pelo cliente'
       : 'Pedido cancelado pelo consultor';
     const motivo = String(campos.mensagem_operador || '').trim() || motivoPadrao;
-    const cancelamento = await vendaService.cancelarVenda(venda.id, {
-      motivo,
-      usuarioId: null,
-      sistema: true,
-      origemMovimentacao: 'automacao_gmail',
+    const cancelamento = await vendaFunilAutomacaoService.cancelar(venda.id, { motivo }, {
+      origem: 'automacao_gmail',
       automacaoEmailId: registro.id,
-      ...(registro.recebido_em ? { automacaoRecebidaEm: registro.recebido_em } : {}),
-      statusFunilEsperado: venda.status_funil || null
+      ...(registro.recebido_em ? { recebidoEm: registro.recebido_em } : {})
     });
     if (cancelamento.status !== 'ok') {
       return { status: 'revisao', erro: cancelamento.message || 'Cancelamento bloqueado pelas regras da venda.', venda_id: venda.id, dados_extraidos: JSON.stringify(dadosExtraidos) };
@@ -468,21 +491,22 @@ async function processarRegistro(registro) {
   const atual = await FunilEtapa.query().findOne({ codigo: venda.status_funil });
   if (atual && Number(etapa.ordem) < Number(atual.ordem)) return { status: 'regressao_funil', erro: 'O e-mail tentaria regredir o funil.', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos) };
   if (venda.status_funil !== etapa.codigo) {
-    const movimento = await vendaService.atualizarStatusVenda(
+    const movimento = await vendaFunilAutomacaoService.movimentar(
       venda.id,
       {
         status_funil: etapa.codigo,
         observacao: `Atualização automática pelo Gmail: ${campos.destino || campos.mensagem_operador}`
       },
-      null,
       {
-        sistema: true,
-        origemMovimentacao: 'automacao_gmail',
+        origem: 'automacao_gmail',
         automacaoEmailId: registro.id,
-        ...(registro.recebido_em ? { automacaoRecebidaEm: registro.recebido_em } : {})
+        ...(registro.recebido_em ? { recebidoEm: registro.recebido_em } : {})
       }
     );
-    if (movimento.status !== 'ok') return { status: 'revisao', erro: movimento.message || 'Movimentação bloqueada pelas regras do funil.', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos) };
+    if (movimento.status !== 'ok') {
+      const regressao = movimento.message === 'O e-mail tentaria regredir o funil.';
+      return { status: regressao ? 'regressao_funil' : 'revisao', erro: movimento.message || 'Movimentação bloqueada pelas regras do funil.', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos) };
+    }
   }
   return { status: 'concluido', classificacao: 'tipo_1', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos), erro: null, processado_em: formatarSQL() };
 }

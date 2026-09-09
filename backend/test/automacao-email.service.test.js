@@ -11,6 +11,8 @@ const VendaProblema = require('../src/models/VendaProblema');
 const VendaProblemaEvento = require('../src/models/VendaProblemaEvento');
 const VendaHistorico = require('../src/models/VendaHistorico');
 const vendaService = require('../src/services/venda.service');
+const vendaFunilAutomacaoService = require('../src/services/venda-funil-automacao.service');
+const VendaFunilAutomacao = require('../src/models/VendaFunilAutomacao');
 const vendaNotificacaoCancelamentoService = require('../src/services/venda-notificacao-cancelamento.service');
 const automacaoController = require('../src/controllers/automacao.controller');
 const automacaoRoutes = require('../src/routes/automacao.routes');
@@ -208,6 +210,7 @@ test('repete uma fotografia das revisoes, preserva overrides e isola falhas de p
   const queryAutomacaoOriginal = AutomacaoEmail.query;
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
+  const queryFunilAutomacaoOriginal = VendaFunilAutomacao.query;
   const override = {
     classificacao: 'sem_acao', alvo: 'sem_acao', destino: 'Antifraude - Processo Em Revisão Crítica', documento: '11143938000187'
   };
@@ -242,6 +245,7 @@ test('repete uma fotografia das revisoes, preserva overrides e isola falhas de p
   AutomacaoEmail.query = () => new QueryAutomacao();
   Venda.query = () => ({ findById() { return this; }, withGraphFetched: async () => ({ id: 41, status_funil: 'ativacao', excluido_em: null, cancelada_em: null }) });
   FunilEtapa.query = () => ({ where: async () => [{ codigo: 'concluido' }] });
+  VendaFunilAutomacao.query = () => ({ findById: async () => null });
 
   try {
     const resultado = await automacao.repetirRevisoes(async gmailId => {
@@ -261,6 +265,7 @@ test('repete uma fotografia das revisoes, preserva overrides e isola falhas de p
     AutomacaoEmail.query = queryAutomacaoOriginal;
     Venda.query = queryVendaOriginal;
     FunilEtapa.query = queryEtapaOriginal;
+    VendaFunilAutomacao.query = queryFunilAutomacaoOriginal;
   }
 });
 
@@ -732,12 +737,14 @@ test('documento com somente vendas finalizadas segue para revisao', () => {
 test('revisao manual bloqueia venda concluida', async () => {
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
+  const queryFunilAutomacaoOriginal = VendaFunilAutomacao.query;
   Venda.query = () => ({
     findById: () => ({
       withGraphFetched: async () => ({ id: 9, status_funil: 'final_personalizado', excluido_em: null, cancelada_em: null })
     })
   });
   FunilEtapa.query = () => ({ where: async () => [{ codigo: 'final_personalizado' }] });
+  VendaFunilAutomacao.query = () => ({ findById: async () => null });
   try {
     const resultado = await automacao._internals.resolverVenda({ revisado_por_id: 3, venda_id: 9 }, {});
     assert.equal(resultado.venda, null);
@@ -746,6 +753,7 @@ test('revisao manual bloqueia venda concluida', async () => {
   } finally {
     Venda.query = queryVendaOriginal;
     FunilEtapa.query = queryEtapaOriginal;
+    VendaFunilAutomacao.query = queryFunilAutomacaoOriginal;
   }
 });
 
@@ -791,6 +799,7 @@ test('endpoints administrativos de historico ficam protegidos e preservam seus c
 test('revisao manual aceita divergencias depois da selecao humana auditada', async () => {
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
+  const queryFunilAutomacaoOriginal = VendaFunilAutomacao.query;
   const escolhida = {
     id: 9,
     status_funil: 'entrega',
@@ -803,13 +812,15 @@ test('revisao manual aceita divergencias depois da selecao humana auditada', asy
   };
   Venda.query = () => ({ findById: () => ({ withGraphFetched: async () => escolhida }) });
   FunilEtapa.query = () => ({ where: async () => [{ codigo: 'concluido' }] });
+  VendaFunilAutomacao.query = () => ({ findById: async () => null });
   try {
     const resultado = await automacao._internals.resolverVenda({
       revisado_por_id: 3,
       venda_id: 9,
       recebido_em: '2026-09-02 12:00:00'
     }, { data_venda: '2026-09-01', quantidade: 1, valor_mensal: 54.99 });
-    assert.equal(resultado.venda, escolhida);
+    assert.equal(resultado.venda.id, escolhida.id);
+    assert.equal(resultado.venda.status_funil, escolhida.status_funil);
     assert.equal(resultado.erro, null);
     assert.equal(resultado.candidatas[0].manual, true);
     assert.equal(resultado.candidatas[0].automaticamente_compativel, false);
@@ -822,6 +833,7 @@ test('revisao manual aceita divergencias depois da selecao humana auditada', asy
   } finally {
     Venda.query = queryVendaOriginal;
     FunilEtapa.query = queryEtapaOriginal;
+    VendaFunilAutomacao.query = queryFunilAutomacaoOriginal;
   }
 });
 
@@ -1061,10 +1073,11 @@ test('carrega a venda completa somente a partir do vínculo do problema automát
   }
 });
 
-test('movimentacao processada pelo Gmail envia origem e id da automacao ao servico de vendas', async () => {
+test('movimentacao processada pelo Gmail envia origem e id ao funil automatico', async () => {
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
-  const atualizarOriginal = vendaService.atualizarStatusVenda;
+  const atualizarOriginal = vendaFunilAutomacaoService.movimentar;
+  const queryFunilAutomacaoOriginal = VendaFunilAutomacao.query;
   let chamada = null;
   let consultaEtapa = 0;
 
@@ -1088,7 +1101,8 @@ test('movimentacao processada pelo Gmail envia origem e id da automacao ao servi
         : { codigo: 'aceite', ordem: 2 }
     };
   };
-  vendaService.atualizarStatusVenda = async (...args) => {
+  VendaFunilAutomacao.query = () => ({ findById: async () => null });
+  vendaFunilAutomacaoService.movimentar = async (...args) => {
     chamada = args;
     return { status: 'ok' };
   };
@@ -1113,23 +1127,23 @@ test('movimentacao processada pelo Gmail envia origem e id da automacao ao servi
     assert.equal(chamada[0], 41);
     assert.equal(chamada[1].status_funil, 'entrega');
     assert.match(chamada[1].observacao, /Gmail/);
-    assert.equal(chamada[2], null);
-    assert.deepEqual(chamada[3], {
-      sistema: true,
-      origemMovimentacao: 'automacao_gmail',
+    assert.deepEqual(chamada[2], {
+      origem: 'automacao_gmail',
       automacaoEmailId: 88
     });
   } finally {
     Venda.query = queryVendaOriginal;
     FunilEtapa.query = queryEtapaOriginal;
-    vendaService.atualizarStatusVenda = atualizarOriginal;
+    vendaFunilAutomacaoService.movimentar = atualizarOriginal;
+    VendaFunilAutomacao.query = queryFunilAutomacaoOriginal;
   }
 });
 
 test('cancelamento automatico usa mensagem, fallback e contexto do Gmail sem mover etapa', async () => {
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
-  const cancelarOriginal = vendaService.cancelarVenda;
+  const cancelarOriginal = vendaFunilAutomacaoService.cancelar;
+  const queryFunilAutomacaoOriginal = VendaFunilAutomacao.query;
   const chamadas = [];
   let venda = { id: 41, status_funil: 'entrega', excluido_em: null, cancelada_em: null };
 
@@ -1138,7 +1152,8 @@ test('cancelamento automatico usa mensagem, fallback e contexto do Gmail sem mov
     withGraphFetched: async () => venda
   });
   FunilEtapa.query = () => ({ where: async () => [{ codigo: 'concluido' }] });
-  vendaService.cancelarVenda = async (...args) => { chamadas.push(args); return { status: 'ok' }; };
+  VendaFunilAutomacao.query = () => ({ findById: async () => null });
+  vendaFunilAutomacaoService.cancelar = async (...args) => { chamadas.push(args); return { status: 'ok' }; };
 
   const registro = (mensagem, destino = 'Pedido Cancelado pelo Consultor') => ({
     id: 92,
@@ -1158,10 +1173,8 @@ test('cancelamento automatico usa mensagem, fallback e contexto do Gmail sem mov
     assert.equal(resultado.status, 'concluido');
     assert.equal(resultado.classificacao, 'cancelamento');
     assert.equal(resultado.etapa_destino, null);
-    assert.deepEqual(chamadas[0], [41, {
-      motivo: 'cancelar', usuarioId: null, sistema: true,
-      origemMovimentacao: 'automacao_gmail', automacaoEmailId: 92,
-      statusFunilEsperado: 'entrega'
+    assert.deepEqual(chamadas[0], [41, { motivo: 'cancelar' }, {
+      origem: 'automacao_gmail', automacaoEmailId: 92
     }]);
 
     resultado = await automacao._internals.processarRegistro(registro(''));
@@ -1180,7 +1193,8 @@ test('cancelamento automatico usa mensagem, fallback e contexto do Gmail sem mov
   } finally {
     Venda.query = queryVendaOriginal;
     FunilEtapa.query = queryEtapaOriginal;
-    vendaService.cancelarVenda = cancelarOriginal;
+    vendaFunilAutomacaoService.cancelar = cancelarOriginal;
+    VendaFunilAutomacao.query = queryFunilAutomacaoOriginal;
   }
 });
 
@@ -1279,7 +1293,8 @@ test('cancelamento automatico recusa mudanca concorrente de etapa', async () => 
 test('destino neutro conclui sem mover a venda nem abrir problema', async () => {
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
-  const atualizarOriginal = vendaService.atualizarStatusVenda;
+  const atualizarOriginal = vendaFunilAutomacaoService.movimentar;
+  const queryFunilAutomacaoOriginal = VendaFunilAutomacao.query;
   let tentouMover = false;
 
   Venda.query = () => ({
@@ -1287,7 +1302,8 @@ test('destino neutro conclui sem mover a venda nem abrir problema', async () => 
     withGraphFetched: async () => ({ id: 41, status_funil: 'ativacao', excluido_em: null, cancelada_em: null })
   });
   FunilEtapa.query = () => ({ where: async () => [{ codigo: 'concluido' }] });
-  vendaService.atualizarStatusVenda = async () => { tentouMover = true; return { status: 'ok' }; };
+  VendaFunilAutomacao.query = () => ({ findById: async () => null });
+  vendaFunilAutomacaoService.movimentar = async () => { tentouMover = true; return { status: 'ok' }; };
 
   try {
     const resultado = await automacao._internals.processarRegistro({
@@ -1314,14 +1330,15 @@ test('destino neutro conclui sem mover a venda nem abrir problema', async () => 
   } finally {
     Venda.query = queryVendaOriginal;
     FunilEtapa.query = queryEtapaOriginal;
-    vendaService.atualizarStatusVenda = atualizarOriginal;
+    vendaFunilAutomacaoService.movimentar = atualizarOriginal;
+    VendaFunilAutomacao.query = queryFunilAutomacaoOriginal;
   }
 });
 
 test('logistica concluida finaliza venda nova e envia portabilidade para confirmacao de SMS', async () => {
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
-  const atualizarOriginal = vendaService.atualizarStatusVenda;
+  const atualizarOriginal = vendaFunilAutomacaoService.movimentar;
   const etapaFinal = { codigo: 'final_personalizado', ordem: 5, ativo: true, etapa_final: true };
   const etapaSms = { codigo: 'sms_portabilidade', nome: 'Confirmação SMS Portabilidade', ordem: 4, ativo: true };
   let vendaAtual;
@@ -1342,7 +1359,7 @@ test('logistica concluida finaliza venda nova e envia portabilidade para confirm
     where: async filtros => filtros?.etapa_final ? [etapaFinal] : [etapaSms, etapaFinal],
     findOne: async filtros => [etapaFinal, etapaSms].find(etapa => etapa.codigo === filtros.codigo) || { codigo: 'ativacao', ordem: 2 }
   });
-  vendaService.atualizarStatusVenda = async (...args) => { movimentos.push(args); return { status: 'ok' }; };
+  vendaFunilAutomacaoService.movimentar = async (...args) => { movimentos.push(args); return { status: 'ok' }; };
 
   const corpo = () => `Dados da Venda\nCNPJ: 11.143.938/0001-87\nWorkflow (tramitação do pedido)\nOrigem: Backoffice Aprovado\nMensagem ao Operador: importação manual\nDestino: Vivocorp - Pedidos > Logística Concluída`;
   const registroAutomatico = () => ({ id: 91, corpo_texto: corpo(), dados_extraidos: null });
@@ -1373,14 +1390,15 @@ test('logistica concluida finaliza venda nova e envia portabilidade para confirm
   } finally {
     Venda.query = queryVendaOriginal;
     FunilEtapa.query = queryEtapaOriginal;
-    vendaService.atualizarStatusVenda = atualizarOriginal;
+    vendaFunilAutomacaoService.movimentar = atualizarOriginal;
   }
 });
 
 test('pedido na operadora avanca apos aceite sem repetir movimento nem regredir o funil', async () => {
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
-  const atualizarOriginal = vendaService.atualizarStatusVenda;
+  const atualizarOriginal = vendaFunilAutomacaoService.movimentar;
+  const queryFunilAutomacaoOriginal = VendaFunilAutomacao.query;
   const etapas = [
     { codigo: 'analise', nome: 'Análise', ordem: 1, ativo: true, aceite_biometria: false },
     { codigo: 'aceite', nome: 'Aceite', ordem: 2, ativo: true, aceite_biometria: true },
@@ -1411,7 +1429,8 @@ test('pedido na operadora avanca apos aceite sem repetir movimento nem regredir 
     },
     findOne: async filtros => etapas.find(etapa => etapa.codigo === filtros.codigo) || null
   });
-  vendaService.atualizarStatusVenda = async (...args) => {
+  VendaFunilAutomacao.query = () => ({ findById: async () => null });
+  vendaFunilAutomacaoService.movimentar = async (...args) => {
     movimentos.push(args);
     return { status: 'ok' };
   };
@@ -1438,9 +1457,8 @@ test('pedido na operadora avanca apos aceite sem repetir movimento nem regredir 
     assert.equal(resultado.etapa_destino, 'pos_aceite');
     assert.equal(movimentos.length, 1);
     assert.equal(movimentos[0][1].status_funil, 'pos_aceite');
-    assert.deepEqual(movimentos[0][3], {
-      sistema: true,
-      origemMovimentacao: 'automacao_gmail',
+    assert.deepEqual(movimentos[0][2], {
+      origem: 'automacao_gmail',
       automacaoEmailId: 88
     });
 
@@ -1458,6 +1476,7 @@ test('pedido na operadora avanca apos aceite sem repetir movimento nem regredir 
   } finally {
     Venda.query = queryVendaOriginal;
     FunilEtapa.query = queryEtapaOriginal;
-    vendaService.atualizarStatusVenda = atualizarOriginal;
+    vendaFunilAutomacaoService.movimentar = atualizarOriginal;
+    VendaFunilAutomacao.query = queryFunilAutomacaoOriginal;
   }
 });

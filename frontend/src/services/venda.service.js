@@ -28,6 +28,11 @@ export async function listarVendas(filtros) {
   return apiGet(`/vendas${montarQuery(filtros)}`);
 }
 
+/** Lista vendas no estado comparativo da automacao. */
+export async function listarVendasFunilAutomacoes(filtros = {}) {
+  return apiGet(`/vendas/funil-automacoes${montarQuery(filtros)}`);
+}
+
 /**
  * Exporta vendas excel no formato esperado.
  */
@@ -342,6 +347,14 @@ export async function recusarSolicitacaoVenda(id, dados = {}) {
  */
 export async function atualizarStatusVenda(id, dados) {
   return apiRequest(`/vendas/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify(dados)
+  });
+}
+
+/** Atualiza somente etapa e prioridade do funil comparativo. */
+export async function atualizarStatusVendaFunilAutomacoes(id, dados) {
+  return apiRequest(`/vendas/${id}/funil-automacoes/status`, {
     method: 'PATCH',
     body: JSON.stringify(dados)
   });

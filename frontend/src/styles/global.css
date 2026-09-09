@@ -1163,6 +1163,10 @@ button.urgent-alert-panel__header {
 .sale-card.sale-card-priority-alta { border-left-color: #ef4444; }
 .sale-card.sale-card-priority-media { border-left-color: #3b82f6; }
 .sale-card.sale-card-priority-baixa { border-left-color: #eab308; }
+.sale-card.sale-card-divergente {
+  outline: 2px solid #f97316;
+  outline-offset: -2px;
+}
 .sale-card.sale-card-cancelada .client,
 .sale-card.sale-card-cancelada .value {
   color: #7f1d1d;
@@ -1192,7 +1196,8 @@ button.urgent-alert-panel__header {
 }
 .sale-card-cancelada-tag,
 .sale-card-finalizada-tag,
-.sale-card-sem-documento-tag {
+.sale-card-sem-documento-tag,
+.sale-card-divergente-tag {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1220,6 +1225,10 @@ button.urgent-alert-panel__header {
   color: #fff;
   box-shadow: 0 1px 2px rgba(113, 63, 18, 0.3);
 }
+.sale-card-divergente-tag {
+  background: #f97316;
+  color: #fff;
+}
 .sale-card-cancelada-tag::before,
 .sale-card-finalizada-tag::before,
 .sale-card-sem-documento-tag::before {
@@ -1244,6 +1253,14 @@ button.urgent-alert-panel__header {
   border-radius: 3px; background: var(--surface-2); color: var(--text-2);
   font-size: 10.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em;
   flex-shrink: 0;
+}
+.sale-card-real-state {
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: color-mix(in srgb, #f97316 12%, transparent);
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 600;
 }
 .sale-card-markers {
   display: flex;

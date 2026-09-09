@@ -25,6 +25,7 @@ test('admin precisa de permissao explicita para visualizar recursos sensiveis', 
   assert.equal(usuarioTemPermissaoLocal(usuario, 'clientes_criar'), true);
   assert.equal(usuarioTemPermissaoLocal(usuario, 'clientes_secretos_ver_todos'), false);
   assert.equal(usuarioTemPermissaoLocal(usuario, 'clientes_antigos_ver_historico'), false);
+  assert.equal(usuarioTemPermissaoLocal(usuario, 'funil_automacoes'), false);
   assert.equal(usuarioTemPermissaoLocal({
     ...usuario,
     permissoes: { clientes_secretos_ver_todos: true, clientes_antigos_ver_historico: true }
@@ -33,6 +34,10 @@ test('admin precisa de permissao explicita para visualizar recursos sensiveis', 
     ...usuario,
     permissoes: { clientes_secretos_ver_todos: true, clientes_antigos_ver_historico: true }
   }, 'clientes_antigos_ver_historico'), true);
+  assert.equal(usuarioTemPermissaoLocal({
+    ...usuario,
+    permissoes: { funil_automacoes: true }
+  }, 'funil_automacoes'), true);
 });
 
 test('admin sempre possui controle integral de vendas apesar de negacoes locais', () => {

@@ -35,6 +35,7 @@ import { agruparOpcoesServicos, formatarNomeServico, servicoIdInclui } from '../
 import {
   atualizarAceiteBiometriaVenda,
   atualizarStatusVenda,
+  atualizarStatusVendaFunilAutomacoes,
   cancelarVenda,
   reverterCancelamentoVenda,
   atualizarVenda,
@@ -43,6 +44,7 @@ import {
   enviarVendaParaPosVenda,
   gerarEmailVenda,
   listarVendas,
+  listarVendasFunilAutomacoes,
   listarVendedoras
 } from '../../services/venda.service';
 import { parseUtcDateTime } from '../../utils/datetime';
@@ -877,6 +879,9 @@ function mapVendaToSale(venda, stageLabels = STAGE_LABELS) {
     semDocumento: vendaSemDocumento(venda),
     motivoCancelamento: venda.motivo_cancelamento || null,
     canceladaPorId: venda.cancelada_por_id || null,
+    statusFunilReal: venda.status_funil_real || null,
+    canceladaEmReal: venda.cancelada_em_real || null,
+    divergenteAutomacao: Boolean(venda.divergente_automacao),
     historico: mapHistoricoVenda(venda, stage, updated, created, sellerName, stageLabels),
     passagensEtapas: contarPassagensEtapas(venda, stage, stageLabels),
   };
@@ -885,7 +890,7 @@ function mapVendaToSale(venda, stageLabels = STAGE_LABELS) {
 /**
  * Renderiza sale modal.
  */
-export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onUpdatePossuiDocNaCasa, onOpenFullSale, openingFullSale, podeCancelar, podeReverterCancelamento, onCancelSale, onReverterCancelamento, podeEditarVenda, podeVerDocumentos, podeAdicionarDocumentos, onEtapasAtualizadas = () => {} }) {
+export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onUpdatePossuiDocNaCasa, onOpenFullSale, openingFullSale, podeCancelar, podeReverterCancelamento, onCancelSale, onReverterCancelamento, podeEditarVenda, podeVerDocumentos, podeAdicionarDocumentos, modoAutomacoes = false, onEtapasAtualizadas = () => {} }) {
   const [tab, setTab] = useState('info');
   const [novaFase, setNovaFase] = useState(sale.stage);
   const [novaPrioridade, setNovaPrioridade] = useState(sale.priority || 'media');
@@ -896,7 +901,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [revertModalOpen, setRevertModalOpen] = useState(false);
   const [historicoEventos, setHistoricoEventos] = useState(sale.historico);
-  const [historicoCarregando, setHistoricoCarregando] = useState(true);
+  const [historicoCarregando, setHistoricoCarregando] = useState(!modoAutomacoes);
   const [possuiDocNaCasa, setPossuiDocNaCasa] = useState(
     sale.raw?.possui_doc_na_casa === true || Number(sale.raw?.possui_doc_na_casa) === 1
   );
@@ -906,6 +911,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
   const podeAcessarDocumentos = Boolean(podeVerDocumentos || podeAdicionarDocumentos);
 
   useEffect(() => {
+    if (modoAutomacoes) return undefined;
     let cancelado = false;
     buscarVendaPorId(sale.id)
       .then(venda => {
@@ -924,7 +930,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
       });
 
     return () => { cancelado = true; };
-  }, [sale.id, sale.stage, stageLabels]);
+  }, [sale.id, sale.stage, stageLabels, modoAutomacoes]);
 
   const saleComHistorico = { ...sale, historico: historicoEventos };
 
@@ -1091,7 +1097,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
           {[
             { id: 'info', label: 'Informações' },
             { id: 'historico', label: 'Histórico' },
-            ...(podeAcessarDocumentos ? [{ id: 'documentos', label: 'Documentos' }] : []),
+            ...(!modoAutomacoes && podeAcessarDocumentos ? [{ id: 'documentos', label: 'Documentos' }] : []),
             { id: 'status', label: 'Atualizar status' },
           ].map(t => (
             <button
@@ -1108,6 +1114,16 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
         <div className="modal-body">
           {tab === 'info' && (
             <div className="detail-grid">
+              {modoAutomacoes && (
+                <div className="detail-item" style={{ gridColumn: '1 / -1' }}>
+                  <div className="label">COMPARAÇÃO COM O FUNIL REAL</div>
+                  <div className="value">
+                    Real: {stageLabels[sale.statusFunilReal] || sale.statusFunilReal || 'Sem etapa'}
+                    {' · '}{sale.canceladaEmReal ? 'Cancelada' : 'Ativa'}
+                    {sale.divergenteAutomacao ? ' · Divergente' : ' · Em conformidade'}
+                  </div>
+                </div>
+              )}
               <div className="detail-item">
                 <div className="label">VALOR</div>
                 <div className="value big">{formatBRL(sale.value)}</div>
@@ -1254,7 +1270,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {!cancelada && (
+                  {!modoAutomacoes && !cancelada && (
                     <button
                       type="button"
                       className="btn btn-sm"
@@ -1265,7 +1281,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
                       <I.AlertTriangle size={13} /> Marcar como retorno
                     </button>
                   )}
-                  {!cancelada && podeCancelar && (
+                  {!modoAutomacoes && !cancelada && podeCancelar && (
                     <button
                       type="button"
                       className="btn btn-sm"
@@ -1276,7 +1292,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
                       <I.AlertTriangle size={13} /> Cancelar venda
                     </button>
                   )}
-                  {cancelada && podeReverterCancelamento && (
+                  {!modoAutomacoes && cancelada && podeReverterCancelamento && (
                     <button
                       type="button"
                       className="btn btn-sm"
@@ -1741,7 +1757,7 @@ function StageMenu({ stage, disabled, onRename, onToggleFinal, onToggleBarrier, 
 /**
  * Renderiza sale card.
  */
-export function SaleCard({ sale, finalizada = false, aceiteBiometria = false, marcadorSaving = '', onToggleMarcador = () => {}, onClick, onEmail, gerandoEmailId, onXlsxClaro, baixandoXlsxId, onWhatsapp, onProblema, podeOperarPosVenda }) {
+export function SaleCard({ sale, finalizada = false, aceiteBiometria = false, marcadorSaving = '', onToggleMarcador = () => {}, onClick, onEmail, gerandoEmailId, onXlsxClaro, baixandoXlsxId, onWhatsapp, onProblema, podeOperarPosVenda, modoAutomacoes = false, stageLabels = STAGE_LABELS }) {
   const priorityInfo = getPriorityInfo(sale.priority);
   const cancelada = Boolean(sale.canceladaEm);
   const semDocumento = sale.semDocumento ?? vendaSemDocumento(sale);
@@ -1778,7 +1794,7 @@ export function SaleCard({ sale, finalizada = false, aceiteBiometria = false, ma
     <>
     <div
       ref={cardRef}
-      className={`sale-card sale-card-priority-${priorityInfo.key}${classeStatus}${classeDocumento}`}
+      className={`sale-card sale-card-priority-${priorityInfo.key}${classeStatus}${classeDocumento}${sale.divergenteAutomacao ? ' sale-card-divergente' : ''}`}
       onClick={onClick}
       onMouseEnter={exibirTooltip}
       onMouseLeave={() => setTooltipPosicao(null)}
@@ -1792,6 +1808,9 @@ export function SaleCard({ sale, finalizada = false, aceiteBiometria = false, ma
 
       {cancelada && (
         <span className="sale-card-cancelada-tag">Cancelada</span>
+      )}
+      {modoAutomacoes && sale.divergenteAutomacao && (
+        <span className="sale-card-divergente-tag">Divergente</span>
       )}
       {semDocumento && (
         <span className="sale-card-sem-documento-tag">Venda sem doc</span>
@@ -1822,6 +1841,12 @@ export function SaleCard({ sale, finalizada = false, aceiteBiometria = false, ma
           {priorityInfo.label.replace('Prioridade ', '')}
         </span>
       </div>
+      {modoAutomacoes && (
+        <div className="sale-card-real-state">
+          Real: {stageLabels[sale.statusFunilReal] || sale.statusFunilReal || 'Sem etapa'}
+          {' · '}{sale.canceladaEmReal ? 'Cancelada' : 'Ativa'}
+        </div>
+      )}
       {aceiteBiometria && (
         <div className="sale-card-markers" aria-label={biometriaAplicavel ? 'Conclusão de Aceite e Biometria' : 'Conclusão de Aceite'}>
           {marcadoresAceite.map(([marcador, rotulo, concluido]) => {
@@ -1858,63 +1883,67 @@ export function SaleCard({ sale, finalizada = false, aceiteBiometria = false, ma
           <span>#{sale.id}</span>
         </span>
         <div className="vendas-contact-actions sale-card-actions" style={{ display: 'flex', alignItems: 'center', gap: 6, width: 'auto' }}>
-          {podeOperarPosVenda && (
-            <button
-              type="button"
-              className="btn btn-icon btn-ghost btn-warn-icon"
-              title="Problemas da venda"
-              onClick={(e) => {
-                e.stopPropagation();
-                onProblema(sale.raw);
-              }}
-              style={{ padding: 4, height: 24, width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              <I.AlertTriangle size={12} />
-            </button>
-          )}
-          <button
-            type="button"
-            className="btn btn-icon btn-ghost vendas-whatsapp-btn"
-            title="Gerar mensagem para WhatsApp"
-            onClick={(e) => {
-              e.stopPropagation();
-              onWhatsapp(sale.raw);
-            }}
-            style={{ padding: 4, height: 24, width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <I.Whatsapp size={12} />
-          </button>
-          <button
-            type="button"
-            className="btn btn-icon btn-ghost vendas-email-btn"
-            title="Gerar corpo de email"
-            disabled={gerandoEmailId === sale.id}
-            onClick={(e) => {
-              e.stopPropagation();
-              onEmail(sale.raw);
-            }}
-            style={{ padding: 4, height: 24, width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            {gerandoEmailId === sale.id ? (
-              <div className="spinner-small" style={{ width: 12, height: 12, border: '2px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-            ) : (
-              <I.Mail size={12} />
-            )}
-          </button>
-          {/claro/i.test(sale.raw?.operadora?.nome) && (
-            <button
-              type="button"
-              className="btn btn-icon btn-ghost vendas-xlsx-btn"
-              title="Baixar planilha Claro"
-              disabled={baixandoXlsxId === sale.id}
-              onClick={(e) => {
-                e.stopPropagation();
-                onXlsxClaro(sale.raw);
-              }}
-              style={{ padding: 4, height: 24, width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              <I.TableSheet size={12} />
-            </button>
+          {!modoAutomacoes && (
+            <>
+              {podeOperarPosVenda && (
+                <button
+                  type="button"
+                  className="btn btn-icon btn-ghost btn-warn-icon"
+                  title="Problemas da venda"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onProblema(sale.raw);
+                  }}
+                  style={{ padding: 4, height: 24, width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <I.AlertTriangle size={12} />
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-icon btn-ghost vendas-whatsapp-btn"
+                title="Gerar mensagem para WhatsApp"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onWhatsapp(sale.raw);
+                }}
+                style={{ padding: 4, height: 24, width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <I.Whatsapp size={12} />
+              </button>
+              <button
+                type="button"
+                className="btn btn-icon btn-ghost vendas-email-btn"
+                title="Gerar corpo de email"
+                disabled={gerandoEmailId === sale.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEmail(sale.raw);
+                }}
+                style={{ padding: 4, height: 24, width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                {gerandoEmailId === sale.id ? (
+                  <div className="spinner-small" style={{ width: 12, height: 12, border: '2px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                ) : (
+                  <I.Mail size={12} />
+                )}
+              </button>
+              {/claro/i.test(sale.raw?.operadora?.nome) && (
+                <button
+                  type="button"
+                  className="btn btn-icon btn-ghost vendas-xlsx-btn"
+                  title="Baixar planilha Claro"
+                  disabled={baixandoXlsxId === sale.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onXlsxClaro(sale.raw);
+                  }}
+                  style={{ padding: 4, height: 24, width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <I.TableSheet size={12} />
+                </button>
+              )}
+            </>
           )}
           <span style={{ fontSize: '10px' }}>{timeAgo(sale.updated)}</span>
         </div>
@@ -1974,10 +2003,10 @@ const DADOS_MODAL_VENDA_INICIAIS = {
 /**
  * Renderiza funil page.
  */
-function FunilPage() {
+function FunilPage({ modoAutomacoes = false }) {
   const [searchParams] = useSearchParams();
   const usuario = getUsuarioLocal();
-  const podeGerenciarEtapas = temPermissao(usuario, 'crud_funil_etapas');
+  const podeGerenciarEtapas = !modoAutomacoes && temPermissao(usuario, 'crud_funil_etapas');
   const podeAbrirVendaCompleta = temPermissao(usuario, [
     'vendas',
     'vendas_ver_proprias',
@@ -2015,6 +2044,7 @@ function FunilPage() {
   const [valorMax, setValorMax] = useState('');
   const [visibilidadeCanceladas, setVisibilidadeCanceladas] = useState(VISIBILIDADE_TODAS);
   const [visibilidadeSemDocumento, setVisibilidadeSemDocumento] = useState(VISIBILIDADE_TODAS);
+  const [somenteDivergentes, setSomenteDivergentes] = useState(false);
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const buscaDeferred = useDeferredValue(busca);
   const [selectedSaleId, setSelectedSaleId] = useState(null);
@@ -2394,7 +2424,9 @@ function FunilPage() {
 
     try {
       const [vendas, etapas, vendedorasData, operadorasData, tiposVendaData, servicosData] = await Promise.all([
-        listarVendas({ enviadas_pos_venda: '1', ocultar_concluidas_antigas: '1' }),
+        modoAutomacoes
+          ? listarVendasFunilAutomacoes()
+          : listarVendas({ enviadas_pos_venda: '1', ocultar_concluidas_antigas: '1' }),
         podeGerenciarEtapas ? listarEtapasFunilAdmin() : listarEtapasFunil(),
         listarVendedoras().catch(() => []),
         listarOperadoras().catch(() => []),
@@ -2701,6 +2733,18 @@ function FunilPage() {
    * Trata o evento de update sale.
    */
   async function handleUpdateSale(saleId, novaFase, novaPrioridade, observacao, motivoRetorno) {
+    if (modoAutomacoes) {
+      const vendaAtualizada = await atualizarStatusVendaFunilAutomacoes(saleId, {
+        status_funil: novaFase,
+        prioridade_funil: novaPrioridade,
+        observacao
+      });
+      setSales(prev => prev.map(sale => (
+        sale.id === saleId ? mapVendaToSale(vendaAtualizada, stageLabels) : sale
+      )));
+      return;
+    }
+
     if (novaFase === 'retorno') {
       await atualizarStatusVenda(saleId, {
         status_funil: 'retorno',
@@ -2775,6 +2819,7 @@ function FunilPage() {
     setValorMax('');
     setVisibilidadeCanceladas(VISIBILIDADE_TODAS);
     setVisibilidadeSemDocumento(VISIBILIDADE_TODAS);
+    setSomenteDivergentes(false);
   }
 
   const selectedSale = selectedSaleId ? sales.find(s => s.id === selectedSaleId) : null;
@@ -2830,7 +2875,8 @@ function FunilPage() {
   }), [vendedoraId, operadoraId, tipoVendaId, servicoId, statusFunil, prioridadeFunil, uf, municipio, dataInicio, dataFim, valorMin, valorMax]);
   const filtrosPopupAtivos = Object.values(filtrosFunil).filter(valor => valor !== '').length;
   const atalhosAtivos = Number(visibilidadeCanceladas !== VISIBILIDADE_TODAS)
-    + Number(visibilidadeSemDocumento !== VISIBILIDADE_TODAS);
+    + Number(visibilidadeSemDocumento !== VISIBILIDADE_TODAS)
+    + Number(modoAutomacoes && somenteDivergentes);
   const totalFiltrosAtivos = filtrosPopupAtivos + atalhosAtivos;
   const filtrosAtalhos = useMemo(() => ({
     canceladas: visibilidadeCanceladas,
@@ -2842,10 +2888,11 @@ function FunilPage() {
       if (!vendaCorrespondeBusca(s, buscaDeferred)) return false;
       if (!vendaCorrespondeFiltros(s, filtrosFunil)) return false;
       if (!vendaCorrespondeAtalhos(s, filtrosAtalhos)) return false;
+      if (modoAutomacoes && somenteDivergentes && !s.divergenteAutomacao) return false;
       return true;
     });
     return { filtradas: filtered, total: filtered.reduce((sum, s) => sum + s.value, 0) };
-  }, [sales, buscaDeferred, filtrosFunil, filtrosAtalhos]);
+  }, [sales, buscaDeferred, filtrosFunil, filtrosAtalhos, modoAutomacoes, somenteDivergentes]);
   const stageLabels = montarStageLabels(stagesVisiveis);
   const statusFunilFiltros = useMemo(
     () => [
@@ -2866,15 +2913,16 @@ function FunilPage() {
           onClose={() => setSelectedSaleId(null)}
           onUpdateSale={handleUpdateSale}
           onUpdatePossuiDocNaCasa={handleUpdatePossuiDocNaCasa}
-          onOpenFullSale={podeAbrirVendaCompleta ? () => abrirVendaCompleta(selectedSale) : null}
+          onOpenFullSale={!modoAutomacoes && podeAbrirVendaCompleta ? () => abrirVendaCompleta(selectedSale) : null}
           openingFullSale={abrindoVendaCompletaId === selectedSale.id}
-          podeCancelar={podeCancelarVenda}
-          podeReverterCancelamento={podeReverterCancelamentoVenda}
+          podeCancelar={!modoAutomacoes && podeCancelarVenda}
+          podeReverterCancelamento={!modoAutomacoes && podeReverterCancelamentoVenda}
           onCancelSale={handleCancelarVenda}
           onReverterCancelamento={handleReverterCancelamentoVenda}
           podeEditarVenda={podeEditarVenda}
-          podeVerDocumentos={podeVerDocumentosVenda}
-          podeAdicionarDocumentos={podeAdicionarDocumentosVenda}
+          podeVerDocumentos={!modoAutomacoes && podeVerDocumentosVenda}
+          podeAdicionarDocumentos={!modoAutomacoes && podeAdicionarDocumentosVenda}
+          modoAutomacoes={modoAutomacoes}
           onEtapasAtualizadas={handleEtapasAtualizadas}
         />
       )}
@@ -3095,6 +3143,16 @@ function FunilPage() {
               {visibilidadeSemDocumento === VISIBILIDADE_OCULTAR ? <I.Eye size={12} /> : <I.EyeOff size={12} />}
               {visibilidadeSemDocumento === VISIBILIDADE_OCULTAR ? 'Mostrar vendas sem doc' : 'Ocultar vendas sem doc'}
             </button>
+            {modoAutomacoes && (
+              <button
+                type="button"
+                className={`filter-chip funil-quick-filter${somenteDivergentes ? ' active' : ''}`}
+                aria-pressed={somenteDivergentes}
+                onClick={() => setSomenteDivergentes(valor => !valor)}
+              >
+                <I.AlertTriangle size={12} /> Somente divergentes
+              </button>
+            )}
             <div className="funil-stats" style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center', fontSize: 12.5, flexShrink: 0 }}>
               <span className="muted">{filtradas.length} vendas</span>
               <span style={{ color: 'var(--border-strong)' }}>·</span>
@@ -3346,7 +3404,7 @@ function FunilPage() {
                         key={s.id}
                         sale={s}
                         finalizada={etapasFinaisIds.has(s.stage)}
-                        aceiteBiometria={st.aceiteBiometria}
+                        aceiteBiometria={!modoAutomacoes && st.aceiteBiometria}
                         marcadorSaving={marcadorSaving}
                         onToggleMarcador={handleToggleMarcador}
                         onClick={() => setSelectedSaleId(s.id)}
@@ -3356,7 +3414,9 @@ function FunilPage() {
                         baixandoXlsxId={baixandoXlsxId}
                         onWhatsapp={abrirMensagemWhatsapp}
                         onProblema={(raw) => setVendaProblema(raw)}
-                        podeOperarPosVenda={podeOperarPosVenda}
+                        podeOperarPosVenda={!modoAutomacoes && podeOperarPosVenda}
+                        modoAutomacoes={modoAutomacoes}
+                        stageLabels={stageLabels}
                       />
                     ))
                   )}

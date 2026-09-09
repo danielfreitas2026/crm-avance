@@ -8,7 +8,8 @@ export const PERMISSOES_ADMIN_EXPLICITAS = new Set([
   'clientes_secretos_ver_todos',
   'clientes_antigos_ver_historico',
   'configurar_horario_acesso',
-  'problemas_pos_venda_responsavel'
+  'problemas_pos_venda_responsavel',
+  'funil_automacoes'
 ]);
 const PERMISSOES_ADMIN_VENDAS_OBRIGATORIAS = new Set([
   'vendas',
@@ -322,6 +323,11 @@ export const GRUPOS_PERMISSOES = [
             chave: 'funil_vendas',
             nome: 'Visualizar funil',
             descricao: 'Permite acessar a página do funil de vendas.'
+          },
+          {
+            chave: 'funil_automacoes',
+            nome: 'Funil automações',
+            descricao: 'Permite visualizar e movimentar o funil comparativo das automações.'
           },
           {
             chave: 'crud_funil_etapas',

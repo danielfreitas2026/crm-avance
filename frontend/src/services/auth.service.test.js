@@ -50,10 +50,12 @@ describe('auth.service', () => {
     expect(temPermissao({ role: { nome: 'admin' } }, 'clientes_antigos_ver_historico')).toBe(false);
     expect(temPermissao({ role: { nome: 'admin' } }, 'vendas_excluir_reversoes')).toBe(true);
     expect(temPermissao({ role: { nome: 'admin' } }, 'configurar_horario_acesso')).toBe(false);
+    expect(temPermissao({ role: { nome: 'admin' } }, 'funil_automacoes')).toBe(false);
     expect(temPermissao({ role: { nome: 'admin' }, permissoes: { clientes_secretos_ver_todos: true } }, 'clientes_secretos_ver_todos')).toBe(true);
     expect(temPermissao({ role: { nome: 'admin' }, permissoes: { clientes_antigos_ver_historico: true } }, 'clientes_antigos_ver_historico')).toBe(true);
     expect(temPermissao({ role: { nome: 'admin' }, permissoes: { vendas_excluir_reversoes: true } }, 'vendas_excluir_reversoes')).toBe(true);
     expect(temPermissao({ role: { nome: 'admin' }, permissoes: { configurar_horario_acesso: true } }, 'configurar_horario_acesso')).toBe(true);
+    expect(temPermissao({ role: { nome: 'admin' }, permissoes: { funil_automacoes: true } }, 'funil_automacoes')).toBe(true);
     expect(temPermissao({ role: { nome: 'admin' }, permissoes: '"{\\"clientes_excluir\\":false}"' }, 'clientes_excluir')).toBe(false);
     expect(temPermissao({ role: { nome: 'admin' }, permissoes: { gerenciar_permissoes: false } }, 'clientes.ver')).toBe(true);
     expect(temPermissao({ permissoes: ['clientes.ver'] }, 'clientes.ver')).toBe(true);

@@ -49,6 +49,21 @@ function renderCard(sale, props = {}) {
 }
 
 describe('FunilPage - documentacao e atalhos rapidos', () => {
+  it('destaca no modo automacoes a etapa real divergente', () => {
+    renderCard(criarSale({
+      stage: 'entrega',
+      statusFunilReal: 'aceite',
+      divergenteAutomacao: true
+    }), {
+      modoAutomacoes: true,
+      stageLabels: { entrega: 'Entrega', aceite: 'Aceite' }
+    });
+
+    expect(screen.getByText('Divergente')).toBeInTheDocument();
+    expect(screen.getByText(/Real: Aceite/)).toBeInTheDocument();
+    expect(screen.queryByTitle('Gerar corpo de email')).not.toBeInTheDocument();
+  });
+
   it.each([
     [{ possui_doc_na_casa: true, total_arquivos: 0 }, false],
     [{ possui_doc_na_casa: 1, total_arquivos: 0 }, false],

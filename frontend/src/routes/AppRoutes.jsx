@@ -5,6 +5,7 @@ import PerfilPage from '../pages/PerfilPage/PerfilPage';
 import Usuarios from '../pages/Usuarios/Usuarios';
 import CadastroUsuario from '../pages/CadastroUsuario/CadastroUsuario';
 import FunilPage from '../pages/FunilPage/FunilPage';
+import FunilAutomacoesPage from '../pages/FunilPage/FunilAutomacoesPage';
 import DashboardPage from '../pages/DashboardPage/DashboardPage';
 import RelatoriosPage from '../pages/RelatoriosPage/RelatoriosPage';
 import EditarPerfilPage from '../pages/EditarPerfilPage/EditarPerfilPage';
@@ -62,6 +63,7 @@ function AppRoutes() {
       <Route path="/" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
       
       <Route path="/funil" element={<PrivateRoute permission="funil_vendas"><FunilPage /></PrivateRoute>} />
+      <Route path="/funil-automacoes" element={<PrivateRoute permission="funil_automacoes"><FunilAutomacoesPage /></PrivateRoute>} />
 
       <Route path="/vendas" element={<PrivateRoute permission={['vendas', 'vendas_ver_proprias', 'vendas_ver_todas', 'vendas_criar', 'vendas_editar', 'vendas_excluir']}><VendasPage /></PrivateRoute>} />
       <Route path="/vendas/aprovacoes" element={<PrivateRoute permission="vendas_aprovacoes_visualizar"><VendasAprovacoesPage /></PrivateRoute>} />

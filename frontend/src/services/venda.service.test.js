@@ -13,6 +13,7 @@ import { apiDelete, apiGet, apiPost, apiPut, apiRequest } from './api';
 import {
   atualizarAceiteBiometriaVenda,
   atualizarStatusVenda,
+  atualizarStatusVendaFunilAutomacoes,
   atualizarVenda,
   buscarVendaPorId,
   criarVenda,
@@ -21,6 +22,7 @@ import {
   gerarEmailVenda,
   listarAprovacoesVenda,
   listarVendas,
+  listarVendasFunilAutomacoes,
   listarVendasLixeira,
   marcarProblemaVenda,
   registrarReversaoVenda,
@@ -77,6 +79,17 @@ describe('venda.service', () => {
       venda: { nome: 'Corrigido' },
       observacao: 'Correção solicitada',
       versao: '2026-08-13T12:00:00.000Z'
+    });
+  });
+
+  it('usa endpoints isolados do funil de automacoes', async () => {
+    await listarVendasFunilAutomacoes({ somente_divergentes: '1' });
+    await atualizarStatusVendaFunilAutomacoes(7, { status_funil: 'entrega', prioridade_funil: 'baixa' });
+
+    expect(apiGet).toHaveBeenCalledWith('/vendas/funil-automacoes?somente_divergentes=1');
+    expect(apiRequest).toHaveBeenCalledWith('/vendas/7/funil-automacoes/status', {
+      method: 'PATCH',
+      body: JSON.stringify({ status_funil: 'entrega', prioridade_funil: 'baixa' }),
     });
   });
 

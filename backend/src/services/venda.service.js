@@ -2048,6 +2048,11 @@ async function enviarVendaParaPosVendaLiberada(venda, usuarioId, agora, trx, opc
     updated_at: agora
   });
 
+  // Require tardio evita ciclo: o servico do funil automatico reutiliza o
+  // escopo de visualizacao de vendas exposto por este modulo.
+  const vendaFunilAutomacaoService = require('./venda-funil-automacao.service');
+  await vendaFunilAutomacaoService.inicializarParaVenda(atualizada, trx);
+
   await registrarHistoricoVenda({
     vendaId: venda.id,
     usuarioId,
