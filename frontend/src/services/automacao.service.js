@@ -16,6 +16,9 @@ export const revisarAutomacao = (id, dados) => apiPost(`/automacoes/${id}/revisa
 export const repetirAutomacao = id => apiPost(`/automacoes/${id}/repetir`, {});
 export const repetirAutomacoesEmRevisao = () => apiPost('/automacoes/repetir-revisoes', {});
 export const descartarAutomacao = (id, justificativa) => apiPost(`/automacoes/${id}/descartar`, { justificativa });
+export const listarInconsistenciasHistoricoAutomacoes = () => apiGet('/automacoes/inconsistencias-historico');
+export const obterPreviaCorrecaoHistoricoAutomacao = historicoId => apiGet(`/automacoes/inconsistencias-historico/${historicoId}`);
+export const corrigirHistoricoAutomacao = (historicoId, dados) => apiPost(`/automacoes/inconsistencias-historico/${historicoId}/corrigir`, dados);
 export const listarProblemasAutomaticos = ({ status = 'abertos', page = 1, perPage = 20 } = {}) => (
   apiGet(`/problemas?status=${encodeURIComponent(status)}&page=${page}&per_page=${perPage}`)
 );

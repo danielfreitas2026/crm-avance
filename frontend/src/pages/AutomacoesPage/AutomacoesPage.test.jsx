@@ -7,8 +7,11 @@ import ProblemasPage from '../ProblemasPage/ProblemasPage';
 const api = vi.hoisted(() => ({
   coletarHistoricoAutomacoes: vi.fn(),
   descartarAutomacao: vi.fn(),
+  corrigirHistoricoAutomacao: vi.fn(),
   listarAutomacoes: vi.fn(),
+  listarInconsistenciasHistoricoAutomacoes: vi.fn(),
   obterResumoAutomacoes: vi.fn(),
+  obterPreviaCorrecaoHistoricoAutomacao: vi.fn(),
   repetirAutomacao: vi.fn(),
   repetirAutomacoesEmRevisao: vi.fn(),
   revisarAutomacao: vi.fn(),
@@ -88,6 +91,16 @@ describe('Painéis da automação Gmail VIVO', () => {
     api.repetirAutomacoesEmRevisao.mockResolvedValue({ selecionados: 2, repetidos: 2, falhas: 0 });
     api.descartarAutomacao.mockResolvedValue({});
     api.coletarHistoricoAutomacoes.mockResolvedValue({ coletados: 4, processados: 4 });
+    api.listarInconsistenciasHistoricoAutomacoes.mockResolvedValue({ data: [], total: 0 });
+    api.obterPreviaCorrecaoHistoricoAutomacao.mockResolvedValue({
+      historico_id: 70, venda_id: 42, automacao_id: 10,
+      motivos: ['E-mail recebido antes da criação da venda.'],
+      email_recebido_em: '2026-09-02 12:00:00', venda_criada_em: '2026-09-08 12:00:00', historico_em: '2026-09-02 12:05:00',
+      venda_updated_at: '2026-09-08 13:00:00', venda_status_atual: 'concluido', status_sugerido: 'aceite',
+      etapas: [{ codigo: 'aceite', nome: 'Aceite' }, { codigo: 'concluido', nome: 'Concluído' }],
+      efeitos_derivados_comprovados: [], efeitos_nao_revertidos_automaticamente: ['data_ativacao']
+    });
+    api.corrigirHistoricoAutomacao.mockResolvedValue({ status: 'ok' });
     api.resolverProblemaAutomatico.mockResolvedValue({});
     api.listarVendasCandidatasAutomacao.mockResolvedValue({
       automacao_id: 10,
@@ -95,6 +108,27 @@ describe('Painéis da automação Gmail VIVO', () => {
       cnpj_original: '11143938000187',
       vendas: [vendaCandidata]
     });
+  });
+
+  it('audita e corrige um histórico somente após prévia e justificativa', async () => {
+    const user = userEvent.setup();
+    api.listarInconsistenciasHistoricoAutomacoes
+      .mockResolvedValueOnce({ data: [{ historico_id: 70, venda_id: 42, automacao_id: 10, status_anterior: 'aceite', status_novo: 'concluido', motivos: ['E-mail recebido antes da criação da venda.'] }], total: 1 })
+      .mockResolvedValue({ data: [], total: 0 });
+    render(<AutomacoesPage />);
+
+    await user.click(await screen.findByRole('button', { name: /Auditar históricos/ }));
+    expect(await screen.findByText('Venda #42')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Revisar correção' }));
+    expect(await screen.findByRole('dialog', { name: 'Corrigir histórico da automação' })).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText('Explique por que o vínculo está incorreto'), 'E-mail pertence a outra venda.');
+    await user.click(screen.getByRole('button', { name: 'Confirmar correção' }));
+
+    await waitFor(() => expect(api.corrigirHistoricoAutomacao).toHaveBeenCalledWith(70, expect.objectContaining({
+      status_destino: 'aceite',
+      motivo: 'E-mail pertence a outra venda.',
+      versao_venda: '2026-09-08 13:00:00'
+    })));
   });
 
   it('modal pesquisa outro CNPJ, exibe detalhes e confirma somente a seleção', async () => {

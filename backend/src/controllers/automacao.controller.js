@@ -9,8 +9,11 @@ async function revisar(req, res) { try { const item = await service.revisar(req.
 async function repetir(req, res) { try { const item = await service.repetir(req.params.id); return item ? res.json(item) : res.status(404).json({ message: 'Execução não encontrada.' }); } catch (error) { return erro(res, error); } }
 async function repetirRevisoes(req, res) { try { return res.json(await service.repetirRevisoes()); } catch (error) { return erro(res, error); } }
 async function descartar(req, res) { try { const item = await service.descartar(req.params.id, req.body?.justificativa, req.usuario.id); return item ? res.json(item) : res.status(404).json({ message: 'Execução não encontrada.' }); } catch (error) { return erro(res, error); } }
+async function inconsistenciasHistorico(req, res) { try { return res.json(await service.listarInconsistenciasHistorico(req.query)); } catch (error) { return erro(res, error); } }
+async function previaCorrecaoHistorico(req, res) { try { const item = await service.obterPreviaCorrecaoHistorico(req.params.historicoId); return item ? res.json(item) : res.status(404).json({ message: 'Inconsistência não encontrada ou já corrigida.' }); } catch (error) { return erro(res, error); } }
+async function corrigirHistorico(req, res) { try { return res.json(await service.corrigirInconsistenciaHistorico(req.params.historicoId, req.body, req.usuario.id)); } catch (error) { return erro(res, error); } }
 async function problemas(req, res) { try { return res.json(await service.listarProblemas(req.query)); } catch (error) { return erro(res, error); } }
 async function resolverProblema(req, res) { try { const item = await service.resolverProblemaAutomatico(req.params.id, req.body?.mensagem, req.usuario.id); return item ? res.json(item) : res.status(404).json({ message: 'Problema automático não encontrado.' }); } catch (error) { return erro(res, error); } }
 async function vendaProblema(req, res) { try { const item = await service.obterVendaProblemaAutomatico(req.params.id); return item ? res.json(item) : res.status(404).json({ message: 'Venda vinculada ao problema não encontrada.' }); } catch (error) { return erro(res, error); } }
 
-module.exports = { index, resumo, coletarHistorico, vendasCandidatas, revisar, repetir, repetirRevisoes, descartar, problemas, resolverProblema, vendaProblema };
+module.exports = { index, resumo, coletarHistorico, vendasCandidatas, revisar, repetir, repetirRevisoes, descartar, inconsistenciasHistorico, previaCorrecaoHistorico, corrigirHistorico, problemas, resolverProblema, vendaProblema };

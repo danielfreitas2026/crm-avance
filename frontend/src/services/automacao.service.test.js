@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./api', () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 
 import { apiGet, apiPost } from './api';
-import { listarAutomacoes, listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterVendaProblemaAutomatico, resolverProblemaAutomatico } from './automacao.service';
+import { corrigirHistoricoAutomacao, listarAutomacoes, listarInconsistenciasHistoricoAutomacoes, listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterPreviaCorrecaoHistoricoAutomacao, obterVendaProblemaAutomatico, resolverProblemaAutomatico } from './automacao.service';
 
 describe('automacao.service', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -32,5 +32,14 @@ describe('automacao.service', () => {
     await listarAutomacoes({ classificacao: 'cancelamento', page: 2, perPage: 50 });
 
     expect(apiGet).toHaveBeenCalledWith('/automacoes?page=2&per_page=50&classificacao=cancelamento');
+  });
+
+  it('usa os endpoints de auditoria e correção de histórico', async () => {
+    await listarInconsistenciasHistoricoAutomacoes();
+    await obterPreviaCorrecaoHistoricoAutomacao(70);
+    await corrigirHistoricoAutomacao(70, { motivo: 'Vínculo incorreto' });
+    expect(apiGet).toHaveBeenNthCalledWith(1, '/automacoes/inconsistencias-historico');
+    expect(apiGet).toHaveBeenNthCalledWith(2, '/automacoes/inconsistencias-historico/70');
+    expect(apiPost).toHaveBeenCalledWith('/automacoes/inconsistencias-historico/70/corrigir', { motivo: 'Vínculo incorreto' });
   });
 });

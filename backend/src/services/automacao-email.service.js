@@ -9,10 +9,12 @@ const Notificacao = require('../models/Notificacao');
 const NotificacaoDestinatario = require('../models/NotificacaoDestinatario');
 const Usuario = require('../models/Usuario');
 const Venda = require('../models/Venda');
+const VendaHistorico = require('../models/VendaHistorico');
 const VendaProblema = require('../models/VendaProblema');
 const VendaProblemaDestinatario = require('../models/VendaProblemaDestinatario');
 const VendaProblemaEvento = require('../models/VendaProblemaEvento');
 const vendaService = require('./venda.service');
+const auditLogService = require('./audit-log.service');
 const { validarCnpj } = require('./cnpj.service');
 const { chamarApiComToken } = require('./telegram.service');
 const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
@@ -150,11 +152,22 @@ async function codigosEtapasFinais() {
   }
 }
 
-function divergenciasSecundarias(venda, campos) {
+function instanteUtc(valor) {
+  if (!valor) return null;
+  if (valor instanceof Date) return Number.isNaN(valor.getTime()) ? null : valor.getTime();
+  const texto = String(valor).trim();
+  const data = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(texto) ? texto : `${texto.replace(' ', 'T')}Z`);
+  return Number.isNaN(data.getTime()) ? null : data.getTime();
+}
+
+function divergenciasSecundarias(venda, campos, recebidoEm = null) {
   const divergencias = [];
   if (campos.data_venda && String(venda.data_venda || '').slice(0, 10) !== campos.data_venda) divergencias.push('data da venda divergente');
   if (campos.quantidade !== null && campos.quantidade !== undefined && Number(venda.quantidade_linhas) !== Number(campos.quantidade)) divergencias.push('quantidade divergente');
   if (campos.valor_mensal !== null && campos.valor_mensal !== undefined && centavos(venda.valor_total) !== centavos(campos.valor_mensal)) divergencias.push('valor mensal divergente');
+  const recebido = instanteUtc(recebidoEm);
+  const criada = instanteUtc(venda.criado_em || venda.created_at);
+  if (recebido !== null && criada !== null && recebido < criada) divergencias.push('e-mail recebido antes da criação da venda');
   return divergencias;
 }
 
@@ -167,17 +180,14 @@ function motivosInelegibilidade(venda, etapasFinais, { cancelamento = false } = 
 }
 
 function selecionarCandidataUnica(avaliadas) {
-  if (avaliadas.length === 1) return avaliadas[0].venda;
-  if (avaliadas.length > 1) {
-    const compativeis = avaliadas.filter(item => item.auditoria.divergencias.length === 0);
-    if (compativeis.length === 1) return compativeis[0].venda;
-  }
-  return null;
+  const compativeis = avaliadas.filter(item => item.auditoria.automaticamente_compativel);
+  return compativeis.length === 1 ? compativeis[0].venda : null;
 }
 
-function avaliarCandidatas(candidatas, campos, etapasFinais, { cancelamento = false } = {}) {
+function avaliarCandidatas(candidatas, campos, etapasFinais, { cancelamento = false, recebidoEm = null } = {}) {
   const avaliadas = candidatas.map(venda => {
     const inelegibilidades = motivosInelegibilidade(venda, etapasFinais, { cancelamento });
+    const divergencias = divergenciasSecundarias(venda, campos, recebidoEm);
     const vendedores = [venda.vendedora, ...(Array.isArray(venda.vendedoras) ? venda.vendedoras : [])]
       .filter(Boolean)
       .filter((item, indice, lista) => lista.findIndex(outro => Number(outro.id) === Number(item.id)) === indice)
@@ -196,9 +206,10 @@ function avaliarCandidatas(candidatas, campos, etapasFinais, { cancelamento = fa
         vendedores,
         criador: venda.criador ? { id: Number(venda.criador.id), nome: venda.criador.nome || 'Não informado' } : null,
         elegivel: inelegibilidades.length === 0,
+        automaticamente_compativel: inelegibilidades.length === 0 && divergencias.length === 0,
         inelegibilidades,
         motivo_bloqueio: inelegibilidades.join(', ') || null,
-        divergencias: divergenciasSecundarias(venda, campos)
+        divergencias
       }
     };
   });
@@ -210,6 +221,8 @@ function avaliarCandidatas(candidatas, campos, etapasFinais, { cancelamento = fa
   let erro = null;
   if (!selecionada && avaliadas.length > 0 && elegiveis.length === 0) {
     erro = 'Todas as vendas encontradas para o documento estão concluídas, canceladas ou excluídas.';
+  } else if (!selecionada && elegiveis.some(item => item.auditoria.divergencias.length > 0)) {
+    erro = 'As vendas encontradas possuem divergências e exigem revisão manual.';
   } else if (!selecionada) {
     erro = 'Não foi possível identificar uma única venda ativa para o documento.';
   }
@@ -256,7 +269,7 @@ async function listarVendasCandidatas(id, cnpjInformado, dependencias = {}) {
   const cancelamento = (registro.classificacao || atuais.classificacao) === 'cancelamento' || atuais.alvo === 'cancelar_venda';
   const buscar = dependencias.buscar || buscarCandidatas;
   const obterEtapas = dependencias.etapasFinais || codigosEtapasFinais;
-  const resultado = avaliarCandidatas(await buscar(campos), campos, await obterEtapas(), { cancelamento });
+  const resultado = avaliarCandidatas(await buscar(campos), campos, await obterEtapas(), { cancelamento, recebidoEm: registro.recebido_em });
   return {
     automacao_id: Number(registro.id),
     cnpj,
@@ -271,15 +284,30 @@ async function resolverVenda(registro, campos) {
   if (registro.revisado_por_id && registro.venda_id) {
     const escolhida = await Venda.query().findById(registro.venda_id).withGraphFetched('[cliente, operadora]');
     if (!escolhida) return { venda: null, candidatas: [], erro: 'A venda selecionada manualmente não foi encontrada.' };
-    const resultado = avaliarCandidatas([escolhida], campos, etapasFinais, { cancelamento });
+    const resultado = avaliarCandidatas([escolhida], campos, etapasFinais, { cancelamento, recebidoEm: registro.recebido_em });
     resultado.candidatas[0].manual = true;
-    if (!resultado.venda) resultado.erro = cancelamento
-      ? 'A venda selecionada manualmente está concluída ou excluída e não pode ser cancelada automaticamente.'
-      : 'A venda selecionada manualmente está concluída, cancelada ou excluída e não pode receber atualizações.';
+    if (resultado.candidatas[0].elegivel) {
+      resultado.venda = escolhida;
+      resultado.erro = null;
+    } else {
+      resultado.venda = null;
+      resultado.erro = cancelamento
+        ? 'A venda selecionada manualmente está concluída ou excluída e não pode ser cancelada automaticamente.'
+        : 'A venda selecionada manualmente está concluída, cancelada ou excluída e não pode receber atualizações.';
+    }
     return resultado;
   }
   const candidatas = await buscarCandidatas(campos);
-  return avaliarCandidatas(candidatas, campos, etapasFinais, { cancelamento });
+  return avaliarCandidatas(candidatas, campos, etapasFinais, { cancelamento, recebidoEm: registro.recebido_em });
+}
+
+async function revalidarResolucaoAutomatica(registro, campos, vendaId) {
+  if (registro.revisado_por_id) return null;
+  const resolucao = await resolverVenda(registro, campos);
+  if (!resolucao.venda || Number(resolucao.venda.id) !== Number(vendaId)) {
+    return resolucao.erro || 'A correspondência da venda mudou e exige revisão manual.';
+  }
+  return null;
 }
 
 async function resolverEtapaDestino(alvo) {
@@ -402,6 +430,8 @@ async function processarRegistro(registro) {
   if (campos.classificacao === 'desconhecido') return { status: 'revisao', erro: 'Destino do e-mail não reconhecido.', dados_extraidos: JSON.stringify(dadosExtraidos) };
   if (!resolucao.venda) return { status: 'revisao', erro: resolucao.erro || 'Não foi possível identificar uma única venda ativa para o documento.', dados_extraidos: JSON.stringify(dadosExtraidos) };
   const venda = resolucao.venda;
+  const erroRevalidacao = await revalidarResolucaoAutomatica(registro, campos, venda.id);
+  if (erroRevalidacao) return { status: 'revisao', erro: erroRevalidacao, venda_id: venda.id, dados_extraidos: JSON.stringify(dadosExtraidos) };
   if (campos.classificacao === 'tipo_2') {
     if (!campos.mensagem_operador) return { status: 'revisao', erro: 'Mensagem ao operador não encontrada.', dados_extraidos: JSON.stringify(dadosExtraidos), venda_id: venda.id };
     const problema = await abrirProblemaAutomatico(registro, venda, campos.mensagem_operador);
@@ -421,6 +451,7 @@ async function processarRegistro(registro) {
       sistema: true,
       origemMovimentacao: 'automacao_gmail',
       automacaoEmailId: registro.id,
+      ...(registro.recebido_em ? { automacaoRecebidaEm: registro.recebido_em } : {}),
       statusFunilEsperado: venda.status_funil || null
     });
     if (cancelamento.status !== 'ok') {
@@ -447,7 +478,8 @@ async function processarRegistro(registro) {
       {
         sistema: true,
         origemMovimentacao: 'automacao_gmail',
-        automacaoEmailId: registro.id
+        automacaoEmailId: registro.id,
+        ...(registro.recebido_em ? { automacaoRecebidaEm: registro.recebido_em } : {})
       }
     );
     if (movimento.status !== 'ok') return { status: 'revisao', erro: movimento.message || 'Movimentação bloqueada pelas regras do funil.', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos) };
@@ -590,6 +622,178 @@ async function repetirRevisoes(carregarCorpo = carregarCorpoGmail) {
   return resultado;
 }
 async function descartar(id, justificativa, usuarioId) { if (!String(justificativa || '').trim()) throw Object.assign(new Error('Informe a justificativa.'), { statusCode: 400 }); return AutomacaoEmail.query().patchAndFetchById(id, { status: 'descartado', justificativa_revisao: String(justificativa).trim(), revisado_por_id: usuarioId, processado_em: formatarSQL() }); }
+
+function dadosHistorico(valor) {
+  return json(valor, {});
+}
+
+function normalizarVersao(valor) {
+  const instante = instanteUtc(valor);
+  return instante === null ? String(valor || '') : String(instante);
+}
+
+function montarInconsistenciaHistorico(historico, venda, automacao) {
+  const dados = dadosHistorico(historico.dados);
+  if (dados.origem_movimentacao !== 'automacao_gmail') return null;
+  const motivos = [];
+  const criadaEm = venda?.criado_em || venda?.created_at || null;
+  const historicoEmMs = instanteUtc(historico.created_at);
+  const criadaEmMs = instanteUtc(criadaEm);
+  if (!venda) motivos.push('Venda vinculada não encontrada.');
+  if (venda && historicoEmMs !== null && criadaEmMs !== null && historicoEmMs < criadaEmMs) motivos.push('Movimentação anterior à criação da venda.');
+  if (!automacao) motivos.push('Histórico Gmail sem automação correspondente.');
+  const recebidoEmMs = instanteUtc(automacao?.recebido_em);
+  if (venda && automacao && recebidoEmMs !== null && criadaEmMs !== null && recebidoEmMs < criadaEmMs) motivos.push('E-mail recebido antes da criação da venda.');
+  const candidatas = json(automacao?.dados_extraidos).candidatas;
+  const candidata = Array.isArray(candidatas)
+    ? candidatas.find(item => Number(item.id) === Number(historico.venda_id))
+    : null;
+  if (Array.isArray(candidata?.divergencias) && candidata.divergencias.length > 0) {
+    motivos.push(`Automação concluída com divergências: ${candidata.divergencias.join(', ')}.`);
+  }
+  if (motivos.length === 0) return null;
+  return {
+    historico_id: Number(historico.id),
+    venda_id: Number(historico.venda_id),
+    automacao_id: automacao ? Number(automacao.id) : Number(dados.automacao_email_id) || null,
+    acao: historico.acao,
+    status_anterior: historico.status_anterior || null,
+    status_novo: historico.status_novo || null,
+    historico_em: historico.created_at,
+    email_recebido_em: automacao?.recebido_em || dados.automacao_recebida_em || null,
+    venda_criada_em: criadaEm,
+    venda_status_atual: venda?.status_funil || null,
+    venda_updated_at: venda?.updated_at || null,
+    motivos
+  };
+}
+
+async function listarInconsistenciasHistorico(filtros = {}) {
+  const pagina = Math.max(1, Number(filtros.page) || 1);
+  const porPagina = Math.min(100, Math.max(10, Number(filtros.per_page) || 20));
+  const historicos = await VendaHistorico.query()
+    .whereIn('acao', ['venda.status_atualizado', 'venda.cancelada'])
+    .whereNull('invalidated_at')
+    .orderBy('id', 'desc');
+  const gmail = historicos.filter(item => dadosHistorico(item.dados).origem_movimentacao === 'automacao_gmail');
+  const vendaIds = [...new Set(gmail.map(item => Number(item.venda_id)).filter(Boolean))];
+  const automacaoIds = [...new Set(gmail.map(item => Number(dadosHistorico(item.dados).automacao_email_id)).filter(Boolean))];
+  const [vendas, automacoes] = await Promise.all([
+    vendaIds.length ? Venda.query().findByIds(vendaIds) : [],
+    automacaoIds.length ? AutomacaoEmail.query().findByIds(automacaoIds) : []
+  ]);
+  const vendasPorId = new Map(vendas.map(item => [Number(item.id), item]));
+  const automacoesPorId = new Map(automacoes.map(item => [Number(item.id), item]));
+  const inconsistencias = gmail.map(item => montarInconsistenciaHistorico(
+    item,
+    vendasPorId.get(Number(item.venda_id)),
+    automacoesPorId.get(Number(dadosHistorico(item.dados).automacao_email_id))
+  )).filter(Boolean);
+  const inicio = (pagina - 1) * porPagina;
+  return { data: inconsistencias.slice(inicio, inicio + porPagina), total: inconsistencias.length, page: pagina, per_page: porPagina };
+}
+
+const EFEITOS_REQUISITOS = {
+  aceite: ['aceite_concluido'],
+  biometria: ['biometria_concluida'],
+  etapa_0800: ['etapa_0800_concluida', 'etapa_0800_concluida_em', 'etapa_0800_concluida_por_id'],
+  etapa_abr: ['etapa_abr_concluida', 'etapa_abr_concluida_em', 'etapa_abr_concluida_por_id'],
+  etapa_vivo: ['etapa_vivo_concluida', 'etapa_vivo_concluida_em', 'etapa_vivo_concluida_por_id']
+};
+
+function efeitosDerivadosComprovados(historico, venda) {
+  const chaves = dadosHistorico(historico.dados).requisitos_concluidos_automaticamente;
+  if (!Array.isArray(chaves)) return [];
+  return chaves.flatMap(chave => EFEITOS_REQUISITOS[chave] || []).filter(coluna => {
+    if (!coluna.endsWith('_em')) return venda?.[coluna] !== null && venda?.[coluna] !== false && venda?.[coluna] !== 0;
+    return normalizarVersao(venda?.[coluna]) === normalizarVersao(historico.created_at);
+  });
+}
+
+async function obterPreviaCorrecaoHistorico(historicoId, trx = null) {
+  const historico = await VendaHistorico.query(trx).findById(historicoId);
+  if (!historico || historico.invalidated_at) return null;
+  const venda = await Venda.query(trx).findById(historico.venda_id);
+  const dados = dadosHistorico(historico.dados);
+  const automacao = dados.automacao_email_id ? await AutomacaoEmail.query(trx).findById(dados.automacao_email_id) : null;
+  const inconsistencia = montarInconsistenciaHistorico(historico, venda, automacao);
+  if (!inconsistencia) return null;
+  const anterior = await VendaHistorico.query(trx)
+    .where('venda_id', historico.venda_id)
+    .where('id', '<', historico.id)
+    .whereNotNull('status_novo')
+    .whereNull('invalidated_at')
+    .orderBy('id', 'desc')
+    .first();
+  const etapas = await FunilEtapa.query(trx).where({ ativo: true }).orderBy('ordem', 'asc').select('codigo', 'nome');
+  return {
+    ...inconsistencia,
+    status_sugerido: anterior?.status_novo || historico.status_anterior || null,
+    etapas,
+    efeitos_derivados_comprovados: efeitosDerivadosComprovados(historico, venda),
+    efeitos_nao_revertidos_automaticamente: historico.status_novo && historico.status_novo !== historico.status_anterior
+      ? ['data_ativacao', 'sincronização do cliente e pacotes gerados']
+      : []
+  };
+}
+
+async function corrigirInconsistenciaHistorico(historicoId, dados, usuarioId) {
+  const motivo = String(dados?.motivo || '').trim();
+  const statusDestino = String(dados?.status_destino || '').trim();
+  if (!motivo) throw Object.assign(new Error('Informe o motivo da correção.'), { statusCode: 400 });
+  if (!statusDestino) throw Object.assign(new Error('Informe a etapa que deve permanecer na venda.'), { statusCode: 400 });
+  const etapa = await FunilEtapa.query().findOne({ codigo: statusDestino, ativo: true });
+  if (!etapa) throw Object.assign(new Error('A etapa escolhida não está ativa.'), { statusCode: 400 });
+
+  return Venda.transaction(async trx => {
+    const historico = await VendaHistorico.query(trx).findById(historicoId).forUpdate();
+    if (!historico) throw Object.assign(new Error('Histórico não encontrado.'), { statusCode: 404 });
+    if (historico.invalidated_at) throw Object.assign(new Error('Este histórico já foi corrigido.'), { statusCode: 409 });
+    const venda = await Venda.query(trx).findById(historico.venda_id).forUpdate();
+    if (!venda) throw Object.assign(new Error('Venda vinculada não encontrada.'), { statusCode: 404 });
+    const automacaoId = Number(dadosHistorico(historico.dados).automacao_email_id) || null;
+    const automacao = automacaoId ? await AutomacaoEmail.query(trx).findById(automacaoId) : null;
+    if (!montarInconsistenciaHistorico(historico, venda, automacao)) {
+      throw Object.assign(new Error('O histórico não corresponde mais a uma inconsistência corrigível.'), { statusCode: 409 });
+    }
+    if (normalizarVersao(venda.updated_at) !== normalizarVersao(dados?.versao_venda)) {
+      throw Object.assign(new Error('A venda mudou desde a prévia. Atualize a auditoria antes de corrigir.'), { statusCode: 409 });
+    }
+    const agora = formatarSQL();
+    const efeitos = dados?.reverter_efeitos_derivados ? efeitosDerivadosComprovados(historico, venda) : [];
+    const patchVenda = { status_funil: statusDestino, ultima_atividade_em: agora, updated_at: agora };
+    efeitos.forEach(coluna => { patchVenda[coluna] = coluna.endsWith('_por_id') || coluna.endsWith('_em') ? null : false; });
+    await Venda.query(trx).findById(venda.id).patch(patchVenda);
+    await VendaHistorico.query(trx).findById(historico.id).patch({
+      invalidated_at: agora,
+      invalidated_by_id: Number(usuarioId),
+      invalidation_reason: motivo,
+      correction_automation_id: automacaoId
+    });
+    await VendaHistorico.query(trx).insert({
+      venda_id: Number(venda.id),
+      usuario_id: Number(usuarioId),
+      acao: 'venda.automacao_corrigida',
+      status_anterior: venda.status_funil || null,
+      status_novo: statusDestino,
+      observacao: motivo,
+      dados: {
+        historico_invalidado_id: Number(historico.id),
+        automacao_email_id: automacaoId,
+        efeitos_derivados_revertidos: efeitos
+      },
+      created_at: agora
+    });
+    await auditLogService.registrar(null, {
+      usuario_id: Number(usuarioId),
+      acao: 'venda.automacao_historico_corrigido',
+      entidade: 'vendas',
+      entidade_id: venda.id,
+      dados: { historico_id: historico.id, automacao_email_id: automacaoId, status_anterior: venda.status_funil, status_novo: statusDestino, motivo, efeitos }
+    }, trx);
+    return { status: 'ok', venda_id: Number(venda.id), historico_id: Number(historico.id), status_destino: statusDestino };
+  });
+}
 
 async function limparCorposExpirados() { const limite = new Date(); limite.setUTCFullYear(limite.getUTCFullYear() - 1); return AutomacaoEmail.query().whereNotNull('corpo_texto').where('recebido_em', '<', formatarSQL(limite)).patch({ corpo_texto: null, corpo_expirado_em: formatarSQL(), updated_at: new Date() }); }
 
@@ -751,4 +955,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, processarPendente, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverEtapaDestino, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas } };
+module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, processarPendente, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas } };

@@ -38,7 +38,9 @@ function parseDinheiro(valor) {
 }
 
 function extrairResumo(texto) {
-  const bloco = String(texto || '').split(/workflow\s*\(/i)[0].split(/resumo da venda/i).at(-1) || '';
+  const partes = String(texto || '').split(/resumo da venda/i);
+  if (partes.length < 2) return { quantidade: null, valor_mensal: null };
+  const bloco = partes.at(-1).split(/workflow\s*\(/i)[0] || '';
   const linhaTotal = bloco.match(/\btotal\s+(\d+)\s+(?:r\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2})/i);
   if (linhaTotal) return { quantidade: Number(linhaTotal[1]), valor_mensal: parseDinheiro(linhaTotal[2]) };
   const linhas = bloco.split(/\r?\n/).map(linha => linha.trim()).filter(Boolean);
