@@ -6,7 +6,11 @@ const FunilEtapa = require('../models/FunilEtapa');
 const RegraComissao = require('../models/RegraComissao');
 const ExcelJS = require('exceljs');
 const vendaService = require('./venda.service');
-const { FORMATO_MOEDA_BR, FORMATO_INTEIRO_BR } = require('../utils/formato-planilha');
+const {
+  FORMATO_MOEDA_BR,
+  FORMATO_INTEIRO_BR,
+  classificacaoClienteBasePlanilha
+} = require('../utils/formato-planilha');
 
 const STATUS_FINAL_FALLBACK = 'concluido';
 const CODIGO_RETORNO_HISTORICO = '__retorno_historico';
@@ -508,6 +512,7 @@ async function carregarVendasNoPeriodo(filtros, criterioData = 'registro', opcoe
       'v.setor_funcao',
       'v.valor_total',
       'v.valores_unitarios_chips',
+      'v.cliente_da_base',
       'v.numeros_portados',
       'v.numeros_ativados',
       'v.cliente_solicitou_servicos',
@@ -1527,6 +1532,7 @@ function montarLinhaExportacaoVenda(venda, etapas = [], statusFinal = STATUS_FIN
     id: venda.id,
     razao_social: valorTexto(venda.razao_social || venda.cliente_razao_social || venda.nome || venda.cliente_nome),
     cnpj: valorTexto(venda.cnpj || venda.cliente_cnpj),
+    classificacao_cliente: classificacaoClienteBasePlanilha(venda.cliente_da_base),
     cidade: valorTexto(venda.municipio),
     uf: valorTexto(venda.uf),
     quantidade,
@@ -1650,27 +1656,13 @@ function aplicarEstiloPlanilha(worksheet) {
   });
 }
 
-/**
- * Gera xlsx vendas periodo a partir dos dados informados.
- */
-async function gerarXlsxVendasPeriodo(filtros = {}) {
-  const { vendas, statusFinal } = await carregarVendasNoPeriodo(filtros, 'registro', { incluirRetornos: true });
-  const etapas = [
-    ...(await listarEtapasPainel()),
-    { codigo: 'retorno', nome: 'Retorno', etapa_final: false }
-  ];
-  const inicio = normalizarData(filtros.data_inicio);
-  const fim = normalizarData(filtros.data_fim);
-  const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet('Vendas');
-
-  workbook.creator = 'Sistema Pos Venda';
-  workbook.created = new Date();
-
-  worksheet.columns = [
+/** Retorna a definicao ordenada das colunas da exportacao de vendas do periodo. */
+function montarColunasXlsxVendasPeriodo() {
+  return [
     { header: 'ID', key: 'id', width: 10 },
     { header: 'RAZAO SOCIAL', key: 'razao_social', width: 34 },
     { header: 'CNPJ', key: 'cnpj', width: 20 },
+    { header: 'CLASSIFICAÇÃO DO CLIENTE', key: 'classificacao_cliente', width: 26 },
     { header: 'CIDADE', key: 'cidade', width: 18 },
     { header: 'UF', key: 'uf', width: 8 },
     { header: 'QUANTIDADE', key: 'quantidade', width: 13, style: { numFmt: FORMATO_INTEIRO_BR } },
@@ -1701,6 +1693,26 @@ async function gerarXlsxVendasPeriodo(filtros = {}) {
     { header: 'OBS', key: 'observacoes', width: 34 },
     { header: 'MOTIVO RETORNO', key: 'motivo_retorno', width: 28 }
   ];
+}
+
+/**
+ * Gera xlsx vendas periodo a partir dos dados informados.
+ */
+async function gerarXlsxVendasPeriodo(filtros = {}) {
+  const { vendas, statusFinal } = await carregarVendasNoPeriodo(filtros, 'registro', { incluirRetornos: true });
+  const etapas = [
+    ...(await listarEtapasPainel()),
+    { codigo: 'retorno', nome: 'Retorno', etapa_final: false }
+  ];
+  const inicio = normalizarData(filtros.data_inicio);
+  const fim = normalizarData(filtros.data_fim);
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Vendas');
+
+  workbook.creator = 'Sistema Pos Venda';
+  workbook.created = new Date();
+
+  worksheet.columns = montarColunasXlsxVendasPeriodo();
 
   vendas
     .flatMap(venda => montarLinhasExportacaoVenda(venda, etapas, statusFinal))
@@ -1741,7 +1753,10 @@ module.exports = {
     gigasUnitarios,
     labelCategoriaPainel,
     montarLinhaChip,
+    montarLinhaExportacaoVenda,
+    montarLinhasExportacaoVenda,
     montarLinhasChips,
+    montarColunasXlsxVendasPeriodo,
     montarRegraComissaoResumo,
     montarRespostaLinhasChips,
     montarVendaResumo,

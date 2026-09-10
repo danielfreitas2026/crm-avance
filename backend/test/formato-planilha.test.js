@@ -7,6 +7,7 @@ const {
   FORMATO_INTEIRO_BR,
   FORMATO_PERCENTUAL_BR,
   FORMATO_DATA_BR,
+  classificacaoClienteBasePlanilha,
   numeroPlanilha
 } = require('../src/utils/formato-planilha');
 
@@ -36,4 +37,13 @@ test('fixa o locale brasileiro nos formatos numericos das exportacoes', () => {
   });
 
   assert.equal(FORMATO_DATA_BR, 'dd/mm/yyyy');
+});
+
+test('formata classificacao do cliente para planilhas preservando valor nao informado', () => {
+  assert.equal(classificacaoClienteBasePlanilha(true), 'Cliente base');
+  assert.equal(classificacaoClienteBasePlanilha(1), 'Cliente base');
+  assert.equal(classificacaoClienteBasePlanilha(false), 'Cliente fora da base');
+  assert.equal(classificacaoClienteBasePlanilha(0), 'Cliente fora da base');
+  assert.equal(classificacaoClienteBasePlanilha(null), '');
+  assert.equal(classificacaoClienteBasePlanilha(undefined), '');
 });

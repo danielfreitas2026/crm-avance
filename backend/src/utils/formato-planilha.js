@@ -32,11 +32,18 @@ function numeroPlanilha(valor) {
   return Number.isFinite(numero) ? numero : null;
 }
 
+/** Retorna a classificacao da venda em relacao a base para exibicao em planilhas. */
+function classificacaoClienteBasePlanilha(valor) {
+  if (valor === null || valor === undefined || valor === '') return '';
+  return valor === true || Number(valor) === 1 ? 'Cliente base' : 'Cliente fora da base';
+}
+
 module.exports = {
   FORMATO_MOEDA_BR,
   FORMATO_DECIMAL_BR,
   FORMATO_INTEIRO_BR,
   FORMATO_PERCENTUAL_BR,
   FORMATO_DATA_BR,
+  classificacaoClienteBasePlanilha,
   numeroPlanilha
 };

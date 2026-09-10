@@ -9,6 +9,8 @@ const {
   classificarSecao,
   encontrarRegraComissao,
   gigasUnitarios,
+  montarColunasXlsxVendasPeriodo,
+  montarLinhasExportacaoVenda,
   montarLinhasChips,
   montarRespostaLinhasChips,
   parseChips,
@@ -72,6 +74,37 @@ test('calcula quantidade de chips total e por tipo', () => {
   assert.equal(quantidadeChipsPorTipo(venda, 'novo'), 2);
   assert.equal(quantidadeChipsPorTipo(venda, 'portabilidade'), 1);
   assert.equal(quantidadeChipsVenda({ quantidade_linhas: 4 }), 4);
+});
+
+test('posiciona classificacao do cliente depois do CNPJ na planilha do fechamento', () => {
+  const colunas = montarColunasXlsxVendasPeriodo();
+  const indiceCnpj = colunas.findIndex(coluna => coluna.key === 'cnpj');
+
+  assert.equal(colunas[indiceCnpj + 1].key, 'classificacao_cliente');
+  assert.equal(colunas[indiceCnpj + 1].header, 'CLASSIFICAÇÃO DO CLIENTE');
+  assert.equal(colunas[indiceCnpj + 2].key, 'cidade');
+});
+
+test('repete classificacao do cliente nas linhas desdobradas do fechamento', () => {
+  const venda = {
+    id: 10,
+    cliente_da_base: false,
+    valores_unitarios_chips: JSON.stringify([
+      { quantidade: 1, tipo_linha: 'novo', valor_unitario: 50, vendedora_id: 1 },
+      { quantidade: 1, tipo_linha: 'portabilidade', valor_unitario: 60, vendedora_id: 2 }
+    ]),
+    vendedoras: [{ id: 1, nome: 'Ana' }, { id: 2, nome: 'Bia' }]
+  };
+
+  const linhas = montarLinhasExportacaoVenda(venda);
+
+  assert.equal(linhas.length, 2);
+  assert.deepEqual(linhas.map(linha => linha.classificacao_cliente), [
+    'Cliente fora da base',
+    'Cliente fora da base'
+  ]);
+  assert.equal(montarLinhasExportacaoVenda({ ...venda, cliente_da_base: true })[0].classificacao_cliente, 'Cliente base');
+  assert.equal(montarLinhasExportacaoVenda({ ...venda, cliente_da_base: null })[0].classificacao_cliente, '');
 });
 
 test('monta linhas de chips com regras, bases e vendedoras', () => {

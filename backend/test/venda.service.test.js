@@ -705,6 +705,30 @@ test('posiciona observacao imediatamente depois do status na planilha de vendas'
   assert.equal(colunas[indiceStatus + 2].key, 'prioridade');
 });
 
+test('posiciona classificacao do cliente depois do documento na planilha de vendas', () => {
+  const colunas = montarColunasXlsxVendas();
+  const indiceDocumento = colunas.findIndex(coluna => coluna.key === 'cnpj');
+
+  assert.equal(colunas[indiceDocumento + 1].key, 'classificacao_cliente');
+  assert.equal(colunas[indiceDocumento + 1].header, 'CLASSIFICAÇÃO DO CLIENTE');
+  assert.equal(colunas[indiceDocumento + 2].key, 'vendedora');
+});
+
+test('exporta classificacao do cliente na linha principal de vendas', () => {
+  const detalhes = { vendedora: 'Ana', quantidadeChips: 1, valoresUnitarios: 'R$ 20,00' };
+  const montarLinha = clienteDaBase => montarLinhaXlsxVenda(
+    { cliente_da_base: clienteDaBase },
+    detalhes,
+    false,
+    'concluido',
+    new Map()
+  );
+
+  assert.equal(montarLinha(true).classificacao_cliente, 'Cliente base');
+  assert.equal(montarLinha(false).classificacao_cliente, 'Cliente fora da base');
+  assert.equal(montarLinha(null).classificacao_cliente, '');
+});
+
 test('exporta observacao vazia quando a movimentacao atual nao possui texto', () => {
   assert.equal(observacaoUltimaMovimentacaoExportacao({
     status_funil: 'entrega',

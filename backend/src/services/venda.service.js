@@ -24,7 +24,11 @@ const vendaVisibilidadeService = require('./venda-visibilidade.service');
 const auditLogService = require('./audit-log.service');
 const { parseUtcDateTime } = require('../utils/datetime');
 const { listarPermissoesEfetivas, usuarioTemPermissaoLocal } = require('../utils/permissoes');
-const { FORMATO_MOEDA_BR, FORMATO_INTEIRO_BR } = require('../utils/formato-planilha');
+const {
+  FORMATO_MOEDA_BR,
+  FORMATO_INTEIRO_BR,
+  classificacaoClienteBasePlanilha
+} = require('../utils/formato-planilha');
 const ExcelJS = require('exceljs');
 
 const CAMPOS = [
@@ -2527,6 +2531,7 @@ function montarColunasXlsxVendas() {
     { header: 'CLIENTE', key: 'cliente', width: 34 },
     { header: 'RAZAO SOCIAL', key: 'razao_social', width: 34 },
     { header: 'CNPJ/CPF', key: 'cnpj', width: 20 },
+    { header: 'CLASSIFICAÇÃO DO CLIENTE', key: 'classificacao_cliente', width: 26 },
     { header: 'VENDEDORA', key: 'vendedora', width: 28 },
     { header: 'QUANTIDADE DE CHIPS', key: 'quantidade_chips_vendedora', width: 20, style: { numFmt: FORMATO_INTEIRO_BR } },
     { header: 'OPERADORA', key: 'operadora', width: 18 },
@@ -2561,6 +2566,7 @@ function montarLinhaXlsxVenda(venda, detalhes, vendaRestrita, etapaFinal, mapaEt
     cliente: vendaRestrita ? '' : venda.nome || venda.cliente?.nome || '',
     razao_social: venda.razao_social || venda.cliente?.razao_social || '',
     cnpj: venda.cnpj || venda.cliente?.cnpj || '',
+    classificacao_cliente: classificacaoClienteBasePlanilha(venda.cliente_da_base),
     vendedora: detalhes.vendedora,
     quantidade_chips_vendedora: detalhes.quantidadeChips,
     operadora: venda.operadora?.nome || '',
