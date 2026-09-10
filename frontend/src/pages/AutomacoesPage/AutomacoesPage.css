@@ -574,6 +574,38 @@
   overflow-wrap: anywhere;
 }
 
+.automation-sale-item__chips {
+  display: grid;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.automation-sale-item__chips > strong {
+  color: var(--text-3);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.automation-sale-item__chip-list {
+  display: grid;
+  gap: 5px;
+}
+
+.automation-sale-item__chip-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+
+.automation-sale-item__chip-list strong {
+  flex: 0 0 auto;
+}
+
 .automation-sale-divergences {
   display: flex;
   align-items: center;
@@ -812,6 +844,12 @@
 
   .automation-sale-item__details {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .automation-sale-item__chip-list > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
   }
 
   .automation-card summary,

@@ -4846,6 +4846,7 @@ async function reverterCancelamentoVenda(id, usuarioId, dados = {}) {
 }
 
 module.exports = {
+  normalizarItensChips,
   listarVendas,
   obterReferenciasClientes,
   gerarXlsxVendas,

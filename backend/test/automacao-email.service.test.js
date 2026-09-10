@@ -356,15 +356,28 @@ test('consulta de candidatas valida execução e CNPJ antes de avaliar vendas at
     );
 
     const resultado = await automacao.listarVendasCandidatas(10, '17025544000704', {
-      buscar: async campos => [{
-        id: 51,
-        nome: 'Empresa atual',
-        razao_social: 'Empresa Atual LTDA',
-        status_funil: 'entrega',
-        data_venda: '2026-08-25',
-        quantidade_linhas: 2,
-        valor_total: 100
-      }],
+      buscar: async campos => [
+        {
+          id: 51,
+          nome: 'Empresa atual',
+          razao_social: 'Empresa Atual LTDA',
+          status_funil: 'entrega',
+          data_venda: '2026-08-25',
+          quantidade_linhas: 2,
+          valor_total: 100,
+          valores_unitarios_chips: JSON.stringify([{ quantidade: 2, tipo_linha: 'novo', valor_unitario: 50 }])
+        },
+        {
+          id: 52,
+          status_funil: 'entrega',
+          valores_unitarios_chips: [
+            { quantidade: 1, tipo_linha: 'novo', valor_unitario: 49.9 },
+            { quantidade: 2, tipo_linha: 'portabilidade', valor_unitario: '59,90' }
+          ]
+        },
+        { id: 53, status_funil: 'entrega', valores_unitarios_chips: '3 x 39,90' },
+        { id: 54, status_funil: 'entrega', tipoVenda: { nome: 'Portabilidade' }, valores_unitarios_chips: null }
+      ],
       etapasFinais: async () => ['concluido']
     });
 
@@ -372,6 +385,17 @@ test('consulta de candidatas valida execução e CNPJ antes de avaliar vendas at
     assert.equal(resultado.cnpj_original, '11143938000187');
     assert.equal(resultado.vendas[0].razao_social, 'Empresa Atual LTDA');
     assert.equal(resultado.vendas[0].elegivel, true);
+    assert.equal(resultado.vendas[0].tipo_venda, 'Novo');
+    assert.deepEqual(resultado.vendas[0].chips, [{ quantidade: 2, tipo_linha: 'novo', valor_unitario: 50 }]);
+    assert.equal(resultado.vendas[1].tipo_venda, 'Novo e Portabilidade');
+    assert.deepEqual(resultado.vendas[1].chips, [
+      { quantidade: 1, tipo_linha: 'novo', valor_unitario: 49.9 },
+      { quantidade: 2, tipo_linha: 'portabilidade', valor_unitario: 59.9 }
+    ]);
+    assert.equal(resultado.vendas[2].tipo_venda, 'Novo');
+    assert.deepEqual(resultado.vendas[2].chips, [{ quantidade: 3, tipo_linha: 'novo', valor_unitario: 39.9 }]);
+    assert.equal(resultado.vendas[3].tipo_venda, 'Portabilidade');
+    assert.deepEqual(resultado.vendas[3].chips, []);
   } finally {
     AutomacaoEmail.query = queryOriginal;
   }

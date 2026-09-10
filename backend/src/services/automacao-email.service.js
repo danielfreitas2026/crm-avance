@@ -156,7 +156,7 @@ async function buscarCandidatas(campos) {
       'etapa_atual.nome as status_funil_nome'
     )
     .where(builder => builder.whereRaw(`${exprVenda} = ?`, [doc]).orWhereRaw(`${exprCliente} = ?`, [doc]))
-    .whereNull('v.excluido_em').withGraphFetched('[cliente, operadora, vendedora, vendedoras, criador]');
+    .whereNull('v.excluido_em').withGraphFetched('[cliente, operadora, tipoVenda, vendedora, vendedoras, criador]');
   return vendas.map(venda => aplicarEstadoFunilAutomacao(venda));
 }
 
@@ -207,6 +207,21 @@ function motivosInelegibilidade(venda, etapasFinais, { cancelamento = false } = 
 function selecionarCandidataUnica(avaliadas) {
   const compativeis = avaliadas.filter(item => item.auditoria.automaticamente_compativel);
   return compativeis.length === 1 ? compativeis[0].venda : null;
+}
+
+function detalhesChipsVenda(venda) {
+  const chips = vendaService.normalizarItensChips(venda.valores_unitarios_chips)
+    .map(item => ({
+      quantidade: item.quantidade,
+      tipo_linha: item.tipo_linha,
+      valor_unitario: item.valor_unitario
+    }));
+  const labels = { novo: 'Novo', portabilidade: 'Portabilidade' };
+  const tipos = Array.from(new Set(chips.map(item => labels[item.tipo_linha]).filter(Boolean)));
+  return {
+    tipo_venda: tipos.join(' e ') || venda.tipoVenda?.nome || null,
+    chips
+  };
 }
 
 function avaliarCandidatas(candidatas, campos, etapasFinais, { cancelamento = false, recebidoEm = null } = {}) {
@@ -294,12 +309,17 @@ async function listarVendasCandidatas(id, cnpjInformado, dependencias = {}) {
   const cancelamento = (registro.classificacao || atuais.classificacao) === 'cancelamento' || atuais.alvo === 'cancelar_venda';
   const buscar = dependencias.buscar || buscarCandidatas;
   const obterEtapas = dependencias.etapasFinais || codigosEtapasFinais;
-  const resultado = avaliarCandidatas(await buscar(campos), campos, await obterEtapas(), { cancelamento, recebidoEm: registro.recebido_em });
+  const candidatas = await buscar(campos);
+  const resultado = avaliarCandidatas(candidatas, campos, await obterEtapas(), { cancelamento, recebidoEm: registro.recebido_em });
+  const vendasPorId = new Map(candidatas.map(venda => [Number(venda.id), venda]));
   return {
     automacao_id: Number(registro.id),
     cnpj,
     cnpj_original: original.length === 14 ? original : null,
-    vendas: resultado.candidatas
+    vendas: resultado.candidatas.map(venda => ({
+      ...venda,
+      ...detalhesChipsVenda(vendasPorId.get(Number(venda.id)) || venda)
+    }))
   };
 }
 

@@ -206,6 +206,21 @@ export function VincularVendaAutomacaoModal({ item, onClose, onSelecionar }) {
                         <span>Vendedores<strong>{venda.vendedores?.map(vendedor => vendedor.nome).join(', ') || '—'}</strong></span>
                         <span>Criador<strong>{venda.criador?.nome || '—'}</strong></span>
                       </div>
+                      <div className="automation-sale-item__chips">
+                        <strong>Chips</strong>
+                        {venda.chips?.length > 0 ? (
+                          <div className="automation-sale-item__chip-list">
+                            {venda.chips.map((chip, index) => (
+                              <div key={`${chip.tipo_linha}-${chip.valor_unitario}-${index}`}>
+                                <span>{chip.quantidade} {Number(chip.quantidade) === 1 ? 'chip' : 'chips'} · {chip.tipo_linha === 'portabilidade' ? 'Portabilidade' : 'Novo'}</span>
+                                <strong>{Number(chip.valor_unitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} cada</strong>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span><strong>{venda.tipo_venda || 'Tipo não informado'}</strong> · Valores unitários não cadastrados</span>
+                        )}
+                      </div>
                       {venda.divergencias?.length > 0 && <div className="automation-sale-divergences"><strong>Divergências do e-mail</strong>{venda.divergencias.map(divergencia => <span key={divergencia}>{divergencia}</span>)}</div>}
                       {!venda.elegivel ? (
                         <div className="automation-sale-block"><I.AlertTriangle size={14} />{venda.motivo_bloqueio || venda.inelegibilidades?.join(', ') || 'Venda indisponível'}</div>

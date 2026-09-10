@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AutomacoesPage, { VincularVendaAutomacaoModal } from './AutomacoesPage';
@@ -180,6 +180,38 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(onSelecionar).toHaveBeenCalledWith(expect.objectContaining({ id: 61 }), '17025544000704');
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(api.revisarAutomacao).not.toHaveBeenCalled();
+  });
+
+  it('exibe tipo, quantidade e valor unitario dos chips sem estimar valores ausentes', async () => {
+    api.listarVendasCandidatasAutomacao.mockResolvedValueOnce({
+      automacao_id: 10,
+      cnpj: '11143938000187',
+      cnpj_original: '11143938000187',
+      vendas: [
+        {
+          ...vendaCandidata,
+          id: 71,
+          tipo_venda: 'Novo e Portabilidade',
+          chips: [
+            { quantidade: 1, tipo_linha: 'novo', valor_unitario: 49.9 },
+            { quantidade: 2, tipo_linha: 'portabilidade', valor_unitario: 59.9 }
+          ]
+        },
+        { ...vendaCandidata, id: 72, tipo_venda: 'Portabilidade', chips: [] }
+      ]
+    });
+
+    render(<VincularVendaAutomacaoModal item={execucao} onClose={vi.fn()} onSelecionar={vi.fn()} />);
+
+    const vendaDetalhada = (await screen.findByText('Venda #71')).closest('article');
+    expect(within(vendaDetalhada).getByText('1 chip · Novo')).toBeVisible();
+    expect(within(vendaDetalhada).getByText('R$ 49,90 cada')).toBeVisible();
+    expect(within(vendaDetalhada).getByText('2 chips · Portabilidade')).toBeVisible();
+    expect(within(vendaDetalhada).getByText('R$ 59,90 cada')).toBeVisible();
+
+    const vendaSemValores = screen.getByText('Venda #72').closest('article');
+    expect(within(vendaSemValores).getByText('Portabilidade')).toBeVisible();
+    expect(within(vendaSemValores).getByText(/Valores unitários não cadastrados/)).toBeVisible();
   });
 
   it('modal apresenta carregamento, lista vazia e erro de busca', async () => {
