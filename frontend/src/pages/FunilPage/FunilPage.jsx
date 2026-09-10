@@ -964,7 +964,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
    */
   function handleAtualizar() {
     if (!observacaoMovimentacaoValida) {
-      setError('Informe uma observação para movimentar a venda no funil.');
+      setError('É obrigatório escrever uma observação para movimentar a venda no funil.');
       return;
     }
     submitStatus(novaFase);
@@ -1263,7 +1263,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
                   value={observacao}
                   onChange={e => setObservacao(e.target.value)}
                   disabled={saving}
-                  required={observacaoMovimentacaoObrigatoria}
+                  aria-required={observacaoMovimentacaoObrigatoria}
                 />
               </div>
 
@@ -1311,7 +1311,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
                   )}
                 </div>
                 {!cancelada && alterou && (
-                  <button type="button" className="btn btn-primary btn-sm" onClick={handleAtualizar} disabled={saving || !observacaoMovimentacaoValida}>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={handleAtualizar} disabled={saving}>
                     {saving ? 'Salvando...' : 'Confirmar mudança'}
                   </button>
                 )}
@@ -1350,7 +1350,7 @@ function ReturnReasonModal({ sale, saving, onClose, onConfirm }) {
     const motivoFinal = motivo || observacaoNormalizada;
 
     if (!observacaoNormalizada) {
-      setError('Informe uma observação para movimentar a venda no funil.');
+      setError('É obrigatório escrever uma observação para movimentar a venda no funil.');
       return;
     }
 
@@ -1408,7 +1408,7 @@ function ReturnReasonModal({ sale, saving, onClose, onConfirm }) {
               value={observacao}
               onChange={event => setObservacao(event.target.value)}
               disabled={saving}
-              required
+              aria-required="true"
               rows={4}
             />
           </div>
@@ -1418,7 +1418,7 @@ function ReturnReasonModal({ sale, saving, onClose, onConfirm }) {
 
         <div className="modal-footer">
           <button type="button" className="btn" onClick={onClose} disabled={saving}>Cancelar</button>
-          <button type="submit" className="btn btn-primary" disabled={saving || !observacao.trim()}>
+          <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? 'Salvando...' : 'Confirmar retorno'}
           </button>
         </div>

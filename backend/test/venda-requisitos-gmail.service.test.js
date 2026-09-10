@@ -152,7 +152,7 @@ test('movimentacao manual de etapa exige observacao', async () => {
 
     assert.deepEqual(resultado, {
       status: 'invalid',
-      message: 'Informe uma observação para movimentar a venda no funil.'
+      message: 'É obrigatório escrever uma observação para movimentar a venda no funil.'
     });
   } finally {
     Venda.query = queryVendaOriginal;

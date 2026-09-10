@@ -4096,7 +4096,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
   const correcaoRetorno = venda.status_funil === 'retorno';
 
   if (movimentacaoManual && !correcaoRetorno && !observacao) {
-    return { status: 'invalid', message: 'Informe uma observação para movimentar a venda no funil.' };
+    return { status: 'invalid', message: 'É obrigatório escrever uma observação para movimentar a venda no funil.' };
   }
 
   const bloqueioBarreira = origemGmail ? null : await validarBarreiraConferencia(venda, status);

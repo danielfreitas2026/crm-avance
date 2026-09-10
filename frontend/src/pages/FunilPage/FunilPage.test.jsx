@@ -278,10 +278,13 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
 
     const confirmar = screen.getByRole('button', { name: 'Confirmar mudança' });
     expect(screen.getByText('Observação (obrigatória)')).toBeInTheDocument();
-    expect(confirmar).toBeDisabled();
+    expect(confirmar).toBeEnabled();
+
+    await user.click(confirmar);
+    expect(screen.getByText('É obrigatório escrever uma observação para movimentar a venda no funil.')).toBeInTheDocument();
+    expect(onUpdateSale).not.toHaveBeenCalled();
 
     await user.type(screen.getByPlaceholderText('Adicione um detalhe sobre essa atualização...'), '  Pedido aprovado  ');
-    expect(confirmar).toBeEnabled();
     await user.click(confirmar);
 
     expect(onUpdateSale).toHaveBeenCalledWith(sale.id, 'entrega', 'media', 'Pedido aprovado', '');
@@ -312,7 +315,11 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
 
     const confirmar = screen.getByRole('button', { name: 'Confirmar retorno' });
     expect(screen.getByText('Observação (obrigatória)')).toBeInTheDocument();
-    expect(confirmar).toBeDisabled();
+    expect(confirmar).toBeEnabled();
+
+    await user.click(confirmar);
+    expect(screen.getByText('É obrigatório escrever uma observação para movimentar a venda no funil.')).toBeInTheDocument();
+    expect(onUpdateSale).not.toHaveBeenCalled();
 
     await user.type(screen.getByPlaceholderText(/cliente recusou por endereço divergente/i), '  Nova tentativa amanhã  ');
     await user.click(confirmar);
