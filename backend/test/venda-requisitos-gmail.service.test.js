@@ -7,8 +7,10 @@ const Venda = require('../src/models/Venda');
 const VendaArquivo = require('../src/models/VendaArquivo');
 const VendaHistorico = require('../src/models/VendaHistorico');
 const FunilEtapa = require('../src/models/FunilEtapa');
+const Usuario = require('../src/models/Usuario');
 const auditLogService = require('../src/services/audit-log.service');
 const vendaNotificacaoParadaService = require('../src/services/venda-notificacao-parada.service');
+const vendaNotificacaoRetornoService = require('../src/services/venda-notificacao-retorno.service');
 
 const {
   obterEtapasAtravessadas,
@@ -115,6 +117,122 @@ function criarQueryEtapas(etapas) {
   };
   return query;
 }
+
+test('movimentacao manual de etapa exige observacao', async () => {
+  const queryVendaOriginal = Venda.query;
+  const queryEtapaOriginal = FunilEtapa.query;
+  const queryUsuarioOriginal = Usuario.query;
+  const venda = {
+    id: 71,
+    status_funil: 'analise',
+    prioridade_funil: 'media',
+    enviada_pos_venda_em: '2026-08-30 10:00:00',
+    excluido_em: null,
+    cancelada_em: null,
+    operadora: { nome: 'Claro' }
+  };
+
+  Usuario.query = () => ({
+    findById() { return this; },
+    withGraphFetched: async () => ({ id: 7, ativo: true, role: { nome: 'admin' } })
+  });
+  Venda.query = () => ({
+    findById() {
+      return { withGraphFetched: async () => venda };
+    }
+  });
+  FunilEtapa.query = () => criarQueryEtapas([]);
+
+  try {
+    const resultado = await vendaService.atualizarStatusVenda(
+      71,
+      { status_funil: 'retorno', motivo_retorno: 'Cliente recusou' },
+      7
+    );
+
+    assert.deepEqual(resultado, {
+      status: 'invalid',
+      message: 'Informe uma observação para movimentar a venda no funil.'
+    });
+  } finally {
+    Venda.query = queryVendaOriginal;
+    FunilEtapa.query = queryEtapaOriginal;
+    Usuario.query = queryUsuarioOriginal;
+  }
+});
+
+test('correcao de retorno usa a nota obrigatoria como observacao do historico', async () => {
+  const queryVendaOriginal = Venda.query;
+  const transactionOriginal = Venda.transaction;
+  const queryHistoricoOriginal = VendaHistorico.query;
+  const queryEtapaOriginal = FunilEtapa.query;
+  const queryUsuarioOriginal = Usuario.query;
+  const desativarRetornoOriginal = vendaNotificacaoRetornoService.desativarNotificacaoRetorno;
+  const trx = { id: 'trx-retorno' };
+  const venda = {
+    id: 72,
+    status_funil: 'retorno',
+    status_anterior_retorno: 'analise',
+    prioridade_funil: 'media',
+    enviada_pos_venda_em: '2026-08-30 10:00:00',
+    excluido_em: null,
+    cancelada_em: null,
+    operadora: { nome: 'Claro' }
+  };
+  let historicoInserido = null;
+
+  Usuario.query = () => ({
+    findById() { return this; },
+    withGraphFetched: async () => ({ id: 7, ativo: true, role: { nome: 'admin' } })
+  });
+  FunilEtapa.query = () => criarQueryEtapas([
+    { id: 'analise', codigo: 'analise', ordem: 1, etapa_final: false, aceite_biometria: false },
+    { id: 'concluido', codigo: 'concluido', ordem: 2, etapa_final: true, aceite_biometria: false }
+  ]);
+  Venda.query = transacao => {
+    if (transacao === trx) {
+      return {
+        patchAndFetchById: async (_id, patch) => ({ ...venda, ...patch })
+      };
+    }
+    return {
+      findById() {
+        return { withGraphFetched: async () => venda };
+      }
+    };
+  };
+  Venda.transaction = callback => callback(trx);
+  VendaHistorico.query = transacao => ({
+    insert: async dados => {
+      assert.equal(transacao, trx);
+      historicoInserido = dados;
+      return dados;
+    }
+  });
+  vendaNotificacaoRetornoService.desativarNotificacaoRetorno = async () => {};
+
+  try {
+    const resultado = await vendaService.atualizarStatusVenda(
+      72,
+      { status_funil: 'analise', nota_correcao_retorno: '  Documento corrigido  ' },
+      7
+    );
+
+    assert.equal(resultado.status, 'ok');
+    assert.equal(resultado.venda.status_funil, 'analise');
+    assert.equal(historicoInserido.acao, 'venda.retorno_corrigido');
+    assert.equal(historicoInserido.observacao, 'Documento corrigido');
+    assert.equal(historicoInserido.status_anterior, 'retorno');
+    assert.equal(historicoInserido.status_novo, 'analise');
+  } finally {
+    Venda.query = queryVendaOriginal;
+    Venda.transaction = transactionOriginal;
+    VendaHistorico.query = queryHistoricoOriginal;
+    FunilEtapa.query = queryEtapaOriginal;
+    Usuario.query = queryUsuarioOriginal;
+    vendaNotificacaoRetornoService.desativarNotificacaoRetorno = desativarRetornoOriginal;
+  }
+});
 
 test('movimentacao, requisitos e historicos do Gmail usam a mesma transacao', async () => {
   const queryVendaOriginal = Venda.query;

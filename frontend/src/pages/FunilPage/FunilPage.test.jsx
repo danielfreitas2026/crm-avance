@@ -253,4 +253,70 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
       expect(onUpdatePossuiDocNaCasa).toHaveBeenCalledWith(sale.id, true);
     });
   });
+
+  it('exige e envia observacao normalizada ao movimentar para outra etapa', async () => {
+    const user = userEvent.setup();
+    const onUpdateSale = vi.fn().mockResolvedValue(undefined);
+    const sale = criarSale({ stage: 'analise', historico: [] });
+    api.buscarVendaPorId.mockResolvedValue({ id: sale.id, status_funil: sale.stage, historico: [] });
+
+    render(
+      <SaleModal
+        sale={sale}
+        stages={[{ id: 'analise', name: 'Análise' }, { id: 'entrega', name: 'Entrega' }]}
+        stageLabels={{ analise: 'Análise', entrega: 'Entrega' }}
+        onClose={vi.fn()}
+        onUpdateSale={onUpdateSale}
+        onUpdatePossuiDocNaCasa={vi.fn()}
+        onCancelSale={vi.fn()}
+        onReverterCancelamento={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Atualizar status' }));
+    await user.click(screen.getByRole('button', { name: 'Entrega' }));
+
+    const confirmar = screen.getByRole('button', { name: 'Confirmar mudança' });
+    expect(screen.getByText('Observação (obrigatória)')).toBeInTheDocument();
+    expect(confirmar).toBeDisabled();
+
+    await user.type(screen.getByPlaceholderText('Adicione um detalhe sobre essa atualização...'), '  Pedido aprovado  ');
+    expect(confirmar).toBeEnabled();
+    await user.click(confirmar);
+
+    expect(onUpdateSale).toHaveBeenCalledWith(sale.id, 'entrega', 'media', 'Pedido aprovado', '');
+  });
+
+  it('exige observacao mesmo quando o motivo do retorno foi selecionado', async () => {
+    const user = userEvent.setup();
+    const onUpdateSale = vi.fn().mockResolvedValue(undefined);
+    const sale = criarSale({ stage: 'analise', historico: [] });
+    api.buscarVendaPorId.mockResolvedValue({ id: sale.id, status_funil: sale.stage, historico: [] });
+
+    render(
+      <SaleModal
+        sale={sale}
+        stages={[{ id: 'analise', name: 'Análise' }]}
+        stageLabels={{ analise: 'Análise' }}
+        onClose={vi.fn()}
+        onUpdateSale={onUpdateSale}
+        onUpdatePossuiDocNaCasa={vi.fn()}
+        onCancelSale={vi.fn()}
+        onReverterCancelamento={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Atualizar status' }));
+    await user.click(screen.getByRole('button', { name: 'Marcar como retorno' }));
+    await user.click(screen.getByRole('button', { name: 'Cliente recusou' }));
+
+    const confirmar = screen.getByRole('button', { name: 'Confirmar retorno' });
+    expect(screen.getByText('Observação (obrigatória)')).toBeInTheDocument();
+    expect(confirmar).toBeDisabled();
+
+    await user.type(screen.getByPlaceholderText(/cliente recusou por endereço divergente/i), '  Nova tentativa amanhã  ');
+    await user.click(confirmar);
+
+    expect(onUpdateSale).toHaveBeenCalledWith(sale.id, 'retorno', 'media', 'Nova tentativa amanhã', 'Cliente recusou');
+  });
 });

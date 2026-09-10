@@ -9,7 +9,10 @@ const {
   aplicarDadosClienteNaVenda,
   filtrarVendasRelatorioPorVendedora,
   montarDadosSincronizacaoClienteVenda,
+  montarColunasXlsxVendas,
   montarDetalhesChipsExportacao,
+  montarLinhaXlsxVenda,
+  observacaoUltimaMovimentacaoExportacao,
   statusVendaExportacao,
   montarAtribuicoesVendedorasVenda,
   montarAlteracoesReversao,
@@ -675,6 +678,63 @@ test('indica cancelamento sem esconder a etapa da venda na exportacao', () => {
     'Aceite/Biometria (Cancelada)'
   );
   assert.equal(statusVendaExportacao({ status_funil: '', cancelada_em: '2026-08-01' }, mapaEtapas), 'Cancelada');
+});
+
+test('exporta a observacao da ultima movimentacao valida para o status atual', () => {
+  const venda = {
+    status_funil: 'entrega',
+    historico: [
+      { id: 1, status_anterior: 'analise', status_novo: 'entrega', observacao: 'Primeira entrada', created_at: '2026-08-01 10:00:00' },
+      { id: 2, status_anterior: 'entrega', status_novo: 'entrega', observacao: 'Apenas uma anotacao', created_at: '2026-08-02 10:00:00' },
+      { id: 3, status_anterior: 'aceite', status_novo: 'entrega', observacao: 'Movimentacao invalidada', invalidated_at: '2026-08-03 11:00:00', created_at: '2026-08-03 10:00:00' },
+      { id: 4, status_anterior: 'envio', status_novo: 'entrega', observacao: 'Movimentacao excluida', deleted_at: '2026-08-04 11:00:00', created_at: '2026-08-04 10:00:00' },
+      { id: 5, status_anterior: 'confirmacao', status_novo: 'concluido', observacao: 'Outro status', created_at: '2026-08-05 10:00:00' },
+      { id: 6, status_anterior: 'envio', status_novo: 'entrega', observacao: '  Ultima entrada valida  ', created_at: '2026-08-06 10:00:00' }
+    ]
+  };
+
+  assert.equal(observacaoUltimaMovimentacaoExportacao(venda), 'Ultima entrada valida');
+});
+
+test('posiciona observacao imediatamente antes do status na planilha de vendas', () => {
+  const colunas = montarColunasXlsxVendas();
+  const indiceStatus = colunas.findIndex(coluna => coluna.key === 'status');
+
+  assert.equal(colunas[indiceStatus - 1].key, 'observacao_movimentacao');
+  assert.equal(colunas[indiceStatus - 1].header, 'OBSERVAÇÃO');
+});
+
+test('exporta observacao vazia quando a movimentacao atual nao possui texto', () => {
+  assert.equal(observacaoUltimaMovimentacaoExportacao({
+    status_funil: 'entrega',
+    historico: [
+      { id: 1, status_anterior: 'analise', status_novo: 'entrega', observacao: 'Entrada antiga', created_at: '2026-08-01 10:00:00' },
+      { id: 2, status_anterior: 'envio', status_novo: 'entrega', observacao: null, created_at: '2026-08-02 10:00:00' }
+    ]
+  }), '');
+  assert.equal(observacaoUltimaMovimentacaoExportacao({ status_funil: null, historico: [] }), '');
+});
+
+test('repete a observacao nas linhas da venda e a oculta para venda restrita', () => {
+  const venda = {
+    id: 10,
+    status_funil: 'entrega',
+    historico: [{
+      id: 1,
+      status_anterior: 'analise',
+      status_novo: 'entrega',
+      observacao: 'Entrega confirmada',
+      created_at: '2026-08-01 10:00:00'
+    }]
+  };
+  const detalhes = [
+    { vendedora: 'Ana', quantidadeChips: 2, valoresUnitarios: 'R$ 10,00' },
+    { vendedora: 'Bia', quantidadeChips: 1, valoresUnitarios: 'R$ 20,00' }
+  ];
+
+  const linhas = detalhes.map(item => montarLinhaXlsxVenda(venda, item, false, 'concluido', new Map()));
+  assert.deepEqual(linhas.map(linha => linha.observacao_movimentacao), ['Entrega confirmada', 'Entrega confirmada']);
+  assert.equal(montarLinhaXlsxVenda(venda, detalhes[0], true, 'concluido', new Map()).observacao_movimentacao, '');
 });
 
 test('monta uma linha de exportacao para cada vendedora com sua quantidade de chips', () => {

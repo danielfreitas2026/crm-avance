@@ -933,6 +933,8 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
   }, [sale.id, sale.stage, stageLabels, modoAutomacoes]);
 
   const saleComHistorico = { ...sale, historico: historicoEventos };
+  const observacaoMovimentacaoObrigatoria = !modoAutomacoes && novaFase !== sale.stage;
+  const observacaoMovimentacaoValida = !observacaoMovimentacaoObrigatoria || observacao.trim() !== '';
 
   const alterou = novaFase !== sale.stage
     || novaPrioridade !== (sale.priority || 'media')
@@ -961,6 +963,10 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
    * Trata o evento de atualizar.
    */
   function handleAtualizar() {
+    if (!observacaoMovimentacaoValida) {
+      setError('Informe uma observação para movimentar a venda no funil.');
+      return;
+    }
     submitStatus(novaFase);
   }
 
@@ -1249,7 +1255,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
 
               <div style={{ marginTop: 20 }}>
                 <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 8 }}>
-                  Observação (opcional)
+                  Observação {observacaoMovimentacaoObrigatoria ? '(obrigatória)' : '(opcional)'}
                 </div>
                 <textarea
                   className="obs-textarea"
@@ -1257,6 +1263,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
                   value={observacao}
                   onChange={e => setObservacao(e.target.value)}
                   disabled={saving}
+                  required={observacaoMovimentacaoObrigatoria}
                 />
               </div>
 
@@ -1304,7 +1311,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
                   )}
                 </div>
                 {!cancelada && alterou && (
-                  <button type="button" className="btn btn-primary btn-sm" onClick={handleAtualizar} disabled={saving}>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={handleAtualizar} disabled={saving || !observacaoMovimentacaoValida}>
                     {saving ? 'Salvando...' : 'Confirmar mudança'}
                   </button>
                 )}
@@ -1342,8 +1349,8 @@ function ReturnReasonModal({ sale, saving, onClose, onConfirm }) {
     const observacaoNormalizada = observacao.trim();
     const motivoFinal = motivo || observacaoNormalizada;
 
-    if (!motivoFinal) {
-      setError('Selecione um motivo ou descreva o retorno na observação.');
+    if (!observacaoNormalizada) {
+      setError('Informe uma observação para movimentar a venda no funil.');
       return;
     }
 
@@ -1394,13 +1401,14 @@ function ReturnReasonModal({ sale, saving, onClose, onConfirm }) {
           </div>
 
           <div className="form-field" style={{ marginTop: 20 }}>
-            <label>Observação</label>
+            <label>Observação (obrigatória)</label>
             <textarea
               className="obs-textarea"
               placeholder="Ex: cliente recusou por endereço divergente, confirmar novo envio."
               value={observacao}
               onChange={event => setObservacao(event.target.value)}
               disabled={saving}
+              required
               rows={4}
             />
           </div>
@@ -1410,7 +1418,7 @@ function ReturnReasonModal({ sale, saving, onClose, onConfirm }) {
 
         <div className="modal-footer">
           <button type="button" className="btn" onClick={onClose} disabled={saving}>Cancelar</button>
-          <button type="submit" className="btn btn-primary" disabled={saving || (!motivo && !observacao.trim())}>
+          <button type="submit" className="btn btn-primary" disabled={saving || !observacao.trim()}>
             {saving ? 'Salvando...' : 'Confirmar retorno'}
           </button>
         </div>

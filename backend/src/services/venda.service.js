@@ -2204,7 +2204,7 @@ async function usuarioPodeEditarVenda(id, usuarioId, opcoes = {}) {
 /**
  * Lista vendas conforme os filtros e parametros informados.
  */
-async function listarVendas(filtros = {}, usuarioId) {
+async function listarVendas(filtros = {}, usuarioId, opcoes = {}) {
   const escopo = await buscarEscopoVendas(usuarioId);
   const expressaoUltimaReversao = montarExpressaoUltimaReversaoVenda('vendas');
   const query = Venda.query()
@@ -2218,7 +2218,13 @@ async function listarVendas(filtros = {}, usuarioId) {
     .modifyGraph('vendedoras', builder => builder.select('usuarios.id', 'usuarios.nome', 'usuarios.email', 'usuarios.foto_perfil').orderBy('venda_vendedoras.ordem', 'asc'))
     .modifyGraph('origemSondador', builder => builder.select('id', 'nome'))
     .modifyGraph('origemLead', builder => builder.select('id', 'primeira_ligacao_avaliacao', 'primeira_ligacao_avaliada_em'))
-    .modifyGraph('historico', builder => builder.select('id', 'venda_id', 'status_novo', 'created_at').whereNotNull('status_novo').orderBy('created_at', 'asc').orderBy('id', 'asc'))
+    .modifyGraph('historico', builder => {
+      builder.select('id', 'venda_id', 'status_novo', 'created_at');
+      if (opcoes.incluirObservacaoMovimentacao) {
+        builder.select('status_anterior', 'observacao', 'deleted_at', 'invalidated_at');
+      }
+      builder.whereNotNull('status_novo').orderBy('created_at', 'asc').orderBy('id', 'asc');
+    })
     .modifyGraph('aprovacaoSolicitacoes', builder => builder.select('id', 'venda_id', 'status', 'motivos', 'observacao_decisao', 'created_at').whereNot('status', 'obsoleta').orderBy('id', 'desc'))
     .whereNull('excluido_em');
 
@@ -2477,26 +2483,31 @@ function statusVendaExportacao(venda, mapaEtapas = new Map()) {
 }
 
 /**
- * Gera xlsx vendas a partir dos dados informados.
+ * Retorna a observacao da movimentacao valida mais recente que levou a venda
+ * ao status atual. Anotacoes e mudancas isoladas de prioridade nao contam.
  */
-async function gerarXlsxVendas(filtros = {}, usuarioId) {
-  const filtrosExportacao = { ...filtros };
-  delete filtrosExportacao.page;
-  delete filtrosExportacao.per_page;
+function observacaoUltimaMovimentacaoExportacao(venda = {}) {
+  const statusAtual = venda.status_funil;
+  if (!statusAtual || !Array.isArray(venda.historico)) return '';
 
-  const vendas = await listarVendas(filtrosExportacao, usuarioId);
-  const usuario = await vendaVisibilidadeService.buscarUsuario(usuarioId);
-  const [etapaFinal, mapaEtapas] = await Promise.all([
-    obterCodigoEtapaFinal(),
-    montarMapaEtapasExportacao()
-  ]);
-  const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet('Vendas');
+  const movimentacoes = venda.historico
+    .filter(item => (
+      !item.deleted_at
+      && !item.invalidated_at
+      && item.status_novo === statusAtual
+      && item.status_anterior !== item.status_novo
+    ))
+    .sort((a, b) => (
+      new Date(a.created_at || 0) - new Date(b.created_at || 0)
+      || Number(a.id || 0) - Number(b.id || 0)
+    ));
 
-  workbook.creator = 'Sistema Pos Venda';
-  workbook.created = new Date();
+  return String(movimentacoes.at(-1)?.observacao || '').trim();
+}
 
-  worksheet.columns = [
+/** Retorna a definicao ordenada das colunas da exportacao principal de vendas. */
+function montarColunasXlsxVendas() {
+  return [
     { header: 'ID', key: 'id', width: 10 },
     { header: 'CLIENTE', key: 'cliente', width: 34 },
     { header: 'RAZAO SOCIAL', key: 'razao_social', width: 34 },
@@ -2513,6 +2524,7 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
     { header: 'VENCIMENTO', key: 'dia_vencimento', width: 12 },
     { header: 'DATA VENDA', key: 'data_venda', width: 16, style: { numFmt: 'dd/mm/yyyy' } },
     { header: 'DATA ATIVACAO', key: 'data_ativacao', width: 16, style: { numFmt: 'dd/mm/yyyy' } },
+    { header: 'OBSERVAÇÃO', key: 'observacao_movimentacao', width: 34 },
     { header: 'STATUS', key: 'status', width: 18 },
     { header: 'PRIORIDADE', key: 'prioridade', width: 14 },
     { header: 'PROTOCOLO', key: 'protocolo', width: 18 },
@@ -2525,43 +2537,80 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
     { header: 'ENVIADA POS-VENDA', key: 'enviada_pos_venda_em', width: 18, style: { numFmt: 'dd/mm/yyyy' } },
     { header: 'CANCELADA EM', key: 'cancelada_em', width: 16, style: { numFmt: 'dd/mm/yyyy' } }
   ];
+}
+
+/** Monta uma linha da exportacao principal de vendas. */
+function montarLinhaXlsxVenda(venda, detalhes, vendaRestrita, etapaFinal, mapaEtapas) {
+  return {
+    id: venda.id,
+    cliente: vendaRestrita ? '' : venda.nome || venda.cliente?.nome || '',
+    razao_social: venda.razao_social || venda.cliente?.razao_social || '',
+    cnpj: venda.cnpj || venda.cliente?.cnpj || '',
+    vendedora: detalhes.vendedora,
+    quantidade_chips_vendedora: detalhes.quantidadeChips,
+    operadora: venda.operadora?.nome || '',
+    tipo: venda.tipoVenda?.nome || '',
+    produto: vendaRestrita ? '' : venda.servico?.nome || venda.produto_fechado || '',
+    quantidade_linhas: venda.quantidade_linhas ?? null,
+    gb: venda.gb || '',
+    valor_total: venda.valor_total === null || venda.valor_total === undefined ? null : Number(venda.valor_total),
+    valores_unitarios_chips: detalhes.valoresUnitarios,
+    dia_vencimento: vendaRestrita ? null : venda.dia_vencimento ?? null,
+    data_venda: valorDataExcel(venda.data_venda),
+    data_ativacao: vendaRestrita ? null : valorDataExcel(venda.data_ativacao),
+    observacao_movimentacao: vendaRestrita ? '' : observacaoUltimaMovimentacaoExportacao(venda),
+    status: vendaRestrita
+      ? (venda.status_funil === etapaFinal ? 'Concluída' : 'Não concluída')
+      : statusVendaExportacao(venda, mapaEtapas),
+    prioridade: vendaRestrita ? '' : venda.prioridade_funil || '',
+    protocolo: vendaRestrita ? '' : venda.protocolo || '',
+    uf: vendaRestrita ? '' : venda.uf || '',
+    municipio: vendaRestrita ? '' : venda.municipio || '',
+    telefone: vendaRestrita ? '' : venda.telefone || '',
+    email: vendaRestrita ? '' : venda.email || '',
+    criado_por: vendaRestrita ? '' : venda.criador?.nome || '',
+    created_at: vendaRestrita ? null : valorDataExcel(venda.criado_em || venda.created_at),
+    enviada_pos_venda_em: vendaRestrita ? null : valorDataExcel(venda.enviada_pos_venda_em),
+    cancelada_em: vendaRestrita ? null : valorDataExcel(venda.cancelada_em)
+  };
+}
+
+/**
+ * Gera xlsx vendas a partir dos dados informados.
+ */
+async function gerarXlsxVendas(filtros = {}, usuarioId) {
+  const filtrosExportacao = { ...filtros };
+  delete filtrosExportacao.page;
+  delete filtrosExportacao.per_page;
+
+  const vendas = await listarVendas(filtrosExportacao, usuarioId, {
+    incluirObservacaoMovimentacao: true
+  });
+  const usuario = await vendaVisibilidadeService.buscarUsuario(usuarioId);
+  const [etapaFinal, mapaEtapas] = await Promise.all([
+    obterCodigoEtapaFinal(),
+    montarMapaEtapasExportacao()
+  ]);
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Vendas');
+
+  workbook.creator = 'Sistema Pos Venda';
+  workbook.created = new Date();
+
+  worksheet.columns = montarColunasXlsxVendas();
 
   vendas.forEach(venda => {
     const vendaRestrita = vendaVisibilidadeService.deveResumirVenda(venda, usuario);
     const detalhesVendedoras = montarDetalhesChipsExportacao(venda);
 
     detalhesVendedoras.forEach(detalhes => {
-      const row = worksheet.addRow({
-        id: venda.id,
-        cliente: vendaRestrita ? '' : venda.nome || venda.cliente?.nome || '',
-        razao_social: venda.razao_social || venda.cliente?.razao_social || '',
-        cnpj: venda.cnpj || venda.cliente?.cnpj || '',
-        vendedora: detalhes.vendedora,
-        quantidade_chips_vendedora: detalhes.quantidadeChips,
-        operadora: venda.operadora?.nome || '',
-        tipo: venda.tipoVenda?.nome || '',
-        produto: vendaRestrita ? '' : venda.servico?.nome || venda.produto_fechado || '',
-        quantidade_linhas: venda.quantidade_linhas ?? null,
-        gb: venda.gb || '',
-        valor_total: venda.valor_total === null || venda.valor_total === undefined ? null : Number(venda.valor_total),
-        valores_unitarios_chips: detalhes.valoresUnitarios,
-        dia_vencimento: vendaRestrita ? null : venda.dia_vencimento ?? null,
-        data_venda: valorDataExcel(venda.data_venda),
-        data_ativacao: vendaRestrita ? null : valorDataExcel(venda.data_ativacao),
-        status: vendaRestrita
-          ? (venda.status_funil === etapaFinal ? 'Concluída' : 'Não concluída')
-          : statusVendaExportacao(venda, mapaEtapas),
-        prioridade: vendaRestrita ? '' : venda.prioridade_funil || '',
-        protocolo: vendaRestrita ? '' : venda.protocolo || '',
-        uf: vendaRestrita ? '' : venda.uf || '',
-        municipio: vendaRestrita ? '' : venda.municipio || '',
-        telefone: vendaRestrita ? '' : venda.telefone || '',
-        email: vendaRestrita ? '' : venda.email || '',
-        criado_por: vendaRestrita ? '' : venda.criador?.nome || '',
-        created_at: vendaRestrita ? null : valorDataExcel(venda.criado_em || venda.created_at),
-        enviada_pos_venda_em: vendaRestrita ? null : valorDataExcel(venda.enviada_pos_venda_em),
-        cancelada_em: vendaRestrita ? null : valorDataExcel(venda.cancelada_em)
-      });
+      const row = worksheet.addRow(montarLinhaXlsxVenda(
+        venda,
+        detalhes,
+        vendaRestrita,
+        etapaFinal,
+        mapaEtapas
+      ));
 
       row.height = 15 * detalhes.quantidadeLinhas;
     });
@@ -4043,6 +4092,13 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
     return { status: 'invalid', message: 'Prioridade do funil invalida.' };
   }
 
+  const movimentacaoManual = !atorSistema && status !== venda.status_funil;
+  const correcaoRetorno = venda.status_funil === 'retorno';
+
+  if (movimentacaoManual && !correcaoRetorno && !observacao) {
+    return { status: 'invalid', message: 'Informe uma observação para movimentar a venda no funil.' };
+  }
+
   const bloqueioBarreira = origemGmail ? null : await validarBarreiraConferencia(venda, status);
 
   if (bloqueioBarreira) {
@@ -4795,7 +4851,10 @@ module.exports = {
     aplicarDadosClienteNaVenda,
     adicionarMesesDataISO,
     calcularTotalChips,
+    montarColunasXlsxVendas,
     montarDetalhesChipsExportacao,
+    montarLinhaXlsxVenda,
+    observacaoUltimaMovimentacaoExportacao,
     statusVendaExportacao,
     limparValor,
     montarDadosSincronizacaoClienteVenda,
