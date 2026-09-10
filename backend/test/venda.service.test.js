@@ -801,7 +801,7 @@ test('soma os grupos da vendedora principal em venda nao compartilhada', () => {
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Ana', quantidadeChips: 3, tiposLinha: 'Novo\nNovo', valoresUnitarios: 'R$ 29,90\nR$ 49,90', quantidadeLinhas: 2 }
+    { vendedora: 'Ana', quantidadeChips: 3, tiposLinha: 'Novo', valoresUnitarios: 'R$ 29,90\nR$ 49,90', quantidadeLinhas: 2 }
   ]);
 });
 

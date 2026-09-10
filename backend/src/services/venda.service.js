@@ -2465,7 +2465,9 @@ function montarDetalhesChipsExportacao(venda = {}) {
   return Array.from(grupos.values()).map(grupo => ({
     vendedora: grupo.vendedora,
     quantidadeChips: grupo.quantidadeChips,
-    tiposLinha: grupo.itens.map(item => rotuloTipoLinhaExportacao(item.tipo_linha)).join('\n'),
+    tiposLinha: Array.from(new Set(
+      grupo.itens.map(item => rotuloTipoLinhaExportacao(item.tipo_linha)).filter(Boolean)
+    )).join('\n'),
     valoresUnitarios: grupo.itens.map(item => formatarMoedaExportacao(item.valor_unitario)).join('\n'),
     quantidadeLinhas: Math.max(1, grupo.itens.length)
   }));
