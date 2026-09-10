@@ -741,9 +741,9 @@ test('repete a observacao nas linhas da venda e a oculta para venda restrita', (
 test('monta uma linha de exportacao para cada vendedora com sua quantidade de chips', () => {
   const detalhes = montarDetalhesChipsExportacao({
     valores_unitarios_chips: [
-      { quantidade: 2, valor_unitario: '29,90', vendedora_id: 10 },
-      { quantidade: 1, valor_unitario: '39,90', vendedora_id: 10 },
-      { quantidade: 1, valor_unitario: 49.9, vendedora_id: 11 }
+      { quantidade: 2, tipo_linha: 'novo', valor_unitario: '29,90', vendedora_id: 10 },
+      { quantidade: 1, tipo_linha: 'portabilidade', valor_unitario: '39,90', vendedora_id: 10 },
+      { quantidade: 1, tipo_linha: 'portabilidade', valor_unitario: 49.9, vendedora_id: 11 }
     ],
     vendedoras: [
       { id: 10, nome: 'Ana' },
@@ -752,9 +752,14 @@ test('monta uma linha de exportacao para cada vendedora com sua quantidade de ch
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Ana', quantidadeChips: 3, valoresUnitarios: 'R$ 29,90\nR$ 39,90', quantidadeLinhas: 2 },
-    { vendedora: 'Bia', quantidadeChips: 1, valoresUnitarios: 'R$ 49,90', quantidadeLinhas: 1 }
+    { vendedora: 'Ana', quantidadeChips: 3, tiposLinha: 'Novo\nPortabilidade', valoresUnitarios: 'R$ 29,90\nR$ 39,90', quantidadeLinhas: 2 },
+    { vendedora: 'Bia', quantidadeChips: 1, tiposLinha: 'Portabilidade', valoresUnitarios: 'R$ 49,90', quantidadeLinhas: 1 }
   ]);
+
+  assert.deepEqual(
+    detalhes.map(item => montarLinhaXlsxVenda({}, item, false, 'concluido', new Map()).tipo),
+    ['Novo\nPortabilidade', 'Portabilidade']
+  );
 });
 
 test('marca vendedora nao informada em venda compartilhada legada', () => {
@@ -767,7 +772,7 @@ test('marca vendedora nao informada em venda compartilhada legada', () => {
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Não informado', quantidadeChips: 2, valoresUnitarios: 'R$ 49,90', quantidadeLinhas: 1 }
+    { vendedora: 'Não informado', quantidadeChips: 2, tiposLinha: 'Novo', valoresUnitarios: 'R$ 49,90', quantidadeLinhas: 1 }
   ]);
 });
 
@@ -781,7 +786,7 @@ test('nao lista vendedoras por virgula quando venda compartilhada legada nao tem
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Não informado', quantidadeChips: 4, valoresUnitarios: '—', quantidadeLinhas: 1 }
+    { vendedora: 'Não informado', quantidadeChips: 4, tiposLinha: '', valoresUnitarios: '—', quantidadeLinhas: 1 }
   ]);
 });
 
@@ -796,8 +801,20 @@ test('soma os grupos da vendedora principal em venda nao compartilhada', () => {
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Ana', quantidadeChips: 3, valoresUnitarios: 'R$ 29,90\nR$ 49,90', quantidadeLinhas: 2 }
+    { vendedora: 'Ana', quantidadeChips: 3, tiposLinha: 'Novo\nNovo', valoresUnitarios: 'R$ 29,90\nR$ 49,90', quantidadeLinhas: 2 }
   ]);
+});
+
+test('usa o tipo geral da venda apenas como fallback para chips legados sem grupos', () => {
+  const venda = {
+    quantidade_linhas: 2,
+    tipoVenda: { nome: 'Portabilidade' },
+    vendedora: { id: 10, nome: 'Ana' }
+  };
+  const [detalhes] = montarDetalhesChipsExportacao(venda);
+
+  assert.equal(detalhes.tiposLinha, 'Portabilidade');
+  assert.equal(montarLinhaXlsxVenda(venda, detalhes, false, 'concluido', new Map()).tipo, 'Portabilidade');
 });
 
 test('mapeia tipo de venda para fallback dos chips exibidos na tabela', () => {

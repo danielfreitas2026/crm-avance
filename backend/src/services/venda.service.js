@@ -2412,6 +2412,15 @@ function formatarMoedaExportacao(valor) {
 }
 
 /**
+ * Retorna o rotulo do tipo de chip usado na exportacao.
+ */
+function rotuloTipoLinhaExportacao(tipoLinha) {
+  if (tipoLinha === 'portabilidade') return 'Portabilidade';
+  if (tipoLinha === 'novo') return 'Novo';
+  return '';
+}
+
+/**
  * Monta uma linha de detalhe por vendedora para a exportacao.
  */
 function montarDetalhesChipsExportacao(venda = {}) {
@@ -2427,9 +2436,12 @@ function montarDetalhesChipsExportacao(venda = {}) {
   const vendedoraPrincipal = venda.vendedora?.nome || vendedoras[0]?.nome || '';
 
   if (itens.length === 0) {
+    const tipoLinhaFallback = obterTipoLinhaPorNomeTipoVenda(venda.tipoVenda?.nome);
+
     return [{
       vendedora: vendaCompartilhada ? 'Não informado' : vendedoraPrincipal || 'Não informado',
       quantidadeChips: obterQuantidadeChipsVenda(venda),
+      tiposLinha: rotuloTipoLinhaExportacao(tipoLinhaFallback),
       valoresUnitarios: '—',
       quantidadeLinhas: 1
     }];
@@ -2453,6 +2465,7 @@ function montarDetalhesChipsExportacao(venda = {}) {
   return Array.from(grupos.values()).map(grupo => ({
     vendedora: grupo.vendedora,
     quantidadeChips: grupo.quantidadeChips,
+    tiposLinha: grupo.itens.map(item => rotuloTipoLinhaExportacao(item.tipo_linha)).join('\n'),
     valoresUnitarios: grupo.itens.map(item => formatarMoedaExportacao(item.valor_unitario)).join('\n'),
     quantidadeLinhas: Math.max(1, grupo.itens.length)
   }));
@@ -2549,7 +2562,9 @@ function montarLinhaXlsxVenda(venda, detalhes, vendaRestrita, etapaFinal, mapaEt
     vendedora: detalhes.vendedora,
     quantidade_chips_vendedora: detalhes.quantidadeChips,
     operadora: venda.operadora?.nome || '',
-    tipo: venda.tipoVenda?.nome || '',
+    tipo: detalhes.tiposLinha || rotuloTipoLinhaExportacao(
+      obterTipoLinhaPorNomeTipoVenda(venda.tipoVenda?.nome)
+    ),
     produto: vendaRestrita ? '' : venda.servico?.nome || venda.produto_fechado || '',
     quantidade_linhas: venda.quantidade_linhas ?? null,
     gb: venda.gb || '',
@@ -2624,6 +2639,7 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
 
+    row.getCell('tipo').alignment = { vertical: 'middle', wrapText: true };
     row.getCell('valores_unitarios_chips').alignment = { vertical: 'middle', wrapText: true };
   });
   ['data_venda', 'data_ativacao', 'created_at', 'enviada_pos_venda_em', 'cancelada_em'].forEach(key => {
