@@ -696,12 +696,13 @@ test('exporta a observacao da ultima movimentacao valida para o status atual', (
   assert.equal(observacaoUltimaMovimentacaoExportacao(venda), 'Ultima entrada valida');
 });
 
-test('posiciona observacao imediatamente antes do status na planilha de vendas', () => {
+test('posiciona observacao imediatamente depois do status na planilha de vendas', () => {
   const colunas = montarColunasXlsxVendas();
   const indiceStatus = colunas.findIndex(coluna => coluna.key === 'status');
 
-  assert.equal(colunas[indiceStatus - 1].key, 'observacao_movimentacao');
-  assert.equal(colunas[indiceStatus - 1].header, 'OBSERVAÇÃO');
+  assert.equal(colunas[indiceStatus + 1].key, 'observacao_movimentacao');
+  assert.equal(colunas[indiceStatus + 1].header, 'OBSERVAÇÃO');
+  assert.equal(colunas[indiceStatus + 2].key, 'prioridade');
 });
 
 test('exporta observacao vazia quando a movimentacao atual nao possui texto', () => {
