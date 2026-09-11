@@ -1806,6 +1806,157 @@ async function buscarIdsPorCriterios(dados, quantidadeTotal) {
 async function listarDestinatariosEnviosPlanilha(planilhaId) {
   return LeadLinha.query().where('planilha_id', Number(planilhaId)).whereNotNull('envio_id').whereNotNull('atribuido_para_id').joinRelated('atribuidoPara').select('atribuido_para_id as usuario_id', 'atribuidoPara.nome as usuario_nome', 'atribuidoPara.email as usuario_email').count('lead_linhas.id as total_linhas').groupBy('atribuido_para_id', 'atribuidoPara.nome', 'atribuidoPara.email').orderBy('atribuidoPara.nome', 'asc');
 }
+
+function situacaoEnvioHistorico(quantidadeRecebida, quantidadeAtual) {
+  if (quantidadeAtual <= 0) return 'encerrado';
+  if (quantidadeAtual < quantidadeRecebida) return 'parcial';
+  return 'atual';
+}
+
+/** Agrupa os lotes do banco por destinatario sem carregar as linhas no frontend. */
+function chavePessoaHistorico(item = {}) {
+  const usuarioId = Number(item.usuario_id_historico || item.usuario_id || 0) || null;
+  return usuarioId ? `usuario:${usuarioId}` : `nome:${item.usuario_nome || 'excluido'}`;
+}
+
+function montarHistoricoDestinatariosPlanilha(planilha, lotes = [], totais = {}, totaisPessoas = []) {
+  const pessoasPorId = new Map();
+  const totaisPessoasPorId = new Map(totaisPessoas.map(item => [chavePessoaHistorico(item), item]));
+
+  lotes.forEach(lote => {
+    const usuarioId = Number(lote.usuario_id_historico || lote.usuario_id || 0) || null;
+    const chave = chavePessoaHistorico(lote);
+    const quantidadeRecebida = Number(lote.quantidade_recebida || 0);
+    const clientesUnicos = Number(lote.clientes_unicos || 0);
+    const quantidadeAtual = Number(lote.quantidade_atual || 0);
+    const enviadoEm = lote.envio_created_at || lote.primeiro_atribuido_em || null;
+    const ultimoAtribuidoEm = lote.ultimo_atribuido_em || enviadoEm;
+    let pessoa = pessoasPorId.get(chave);
+
+    if (!pessoa) {
+      pessoa = {
+        usuario_id: usuarioId,
+        usuario_nome: lote.usuario_nome || 'Usuario excluido',
+        usuario_excluido: !lote.usuario_id,
+        total_recebido: 0,
+        clientes_unicos: 0,
+        quantidade_atual: 0,
+        ultimo_envio_em: ultimoAtribuidoEm,
+        envios: []
+      };
+      pessoasPorId.set(chave, pessoa);
+    }
+
+    pessoa.total_recebido += quantidadeRecebida;
+    pessoa.clientes_unicos += clientesUnicos;
+    pessoa.quantidade_atual += quantidadeAtual;
+    if (!pessoa.ultimo_envio_em || String(ultimoAtribuidoEm) > String(pessoa.ultimo_envio_em)) {
+      pessoa.ultimo_envio_em = ultimoAtribuidoEm;
+    }
+    pessoa.envios.push({
+      envio_id: Number(lote.envio_id || 0) || null,
+      envio_nome: lote.envio_nome || 'Envio removido',
+      etapa: lote.etapa,
+      enviado_em: enviadoEm,
+      quantidade_recebida: quantidadeRecebida,
+      clientes_unicos: clientesUnicos,
+      quantidade_atual: quantidadeAtual,
+      situacao: situacaoEnvioHistorico(quantidadeRecebida, quantidadeAtual)
+    });
+  });
+
+  const pessoas = [...pessoasPorId.values()]
+    .map(pessoa => ({
+      ...pessoa,
+      clientes_unicos: Number(totaisPessoasPorId.get(chavePessoaHistorico(pessoa))?.clientes_unicos ?? pessoa.clientes_unicos),
+      quantidade_atual: Number(totaisPessoasPorId.get(chavePessoaHistorico(pessoa))?.quantidade_atual ?? pessoa.quantidade_atual),
+      envios: pessoa.envios.sort((a, b) => String(b.enviado_em || '').localeCompare(String(a.enviado_em || '')))
+    }))
+    .sort((a, b) => String(b.ultimo_envio_em || '').localeCompare(String(a.ultimo_envio_em || '')));
+
+  return {
+    planilha: { id: Number(planilha.id), nome: planilha.nome },
+    resumo: {
+      pessoas: pessoas.length,
+      atribuicoes: pessoas.reduce((total, pessoa) => total + pessoa.total_recebido, 0),
+      clientes_unicos: Number(totais.clientes_unicos ?? lotes.reduce((total, lote) => total + Number(lote.clientes_unicos || 0), 0)),
+      atualmente_atribuidos: Number(totais.atualmente_atribuidos ?? pessoas.reduce((total, pessoa) => total + pessoa.quantidade_atual, 0))
+    },
+    pessoas,
+    cobertura_historica: {
+      completa_desde: '2026-07-11',
+      aviso: 'Destinatarios anteriores a 11/07/2026 que ja haviam perdido o mailing podem nao estar registrados.'
+    }
+  };
+}
+
+/** Lista todas as atribuicoes historicas pertencentes a uma planilha. */
+async function listarHistoricoDestinatariosPlanilha(planilhaId) {
+  const planilha = await LeadPlanilha.query().findById(Number(planilhaId)).select('id', 'nome');
+  if (!planilha) throw criarHttpError(404, 'Planilha nao encontrada.');
+
+  const identidadeUsuario = db.raw('COALESCE(la.usuario_id, la.usuario_id_historico)');
+  const nomeUsuario = db.raw("COALESCE(u.nome, la.usuario_nome_historico, 'Usuario excluido')");
+  const lotesQuery = db('lead_atribuicoes as la')
+    .join('lead_linhas as ll', 'll.id', 'la.lead_linha_id')
+    .leftJoin('lead_envios as le', 'le.id', 'la.envio_id')
+    .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
+    .where('ll.planilha_id', planilha.id)
+    .select(
+      'la.usuario_id',
+      'la.usuario_id_historico',
+      'la.envio_id',
+      'la.etapa',
+      'le.nome as envio_nome',
+      'le.created_at as envio_created_at',
+      { usuario_nome: nomeUsuario }
+    )
+    .count('la.id as quantidade_recebida')
+    .countDistinct('la.lead_linha_id as clientes_unicos')
+    .countDistinct({
+      quantidade_atual: db.raw('CASE WHEN ll.atribuido_para_id = la.usuario_id AND ll.envio_id = la.envio_id THEN la.lead_linha_id ELSE NULL END')
+    })
+    .min('la.atribuido_em as primeiro_atribuido_em')
+    .max('la.atribuido_em as ultimo_atribuido_em')
+    .groupBy([
+      identidadeUsuario,
+      nomeUsuario,
+      'la.usuario_id',
+      'la.usuario_id_historico',
+      'la.envio_id',
+      'la.etapa',
+      'le.nome',
+      'le.created_at'
+    ]);
+
+  const totaisQuery = db('lead_atribuicoes as la')
+    .join('lead_linhas as ll', 'll.id', 'la.lead_linha_id')
+    .where('ll.planilha_id', planilha.id)
+    .countDistinct('la.lead_linha_id as clientes_unicos')
+    .countDistinct({
+      atualmente_atribuidos: db.raw('CASE WHEN ll.atribuido_para_id = la.usuario_id AND ll.envio_id = la.envio_id THEN la.lead_linha_id ELSE NULL END')
+    })
+    .first();
+
+  const totaisPessoasQuery = db('lead_atribuicoes as la')
+    .join('lead_linhas as ll', 'll.id', 'la.lead_linha_id')
+    .leftJoin('usuarios as u', 'u.id', 'la.usuario_id')
+    .where('ll.planilha_id', planilha.id)
+    .select(
+      'la.usuario_id',
+      'la.usuario_id_historico',
+      { usuario_nome: nomeUsuario }
+    )
+    .countDistinct('la.lead_linha_id as clientes_unicos')
+    .countDistinct({
+      quantidade_atual: db.raw('CASE WHEN ll.atribuido_para_id = la.usuario_id AND ll.envio_id = la.envio_id THEN la.lead_linha_id ELSE NULL END')
+    })
+    .groupBy([identidadeUsuario, nomeUsuario, 'la.usuario_id', 'la.usuario_id_historico']);
+
+  const [lotes, totais, totaisPessoas] = await Promise.all([lotesQuery, totaisQuery, totaisPessoasQuery]);
+
+  return montarHistoricoDestinatariosPlanilha(planilha, lotes, totais, totaisPessoas);
+}
 async function cancelarEnviosPlanilha(planilhaId, usuarioAlvoId, canceladoPorId) {
   const planilha = await LeadPlanilha.query().findById(Number(planilhaId));
   if (!planilha) throw criarHttpError(404, 'Planilha nao encontrada.');
@@ -5217,6 +5368,7 @@ module.exports = {
   listarTodosEnvios,
   atualizarNomeEnvio,
   listarDestinatariosEnviosPlanilha,
+  listarHistoricoDestinatariosPlanilha,
   cancelarEnviosPlanilha,
   dividirLeads,
   exportarCsv,
@@ -5250,6 +5402,9 @@ module.exports = {
   restaurarFuturoCliente,
   excluirFuturoClienteDefinitivo,
   _internals: {
+    montarHistoricoDestinatariosPlanilha,
+    chavePessoaHistorico,
+    situacaoEnvioHistorico,
     aplicarGruposMailing,
     aplicarBuscaDadosJson,
     aplicarBuscaFuturosClientes,

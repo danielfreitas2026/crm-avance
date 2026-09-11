@@ -223,6 +223,7 @@ export function dividirLeadLinhas(dados) {
  * Lista lead envios conforme os filtros e parametros informados.
  */
 export function listarDestinatariosEnviosPlanilha(planilhaId) { return apiGet('/lead-planilhas/' + planilhaId + '/destinatarios-envios'); }
+export function listarHistoricoDestinatariosPlanilha(planilhaId) { return apiGet('/lead-planilhas/' + planilhaId + '/historico-destinatarios'); }
 export function cancelarEnviosPlanilha(planilhaId, usuarioId = null) { return apiPost('/lead-planilhas/' + planilhaId + '/cancelar-envios', usuarioId ? { usuario_id: usuarioId } : {}); }
 
 export function listarLeadEnvios() {

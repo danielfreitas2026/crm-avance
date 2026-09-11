@@ -76,7 +76,19 @@ async function atualizarUsuario(id, dados) {
  * Exclui usuario conforme a regra de negocio.
  */
 async function excluirUsuario(id) {
-  return Usuario.query().deleteById(id);
+  return Usuario.transaction(async trx => {
+    const usuario = await Usuario.query(trx).findById(id).select('id', 'nome');
+    if (!usuario) return 0;
+
+    await trx('lead_atribuicoes')
+      .where('usuario_id', usuario.id)
+      .update({
+        usuario_id_historico: usuario.id,
+        usuario_nome_historico: usuario.nome
+      });
+
+    return Usuario.query(trx).deleteById(usuario.id);
+  });
 }
 
 module.exports = {

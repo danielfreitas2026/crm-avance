@@ -31,6 +31,7 @@ import {
   importarLeadPlanilhaExcel,
   listarLeadLinhas,
   listarDestinatariosEnviosPlanilha,
+  listarHistoricoDestinatariosPlanilha,
   listarLeadPlanilhas,
   marcarErroLeadPlanilha,
   salvarLeadLinhas
@@ -783,6 +784,81 @@ function CancelarEnviosModal({ planilha, destinatarios, carregando, erro, onClos
   if (!planilha) return null;
   return (<div className="modal-overlay"><div className="modal leads-delete-modal"><div className="modal-header"><div className="modal-header-row"><div><div className="modal-client">Cancelar envio de mailing?</div><div className="modal-sub">As linhas canceladas voltam para a fila, sem apagar os status ou o histórico de contato.</div></div><button type="button" className="btn btn-icon btn-ghost" onClick={onClose} disabled={carregando}><I.Close size={14} /></button></div></div><div className="modal-body"><div className="form-field"><label>Cancelar para</label><select value={usuarioId} onChange={event => setUsuarioId(event.target.value)} disabled={carregando}><option value="">Todas as vendedoras ({destinatarios.reduce((total, item) => total + Number(item.total_linhas || 0), 0)} linhas)</option>{destinatarios.map(item => <option key={item.usuario_id} value={item.usuario_id}>{item.usuario_nome} ({item.total_linhas} linhas)</option>)}</select></div>{erro && <div className="alert-error">{erro}</div>}</div><div className="modal-footer"><button type="button" className="btn" onClick={onClose} disabled={carregando}>Voltar</button><button type="button" className="btn btn-danger" onClick={() => onConfirm(usuarioId || null)} disabled={carregando}><I.Close size={13} /> {carregando ? 'Cancelando...' : 'Cancelar envio'}</button></div></div></div>);
 }
+
+const ROTULOS_ETAPA_HISTORICO = { sondagem: 'Sondagem', venda: 'Venda' };
+const ROTULOS_SITUACAO_HISTORICO = { atual: 'Atual', parcial: 'Parcial', encerrado: 'Encerrado' };
+
+/** Exibe os destinatarios atuais e anteriores de uma planilha. */
+export function HistoricoDestinatariosModal({ planilha, historico, carregando, erro, onClose }) {
+  const resumo = historico?.resumo || {};
+  const pessoas = historico?.pessoas || [];
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal leads-history-modal" role="dialog" aria-modal="true" aria-labelledby="leads-history-title">
+        <div className="modal-header">
+          <div className="modal-header-row">
+            <div>
+              <div className="modal-client" id="leads-history-title">Histórico de destinatários</div>
+              <div className="modal-sub">{planilha.nome}</div>
+            </div>
+            <button type="button" className="btn btn-icon btn-ghost" onClick={onClose} aria-label="Fechar histórico"><I.Close size={14} /></button>
+          </div>
+        </div>
+        <div className="modal-body leads-history-body">
+          {carregando && <div className="leads-history-state">Carregando histórico...</div>}
+          {!carregando && erro && <div className="alert-error">{erro}</div>}
+          {!carregando && !erro && historico && (
+            <>
+              <div className="leads-history-summary">
+                <div><span>Pessoas</span><strong>{formatarNumero(resumo.pessoas)}</strong></div>
+                <div><span>Atribuições</span><strong>{formatarNumero(resumo.atribuicoes)}</strong></div>
+                <div><span>Clientes únicos</span><strong>{formatarNumero(resumo.clientes_unicos)}</strong></div>
+                <div><span>Com responsável atual</span><strong>{formatarNumero(resumo.atualmente_atribuidos)}</strong></div>
+              </div>
+              {historico.cobertura_historica?.aviso && (
+                <div className="leads-history-warning"><I.History size={16} /><span>{historico.cobertura_historica.aviso}</span></div>
+              )}
+              {pessoas.length === 0 ? (
+                <div className="leads-history-state">Esta planilha ainda não foi enviada para ninguém.</div>
+              ) : (
+                <div className="leads-history-people">
+                  {pessoas.map(pessoa => (
+                    <section className="leads-history-person" key={pessoa.usuario_id || pessoa.usuario_nome}>
+                      <div className="leads-history-person__header">
+                        <div><strong>{pessoa.usuario_nome}</strong>{pessoa.usuario_excluido && <small>Usuário excluído</small>}</div>
+                        <div className="leads-history-person__metrics">
+                          <span><b>{formatarNumero(pessoa.total_recebido)}</b> recebidos</span>
+                          <span><b>{formatarNumero(pessoa.clientes_unicos)}</b> únicos</span>
+                          <span><b>{formatarNumero(pessoa.quantidade_atual)}</b> atuais</span>
+                        </div>
+                      </div>
+                      <div className="leads-history-sends">
+                        {pessoa.envios.map(envio => (
+                          <div className="leads-history-send" key={`${envio.envio_id}-${envio.etapa}-${envio.enviado_em}`}>
+                            <div className="leads-history-send__identity">
+                              <strong>{envio.envio_nome}</strong>
+                              <small>{envio.enviado_em ? formatUtcDateTime(envio.enviado_em) : 'Data não disponível'}</small>
+                            </div>
+                            <span className={`leads-history-badge stage-${envio.etapa}`}>{ROTULOS_ETAPA_HISTORICO[envio.etapa] || envio.etapa}</span>
+                            <span>{formatarNumero(envio.quantidade_recebida)} recebidos</span>
+                            <span>{formatarNumero(envio.quantidade_atual)} atuais</span>
+                            <span className={`leads-history-badge status-${envio.situacao}`}>{ROTULOS_SITUACAO_HISTORICO[envio.situacao] || envio.situacao}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div className="modal-footer"><button type="button" className="btn" onClick={onClose}>Fechar</button></div>
+      </div>
+    </div>
+  );
+}
 function ExcluirPlanilhaModal({ planilha, carregando, erro, onClose, onConfirm }) {
   if (!planilha) return null;
 
@@ -1263,6 +1339,10 @@ function AdminLeadsPage() {
   const [modalMesclar, setModalMesclar] = useState(null);
   const [modalExcluir, setModalExcluir] = useState(null);
   const [modalCancelarEnvios, setModalCancelarEnvios] = useState(null);
+  const [modalHistorico, setModalHistorico] = useState(null);
+  const [historicoDestinatarios, setHistoricoDestinatarios] = useState(null);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+  const [erroHistorico, setErroHistorico] = useState('');
   const [destinatariosCancelamento, setDestinatariosCancelamento] = useState([]);
   const [cancelandoEnvios, setCancelandoEnvios] = useState(false);
   const [erroCancelamento, setErroCancelamento] = useState('');
@@ -1947,6 +2027,19 @@ function AdminLeadsPage() {
     try { const destinatarios = await listarDestinatariosEnviosPlanilha(planilha.id); setDestinatariosCancelamento(destinatarios || []); setModalCancelarEnvios(planilha); }
     catch (error) { setErro(error.message || 'Erro ao carregar destinatarios do mailing.'); }
   }
+  async function abrirHistoricoDestinatarios(planilha) {
+    setModalHistorico(planilha);
+    setHistoricoDestinatarios(null);
+    setErroHistorico('');
+    setCarregandoHistorico(true);
+    try {
+      setHistoricoDestinatarios(await listarHistoricoDestinatariosPlanilha(planilha.id));
+    } catch (error) {
+      setErroHistorico(error.message || 'Erro ao carregar o histórico de destinatários.');
+    } finally {
+      setCarregandoHistorico(false);
+    }
+  }
   async function confirmarCancelamentoEnvios(usuarioId) {
     if (!modalCancelarEnvios) return;
     setCancelandoEnvios(true); setErroCancelamento(''); setErro('');
@@ -2206,6 +2299,7 @@ function AdminLeadsPage() {
       )}
 
       {modalCancelarEnvios && (<CancelarEnviosModal planilha={modalCancelarEnvios} destinatarios={destinatariosCancelamento} carregando={cancelandoEnvios} erro={erroCancelamento} onClose={() => { if (!cancelandoEnvios) setModalCancelarEnvios(null); }} onConfirm={confirmarCancelamentoEnvios} />)}
+      {modalHistorico && <HistoricoDestinatariosModal planilha={modalHistorico} historico={historicoDestinatarios} carregando={carregandoHistorico} erro={erroHistorico} onClose={() => setModalHistorico(null)} />}
       {modalExcluir && (
         <ExcluirPlanilhaModal
           planilha={modalExcluir}
@@ -2343,6 +2437,7 @@ function AdminLeadsPage() {
                   }
                 }}
               >
+                <button type="button" className="lead-doc-history" title="Ver histórico de destinatários" aria-label={`Ver histórico de ${planilha.nome}`} onClick={event => { event.stopPropagation(); abrirHistoricoDestinatarios(planilha); }}><I.History size={14} /></button>
                                 <button type="button" className="lead-doc-cancel" title="Cancelar envio de mailing" aria-label={`Cancelar envio de ${planilha.nome}`} onClick={event => { event.stopPropagation(); abrirCancelamentoEnvios(planilha); }}><I.Close size={14} /></button><button
                   type="button"
                   className="lead-doc-delete"

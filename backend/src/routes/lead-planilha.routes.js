@@ -413,6 +413,7 @@ router.delete(
   leadPlanilhaController.adminDesvincularVenda
 );
 router.get('/:id/destinatarios-envios', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.destinatariosEnviosPlanilha);
+router.get('/:id/historico-destinatarios', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.historicoDestinatariosPlanilha);
 router.post('/:id/cancelar-envios', exigirUmaPermissao(['gerenciar_leads']), auditar({ acao: 'lead_envio.cancelado', entidade: 'lead_planilhas', entidade_id: req => req.params.id, dados: req => ({ planilha_id: req.params.id, usuario_destino_id: req.body?.usuario_id || null, cancelado_por_id: req.usuario?.id }) }), leadPlanilhaController.cancelarEnviosPlanilha);
 
 router.get('/envios', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.envios);

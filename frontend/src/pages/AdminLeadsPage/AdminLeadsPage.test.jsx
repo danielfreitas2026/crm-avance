@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import AdminLeadsPage from './AdminLeadsPage';
-import { listarLeadLinhas, listarLeadPlanilhas } from '../../services/lead-planilha.service';
+import { listarHistoricoDestinatariosPlanilha, listarLeadLinhas, listarLeadPlanilhas } from '../../services/lead-planilha.service';
 import { listarVendedoras } from '../../services/venda.service';
 import { confirmarAberturaNotificacao } from '../../services/notificacao-abertura.service';
 
@@ -25,6 +25,7 @@ vi.mock('../../services/lead-planilha.service', () => ({
   finalizarLeadPlanilha: vi.fn(),
   importarLeadPlanilhaExcel: vi.fn(),
   listarLeadLinhas: vi.fn(),
+  listarHistoricoDestinatariosPlanilha: vi.fn(),
   listarLeadPlanilhas: vi.fn(),
   marcarErroLeadPlanilha: vi.fn(),
   salvarLeadLinhas: vi.fn()
@@ -116,6 +117,23 @@ describe('AdminLeadsPage - coluna Status da tabela', () => {
     expect(await screen.findByText('Detalhe do cliente')).toBeVisible();
     expect(listarLeadLinhas).toHaveBeenCalledWith({ linha_id: 10, page: 1, page_size: 1 });
     expect(confirmarAberturaNotificacao).toHaveBeenCalledWith(77);
+  });
+
+  it('abre o histórico do card sem selecionar a planilha', async () => {
+    listarLeadPlanilhas.mockResolvedValue([PLANILHA]);
+    listarVendedoras.mockResolvedValue([]);
+    listarHistoricoDestinatariosPlanilha.mockResolvedValue({
+      resumo: { pessoas: 0, atribuicoes: 0, clientes_unicos: 0, atualmente_atribuidos: 0 },
+      pessoas: [],
+      cobertura_historica: { aviso: 'Histórico legado pode estar incompleto.' }
+    });
+
+    renderPagina();
+    await userEvent.click(await screen.findByRole('button', { name: 'Ver histórico de Julho 24' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Histórico de destinatários' })).toBeVisible();
+    expect(listarHistoricoDestinatariosPlanilha).toHaveBeenCalledWith(1);
+    expect(listarLeadLinhas).not.toHaveBeenCalled();
   });
 
   it('mostra "Chamada não atendida" na linha da tabela quando o lead esta marcado', async () => {
