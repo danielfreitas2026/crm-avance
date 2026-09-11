@@ -810,8 +810,9 @@
   width: min(520px, 100%);
 }
 
-.leads-history-modal {
-  width: min(920px, 100%);
+.modal.leads-history-modal {
+  width: min(920px, calc(100vw - 48px));
+  max-width: 920px;
   max-height: min(820px, calc(100vh - 32px));
 }
 
@@ -873,6 +874,7 @@
 }
 
 .leads-history-person {
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -907,10 +909,11 @@
 
 .leads-history-send {
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) 90px 100px 90px 80px;
-  gap: 10px;
+  grid-template-columns: minmax(150px, 1fr) 76px 88px 76px 72px;
+  gap: 8px;
   align-items: center;
-  padding: 10px 14px;
+  min-width: 0;
+  padding: 10px 12px;
   border-top: 1px solid var(--border);
   font-size: 12px;
 }
@@ -919,6 +922,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .leads-history-badge {
@@ -929,6 +934,7 @@
   color: var(--text-2);
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .leads-history-badge.stage-venda,
@@ -1953,6 +1959,7 @@
 }
 
 @media (max-width: 640px) {
+  .modal.leads-history-modal { width: 100%; max-width: none; max-height: 100dvh; }
   .leads-history-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .leads-history-person__header { align-items: flex-start; flex-direction: column; }
   .leads-history-person__metrics { flex-wrap: wrap; }
