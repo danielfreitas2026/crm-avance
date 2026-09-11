@@ -12,6 +12,8 @@ const Usuario = require('../models/Usuario');
  * Servico de anexos e pacotes de arquivos de vendas.
  */
 const arquivoService = require('./arquivo.service');
+const dashboardIntegracaoService = require('./dashboard-integracao.service');
+const vendaDocumentacaoService = require('./venda-documentacao.service');
 const vendaVisibilidadeService = require('./venda-visibilidade.service');
 const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
 
@@ -125,6 +127,18 @@ async function garantirAcessoVenda(vendaId, usuarioId) {
   await vendaVisibilidadeService.garantirAcessoCompletoVenda(vendaId, usuarioId);
 }
 
+async function sincronizarDashboardSeDocumentacaoMudou(vendaId, estadoAnterior) {
+  try {
+    const estadoAtual = await vendaDocumentacaoService.obterEstadoDocumentacao(vendaId);
+    if (estadoAtual !== null && estadoAtual !== estadoAnterior) {
+      await dashboardIntegracaoService.sincronizarDocumentacaoAtualizada(vendaId);
+    }
+  } catch (error) {
+    // O arquivo ja foi persistido. Falhas externas nao podem desfazer a operacao local.
+    console.error(`Erro ao refletir documentacao da venda ${vendaId} no dashboard:`, error.message);
+  }
+}
+
 /**
  * Adiciona dias ao conjunto atual.
  */
@@ -226,6 +240,7 @@ async function listarArquivos(vendaId, usuarioId) {
  */
 async function receberArquivoUpload(req, vendaId, usuarioId) {
   await garantirAcessoVenda(vendaId, usuarioId);
+  const documentacaoAnterior = await vendaDocumentacaoService.obterEstadoDocumentacao(vendaId);
 
   const totalAtivos = await VendaArquivo.query()
     .where('venda_id', vendaId)
@@ -270,6 +285,8 @@ async function receberArquivoUpload(req, vendaId, usuarioId) {
   } else {
     await marcarPacoteDesatualizado(vendaId);
   }
+
+  await sincronizarDashboardSeDocumentacaoMudou(vendaId, documentacaoAnterior);
 
   return arquivoVenda;
 }
@@ -354,6 +371,7 @@ async function prepararDownloadArquivo(vendaId, arquivoVendaId, usuarioId) {
  */
 async function excluirArquivoVenda(vendaId, arquivoVendaId, usuarioId) {
   const vinculo = await buscarVinculoArquivo(vendaId, arquivoVendaId, usuarioId);
+  const documentacaoAnterior = await vendaDocumentacaoService.obterEstadoDocumentacao(vendaId);
 
   const total = await VendaArquivo.query()
     .patch({
@@ -371,6 +389,7 @@ async function excluirArquivoVenda(vendaId, arquivoVendaId, usuarioId) {
     } else {
       await marcarPacoteDesatualizado(vendaId);
     }
+    await sincronizarDashboardSeDocumentacaoMudou(vendaId, documentacaoAnterior);
   }
 
   return total;
@@ -661,5 +680,6 @@ module.exports = {
   gerarPacoteVenda,
   prepararDownloadPacote,
   marcarPacoteDesatualizado,
-  limparArquivosIndividuaisVencidos
+  limparArquivosIndividuaisVencidos,
+  _internals: { sincronizarDashboardSeDocumentacaoMudou }
 };

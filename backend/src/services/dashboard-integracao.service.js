@@ -7,6 +7,7 @@
 const axios = require('axios');
 const Venda = require('../models/Venda');
 const { parseUtcDateTime } = require('../utils/datetime');
+const { possuiDocumentacao, valorBooleano } = require('./venda-documentacao.service');
 
 const NOME_TABELA = 'dashboard_integracao_vendas';
 const CACHE_REFERENCIAS_MS = 5 * 60 * 1000;
@@ -41,9 +42,15 @@ function idsLiberadosExcepcionalmente() {
 }
 function normalizarTexto(valor) { return String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); }
 function somenteDigitos(valor) { return String(valor || '').replace(/\D/g, ''); }
-function valorBooleano(valor) { return valor === true || valor === 1 || valor === '1'; }
 function obterNomeReferencia(item) { return item?.full_name || item?.name || item?.nome || item?.label || item?.title || ''; }
 function obterColecaoReferencias(referencias, chave) { const raiz = referencias?.data || referencias || {}; return Array.isArray(raiz[chave]) ? raiz[chave] : []; }
+function lancamentoConfirmadoNoDashboard(item) { return item?.status === 'enviada' || Boolean(item?.dashboard_sale_id); }
+function separarReenviosPorExistencia(itens = []) {
+  return itens.reduce((grupos, item) => {
+    grupos[lancamentoConfirmadoNoDashboard(item) ? 'existentes' : 'novos'].push(item);
+    return grupos;
+  }, { existentes: [], novos: [] });
+}
 
 function obterMapaConfigurado(chave) {
   const valor = process.env[`DASHBOARD_INTEGRATION_${chave.toUpperCase()}_MAP`];
@@ -155,7 +162,7 @@ function montarPayloadVenda(venda, referencias, itemKey = 'principal') {
     closed_by_name: venda.nome_fechou_venda || vendedora?.nome || '',
     quantity: quantidade,
     unit_value: unitValue,
-    has_doc: valorBooleano(venda.possui_doc_na_casa),
+    has_doc: possuiDocumentacao(venda),
     is_base_sale: valorBooleano(venda.cliente_da_base),
     // String vazia é aceita tanto pelo dashboard atual quanto pelo que aceita null.
     notes: venda.observacoes || ''
@@ -198,7 +205,13 @@ async function registrarVendaPendente(venda, trx) {
 }
 
 async function obterVendaParaEnvio(vendaId) {
-  const venda = await Venda.query().findById(vendaId).withGraphFetched('[vendedora, servico, operadora, tipoVenda]');
+  const venda = await Venda.query()
+    .findById(vendaId)
+    .select('vendas.*')
+    .select(Venda.knex().raw(
+      '(SELECT COUNT(*) FROM venda_arquivos va WHERE va.venda_id = vendas.id AND va.excluido_em IS NULL) as total_arquivos'
+    ))
+    .withGraphFetched('[vendedora, servico, operadora, tipoVenda]');
   if (!venda) return null;
   const chips = normalizarChips(venda.valores_unitarios_chips);
   const idsVendedoras = [...new Set(chips.map(chip => Number(chip.vendedora_id)).filter(Number.isInteger))];
@@ -401,6 +414,80 @@ async function sincronizarVendaAtualizada(vendaId) {
   }
 }
 
+/**
+ * Atualiza somente lancamentos que ja existem no dashboard.
+ * Este fluxo nunca cria nem exclui lancamentos, evitando o anuncio de venda nova.
+ */
+async function sincronizarDocumentacaoAtualizada(vendaId) {
+  const knex = Venda.knex();
+  const itensRegistrados = await knex(NOME_TABELA)
+    .where({ venda_id: Number(vendaId) })
+    .whereNot('status', 'excluida')
+    .orderBy('id');
+  const itens = itensRegistrados.filter(lancamentoConfirmadoNoDashboard);
+
+  if (itens.length === 0 || !estaConfigurada()) {
+    return { atualizados: 0, ignorados: itens.length, erros: 0 };
+  }
+
+  const venda = await obterVendaParaEnvio(vendaId);
+  if (!venda) return { atualizados: 0, ignorados: itens.length, erros: 0 };
+
+  const chavesAtuais = new Set(itensSincronizacao(venda));
+  const elegiveis = itens.filter(item => chavesAtuais.has(item.item_key));
+  const resultado = {
+    atualizados: 0,
+    ignorados: itens.length - elegiveis.length,
+    erros: 0
+  };
+
+  let referencias;
+  try {
+    referencias = await obterReferencias();
+  } catch (error) {
+    for (const item of elegiveis) await atualizarFalha(knex, item, error);
+    console.error(`Erro ao sincronizar documentacao da venda ${vendaId} no dashboard:`, mensagemErro(error));
+    return { ...resultado, erros: elegiveis.length };
+  }
+
+  const { baseUrl, apiKey } = configuracao();
+  for (const item of elegiveis) {
+    try {
+      const payload = montarPayloadVenda(venda, referencias, item.item_key);
+      await reservarRequisicao();
+      const resposta = await atualizarLancamentoNoDashboard(baseUrl, apiKey, payload);
+      await knex(NOME_TABELA).where({ id: item.id }).update({
+        status: 'enviada',
+        tentativas: Number(item.tentativas || 0) + 1,
+        ultimo_erro: null,
+        dashboard_sale_id: resposta.data?.data?.id || item.dashboard_sale_id || null,
+        enviada_em: knex.fn.now(),
+        ultima_tentativa_em: knex.fn.now(),
+        updated_at: knex.fn.now()
+      });
+      resultado.atualizados += 1;
+    } catch (error) {
+      await atualizarFalha(knex, item, error);
+      resultado.erros += 1;
+      console.error(`Erro ao sincronizar documentacao da venda ${vendaId} no dashboard:`, mensagemErro(error));
+    }
+  }
+
+  return resultado;
+}
+
+async function listarCandidatosReconciliacaoDocumentacao() {
+  return Venda.knex()(`${NOME_TABELA} as integracao`)
+    .innerJoin('vendas as venda', 'venda.id', 'integracao.venda_id')
+    .whereNull('venda.excluido_em')
+    .whereNot('integracao.status', 'excluida')
+    .where(builder => builder.where('integracao.status', 'enviada').orWhereNotNull('integracao.dashboard_sale_id'))
+    .groupBy('integracao.venda_id')
+    .orderBy('integracao.venda_id')
+    .select('integracao.venda_id')
+    .count('* as total_lancamentos');
+}
+
 function montarResumo(items = [], vendaId = null) {
   if (items.length === 0) return null;
   const todosEnviados = items.every(item => item.status === 'enviada');
@@ -450,13 +537,18 @@ async function reenviarVendaManualmente(vendaId) {
   const pendencias = await Venda.knex()(NOME_TABELA)
     .where({ venda_id: Number(vendaId), status: 'erro' })
     .orderBy('id')
-    .select('item_key', 'pode_reenviar_manualmente');
+    .select('item_key', 'pode_reenviar_manualmente', 'dashboard_sale_id');
 
   const vendaLiberada = idsLiberadosExcepcionalmente().has(Number(vendaId));
   const elegiveis = pendencias.filter(item => Boolean(item.pode_reenviar_manualmente) || vendaLiberada);
   if (elegiveis.length === 0) return { status: 'nao_elegivel' };
 
-  for (const pendencia of elegiveis) {
+  const { existentes, novos } = separarReenviosPorExistencia(elegiveis);
+  if (existentes.length > 0) {
+    await sincronizarDocumentacaoAtualizada(vendaId);
+  }
+
+  for (const pendencia of novos) {
     try {
       await enviarVendaPendente(vendaId, pendencia.item_key);
     } catch {
@@ -477,6 +569,8 @@ module.exports = {
   registrarVendaPendente,
   restaurarVendaNoDashboard,
   resolverIdReferencia,
+  listarCandidatosReconciliacaoDocumentacao,
+  sincronizarDocumentacaoAtualizada,
   sincronizarVendaAtualizada,
-  _internals: { atualizarLancamentoNoDashboard, chipDaVenda, formatarDataHoraVenda, idExternoVenda, idsLiberadosExcepcionalmente, itensSincronizacao, mensagemErro, montarResumo, normalizarChips, normalizarTexto, somenteDigitos, resolverTipoVendaDoChip }
+  _internals: { atualizarLancamentoNoDashboard, chipDaVenda, formatarDataHoraVenda, idExternoVenda, idsLiberadosExcepcionalmente, itensSincronizacao, lancamentoConfirmadoNoDashboard, mensagemErro, montarResumo, normalizarChips, normalizarTexto, separarReenviosPorExistencia, somenteDigitos, resolverTipoVendaDoChip }
 };

@@ -3809,6 +3809,7 @@ function VendaModal({
   initialProblemaId = null,
   modoEdicao = true,
   onEtapasAtualizadas = () => {},
+  onArquivosAlterados = () => {},
   onStartEdit,
   onClose,
   onSave,
@@ -5188,7 +5189,7 @@ function VendaModal({
                 setForm(f => ({ ...f, possui_doc_na_casa: valor }));
                 setDocsAlterados(true);
               }}
-              onArquivosAlterados={() => setDocsAlterados(true)}
+              onArquivosAlterados={() => onArquivosAlterados(venda.id)}
             />
           ) : abaExibida === 'cancelamento' && vendaCancelada ? (
             <VendaCancelamentoTab venda={venda || form} />

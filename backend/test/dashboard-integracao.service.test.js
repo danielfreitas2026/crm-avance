@@ -50,6 +50,26 @@ test('monta o payload aceito pelo dashboard a partir da venda local', () => {
   });
 });
 
+test('considera arquivo ativo como documentacao no payload do dashboard', () => {
+  const base = {
+    id: 43,
+    data_venda: '2026-07-28',
+    criado_em: '2026-07-28 14:30:00',
+    nome: 'Empresa Exemplo',
+    quantidade_linhas: 1,
+    valor_total: 99.9,
+    possui_doc_na_casa: false,
+    vendedora: { id: 1, nome: 'Ana Vendedora' },
+    servico: { id: 2, nome: 'Internet' },
+    operadora: { id: 3, nome: 'Claro' },
+    tipoVenda: { id: 4, nome: 'Portabilidade' }
+  };
+
+  assert.equal(montarPayloadVenda({ ...base, total_arquivos: 1 }, referencias).has_doc, true);
+  assert.equal(montarPayloadVenda({ ...base, total_arquivos: 0 }, referencias).has_doc, false);
+  assert.equal(montarPayloadVenda({ ...base, possui_doc_na_casa: true }, referencias).has_doc, true);
+});
+
 test('usa o ID equivalente quando uma referencia possui o mesmo ID local', () => {
   assert.equal(resolverIdReferencia({
     referencias: { sellers: [{ id: 5, name: 'Nome diferente' }] },
@@ -96,6 +116,22 @@ test('edição usa PUT e não reenvia o identificador externo no corpo', async (
   } finally {
     axios.put = putOriginal;
   }
+});
+
+test('sincronizacao documental aceita somente lancamentos ja confirmados', () => {
+  assert.equal(_internals.lancamentoConfirmadoNoDashboard({ status: 'enviada' }), true);
+  assert.equal(_internals.lancamentoConfirmadoNoDashboard({ status: 'erro', dashboard_sale_id: 91 }), true);
+  assert.equal(_internals.lancamentoConfirmadoNoDashboard({ status: 'pendente' }), false);
+  assert.equal(_internals.lancamentoConfirmadoNoDashboard({ status: 'erro' }), false);
+});
+
+test('reenvio separa atualizacoes silenciosas de criacoes nunca confirmadas', () => {
+  const existente = { item_key: 'chip-1', status: 'erro', dashboard_sale_id: 91 };
+  const novo = { item_key: 'chip-2', status: 'erro', dashboard_sale_id: null };
+  assert.deepEqual(_internals.separarReenviosPorExistencia([existente, novo]), {
+    existentes: [existente],
+    novos: [novo]
+  });
 });
 
 test('usa o mapa configurado para vendedora mesmo com nomes diferentes', () => {

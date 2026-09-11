@@ -890,7 +890,7 @@ function mapVendaToSale(venda, stageLabels = STAGE_LABELS) {
 /**
  * Renderiza sale modal.
  */
-export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onUpdatePossuiDocNaCasa, onOpenFullSale, openingFullSale, podeCancelar, podeReverterCancelamento, onCancelSale, onReverterCancelamento, podeEditarVenda, podeVerDocumentos, podeAdicionarDocumentos, modoAutomacoes = false, onEtapasAtualizadas = () => {} }) {
+export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onUpdatePossuiDocNaCasa, onOpenFullSale, openingFullSale, podeCancelar, podeReverterCancelamento, onCancelSale, onReverterCancelamento, podeEditarVenda, podeVerDocumentos, podeAdicionarDocumentos, modoAutomacoes = false, onEtapasAtualizadas = () => {}, onArquivosAlterados = () => {} }) {
   const [tab, setTab] = useState('info');
   const [novaFase, setNovaFase] = useState(sale.stage);
   const [novaPrioridade, setNovaPrioridade] = useState(sale.priority || 'media');
@@ -1209,6 +1209,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
                 possuiDocNaCasa={possuiDocNaCasa}
                 onPossuiDocNaCasaChange={handlePossuiDocNaCasaChange}
                 onEtapasAtualizadas={etapas => onEtapasAtualizadas(sale.id, etapas)}
+                onArquivosAlterados={() => onArquivosAlterados(sale.id)}
               />
               {error && <div className="alert-error" style={{ marginTop: 12 }}>{error}</div>}
             </>
@@ -2932,6 +2933,7 @@ function FunilPage({ modoAutomacoes = false }) {
           podeAdicionarDocumentos={!modoAutomacoes && podeAdicionarDocumentosVenda}
           modoAutomacoes={modoAutomacoes}
           onEtapasAtualizadas={handleEtapasAtualizadas}
+          onArquivosAlterados={carregarVendas}
         />
       )}
       {vendaCompleta && (
@@ -2951,6 +2953,7 @@ function FunilPage({ modoAutomacoes = false }) {
           usuarioLogado={usuario}
           modoEdicao={modalVendaModoEdicao}
           onEtapasAtualizadas={etapas => handleEtapasAtualizadas(vendaCompleta.id, etapas)}
+          onArquivosAlterados={carregarVendas}
           onStartEdit={() => setModalVendaModoEdicao(true)}
           onClose={fecharVendaCompleta}
           onSave={salvarVendaCompleta}

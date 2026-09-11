@@ -1723,6 +1723,7 @@ function VendasPage() {
           onSaveReversal={salvarReversao}
           onDeleteReversal={ocultarReversao}
           onRetryDashboard={reenviarDashboard}
+          onArquivosAlterados={() => carregarVendas(filtros, paginaAtual)}
           onDraftChange={setVendaCadastroDraft}
           onSendToPosVenda={enviarPosVenda}
           onCreateClient={abrirClienteRapido}

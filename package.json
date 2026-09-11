@@ -14,6 +14,7 @@
     "postinstall": "cd backend && npm install",
     "migrate": "cd backend && npm run migrate",
     "seed": "cd backend && npm run seed",
+    "reconcile:dashboard-docs": "npm --prefix backend run dashboard:reconcile-docs --",
     "test:backend": "npm --prefix backend test",
     "test:frontend": "npm --prefix frontend run test:run",
     "verify": "npm run test:backend && npm run test:frontend && npm run lint:frontend && npm run build:frontend"

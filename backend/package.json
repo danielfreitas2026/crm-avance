@@ -10,6 +10,7 @@
     "migrate": "knex migrate:latest",
     "rollback": "knex migrate:rollback",
     "seed": "knex seed:run",
+    "dashboard:reconcile-docs": "node scripts/reconciliar-documentacao-dashboard.js",
     "telegram:smoke": "node scripts/testar-telegram.js",
     "telegram:corrigir-botoes-cancelamento": "node scripts/corrigir-botoes-cancelamento-telegram.js",
     "telegram:configurar-webhook-aprovacoes": "node scripts/configurar-telegram-aprovacoes-webhook.js"
