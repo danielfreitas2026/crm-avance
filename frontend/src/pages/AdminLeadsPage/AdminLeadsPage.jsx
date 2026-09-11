@@ -787,6 +787,11 @@ function CancelarEnviosModal({ planilha, destinatarios, carregando, erro, onClos
 
 const ROTULOS_ETAPA_HISTORICO = { sondagem: 'Sondagem', venda: 'Venda' };
 const ROTULOS_SITUACAO_HISTORICO = { atual: 'Atual', parcial: 'Parcial', encerrado: 'Encerrado' };
+const DESCRICOES_SITUACAO_HISTORICO = {
+  atual: 'Todos os clientes deste lote continuam com esta pessoa.',
+  parcial: 'Uma parte dos clientes deste lote foi transferida ou cancelada.',
+  encerrado: 'Nenhum cliente deste lote continua com esta pessoa.'
+};
 
 /** Exibe os destinatarios atuais e anteriores de uma planilha. */
 export function HistoricoDestinatariosModal({ planilha, historico, carregando, erro, onClose }) {
@@ -799,8 +804,8 @@ export function HistoricoDestinatariosModal({ planilha, historico, carregando, e
         <div className="modal-header">
           <div className="modal-header-row">
             <div>
-              <div className="modal-client" id="leads-history-title">Histórico de destinatários</div>
-              <div className="modal-sub">{planilha.nome}</div>
+              <div className="modal-client" id="leads-history-title">Quem já recebeu este mailing</div>
+              <div className="modal-sub">Planilha: {planilha.nome}</div>
             </div>
             <button type="button" className="btn btn-icon btn-ghost" onClick={onClose} aria-label="Fechar histórico"><I.Close size={14} /></button>
           </div>
@@ -810,15 +815,24 @@ export function HistoricoDestinatariosModal({ planilha, historico, carregando, e
           {!carregando && erro && <div className="alert-error">{erro}</div>}
           {!carregando && !erro && historico && (
             <>
+              <p className="leads-history-intro">Consulte todas as pessoas que já receberam clientes desta planilha, inclusive em reenvios e transferências.</p>
               <div className="leads-history-summary">
-                <div><span>Pessoas</span><strong>{formatarNumero(resumo.pessoas)}</strong></div>
-                <div><span>Atribuições</span><strong>{formatarNumero(resumo.atribuicoes)}</strong></div>
-                <div><span>Clientes únicos</span><strong>{formatarNumero(resumo.clientes_unicos)}</strong></div>
-                <div><span>Com responsável atual</span><strong>{formatarNumero(resumo.atualmente_atribuidos)}</strong></div>
+                <div><span>Pessoas que receberam</span><strong>{formatarNumero(resumo.pessoas)}</strong><small>Destinatários diferentes</small></div>
+                <div><span>Total de entregas</span><strong>{formatarNumero(resumo.atribuicoes)}</strong><small>Conta novamente quando há reenvio</small></div>
+                <div><span>Clientes diferentes</span><strong>{formatarNumero(resumo.clientes_unicos)}</strong><small>Sem duplicar os reenvios</small></div>
+                <div><span>Ainda atribuídos</span><strong>{formatarNumero(resumo.atualmente_atribuidos)}</strong><small>Continuam com algum responsável</small></div>
               </div>
               {historico.cobertura_historica?.aviso && (
-                <div className="leads-history-warning"><I.History size={16} /><span>{historico.cobertura_historica.aviso}</span></div>
+                <div className="leads-history-warning"><I.History size={16} /><span>O histórico é completo desde 11/07/2026. Movimentações anteriores a essa data podem não aparecer.</span></div>
               )}
+              <div className="leads-history-guide">
+                <div><strong>Como interpretar</strong><span>“Entregues” é a quantidade enviada naquele lote. “Ainda possui” mostra quantos continuam com a mesma pessoa.</span></div>
+                <div className="leads-history-legend" aria-label="Significado das situações">
+                  <span><i className="leads-history-legend__dot status-atual"></i><b>Atual:</b> mantém todos</span>
+                  <span><i className="leads-history-legend__dot status-parcial"></i><b>Parcial:</b> mantém uma parte</span>
+                  <span><i className="leads-history-legend__dot status-encerrado"></i><b>Encerrado:</b> não mantém nenhum</span>
+                </div>
+              </div>
               {pessoas.length === 0 ? (
                 <div className="leads-history-state">Esta planilha ainda não foi enviada para ninguém.</div>
               ) : (
@@ -828,12 +842,15 @@ export function HistoricoDestinatariosModal({ planilha, historico, carregando, e
                       <div className="leads-history-person__header">
                         <div><strong>{pessoa.usuario_nome}</strong>{pessoa.usuario_excluido && <small>Usuário excluído</small>}</div>
                         <div className="leads-history-person__metrics">
-                          <span><b>{formatarNumero(pessoa.total_recebido)}</b> recebidos</span>
-                          <span><b>{formatarNumero(pessoa.clientes_unicos)}</b> únicos</span>
-                          <span><b>{formatarNumero(pessoa.quantidade_atual)}</b> atuais</span>
+                          <span><b>{formatarNumero(pessoa.total_recebido)}</b> entregas</span>
+                          <span><b>{formatarNumero(pessoa.clientes_unicos)}</b> clientes diferentes</span>
+                          <span><b>{formatarNumero(pessoa.quantidade_atual)}</b> ainda com esta pessoa</span>
                         </div>
                       </div>
                       <div className="leads-history-sends">
+                        <div className="leads-history-send leads-history-send--header" aria-hidden="true">
+                          <span>Lote de envio e data</span><span>Etapa</span><span>Entregues</span><span>Ainda possui</span><span>Situação</span>
+                        </div>
                         {pessoa.envios.map(envio => (
                           <div className="leads-history-send" key={`${envio.envio_id}-${envio.etapa}-${envio.enviado_em}`}>
                             <div className="leads-history-send__identity">
@@ -841,9 +858,9 @@ export function HistoricoDestinatariosModal({ planilha, historico, carregando, e
                               <small>{envio.enviado_em ? formatUtcDateTime(envio.enviado_em) : 'Data não disponível'}</small>
                             </div>
                             <span className={`leads-history-badge stage-${envio.etapa}`}>{ROTULOS_ETAPA_HISTORICO[envio.etapa] || envio.etapa}</span>
-                            <span>{formatarNumero(envio.quantidade_recebida)} recebidos</span>
-                            <span>{formatarNumero(envio.quantidade_atual)} atuais</span>
-                            <span className={`leads-history-badge status-${envio.situacao}`}>{ROTULOS_SITUACAO_HISTORICO[envio.situacao] || envio.situacao}</span>
+                            <span className="leads-history-send__metric" data-label="Entregues">{formatarNumero(envio.quantidade_recebida)}</span>
+                            <span className="leads-history-send__metric" data-label="Ainda possui">{formatarNumero(envio.quantidade_atual)}</span>
+                            <span className={`leads-history-badge status-${envio.situacao}`} title={DESCRICOES_SITUACAO_HISTORICO[envio.situacao]}>{ROTULOS_SITUACAO_HISTORICO[envio.situacao] || envio.situacao}</span>
                           </div>
                         ))}
                       </div>

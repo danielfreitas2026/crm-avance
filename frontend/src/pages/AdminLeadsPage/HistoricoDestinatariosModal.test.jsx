@@ -29,13 +29,20 @@ describe('HistoricoDestinatariosModal', () => {
     />);
 
     expect(screen.getByText('Consultora Teste')).toBeVisible();
+    expect(screen.getByText('Quem já recebeu este mailing')).toBeVisible();
+    expect(screen.getByText('Pessoas que receberam')).toBeVisible();
+    expect(screen.getByText('Total de entregas')).toBeVisible();
+    expect(screen.getByText('Sem duplicar os reenvios')).toBeVisible();
+    expect(screen.getByText('Como interpretar')).toBeVisible();
+    expect(screen.getByText('Lote de envio e data')).toBeVisible();
+    expect(screen.getByText('Ainda possui')).toBeVisible();
     expect(screen.getByText('Envio inicial')).toBeVisible();
     expect(screen.getByText('Envio de venda')).toBeVisible();
     expect(screen.getByText('Sondagem')).toBeVisible();
     expect(screen.getByText('Venda')).toBeVisible();
     expect(screen.getByText('Encerrado')).toBeVisible();
     expect(screen.getByText('Atual')).toBeVisible();
-    expect(screen.getByText('Registros legados podem estar incompletos.')).toBeVisible();
+    expect(screen.getByText(/O histórico é completo desde 11\/07\/2026/)).toBeVisible();
   });
 
   it('mostra os estados de carregamento, erro e histórico vazio', () => {

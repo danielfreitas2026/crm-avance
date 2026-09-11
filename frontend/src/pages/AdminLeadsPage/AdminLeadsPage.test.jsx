@@ -131,7 +131,7 @@ describe('AdminLeadsPage - coluna Status da tabela', () => {
     renderPagina();
     await userEvent.click(await screen.findByRole('button', { name: 'Ver histórico de Julho 24' }));
 
-    expect(await screen.findByRole('dialog', { name: 'Histórico de destinatários' })).toBeVisible();
+    expect(await screen.findByRole('dialog', { name: 'Quem já recebeu este mailing' })).toBeVisible();
     expect(listarHistoricoDestinatariosPlanilha).toHaveBeenCalledWith(1);
     expect(listarLeadLinhas).not.toHaveBeenCalled();
   });
