@@ -696,13 +696,73 @@ test('exporta a observacao da ultima movimentacao valida para o status atual', (
   assert.equal(observacaoUltimaMovimentacaoExportacao(venda), 'Ultima entrada valida');
 });
 
-test('posiciona observacao imediatamente depois do status na planilha de vendas', () => {
+test('diferencia os status e posiciona a observacao depois deles na planilha de vendas', () => {
   const colunas = montarColunasXlsxVendas();
-  const indiceStatus = colunas.findIndex(coluna => coluna.key === 'status');
+  const indiceStatus = colunas.findIndex(coluna => coluna.key === 'status_interno');
 
-  assert.equal(colunas[indiceStatus + 1].key, 'observacao_movimentacao');
-  assert.equal(colunas[indiceStatus + 1].header, 'OBSERVAÇÃO');
-  assert.equal(colunas[indiceStatus + 2].key, 'prioridade');
+  assert.equal(colunas[indiceStatus].header, 'STATUS INTERNO');
+  assert.equal(colunas[indiceStatus + 1].key, 'status_automacao');
+  assert.equal(colunas[indiceStatus + 1].header, 'STATUS AUTOMAÇÃO');
+  assert.equal(colunas[indiceStatus + 2].key, 'observacao_movimentacao');
+  assert.equal(colunas[indiceStatus + 2].header, 'OBSERVAÇÃO');
+  assert.equal(colunas[indiceStatus + 3].key, 'prioridade');
+});
+
+test('exporta separadamente as etapas e os cancelamentos dos funis interno e automatico', () => {
+  const mapaEtapas = new Map([
+    ['aceite', 'Aceite/Biometria'],
+    ['entrega', 'Entrega']
+  ]);
+  const linha = montarLinhaXlsxVenda(
+    { status_funil: 'aceite', cancelada_em: null, enviada_pos_venda_em: '2026-09-01' },
+    { vendedora: 'Ana', quantidadeChips: 1, valoresUnitarios: 'R$ 20,00' },
+    false,
+    'concluido',
+    mapaEtapas,
+    { status_funil: 'entrega', cancelada_em: '2026-09-10' }
+  );
+
+  assert.equal(linha.status_interno, 'Aceite/Biometria');
+  assert.equal(linha.status_automacao, 'Entrega (Cancelada)');
+});
+
+test('nao copia o status interno quando o funil automatico ainda nao possui estado', () => {
+  const mapaEtapas = new Map([['aceite', 'Aceite/Biometria']]);
+  const detalhes = { vendedora: 'Ana', quantidadeChips: 1, valoresUnitarios: 'R$ 20,00' };
+
+  const antesDoEnvio = montarLinhaXlsxVenda(
+    { status_funil: 'aceite', enviada_pos_venda_em: null },
+    detalhes,
+    false,
+    'concluido',
+    mapaEtapas
+  );
+  const depoisDoEnvio = montarLinhaXlsxVenda(
+    { status_funil: 'aceite', enviada_pos_venda_em: '2026-09-01' },
+    detalhes,
+    false,
+    'concluido',
+    mapaEtapas
+  );
+
+  assert.equal(antesDoEnvio.status_interno, 'Aceite/Biometria');
+  assert.equal(antesDoEnvio.status_automacao, 'Falta enviar ao pós-venda');
+  assert.equal(depoisDoEnvio.status_automacao, 'Sem etapa');
+});
+
+test('resume separadamente os dois status quando a venda tem visualizacao restrita', () => {
+  const detalhes = { vendedora: 'Ana', quantidadeChips: 1, valoresUnitarios: 'R$ 20,00' };
+  const linha = montarLinhaXlsxVenda(
+    { status_funil: 'aceite', enviada_pos_venda_em: '2026-09-01' },
+    detalhes,
+    true,
+    'concluido',
+    new Map(),
+    { status_funil: 'concluido' }
+  );
+
+  assert.equal(linha.status_interno, 'Não concluída');
+  assert.equal(linha.status_automacao, 'Concluída');
 });
 
 test('posiciona classificacao do cliente depois do documento na planilha de vendas', () => {

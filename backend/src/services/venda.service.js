@@ -2,6 +2,7 @@
  * Servico principal de vendas, funil, relatorios, importacoes e pos-venda.
  */
 const Venda = require('../models/Venda');
+const VendaFunilAutomacao = require('../models/VendaFunilAutomacao');
 const VendaHistorico = require('../models/VendaHistorico');
 const Usuario = require('../models/Usuario');
 const FunilEtapa = require('../models/FunilEtapa');
@@ -2544,7 +2545,8 @@ function montarColunasXlsxVendas() {
     { header: 'VENCIMENTO', key: 'dia_vencimento', width: 12 },
     { header: 'DATA VENDA', key: 'data_venda', width: 16, style: { numFmt: 'dd/mm/yyyy' } },
     { header: 'DATA ATIVACAO', key: 'data_ativacao', width: 16, style: { numFmt: 'dd/mm/yyyy' } },
-    { header: 'STATUS', key: 'status', width: 18 },
+    { header: 'STATUS INTERNO', key: 'status_interno', width: 18 },
+    { header: 'STATUS AUTOMAÇÃO', key: 'status_automacao', width: 18 },
     { header: 'OBSERVAÇÃO', key: 'observacao_movimentacao', width: 34 },
     { header: 'PRIORIDADE', key: 'prioridade', width: 14 },
     { header: 'PROTOCOLO', key: 'protocolo', width: 18 },
@@ -2560,7 +2562,13 @@ function montarColunasXlsxVendas() {
 }
 
 /** Monta uma linha da exportacao principal de vendas. */
-function montarLinhaXlsxVenda(venda, detalhes, vendaRestrita, etapaFinal, mapaEtapas) {
+function montarLinhaXlsxVenda(venda, detalhes, vendaRestrita, etapaFinal, mapaEtapas, estadoAutomacao = null) {
+  const statusAutomacao = {
+    status_funil: estadoAutomacao?.status_funil ?? null,
+    cancelada_em: estadoAutomacao?.cancelada_em ?? null,
+    enviada_pos_venda_em: venda.enviada_pos_venda_em || null
+  };
+
   return {
     id: venda.id,
     cliente: vendaRestrita ? '' : venda.nome || venda.cliente?.nome || '',
@@ -2582,9 +2590,12 @@ function montarLinhaXlsxVenda(venda, detalhes, vendaRestrita, etapaFinal, mapaEt
     data_venda: valorDataExcel(venda.data_venda),
     data_ativacao: vendaRestrita ? null : valorDataExcel(venda.data_ativacao),
     observacao_movimentacao: vendaRestrita ? '' : observacaoUltimaMovimentacaoExportacao(venda),
-    status: vendaRestrita
+    status_interno: vendaRestrita
       ? (venda.status_funil === etapaFinal ? 'Concluída' : 'Não concluída')
       : statusVendaExportacao(venda, mapaEtapas),
+    status_automacao: vendaRestrita
+      ? (statusAutomacao.status_funil === etapaFinal ? 'Concluída' : 'Não concluída')
+      : statusVendaExportacao(statusAutomacao, mapaEtapas),
     prioridade: vendaRestrita ? '' : venda.prioridade_funil || '',
     protocolo: vendaRestrita ? '' : venda.protocolo || '',
     uf: vendaRestrita ? '' : venda.uf || '',
@@ -2610,10 +2621,17 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
     incluirObservacaoMovimentacao: true
   });
   const usuario = await vendaVisibilidadeService.buscarUsuario(usuarioId);
-  const [etapaFinal, mapaEtapas] = await Promise.all([
+  const vendaIds = vendas.map(venda => Number(venda.id)).filter(Number.isInteger);
+  const [etapaFinal, mapaEtapas, estadosAutomacao] = await Promise.all([
     obterCodigoEtapaFinal(),
-    montarMapaEtapasExportacao()
+    montarMapaEtapasExportacao(),
+    vendaIds.length
+      ? VendaFunilAutomacao.query().whereIn('venda_id', vendaIds)
+      : Promise.resolve([])
   ]);
+  const estadosAutomacaoPorVenda = new Map(
+    estadosAutomacao.map(estado => [Number(estado.venda_id), estado])
+  );
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Vendas');
 
@@ -2632,7 +2650,8 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
         detalhes,
         vendaRestrita,
         etapaFinal,
-        mapaEtapas
+        mapaEtapas,
+        estadosAutomacaoPorVenda.get(Number(venda.id)) || null
       ));
 
       row.height = 15 * detalhes.quantidadeLinhas;
