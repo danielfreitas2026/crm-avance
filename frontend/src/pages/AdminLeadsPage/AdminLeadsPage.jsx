@@ -849,7 +849,7 @@ export function HistoricoDestinatariosModal({ planilha, historico, carregando, e
                       </div>
                       <div className="leads-history-sends">
                         <div className="leads-history-send leads-history-send--header" aria-hidden="true">
-                          <span>Lote de envio e data</span><span>Etapa</span><span>Entregues</span><span>Ainda possui</span><span>Situação</span>
+                          <span>Lote de envio e data</span><span className="leads-history-send__compact">Etapa</span><span className="leads-history-send__compact">Entregues</span><span className="leads-history-send__compact">Ainda possui</span><span className="leads-history-send__compact">Situação</span>
                         </div>
                         {pessoa.envios.map(envio => (
                           <div className="leads-history-send" key={`${envio.envio_id}-${envio.etapa}-${envio.enviado_em}`}>
@@ -857,10 +857,10 @@ export function HistoricoDestinatariosModal({ planilha, historico, carregando, e
                               <strong>{envio.envio_nome}</strong>
                               <small>{envio.enviado_em ? formatUtcDateTime(envio.enviado_em) : 'Data não disponível'}</small>
                             </div>
-                            <span className={`leads-history-badge stage-${envio.etapa}`}>{ROTULOS_ETAPA_HISTORICO[envio.etapa] || envio.etapa}</span>
-                            <span className="leads-history-send__metric" data-label="Entregues">{formatarNumero(envio.quantidade_recebida)}</span>
-                            <span className="leads-history-send__metric" data-label="Ainda possui">{formatarNumero(envio.quantidade_atual)}</span>
-                            <span className={`leads-history-badge status-${envio.situacao}`} title={DESCRICOES_SITUACAO_HISTORICO[envio.situacao]}>{ROTULOS_SITUACAO_HISTORICO[envio.situacao] || envio.situacao}</span>
+                            <span className={`leads-history-badge leads-history-send__compact stage-${envio.etapa}`}>{ROTULOS_ETAPA_HISTORICO[envio.etapa] || envio.etapa}</span>
+                            <span className="leads-history-send__metric leads-history-send__compact" data-label="Entregues">{formatarNumero(envio.quantidade_recebida)}</span>
+                            <span className="leads-history-send__metric leads-history-send__compact" data-label="Ainda possui">{formatarNumero(envio.quantidade_atual)}</span>
+                            <span className={`leads-history-badge leads-history-send__compact status-${envio.situacao}`} title={DESCRICOES_SITUACAO_HISTORICO[envio.situacao]}>{ROTULOS_SITUACAO_HISTORICO[envio.situacao] || envio.situacao}</span>
                           </div>
                         ))}
                       </div>

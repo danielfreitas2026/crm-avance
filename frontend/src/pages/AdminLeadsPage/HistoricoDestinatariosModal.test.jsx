@@ -43,6 +43,11 @@ describe('HistoricoDestinatariosModal', () => {
     expect(screen.getByText('Encerrado')).toBeVisible();
     expect(screen.getByText('Atual')).toBeVisible();
     expect(screen.getByText(/O histórico é completo desde 11\/07\/2026/)).toBeVisible();
+
+    const tituloEtapa = screen.getByText('Etapa');
+    const valorEtapa = screen.getByText('Sondagem');
+    expect(tituloEtapa).toHaveClass('leads-history-send__compact');
+    expect(valorEtapa).toHaveClass('leads-history-send__compact');
   });
 
   it('mostra os estados de carregamento, erro e histórico vazio', () => {

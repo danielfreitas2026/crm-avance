@@ -973,6 +973,11 @@
   font-size: 12px;
 }
 
+.leads-history-send__compact {
+  justify-self: center;
+  text-align: center;
+}
+
 .leads-history-send--header {
   padding-top: 7px;
   padding-bottom: 7px;
