@@ -417,6 +417,8 @@ function CorrecaoHistoricoModal({ item, onClose, onCorrigido, onErro }) {
 export default function AutomacoesPage() {
   const [status, setStatus] = useState('');
   const [classificacao, setClassificacao] = useState('');
+  const [tituloInput, setTituloInput] = useState('');
+  const [titulo, setTitulo] = useState('');
   const [pagina, setPagina] = useState(1);
   const [porPagina, setPorPagina] = useState(20);
   const [totalRegistros, setTotalRegistros] = useState(0);
@@ -438,7 +440,7 @@ export default function AutomacoesPage() {
     try {
       setErro('');
       const [lista, dadosResumo] = await Promise.all([
-        listarAutomacoes({ status, ...(classificacao ? { classificacao } : {}), page: pagina, perPage: porPagina }),
+        listarAutomacoes({ status, ...(classificacao ? { classificacao } : {}), ...(titulo ? { titulo } : {}), page: pagina, perPage: porPagina }),
         obterResumoAutomacoes()
       ]);
       if (!ativo.valor) return;
@@ -459,7 +461,18 @@ export default function AutomacoesPage() {
         setAtualizando(false);
       }
     }
-  }, [classificacao, pagina, porPagina, status]);
+  }, [classificacao, pagina, porPagina, status, titulo]);
+
+  useEffect(() => {
+    const agendamento = window.setTimeout(() => {
+      const novoTitulo = tituloInput.trim();
+      if (novoTitulo === titulo) return;
+      setCarregando(true);
+      setPagina(1);
+      setTitulo(novoTitulo);
+    }, 350);
+    return () => window.clearTimeout(agendamento);
+  }, [titulo, tituloInput]);
 
   async function coletarHistorico() {
     setColetandoHistorico(true);
@@ -547,13 +560,22 @@ export default function AutomacoesPage() {
         </section>
 
         <section className="automation-toolbar" aria-label="Filtros das automações">
-          <label>
-            Status ou classificação
-            <select value={classificacao || status} onChange={event => alterarFiltro(event.target.value)}>
-              {STATUS.map(item => <option key={item} value={item}>{item ? STATUS_LABEL[item] : 'Todas as execuções'}</option>)}
-              <option value="cancelamento">Vendas canceladas</option>
-            </select>
-          </label>
+          <div className="automation-toolbar__filters">
+            <label>
+              Status ou classificação
+              <select value={classificacao || status} onChange={event => alterarFiltro(event.target.value)}>
+                {STATUS.map(item => <option key={item} value={item}>{item ? STATUS_LABEL[item] : 'Todas as execuções'}</option>)}
+                <option value="cancelamento">Vendas canceladas</option>
+              </select>
+            </label>
+            <label>
+              Título do e-mail
+              <span className="automation-title-search">
+                <I.Search size={15} aria-hidden="true" />
+                <input type="search" maxLength={500} value={tituloInput} onChange={event => setTituloInput(event.target.value)} placeholder="Pesquisar pelo título" />
+              </span>
+            </label>
+          </div>
           <div className="automation-toolbar__actions">
             <button type="button" className="btn" disabled={barraOcupada || totalRevisoes === 0} onClick={repetirRevisoes}><I.Refresh size={14} /> {repetindoRevisoes ? 'Reprocessando...' : `Repetir revisões e regressões (${totalRevisoes})`}</button>
             <button type="button" className="btn" disabled={barraOcupada} onClick={auditarHistoricos}><I.AlertTriangle size={14} /> {auditandoHistorico ? 'Auditando...' : 'Auditar históricos'}</button>
@@ -574,7 +596,7 @@ export default function AutomacoesPage() {
 
         <section className="automation-list" aria-busy={carregando}>
           {carregando && <div className="automation-empty"><span className="automation-spinner" aria-hidden="true" /><strong>Carregando execuções</strong><span>Consultando o histórico da automação.</span></div>}
-          {!carregando && itens.length === 0 && <div className="automation-empty"><span className="automation-empty__icon"><I.History size={24} /></span><strong>Nenhuma execução encontrada</strong><span>{classificacao === 'cancelamento' ? 'Não há execuções com a classificação “Vendas canceladas”.' : status ? `Não há execuções com o status “${STATUS_LABEL[status]}”.` : 'Os novos e-mails processados aparecerão aqui.'}</span></div>}
+          {!carregando && itens.length === 0 && <div className="automation-empty"><span className="automation-empty__icon"><I.History size={24} /></span><strong>Nenhuma execução encontrada</strong><span>{titulo ? `Nenhum título de e-mail contém “${titulo}”.` : classificacao === 'cancelamento' ? 'Não há execuções com a classificação “Vendas canceladas”.' : status ? `Não há execuções com o status “${STATUS_LABEL[status]}”.` : 'Os novos e-mails processados aparecerão aqui.'}</span></div>}
           {!carregando && itens.map(item => (
             <details key={item.id} className={`automation-card status-${item.status}`}>
               <summary>

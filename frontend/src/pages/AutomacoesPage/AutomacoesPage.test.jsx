@@ -331,6 +331,36 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByRole('button', { name: 'Mostrar todas as 7 execuções' })).toBeInTheDocument();
   });
 
+  it('pesquisa pelo titulo com debounce, reinicia a pagina e combina com o status', async () => {
+    const user = userEvent.setup();
+    api.listarAutomacoes.mockResolvedValue({ data: [execucao], total: 41, page: 1, per_page: 20 });
+    render(<AutomacoesPage />);
+    await screen.findByText('1–20 de 41');
+    await user.click(screen.getByRole('button', { name: 'Próxima página' }));
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: '', page: 2, perPage: 20 }));
+
+    const pesquisa = screen.getByRole('searchbox', { name: 'Título do e-mail' });
+    await user.type(pesquisa, '  ipiranga  ');
+    expect(api.listarAutomacoes).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: '', titulo: 'ipiranga', page: 1, perPage: 20 }));
+
+    await user.click(screen.getByRole('button', { name: 'Filtrar por Revisão manual: 2' }));
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'revisao', titulo: 'ipiranga', page: 1, perPage: 20 }));
+
+    await user.clear(pesquisa);
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'revisao', page: 1, perPage: 20 }));
+  });
+
+  it('informa quando nenhum titulo corresponde a pesquisa', async () => {
+    const user = userEvent.setup();
+    render(<AutomacoesPage />);
+    await screen.findByText('Nenhuma execução encontrada');
+
+    await user.type(screen.getByRole('searchbox', { name: 'Título do e-mail' }), 'cliente inexistente');
+
+    expect(await screen.findByText('Nenhum título de e-mail contém “cliente inexistente”.')).toBeInTheDocument();
+  });
+
   it('volta para a última página válida quando o total diminui', async () => {
     const user = userEvent.setup();
     api.listarAutomacoes

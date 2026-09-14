@@ -34,6 +34,12 @@ describe('automacao.service', () => {
     expect(apiGet).toHaveBeenCalledWith('/automacoes?page=2&per_page=50&classificacao=cancelamento');
   });
 
+  it('envia o titulo normalizado e codificado na listagem de automacoes', async () => {
+    await listarAutomacoes({ status: 'concluido', titulo: '  Análise & aceite  ' });
+
+    expect(apiGet).toHaveBeenCalledWith('/automacoes?page=1&per_page=20&status=concluido&titulo=An%C3%A1lise+%26+aceite');
+  });
+
   it('usa os endpoints de auditoria e correção de histórico', async () => {
     await listarInconsistenciasHistoricoAutomacoes();
     await obterPreviaCorrecaoHistoricoAutomacao(70);

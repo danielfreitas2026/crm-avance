@@ -903,6 +903,7 @@ test('pagina automacoes por status e classificacao com ordenacao deterministica'
   class QueryAutomacao {
     orderBy(campo, direcao) { chamadas.push(['orderBy', campo, direcao]); return this; }
     where(campo, valor) { chamadas.push(['where', campo, valor]); return this; }
+    whereRaw(sql, parametros) { chamadas.push(['whereRaw', sql, parametros]); return this; }
     async page(offset, limite) {
       chamadas.push(['page', offset, limite]);
       return { total: 121, results: [{ id: 7, dados_extraidos: '{"destino":"Entrega"}' }] };
@@ -910,12 +911,13 @@ test('pagina automacoes por status e classificacao com ordenacao deterministica'
   }
   AutomacaoEmail.query = () => new QueryAutomacao();
   try {
-    const resultado = await automacao.listar({ status: 'concluido', classificacao: 'cancelamento', page: 2, per_page: 100 });
+    const resultado = await automacao.listar({ status: 'concluido', classificacao: 'cancelamento', titulo: '  Análise 100%_VIVO  ', page: 2, per_page: 100 });
     assert.deepEqual(chamadas, [
       ['orderBy', 'recebido_em', 'desc'],
       ['orderBy', 'id', 'desc'],
       ['where', 'status', 'concluido'],
       ['where', 'classificacao', 'cancelamento'],
+      ['whereRaw', "LOCATE(LOWER(?), LOWER(COALESCE(assunto, ''))) > 0", ['Análise 100%_VIVO']],
       ['page', 1, 100]
     ]);
     assert.equal(resultado.total, 121);

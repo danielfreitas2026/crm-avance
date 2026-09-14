@@ -1,10 +1,11 @@
 import { apiGet, apiPost } from './api';
 
 export const obterResumoAutomacoes = () => apiGet('/automacoes/resumo');
-export const listarAutomacoes = ({ status = '', classificacao = '', page = 1, perPage = 20 } = {}) => {
+export const listarAutomacoes = ({ status = '', classificacao = '', titulo = '', page = 1, perPage = 20 } = {}) => {
   const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
   if (status) params.set('status', status);
   if (classificacao) params.set('classificacao', classificacao);
+  if (titulo.trim()) params.set('titulo', titulo.trim());
   return apiGet(`/automacoes?${params.toString()}`);
 };
 export const coletarHistoricoAutomacoes = () => apiPost('/automacoes/coletar-historico', {});

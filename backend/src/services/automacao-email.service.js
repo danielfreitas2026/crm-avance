@@ -590,9 +590,11 @@ async function enriquecerEtapasCandidatas(itens) {
 
 async function listar(filtros = {}) {
   const pagina = Math.max(1, Number(filtros.page) || 1); const porPagina = Math.min(100, Math.max(10, Number(filtros.per_page) || 25));
+  const titulo = String(filtros.titulo || '').trim();
   const query = AutomacaoEmail.query().orderBy('recebido_em', 'desc').orderBy('id', 'desc');
   if (filtros.status) query.where('status', filtros.status);
   if (filtros.classificacao) query.where('classificacao', filtros.classificacao);
+  if (titulo) query.whereRaw("LOCATE(LOWER(?), LOWER(COALESCE(assunto, ''))) > 0", [titulo]);
   const resultado = await query.page(pagina - 1, porPagina);
   const data = await enriquecerEtapasCandidatas(resultado.results.map(item => ({ ...item, dados_extraidos: json(item.dados_extraidos) })));
   return { data, total: resultado.total, page: pagina, per_page: porPagina };
