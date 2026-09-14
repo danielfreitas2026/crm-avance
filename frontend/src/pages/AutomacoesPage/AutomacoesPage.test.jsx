@@ -410,6 +410,8 @@ describe('Painéis da automação Gmail VIVO', () => {
     render(<AutomacoesPage />);
 
     await screen.findByText('Workflow de venda VIVO');
+    const repetir = screen.getByRole('button', { name: 'Repetir sem alterações' });
+    expect(repetir).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'Vincular venda' }));
     expect(await screen.findByText('SONHO INFANTIL LTDA')).toBeInTheDocument();
     expect(screen.getByText('Entrega')).toBeInTheDocument();
@@ -417,6 +419,11 @@ describe('Painéis da automação Gmail VIVO', () => {
     await user.click(screen.getByRole('button', { name: 'Confirmar' }));
     expect(screen.queryByRole('dialog', { name: 'Vincular venda' })).not.toBeInTheDocument();
     expect(screen.getByText(/Venda #51/)).toBeInTheDocument();
+    expect(screen.getByText('Venda ambígua.')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Vínculo ainda não salvo; informe a justificativa e clique em Corrigir e reprocessar.');
+    expect(repetir).toBeDisabled();
+    await user.click(repetir);
+    expect(api.repetirAutomacao).not.toHaveBeenCalled();
     await user.type(screen.getByRole('textbox', { name: 'Justificativa' }), 'Venda conferida manualmente.');
     await user.click(screen.getByRole('button', { name: 'Corrigir e reprocessar' }));
 

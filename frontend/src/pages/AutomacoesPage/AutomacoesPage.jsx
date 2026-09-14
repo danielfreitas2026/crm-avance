@@ -298,7 +298,13 @@ function Revisao({ item, onAtualizar, onErro }) {
         <label>Venda ID<input value={vendaId} onChange={event => setVendaId(event.target.value)} inputMode="numeric" /></label>
       ) : (
         <div className="automation-review__link-sale">
-          {vendaSelecionada && <span><strong>Venda #{vendaSelecionada.id}</strong>{vendaSelecionada.razao_social || vendaSelecionada.nome} · {vendaSelecionada.status_funil_nome}</span>}
+          {vendaSelecionada && (
+            <span>
+              <strong>Venda #{vendaSelecionada.id}</strong>
+              {vendaSelecionada.razao_social || vendaSelecionada.nome} · {vendaSelecionada.status_funil_nome}
+              <small className="automation-review__pending-sale" role="status">Vínculo ainda não salvo; informe a justificativa e clique em Corrigir e reprocessar.</small>
+            </span>
+          )}
           <button type="button" className="btn" onClick={() => setVinculandoVenda(true)}>{vendaSelecionada ? 'Trocar venda' : 'Vincular venda'}</button>
         </div>
       )}
@@ -338,7 +344,7 @@ function Revisao({ item, onAtualizar, onErro }) {
       <label className="wide">Justificativa<textarea value={justificativa} onChange={event => setJustificativa(event.target.value)} placeholder="Informe o motivo da correção ou descarte" /></label>
       <div className="automation-actions">
         <button type="button" className="btn btn-primary" disabled={salvando || !vendaId || !justificativa.trim()} onClick={() => executar('revisar')}>{salvando ? 'Processando...' : 'Corrigir e reprocessar'}</button>
-        <button type="button" className="btn" disabled={salvando} onClick={() => executar('repetir')}>Repetir execução</button>
+        <button type="button" className="btn" disabled={salvando || Boolean(vendaSelecionada)} onClick={() => executar('repetir')}>Repetir sem alterações</button>
         <button type="button" className="btn btn-danger" disabled={salvando || !justificativa.trim()} onClick={() => executar('descartar')}>Descartar</button>
       </div>
     </div>
