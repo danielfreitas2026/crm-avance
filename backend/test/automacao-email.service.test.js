@@ -873,6 +873,138 @@ test('coleta historica ignora o cursor mais recente e respeita a data inicial', 
   assert.equal(automacao._internals.calcularDepois(inicio, ultima, false), 1788090900);
 });
 
+test('cursor trata datetime SQL como UTC mesmo no fuso de Sao Paulo', () => {
+  const timezoneAnterior = process.env.TZ;
+  process.env.TZ = 'America/Sao_Paulo';
+  try {
+    const inicio = new Date('2026-08-20T03:00:00.000Z');
+    assert.equal(
+      automacao._internals.calcularDepois(inicio, '2026-08-30 12:00:00', false),
+      automacao._internals.calcularDepois(inicio, '2026-08-30T12:00:00.000Z', false)
+    );
+  } finally {
+    if (timezoneAnterior === undefined) delete process.env.TZ;
+    else process.env.TZ = timezoneAnterior;
+  }
+});
+
+test('deduplicacao nao consulta novamente uma mensagem ja registrada', async () => {
+  const queryOriginal = AutomacaoEmail.query;
+  AutomacaoEmail.query = () => ({ findOne: async filtro => ({ id: 8, ...filtro }) });
+  try {
+    assert.equal(await automacao._internals.registrarMensagem({ id: 'gmail-repetido' }, 'token'), false);
+  } finally {
+    AutomacaoEmail.query = queryOriginal;
+  }
+});
+
+test('valida a conta vinculada sem expor os enderecos no erro', async () => {
+  const contaAnterior = process.env.GMAIL_VIVO_ACCOUNT;
+  process.env.GMAIL_VIVO_ACCOUNT = 'automacao@empresa.example';
+  try {
+    await assert.rejects(
+      automacao._internals.validarContaGmail('token', async (caminho, token) => {
+        assert.deepEqual([caminho, token], ['profile', 'token']);
+        return { data: { emailAddress: 'outra-conta@empresa.example' } };
+      }),
+      error => error.code === 'GMAIL_ACCOUNT_MISMATCH'
+        && !error.message.includes('automacao@')
+        && !error.message.includes('outra-conta@')
+    );
+  } finally {
+    if (contaAnterior === undefined) delete process.env.GMAIL_VIVO_ACCOUNT;
+    else process.env.GMAIL_VIVO_ACCOUNT = contaAnterior;
+  }
+});
+
+test('coleta todo o backlog paginado e conta somente mensagens novas', async () => {
+  const habilitadaAnterior = process.env.GMAIL_VIVO_AUTOMATION_ENABLED;
+  const inicioAnterior = process.env.GMAIL_VIVO_PROCESS_AFTER;
+  const contaAnterior = process.env.GMAIL_VIVO_ACCOUNT;
+  const queryOriginal = AutomacaoEmail.query;
+  process.env.GMAIL_VIVO_AUTOMATION_ENABLED = 'true';
+  process.env.GMAIL_VIVO_PROCESS_AFTER = '2026-08-20T03:00:00.000Z';
+  delete process.env.GMAIL_VIVO_ACCOUNT;
+  AutomacaoEmail.query = () => ({ max() { return this; }, first: async () => ({ valor: '2026-09-04 20:16:01' }) });
+  const consultas = [];
+  try {
+    const resultado = await automacao.coletarEmails({}, {
+      tokenAcesso: async () => 'token',
+      gmailGet: async (caminho, token, params) => {
+        consultas.push({ caminho, token, params });
+        return params.pageToken
+          ? { data: { messages: [{ id: 'nova-3' }] } }
+          : { data: { messages: [{ id: 'existente' }, { id: 'nova-2' }], nextPageToken: 'pagina-2' } };
+      },
+      registrarMensagem: async item => item.id !== 'existente'
+    });
+    assert.deepEqual(resultado, { habilitado: true, coletados: 2 });
+    assert.equal(consultas.length, 2);
+    assert.equal(consultas[0].params.q, `after:${Math.floor(Date.parse('2026-09-04T20:16:01Z') / 1000) - 300}`);
+    assert.equal(consultas[1].params.pageToken, 'pagina-2');
+  } finally {
+    AutomacaoEmail.query = queryOriginal;
+    if (habilitadaAnterior === undefined) delete process.env.GMAIL_VIVO_AUTOMATION_ENABLED;
+    else process.env.GMAIL_VIVO_AUTOMATION_ENABLED = habilitadaAnterior;
+    if (inicioAnterior === undefined) delete process.env.GMAIL_VIVO_PROCESS_AFTER;
+    else process.env.GMAIL_VIVO_PROCESS_AFTER = inicioAnterior;
+    if (contaAnterior === undefined) delete process.env.GMAIL_VIVO_ACCOUNT;
+    else process.env.GMAIL_VIVO_ACCOUNT = contaAnterior;
+  }
+});
+
+function criarBancoEstado(estadoInicial = { id: 1, estado: 'aguardando', falhas_consecutivas: 0 }) {
+  let estado = { ...estadoInicial };
+  function database(tabela) {
+    assert.equal(tabela, 'automacao_email_estado');
+    return {
+      where(filtro) { assert.deepEqual(filtro, { id: 1 }); return this; },
+      first: async () => ({ ...estado }),
+      async update(patch) { estado = { ...estado, ...patch }; return 1; },
+      insert(patch) {
+        return { onConflict: () => ({ merge: async () => { estado = { ...estado, ...patch }; } }) };
+      }
+    };
+  }
+  return { database, estado: () => estado };
+}
+
+test('ciclo persiste sucesso e recupera o contador depois de uma falha por fase', async () => {
+  const banco = criarBancoEstado({ id: 1, estado: 'erro', falhas_consecutivas: 2 });
+  await automacao.ciclo({
+    database: banco.database,
+    coletarEmails: async () => ({ habilitado: true, coletados: 7 }),
+    processarPendentes: async () => 3,
+    repetirTelegrams: async () => undefined
+  });
+  assert.equal(banco.estado().estado, 'ok');
+  assert.equal(banco.estado().falhas_consecutivas, 0);
+  assert.equal(banco.estado().emails_ultimo_ciclo, 7);
+  assert.ok(banco.estado().ultimo_sucesso_em);
+});
+
+test('ciclo registra a fase e relanca o erro original com mensagem sanitizada', async () => {
+  const banco = criarBancoEstado();
+  const falha = Object.assign(new Error('access_token=segredo recusado'), {
+    response: { status: 401, data: { error: 'invalid_grant', error_description: 'refresh_token=segredo expirado' } }
+  });
+  await assert.rejects(
+    automacao.ciclo({
+      database: banco.database,
+      coletarEmails: async () => ({ habilitado: true, coletados: 2 }),
+      processarPendentes: async () => { throw falha; },
+      repetirTelegrams: async () => undefined
+    }),
+    error => error === falha
+  );
+  assert.equal(banco.estado().estado, 'erro');
+  assert.equal(banco.estado().fase_erro, 'processamento');
+  assert.equal(banco.estado().falhas_consecutivas, 1);
+  assert.match(banco.estado().ultimo_erro, /Google 401/);
+  assert.match(banco.estado().ultimo_erro, /invalid_grant/);
+  assert.doesNotMatch(banco.estado().ultimo_erro, /segredo/);
+});
+
 test('usa especificamente o bot de aprovacoes para notificar problemas', () => {
   const tokenAprovacoesAnterior = process.env.TELEGRAM_APROVACOES_BOT_TOKEN;
   const tokenGeralAnterior = process.env.TELEGRAM_BOT_TOKEN;
@@ -950,17 +1082,36 @@ test('resume status e cancelamentos sem incluir a classificacao no total por sta
         async first() { return { total: '2' }; }
       };
     }
-    return {
+    if (consulta === 3) return {
       max(expressao) { assert.equal(expressao, 'recebido_em as recebido_em'); return this; },
       async first() { return { recebido_em: '2026-09-03 12:00:00' }; }
     };
+    return {
+      where(filtro) { assert.deepEqual(filtro, { id: 1 }); return this; },
+      async first() {
+        return {
+          estado: 'ok', ultimo_inicio_em: new Date().toISOString(), ultimo_sucesso_em: '2026-09-03 12:01:00',
+          falhas_consecutivas: 0, emails_ultimo_ciclo: 2
+        };
+      }
+    };
   };
 
-  const resultado = await automacao.resumo(banco);
+  const habilitadaAnterior = process.env.GMAIL_VIVO_AUTOMATION_ENABLED;
+  process.env.GMAIL_VIVO_AUTOMATION_ENABLED = 'true';
+  let resultado;
+  try {
+    resultado = await automacao.resumo(banco);
+  } finally {
+    if (habilitadaAnterior === undefined) delete process.env.GMAIL_VIVO_AUTOMATION_ENABLED;
+    else process.env.GMAIL_VIVO_AUTOMATION_ENABLED = habilitadaAnterior;
+  }
 
   assert.deepEqual(resultado.contadores, { concluido: 4, revisao: 1 });
   assert.deepEqual(resultado.contadores_classificacao, { cancelamento: 2 });
   assert.equal(Object.values(resultado.contadores).reduce((total, valor) => total + valor, 0), 5);
+  assert.equal(resultado.integracao.estado, 'ativo');
+  assert.equal(resultado.integracao.emails_ultimo_ciclo, 2);
 });
 
 test('enriquece candidatas antigas com o nome atual da etapa do funil', async () => {

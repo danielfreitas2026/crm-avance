@@ -26,7 +26,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 250px;
+  min-width: 280px;
+  max-width: 460px;
   padding: 14px 16px;
 }
 
@@ -70,6 +71,18 @@
 .automation-connection.has-problems .automation-summary__icon {
   background: #fef3c7;
   color: #b45309;
+}
+
+.automation-connection.is-error .automation-summary__icon {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.automation-connection__error {
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .automation-metric {

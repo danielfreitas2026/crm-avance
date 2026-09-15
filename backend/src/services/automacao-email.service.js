@@ -20,9 +20,12 @@ const auditLogService = require('./audit-log.service');
 const { validarCnpj } = require('./cnpj.service');
 const { chamarApiComToken } = require('./telegram.service');
 const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
+const { parseUtcDateTime } = require('../utils/datetime');
 const { interpretarEmail, textoCanonico } = require('./vivo-email-parser.service');
 
 const PERMISSAO_RESPONSAVEL = 'problemas_pos_venda_responsavel';
+const TABELA_ESTADO = 'automacao_email_estado';
+const ESTADO_ID = 1;
 
 function formatarSQL(data = new Date()) { return data.toISOString().slice(0, 19).replace('T', ' '); }
 function json(valor, fallback = {}) { if (!valor) return fallback; if (typeof valor === 'object') return valor; try { return JSON.parse(valor); } catch { return fallback; } }
@@ -83,6 +86,19 @@ async function gmailGet(caminho, token, params = {}) {
   return axios.get(`https://gmail.googleapis.com/gmail/v1/users/me/${caminho}`, { headers: { Authorization: `Bearer ${token}` }, params, timeout: 15000 });
 }
 
+async function validarContaGmail(token, buscar = gmailGet) {
+  const configurada = String(process.env.GMAIL_VIVO_ACCOUNT || '').trim().toLowerCase();
+  if (!configurada) return { verificada: false };
+  const resposta = await buscar('profile', token);
+  const encontrada = String(resposta.data?.emailAddress || '').trim().toLowerCase();
+  if (!encontrada || encontrada !== configurada) {
+    const erro = new Error('A credencial OAuth pertence a outra conta Gmail.');
+    erro.code = 'GMAIL_ACCOUNT_MISMATCH';
+    throw erro;
+  }
+  return { verificada: true };
+}
+
 async function carregarCorpoGmail(gmailMessageId) {
   const token = await tokenAcesso();
   const resposta = await gmailGet(`messages/${gmailMessageId}`, token, { format: 'raw' });
@@ -111,21 +127,26 @@ async function registrarMensagem(remota, token) {
 
 function calcularDepois(inicio, ultima, desdeInicio = false) {
   if (desdeInicio || !ultima) return Math.floor(inicio.getTime() / 1000);
-  return Math.max(Math.floor(new Date(ultima).getTime() / 1000) - 300, Math.floor(inicio.getTime() / 1000));
+  const ultimaUtc = parseUtcDateTime(ultima);
+  return Math.max(Math.floor((ultimaUtc || inicio).getTime() / 1000) - 300, Math.floor(inicio.getTime() / 1000));
 }
 
-async function coletarEmails({ desdeInicio = false } = {}) {
+async function coletarEmails({ desdeInicio = false } = {}, dependencias = {}) {
   if (!configurado()) return { habilitado: false, coletados: 0 };
   const inicio = new Date(process.env.GMAIL_VIVO_PROCESS_AFTER || '');
   if (Number.isNaN(inicio.getTime())) throw new Error('GMAIL_VIVO_PROCESS_AFTER inválido ou ausente.');
   const ultima = await AutomacaoEmail.query().max('recebido_em as valor').first();
   const depois = calcularDepois(inicio, ultima?.valor, desdeInicio);
-  const token = await tokenAcesso();
+  const obterToken = dependencias.tokenAcesso || tokenAcesso;
+  const buscarGmail = dependencias.gmailGet || gmailGet;
+  const registrar = dependencias.registrarMensagem || registrarMensagem;
+  const token = await obterToken();
+  await validarContaGmail(token, buscarGmail);
   let pageToken;
   let coletados = 0;
   do {
-    const resposta = await gmailGet('messages', token, { q: `after:${depois}`, maxResults: 100, pageToken });
-    for (const item of resposta.data.messages || []) if (await registrarMensagem(item, token)) coletados += 1;
+    const resposta = await buscarGmail('messages', token, { q: `after:${depois}`, maxResults: 100, pageToken });
+    for (const item of resposta.data.messages || []) if (await registrar(item, token)) coletados += 1;
     pageToken = resposta.data.nextPageToken;
   } while (pageToken);
   return { habilitado: true, coletados };
@@ -563,7 +584,78 @@ async function repetirTelegrams() {
   }
 }
 
-async function ciclo() { const coleta = await coletarEmails(); if (coleta.habilitado) { await processarPendentes(); await repetirTelegrams(); } return coleta; }
+function mensagemErroIntegracao(error) {
+  const resposta = error?.response;
+  const payload = resposta?.data;
+  const erroGoogle = payload?.error;
+  const codigo = typeof erroGoogle === 'string'
+    ? erroGoogle
+    : erroGoogle?.status || erroGoogle?.code || error?.code || null;
+  const detalhe = payload?.error_description || erroGoogle?.message || error?.message || 'Falha desconhecida.';
+  const prefixo = resposta?.status ? `Google ${resposta.status}` : null;
+  return [prefixo, codigo, detalhe]
+    .filter(Boolean)
+    .join(' · ')
+    .replace(/(bearer|access[_ -]?token|refresh[_ -]?token|client[_ -]?secret)\s*[:=]?\s*[^\s,;]+/gi, '$1 [removido]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 1000);
+}
+
+async function salvarEstadoIntegracao(patch, database = db) {
+  const dados = { ...patch, updated_at: new Date() };
+  const atualizados = await database(TABELA_ESTADO).where({ id: ESTADO_ID }).update(dados);
+  if (!atualizados) {
+    await database(TABELA_ESTADO).insert({ id: ESTADO_ID, ...dados }).onConflict('id').merge();
+  }
+}
+
+async function registrarInicioCiclo(database = db) {
+  await salvarEstadoIntegracao({ estado: 'processando', fase_erro: null, ultimo_inicio_em: formatarSQL() }, database);
+}
+
+async function registrarSucessoCiclo(coletados, database = db) {
+  const agora = formatarSQL();
+  await salvarEstadoIntegracao({
+    estado: 'ok', fase_erro: null, ultimo_fim_em: agora, ultimo_sucesso_em: agora,
+    ultimo_erro_em: null, ultimo_erro: null, falhas_consecutivas: 0,
+    emails_ultimo_ciclo: Number(coletados || 0)
+  }, database);
+}
+
+async function registrarFalhaCiclo(fase, error, database = db) {
+  const atual = await database(TABELA_ESTADO).where({ id: ESTADO_ID }).first();
+  await salvarEstadoIntegracao({
+    estado: 'erro', fase_erro: fase, ultimo_fim_em: formatarSQL(), ultimo_erro_em: formatarSQL(),
+    ultimo_erro: mensagemErroIntegracao(error),
+    falhas_consecutivas: Number(atual?.falhas_consecutivas || 0) + 1
+  }, database);
+}
+
+async function ciclo(dependencias = {}) {
+  const database = dependencias.database || db;
+  const coletar = dependencias.coletarEmails || coletarEmails;
+  const processar = dependencias.processarPendentes || processarPendentes;
+  const enviarTelegrams = dependencias.repetirTelegrams || repetirTelegrams;
+  await registrarInicioCiclo(database);
+  let fase = 'coleta';
+  try {
+    const coleta = await coletar();
+    if (!coleta.habilitado) {
+      await salvarEstadoIntegracao({ estado: 'desabilitado', fase_erro: null, ultimo_fim_em: formatarSQL(), ultimo_erro: null, falhas_consecutivas: 0 }, database);
+      return coleta;
+    }
+    fase = 'processamento';
+    await processar();
+    fase = 'telegram';
+    await enviarTelegrams();
+    await registrarSucessoCiclo(coleta.coletados, database);
+    return coleta;
+  } catch (error) {
+    try { await registrarFalhaCiclo(fase, error, database); } catch { }
+    throw error;
+  }
+}
 
 async function enriquecerEtapasCandidatas(itens) {
   const codigos = [...new Set(itens.flatMap(item => (
@@ -601,16 +693,37 @@ async function listar(filtros = {}) {
 }
 
 async function resumo(database = db) {
-  const [linhas, cancelamentos, ultima] = await Promise.all([
+  const [linhas, cancelamentos, ultima, estado] = await Promise.all([
     database('automacao_emails').select('status').count('* as total').groupBy('status'),
     database('automacao_emails').where('classificacao', 'cancelamento').count('* as total').first(),
-    database('automacao_emails').max('recebido_em as recebido_em').first()
+    database('automacao_emails').max('recebido_em as recebido_em').first(),
+    database(TABELA_ESTADO).where({ id: ESTADO_ID }).first()
   ]);
+  const habilitada = configurado();
+  const intervaloMs = Math.max(30000, Number(process.env.GMAIL_VIVO_POLL_INTERVAL_MS) || 60000);
+  const limiteSemRespostaMs = Math.max(intervaloMs * 3, 5 * 60 * 1000);
+  const ultimoInicio = parseUtcDateTime(estado?.ultimo_inicio_em);
+  let estadoPublico = 'ativo';
+  if (!habilitada) estadoPublico = 'desabilitado';
+  else if (!ultimoInicio || estado?.estado === 'desabilitado') estadoPublico = 'aguardando';
+  else if (estado?.estado === 'erro') estadoPublico = 'falha';
+  else if (Date.now() - ultimoInicio.getTime() > limiteSemRespostaMs) estadoPublico = 'sem_resposta';
   return {
-    habilitada: configurado(),
+    habilitada,
     ultima_mensagem_em: ultima?.recebido_em || null,
     contadores: Object.fromEntries(linhas.map(item => [item.status, Number(item.total)])),
-    contadores_classificacao: { cancelamento: Number(cancelamentos?.total || 0) }
+    contadores_classificacao: { cancelamento: Number(cancelamentos?.total || 0) },
+    integracao: {
+      estado: estadoPublico,
+      fase_erro: estado?.fase_erro || null,
+      ultimo_inicio_em: estado?.ultimo_inicio_em || null,
+      ultimo_fim_em: estado?.ultimo_fim_em || null,
+      ultimo_sucesso_em: estado?.ultimo_sucesso_em || null,
+      ultimo_erro_em: estado?.ultimo_erro_em || null,
+      ultimo_erro: estado?.ultimo_erro || null,
+      falhas_consecutivas: Number(estado?.falhas_consecutivas || 0),
+      emails_ultimo_ciclo: Number(estado?.emails_ultimo_ciclo || 0)
+    }
   };
 }
 
@@ -1001,4 +1114,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, prepararRepeticao, processarPendente, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas } };
+module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo } };
