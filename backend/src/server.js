@@ -10,6 +10,7 @@ const leadDistribuicaoService = require('./services/lead-distribuicao.service');
 const leadTelegramPublicacaoService = require('./services/lead-telegram-publicacao.service');
 const leadTelegramReconciliacaoService = require('./services/lead-telegram-reconciliacao.service');
 const telegramCancelamentoRetroativoService = require('./services/telegram-cancelamento-retroativo.service');
+const telegramAprovacoesService = require('./services/telegram-aprovacoes.service');
 const leadEnriquecimentoService = require('./services/lead-enriquecimento.service');
 const automacaoEmailService = require('./services/automacao-email.service');
 
@@ -69,6 +70,19 @@ function processarPrazosDistribuicao() {
     })
     .finally(() => {
       processandoPrazosDistribuicao = false;
+    });
+}
+
+let processandoAprovacoesTelegram = false;
+function processarAprovacoesTelegram() {
+  if (processandoAprovacoesTelegram) return;
+  processandoAprovacoesTelegram = true;
+  telegramAprovacoesService.processarPublicacoesPendentes()
+    .catch(error => {
+      console.error('Erro ao reconciliar aprovações pendentes no Telegram:', error);
+    })
+    .finally(() => {
+      processandoAprovacoesTelegram = false;
     });
 }
 
@@ -132,6 +146,8 @@ function iniciarAgendamentos() {
   setInterval(sincronizarNotificacoesPendentes, 30 * 1000);
   setTimeout(processarPrazosDistribuicao, 10000);
   setInterval(processarPrazosDistribuicao, 30 * 1000);
+  setTimeout(processarAprovacoesTelegram, 8000);
+  setInterval(processarAprovacoesTelegram, 30 * 1000);
   setTimeout(corrigirBotoesCancelamentoAntigos, 15000);
 
   const enriquecimentoIntervaloMs = Number(process.env.LEAD_ENRIQUECIMENTO_WORKER_MS || 15 * 1000);

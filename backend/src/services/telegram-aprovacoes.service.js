@@ -2,6 +2,10 @@ const VendaAprovacaoSolicitacao = require('../models/VendaAprovacaoSolicitacao')
 const vendaAprovacaoService = require('./venda-aprovacao.service');
 const { chamarApiComToken } = require('./telegram.service');
 
+const RETENTATIVA_INICIAL_MS = 30 * 1000;
+const RETENTATIVA_MAXIMA_MS = 30 * 60 * 1000;
+const LEASE_MS = 5 * 60 * 1000;
+
 function token() {
   return String(process.env.TELEGRAM_APROVACOES_BOT_TOKEN || '').trim();
 }
@@ -91,35 +95,125 @@ async function buscarSolicitacao(id) {
     .modifyGraph('decisor', builder => builder.select('id', 'nome', 'email'));
 }
 
-/** Publica uma solicitacao pendente no grupo do bot apenas uma vez. */
-async function notificarSolicitacaoPendente(solicitacaoId) {
-  if (!configurado()) return { enviado: false, motivo: 'telegram_aprovacoes_nao_configurado' };
+function calcularAtrasoRetentativa(tentativas) {
+  const expoente = Math.max(0, Number(tentativas || 1) - 1);
+  return Math.min(RETENTATIVA_INICIAL_MS * (2 ** expoente), RETENTATIVA_MAXIMA_MS);
+}
 
-  const solicitacao = await buscarSolicitacao(solicitacaoId);
-  if (!solicitacao || solicitacao.status !== 'pendente') return { enviado: false, motivo: 'solicitacao_nao_pendente' };
-  if (solicitacao.telegram_message_id) return { enviado: false, motivo: 'ja_notificada' };
+async function reivindicarPublicacao(solicitacaoId = null, agora = new Date()) {
+  return VendaAprovacaoSolicitacao.transaction(async trx => {
+    const query = VendaAprovacaoSolicitacao.query(trx)
+      .where('status', 'pendente')
+      .whereNull('telegram_message_id')
+      .where(builder => builder
+        .whereNull('telegram_proxima_tentativa_em')
+        .orWhere('telegram_proxima_tentativa_em', '<=', agora));
+    if (solicitacaoId) query.where('id', Number(solicitacaoId));
 
-  const resultado = await chamarApi('sendMessage', {
+    const item = await query
+      .orderBy('telegram_proxima_tentativa_em', 'asc')
+      .orderBy('id', 'asc')
+      .forUpdate()
+      .first();
+    if (!item) return null;
+
+    const tentativas = Number(item.telegram_tentativas || 0) + 1;
+    await VendaAprovacaoSolicitacao.query(trx).findById(item.id).patch({
+      telegram_tentativas: tentativas,
+      telegram_proxima_tentativa_em: new Date(agora.getTime() + LEASE_MS),
+      updated_at: agora
+    });
+    return { ...item, telegram_tentativas: tentativas };
+  });
+}
+
+async function registrarFalha(item, error, agora = new Date()) {
+  const atraso = calcularAtrasoRetentativa(item.telegram_tentativas);
+  return VendaAprovacaoSolicitacao.query().findById(item.id).patch({
+    telegram_proxima_tentativa_em: new Date(agora.getTime() + atraso),
+    telegram_ultimo_erro: String(error?.message || error || 'Falha desconhecida no Telegram').slice(0, 4000),
+    updated_at: agora
+  });
+}
+
+async function registrarSucesso(item, resultado, agora = new Date()) {
+  return VendaAprovacaoSolicitacao.query()
+    .findById(item.id)
+    .whereNull('telegram_message_id')
+    .patch({
+      telegram_chat_id: chatId(),
+      telegram_message_id: String(resultado.message_id),
+      telegram_notificado_em: agora,
+      telegram_proxima_tentativa_em: null,
+      telegram_ultimo_erro: null,
+      updated_at: agora
+    });
+}
+
+async function liberarPublicacao(item, agora = new Date()) {
+  return VendaAprovacaoSolicitacao.query().findById(item.id).patch({
+    telegram_proxima_tentativa_em: null,
+    telegram_ultimo_erro: null,
+    updated_at: agora
+  });
+}
+
+async function processarPublicacao(item, opcoes = {}) {
+  const carregar = opcoes.buscarSolicitacao || buscarSolicitacao;
+  const enviar = opcoes.enviar || (solicitacao => chamarApi('sendMessage', {
     chat_id: chatId(),
     text: montarMensagemSolicitacao(solicitacao),
     disable_web_page_preview: true,
     reply_markup: { inline_keyboard: botoesDecisao(solicitacao.id) }
-  });
+  }));
+  const salvarSucesso = opcoes.registrarSucesso || registrarSucesso;
+  const salvarFalha = opcoes.registrarFalha || registrarFalha;
+  const liberar = opcoes.liberarPublicacao || liberarPublicacao;
+  const agora = opcoes.agora || new Date();
 
-  if (resultado?.message_id) {
-    await VendaAprovacaoSolicitacao.query()
-      .findById(solicitacao.id)
-      .where('status', 'pendente')
-      .whereNull('telegram_message_id')
-      .patch({
-        telegram_chat_id: chatId(),
-        telegram_message_id: String(resultado.message_id),
-        telegram_notificado_em: new Date(),
-        updated_at: new Date()
-      });
+  try {
+    const solicitacao = await carregar(item.id);
+    if (!solicitacao || solicitacao.status !== 'pendente' || solicitacao.telegram_message_id) {
+      await liberar(item, agora);
+      return { enviado: false, ignorado: true, motivo: 'solicitacao_nao_pendente' };
+    }
+
+    const resultado = await enviar(solicitacao);
+    if (!resultado?.message_id) throw new Error('Telegram não confirmou a publicação.');
+    await salvarSucesso(item, resultado, agora);
+    return { enviado: true, message_id: resultado.message_id };
+  } catch (error) {
+    await salvarFalha(item, error, agora);
+    console.error(`Erro ao publicar aprovação #${item.id} no Telegram:`, error.message);
+    return { enviado: false, falhou: true, motivo: error.message };
   }
+}
 
-  return { enviado: Boolean(resultado?.message_id), message_id: resultado?.message_id || null };
+/** Publica uma solicitacao pendente com claim atomico e retentativa duravel. */
+async function notificarSolicitacaoPendente(solicitacaoId, opcoes = {}) {
+  if (!configurado()) return { enviado: false, motivo: 'telegram_aprovacoes_nao_configurado' };
+  const reivindicar = opcoes.reivindicar || reivindicarPublicacao;
+  const item = await reivindicar(solicitacaoId, opcoes.agora || new Date());
+  if (!item) return { enviado: false, motivo: 'solicitacao_indisponivel' };
+  return processarPublicacao(item, opcoes);
+}
+
+async function processarPublicacoesPendentes(opcoes = {}) {
+  const resultado = { processadas: 0, enviadas: 0, falhas: 0, ignoradas: 0 };
+  if (!configurado()) return { ...resultado, configurado: false };
+
+  const limite = Math.max(1, Number(opcoes.limite || 20));
+  const reivindicar = opcoes.reivindicar || reivindicarPublicacao;
+  for (let indice = 0; indice < limite; indice += 1) {
+    const item = await reivindicar(null, opcoes.agora || new Date());
+    if (!item) break;
+    const processamento = await processarPublicacao(item, opcoes);
+    resultado.processadas += 1;
+    if (processamento.enviado) resultado.enviadas += 1;
+    if (processamento.falhou) resultado.falhas += 1;
+    if (processamento.ignorado) resultado.ignoradas += 1;
+  }
+  return resultado;
 }
 
 function grupoAutorizado(id) {
@@ -230,6 +324,19 @@ module.exports = {
   receberWebhook,
   processarCallback,
   notificarSolicitacaoPendente,
+  processarPublicacoesPendentes,
   atualizarMensagemDecisao,
-  _internals: { botoesDecisao, identidadeTelegram, nomeExibicaoTelegram, grupoAutorizado, montarMensagemSolicitacao, montarMensagemDecisao, motivosTexto, nomesConsultores }
+  _internals: {
+    botoesDecisao,
+    identidadeTelegram,
+    nomeExibicaoTelegram,
+    grupoAutorizado,
+    montarMensagemSolicitacao,
+    montarMensagemDecisao,
+    motivosTexto,
+    nomesConsultores,
+    calcularAtrasoRetentativa,
+    reivindicarPublicacao,
+    processarPublicacao
+  }
 };
