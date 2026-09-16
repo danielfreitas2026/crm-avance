@@ -57,6 +57,7 @@ test('bootstrap remove credenciais externas herdadas pelo processo', () => {
     telegram: process.env.TELEGRAM_BOT_TOKEN,
     smtp: process.env.SMTP_PASS,
     dashboard: process.env.DASHBOARD_INTEGRATION_API_KEY,
+    gmail: process.env.GMAIL_VIVO_REFRESH_TOKEN,
     google: process.env.GOOGLE_MAPS_API_KEY,
     apify: process.env.APIFY_TOKEN
   }))`;
@@ -70,6 +71,7 @@ test('bootstrap remove credenciais externas herdadas pelo processo', () => {
       TELEGRAM_BOT_TOKEN: 'nao-pode-sobreviver',
       SMTP_PASS: 'nao-pode-sobreviver',
       DASHBOARD_INTEGRATION_API_KEY: 'nao-pode-sobreviver',
+      GMAIL_VIVO_REFRESH_TOKEN: 'nao-pode-sobreviver',
       GOOGLE_MAPS_API_KEY: 'nao-pode-sobreviver',
       APIFY_TOKEN: 'nao-pode-sobreviver'
     }

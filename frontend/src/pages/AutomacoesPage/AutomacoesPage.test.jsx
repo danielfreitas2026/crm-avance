@@ -237,6 +237,31 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByRole('button', { name: 'Mostrar todas as 7 execuções' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it.each([
+    ['ativo', null, 'Gmail ativo'],
+    ['sem_resposta', null, 'Worker sem resposta'],
+    ['aguardando', null, 'Aguardando primeiro ciclo'],
+    ['falha', 'coleta', 'Falha na coleta do Gmail'],
+    ['falha', 'processamento', 'Falha no processamento'],
+    ['falha', 'telegram', 'Falha na notificação no Telegram']
+  ])('exibe o estado %s da integração', async (estado, faseErro, rotulo) => {
+    api.obterResumoAutomacoes.mockResolvedValue({
+      ...resumo,
+      habilitada: true,
+      integracao: {
+        estado,
+        fase_erro: faseErro,
+        ultimo_sucesso_em: '2026-09-04 20:16:01',
+        ultimo_erro: estado === 'falha' ? 'Google 401 · invalid_grant' : null
+      }
+    });
+    render(<AutomacoesPage />);
+
+    expect(await screen.findByText(rotulo)).toBeInTheDocument();
+    expect(screen.getByText(/Último ciclo concluído:/)).toBeInTheDocument();
+    if (estado === 'falha') expect(screen.getByRole('alert')).toHaveTextContent('Google 401 · invalid_grant');
+  });
+
   it('usa status e cancelamentos como filtros mutuamente exclusivos', async () => {
     const user = userEvent.setup();
     render(<AutomacoesPage />);

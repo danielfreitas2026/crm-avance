@@ -42,6 +42,18 @@ const DATA_HORA_OPTIONS = {
   timeZone: 'America/Sao_Paulo'
 };
 const dataHora = valor => formatUtcDateTime(valor, DATA_HORA_OPTIONS, '—');
+const INTEGRACAO_LABEL = {
+  ativo: 'Gmail ativo',
+  falha: 'Falha na automação',
+  sem_resposta: 'Worker sem resposta',
+  desabilitado: 'Gmail desabilitado',
+  aguardando: 'Aguardando primeiro ciclo'
+};
+const FASE_LABEL = {
+  coleta: 'Falha na coleta do Gmail',
+  processamento: 'Falha no processamento',
+  telegram: 'Falha na notificação no Telegram'
+};
 
 function formatarCnpj(valor) {
   const digitos = String(valor || '').replace(/\D/g, '').slice(0, 14);
@@ -535,6 +547,13 @@ export default function AutomacoesPage() {
   const total = Object.values(contadores).reduce((soma, quantidade) => soma + Number(quantidade || 0), 0);
   const totalRevisoes = Number(contadores.revisao || 0) + Number(contadores.regressao_funil || 0);
   const barraOcupada = atualizando || coletandoHistorico || repetindoRevisoes || auditandoHistorico;
+  const integracao = resumo.integracao || { estado: resumo.habilitada ? 'ativo' : 'desabilitado' };
+  const estadoIntegracao = integracao.estado || (resumo.habilitada ? 'ativo' : 'desabilitado');
+  const integracaoComFalha = estadoIntegracao === 'falha' || estadoIntegracao === 'sem_resposta';
+  const classeIntegracao = estadoIntegracao === 'ativo' ? 'is-active' : integracaoComFalha ? 'is-error' : 'is-disabled';
+  const tituloIntegracao = estadoIntegracao === 'falha' && integracao.fase_erro
+    ? FASE_LABEL[integracao.fase_erro] || 'Falha na automação'
+    : INTEGRACAO_LABEL[estadoIntegracao] || 'Estado do Gmail indisponível';
   function alterarFiltro(novoFiltro) {
     const novaClassificacao = novoFiltro === 'cancelamento' ? 'cancelamento' : '';
     const novoStatus = novaClassificacao ? '' : novoFiltro;
@@ -548,9 +567,14 @@ export default function AutomacoesPage() {
     <LayoutPrivado>
       <main className="automation-page">
         <section className="automation-summary" aria-label="Resumo das automações">
-          <div className={`automation-connection ${resumo.habilitada ? 'is-active' : 'is-disabled'}`}>
-            <span className="automation-summary__icon"><I.Mail size={18} /></span>
-            <div><strong>{resumo.habilitada ? 'Gmail ativo' : 'Gmail desabilitado'}</strong><span>Última mensagem: {dataHora(resumo.ultima_mensagem_em)}</span></div>
+          <div className={`automation-connection ${classeIntegracao}`}>
+            <span className="automation-summary__icon">{integracaoComFalha ? <I.AlertTriangle size={18} /> : <I.Mail size={18} />}</span>
+            <div>
+              <strong>{tituloIntegracao}</strong>
+              <span>Última mensagem: {dataHora(resumo.ultima_mensagem_em)}</span>
+              {integracao.ultimo_sucesso_em && <span>Último ciclo concluído: {dataHora(integracao.ultimo_sucesso_em)}</span>}
+              {integracao.ultimo_erro && <small className="automation-connection__error" role="alert">{integracao.ultimo_erro}</small>}
+            </div>
           </div>
           <button type="button" className={`automation-metric ${status === '' && classificacao === '' ? 'is-selected' : ''}`} aria-label={`Mostrar todas as ${total} execuções`} aria-pressed={status === '' && classificacao === ''} onClick={() => alterarFiltro('')}><strong>{total}</strong><span>Todas</span></button>
           {STATUS.filter(Boolean).map(chave => (

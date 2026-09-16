@@ -7,6 +7,7 @@ const sensitiveEnvironmentPatterns = [
   /^APIFY_/,
   /^DASHBOARD_INTEGRATION_/,
   /^EMAIL(?:_|$)/,
+  /^GMAIL_VIVO_/,
   /^GOOGLE_MAPS_API_KEY(?:_|$)/,
   /^GOOGLE_PLACES_API_KEY(?:_|$)/,
   /^SMTP_/,
