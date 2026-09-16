@@ -30,6 +30,7 @@ import FechamentoMensalPage from '../pages/FechamentoMensalPage/FechamentoMensal
 import MensagensPage from '../pages/MensagensPage/MensagensPage';
 import AutomacoesPage from '../pages/AutomacoesPage/AutomacoesPage';
 import ProblemasPage from '../pages/ProblemasPage/ProblemasPage';
+import PublicInfoPage from '../pages/PublicInfoPage/PublicInfoPage';
 import '../pages/HistoricoPage/HistoricoPage.css';
 
 import { getUsuarioLocal, temPermissao } from '../services/auth.service';
@@ -70,6 +71,9 @@ function AppRoutes() {
       <Route path="/vendas/lixeira" element={<PrivateRoute permission={['vendas_ver_proprias', 'vendas_ver_todas']}><VendasLixeiraPage /></PrivateRoute>} />
 
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/integracao-gmail" element={<PublicInfoPage page="integracao" />} />
+      <Route path="/privacidade" element={<PublicInfoPage page="privacidade" />} />
+      <Route path="/termos" element={<PublicInfoPage page="termos" />} />
 
       <Route path="/perfil" element={<PrivateRoute><PerfilPage /></PrivateRoute>} />
 

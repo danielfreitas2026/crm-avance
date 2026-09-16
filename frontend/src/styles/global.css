@@ -1632,6 +1632,22 @@ button.urgent-alert-panel__header {
   margin-bottom: 18px;
 }
 .login-card .row a { color: var(--text-2); text-decoration: none; }
+.login-public-links {
+  margin-top: 20px;
+  padding-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 14px;
+  border-top: 1px solid var(--border);
+}
+.login-public-links a {
+  color: var(--text-2);
+  font-size: 11.5px;
+  text-underline-offset: 3px;
+}
+.login-public-links a:hover,
+.login-public-links a:focus-visible { color: var(--text); }
 
 /* === Settings === */
 .settings-section {

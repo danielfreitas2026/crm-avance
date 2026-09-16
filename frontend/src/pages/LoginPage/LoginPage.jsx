@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import * as I from '../../components/Icons';
 import { login } from '../../services/auth.service';
 import { SYSTEM_CLOSED_MESSAGE } from '../../services/api';
@@ -106,7 +106,12 @@ function LoginPage() {
           </button>
         </form>
 
-        <div style={{ marginTop: 18, fontSize: 11.5, color: 'var(--text-3)', textAlign: 'center' }}>
+        <div className="login-public-links" aria-label="Informações públicas">
+          <Link to="/integracao-gmail">Integração Gmail</Link>
+          <Link to="/privacidade">Privacidade</Link>
+          <Link to="/termos">Termos</Link>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--text-3)', textAlign: 'center' }}>
           v1.0 · Sistema interno · Acesso restrito
         </div>
       </div>
