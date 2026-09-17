@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const ExcelJS = require('exceljs');
 
 const vendaService = require('../src/services/venda.service');
 const Usuario = require('../src/models/Usuario');
@@ -7,6 +8,7 @@ const Usuario = require('../src/models/Usuario');
 const {
   adicionarMesesDataISO,
   aplicarDadosClienteNaVenda,
+  aplicarEstiloExportacao,
   filtrarVendasRelatorioPorVendedora,
   montarDadosSincronizacaoClienteVenda,
   montarColunasXlsxVendas,
@@ -772,6 +774,34 @@ test('posiciona classificacao do cliente depois do documento na planilha de vend
   assert.equal(colunas[indiceDocumento + 1].key, 'classificacao_cliente');
   assert.equal(colunas[indiceDocumento + 1].header, 'CLASSIFICAÇÃO DO CLIENTE');
   assert.equal(colunas[indiceDocumento + 2].key, 'vendedora');
+});
+
+test('posiciona quantidade de chips imediatamente antes de linhas na planilha de vendas', () => {
+  const colunas = montarColunasXlsxVendas();
+  const indiceLinhas = colunas.findIndex(coluna => coluna.key === 'quantidade_linhas');
+
+  assert.equal(colunas[indiceLinhas - 1].key, 'quantidade_chips_vendedora');
+  assert.equal(colunas[indiceLinhas - 1].header, 'QUANTIDADE DE CHIPS');
+  assert.equal(colunas[indiceLinhas].header, 'LINHAS');
+});
+
+test('centraliza cabecalhos e valores da planilha de vendas', () => {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Vendas');
+  worksheet.columns = [
+    { header: 'CLIENTE', key: 'cliente' },
+    { header: 'VALOR', key: 'valor' }
+  ];
+  worksheet.addRow({ cliente: 'Empresa Teste', valor: 100 });
+
+  aplicarEstiloExportacao(worksheet);
+
+  worksheet.eachRow(row => {
+    row.eachCell(cell => {
+      assert.equal(cell.alignment.horizontal, 'center');
+      assert.equal(cell.alignment.vertical, 'middle');
+    });
+  });
 });
 
 test('exporta classificacao do cliente na linha principal de vendas', () => {

@@ -2395,7 +2395,7 @@ function aplicarEstiloExportacao(worksheet) {
 
   worksheet.eachRow((row, rowNumber) => {
     row.eachCell(cell => {
-      cell.alignment = { vertical: 'middle', wrapText: rowNumber === 1 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: rowNumber === 1 };
       cell.border = {
         top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
         left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
@@ -2536,10 +2536,10 @@ function montarColunasXlsxVendas() {
     { header: 'CNPJ/CPF', key: 'cnpj', width: 20 },
     { header: 'CLASSIFICAÇÃO DO CLIENTE', key: 'classificacao_cliente', width: 26 },
     { header: 'VENDEDORA', key: 'vendedora', width: 28 },
-    { header: 'QUANTIDADE DE CHIPS', key: 'quantidade_chips_vendedora', width: 20, style: { numFmt: FORMATO_INTEIRO_BR } },
     { header: 'OPERADORA', key: 'operadora', width: 18 },
     { header: 'TIPO', key: 'tipo', width: 18 },
     { header: 'PRODUTO', key: 'produto', width: 20 },
+    { header: 'QUANTIDADE DE CHIPS', key: 'quantidade_chips_vendedora', width: 20, style: { numFmt: FORMATO_INTEIRO_BR } },
     { header: 'LINHAS', key: 'quantidade_linhas', width: 10, style: { numFmt: FORMATO_INTEIRO_BR } },
     { header: 'GB', key: 'gb', width: 12 },
     { header: 'VALORES UNITÁRIOS', key: 'valores_unitarios_chips', width: 28 },
@@ -2670,8 +2670,8 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
 
-    row.getCell('tipo').alignment = { vertical: 'middle', wrapText: true };
-    row.getCell('valores_unitarios_chips').alignment = { vertical: 'middle', wrapText: true };
+    row.getCell('tipo').alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    row.getCell('valores_unitarios_chips').alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
   });
   ['data_venda', 'data_ativacao', 'created_at', 'enviada_pos_venda_em', 'cancelada_em'].forEach(key => {
     worksheet.getColumn(key).numFmt = 'dd/mm/yyyy';
@@ -4898,6 +4898,7 @@ module.exports = {
   _internals: {
     aplicarDadosClienteNaVenda,
     adicionarMesesDataISO,
+    aplicarEstiloExportacao,
     calcularTotalChips,
     montarColunasXlsxVendas,
     montarDetalhesChipsExportacao,
