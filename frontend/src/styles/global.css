@@ -1564,6 +1564,14 @@ button.urgent-alert-panel__header {
 .detail-item .value { font-size: 13.5px; color: var(--text); }
 .detail-item .value.mono { font-family: var(--font-mono); font-size: 13px; }
 .detail-item .value.big { font-size: 18px; font-weight: 600; font-family: var(--font-mono); }
+.conclusao-resumo { display: flex; align-items: center; gap: 6px; min-height: 32px; }
+.conclusao-resumo .btn-icon { width: 28px; height: 28px; }
+.detail-item--conclusao-editando { grid-column: 1 / -1; }
+.conclusao-editor { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.conclusao-editor input { width: 220px; max-width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 13px; outline: none; }
+.conclusao-editor input:focus { border-color: var(--border-strong); }
+.conclusao-editor__actions { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+.conclusao-editor__feedback { color: var(--danger); font-size: 12px; line-height: 1.35; }
 
 /* === Login === */
 .login-page {

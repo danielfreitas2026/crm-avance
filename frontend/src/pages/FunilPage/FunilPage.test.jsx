@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -15,6 +15,7 @@ vi.mock('../../services/venda.service', async importOriginal => ({
 
 import { SaleCard, SaleModal } from './FunilPage';
 import { vendaCorrespondeAtalhos, vendaSemDocumento } from './funilFiltros';
+import { localDateTimeInputToUtc, toLocalDateTimeInputFromUtc } from '../../utils/datetime';
 
 function criarSale(sobrescritas = {}) {
   return {
@@ -50,9 +51,29 @@ function renderCard(sale, props = {}) {
 
 describe('FunilPage - documentacao e atalhos rapidos', () => {
   it('exibe quando a venda entrou pela ultima vez na etapa concluida', async () => {
+    const user = userEvent.setup();
     const sale = criarSale({
       stage: 'concluido',
-      historico: []
+      historico: [],
+      raw: {
+        possui_doc_na_casa: false,
+        total_arquivos: 0,
+        enviada_pos_venda_em: '2026-09-01 10:00:00'
+      }
+    });
+    const onUpdateConclusao = vi.fn().mockResolvedValue({
+      ...sale,
+      historico: [{
+        id: 4,
+        acaoRaw: 'venda.conclusao_editada',
+        statusAnterior: null,
+        statusNovo: null,
+        statusConclusao: 'concluido',
+        data: new Date('2026-09-17T12:00:00.000Z'),
+        dataConclusao: new Date('2026-09-10T15:45:00.000Z'),
+        conclusaoEm: new Date('2026-09-10T15:45:00.000Z'),
+        autor: 'Nathalia'
+      }]
     });
     api.buscarVendaPorId.mockResolvedValue({
       id: sale.id,
@@ -93,10 +114,12 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
         stageLabels={{ concluido: 'Concluído' }}
         onClose={vi.fn()}
         onUpdateSale={vi.fn()}
+        onUpdateConclusao={onUpdateConclusao}
         onUpdatePossuiDocNaCasa={vi.fn()}
         onCancelSale={vi.fn()}
         onReverterCancelamento={vi.fn()}
         finalizada
+        podeEditarConclusao
       />
     );
 
@@ -108,6 +131,76 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
     expect(screen.queryByText(/16\/09\/26/)).not.toBeInTheDocument();
     expect(screen.queryByText('Outro usuário')).not.toBeInTheDocument();
     expect(screen.queryByText('Automação inválida')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Editar data de conclusão' }));
+    const input = screen.getByLabelText('Data de conclusão');
+    const salvar = screen.getByRole('button', { name: 'Salvar' });
+    const cancelar = screen.getByRole('button', { name: 'Cancelar' });
+    const acoes = salvar.closest('.conclusao-editor__actions');
+
+    expect(input).toBeRequired();
+    expect(input).toHaveAttribute('min', toLocalDateTimeInputFromUtc(sale.raw.enviada_pos_venda_em));
+    expect(localDateTimeInputToUtc(input.max)).toBeTruthy();
+    expect(salvar.closest('.detail-item')).toHaveClass('detail-item--conclusao-editando');
+    expect(acoes).toContainElement(cancelar);
+    expect(salvar).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: '' } });
+    expect(screen.getByText('Informe uma data de conclusão.')).toBeInTheDocument();
+    expect(salvar).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: '2026-08-31T12:45' } });
+    expect(screen.getByText('A conclusão não pode ser anterior ao envio ao pós-venda.')).toBeInTheDocument();
+    expect(salvar).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: '2999-09-10T12:45' } });
+    expect(screen.getByText('A data de conclusão não pode ser futura.')).toBeInTheDocument();
+    expect(salvar).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: '2026-09-10T12:45' } });
+    expect(salvar).toBeEnabled();
+    await user.click(salvar);
+
+    expect(onUpdateConclusao).toHaveBeenCalledWith(sale.id, expect.stringMatching(/^2026-09-10T/));
+    expect(await screen.findByText('Nathalia')).toBeInTheDocument();
+    expect(screen.getByText(/10\/09\/26/)).toBeInTheDocument();
+  });
+
+  it('bloqueia a edicao quando a venda nao possui data de envio ao pos-venda', async () => {
+    const user = userEvent.setup();
+    const sale = criarSale({ stage: 'concluido', historico: [] });
+    api.buscarVendaPorId.mockResolvedValue({
+      id: sale.id,
+      status_funil: sale.stage,
+      historico: [{
+        id: 1,
+        acao: 'venda.status_atualizado',
+        status_anterior: 'entrega',
+        status_novo: 'concluido',
+        created_at: '2026-09-14 13:30:00'
+      }]
+    });
+
+    render(
+      <SaleModal
+        sale={sale}
+        stages={[{ id: 'concluido', name: 'Concluído', etapaFinal: true }]}
+        stageLabels={{ concluido: 'Concluído' }}
+        onClose={vi.fn()}
+        onUpdateSale={vi.fn()}
+        onUpdateConclusao={vi.fn()}
+        onUpdatePossuiDocNaCasa={vi.fn()}
+        onCancelSale={vi.fn()}
+        onReverterCancelamento={vi.fn()}
+        finalizada
+        podeEditarConclusao
+      />
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Editar data de conclusão' }));
+
+    expect(screen.queryByLabelText('Data de conclusão')).not.toBeInTheDocument();
+    expect(screen.getByText('A venda não possui data de envio ao pós-venda. Não é possível editar a conclusão.')).toBeInTheDocument();
   });
 
   it('destaca no modo automacoes a etapa real divergente', () => {

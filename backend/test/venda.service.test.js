@@ -46,8 +46,99 @@ const {
   resolverLeadOrigemCadastro,
   usuarioPossuiMailingDaLinha,
   validarVendedorasNosChips,
-  vendaDeveAparecerNoFunil
+  vendaDeveAparecerNoFunil,
+  obterConclusaoEfetivaHistorico,
+  prepararEdicaoConclusao
 } = vendaService._internals;
+
+test('edicao da conclusao preserva a data anterior e identifica o ultimo editor no historico', () => {
+  const historico = [
+    {
+      id: 1,
+      acao: 'venda.status_atualizado',
+      status_anterior: 'entrega',
+      status_novo: 'concluido',
+      created_at: '2026-09-10 12:00:00'
+    },
+    {
+      id: 2,
+      acao: 'venda.conclusao_editada',
+      status_anterior: 'concluido',
+      status_novo: 'concluido',
+      dados: JSON.stringify({ concluida_em: '2026-09-11 14:00:00' }),
+      created_at: '2026-09-12 09:00:00'
+    }
+  ];
+
+  const resultado = prepararEdicaoConclusao({
+    venda: {
+      id: 7,
+      status_funil: 'concluido',
+      enviada_pos_venda_em: '2026-09-01 10:00:00',
+      excluido_em: null,
+      cancelada_em: null
+    },
+    historico,
+    concluidaEm: '2026-09-09T15:30:00.000Z',
+    usuarioId: 22,
+    etapaFinal: 'concluido',
+    agora: new Date('2026-09-13T10:00:00.000Z')
+  });
+
+  assert.equal(obterConclusaoEfetivaHistorico(historico, 'concluido'), '2026-09-11 14:00:00');
+  assert.equal(resultado.status, 'ok');
+  assert.equal(resultado.historico.acao, 'venda.conclusao_editada');
+  assert.equal(resultado.historico.usuarioId, 22);
+  assert.equal(resultado.historico.statusNovo, null);
+  assert.equal(resultado.historico.dados.status_funil, 'concluido');
+  assert.equal(resultado.historico.dados.concluida_em_anterior, '2026-09-11 14:00:00');
+  assert.equal(resultado.historico.dados.concluida_em, '2026-09-09 15:30:00');
+  assert.equal(resultado.historico.createdAt, '2026-09-13 10:00:00');
+});
+
+test('edicao da conclusao rejeita estado ou intervalo impossivel e alteracao redundante', () => {
+  const base = {
+    venda: {
+      id: 7,
+      status_funil: 'entrega',
+      enviada_pos_venda_em: '2026-09-10 08:00:00',
+      excluido_em: null,
+      cancelada_em: null
+    },
+    historico: [{
+      id: 1,
+      acao: 'venda.status_atualizado',
+      status_anterior: 'entrega',
+      status_novo: 'concluido',
+      created_at: '2026-09-12 09:00:00'
+    }],
+    concluidaEm: '2026-09-13T09:00:00.000Z',
+    usuarioId: 22,
+    etapaFinal: 'concluido',
+    agora: new Date('2026-09-13T10:00:00.000Z')
+  };
+
+  assert.equal(prepararEdicaoConclusao(base).status, 'invalid');
+  assert.match(prepararEdicaoConclusao({
+    ...base,
+    venda: { ...base.venda, status_funil: 'concluido' },
+    concluidaEm: '2026-09-13T11:00:00.000Z'
+  }).message, /futura/i);
+  assert.match(prepararEdicaoConclusao({
+    ...base,
+    venda: { ...base.venda, status_funil: 'concluido' },
+    concluidaEm: '2026-09-09T11:00:00.000Z'
+  }).message, /anterior ao envio/i);
+  assert.match(prepararEdicaoConclusao({
+    ...base,
+    venda: { ...base.venda, status_funil: 'concluido', enviada_pos_venda_em: null }
+  }).message, /não possui data de envio/i);
+  assert.match(prepararEdicaoConclusao({
+    ...base,
+    venda: { ...base.venda, status_funil: 'concluido' },
+    concluidaEm: '2026-09-12T09:00:30.000Z'
+  }).message, /data diferente/i);
+});
 
 test('admin acessa todas as vendas sem limite mesmo com negacoes locais', () => {
   const escopo = montarEscopoVendasUsuario({
@@ -852,12 +943,12 @@ test('repete a observacao nas linhas da venda e a oculta para venda restrita', (
   assert.equal(montarLinhaXlsxVenda(venda, detalhes[0], true, 'concluido', new Map()).observacao_movimentacao, '');
 });
 
-test('monta uma linha de exportacao para cada vendedora com sua quantidade de chips', () => {
+test('separa categorias e valores por vendedora em linhas de exportacao distintas', () => {
   const detalhes = montarDetalhesChipsExportacao({
     valores_unitarios_chips: [
-      { quantidade: 2, tipo_linha: 'novo', valor_unitario: '29,90', vendedora_id: 10 },
-      { quantidade: 1, tipo_linha: 'portabilidade', valor_unitario: '39,90', vendedora_id: 10 },
-      { quantidade: 1, tipo_linha: 'portabilidade', valor_unitario: 49.9, vendedora_id: 11 }
+      { quantidade: 2, gb: '20', tipo_linha: 'novo', valor_unitario: '29,90', vendedora_id: 10 },
+      { quantidade: 1, gb: '40', tipo_linha: 'portabilidade', valor_unitario: '39,90', vendedora_id: 10 },
+      { quantidade: 1, gb: '40', tipo_linha: 'portabilidade', valor_unitario: 49.9, vendedora_id: 11 }
     ],
     vendedoras: [
       { id: 10, nome: 'Ana' },
@@ -866,18 +957,20 @@ test('monta uma linha de exportacao para cada vendedora com sua quantidade de ch
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Ana', quantidadeChips: 3, tiposLinha: 'Novo\nPortabilidade', valoresUnitarios: 'R$ 29,90\nR$ 39,90', valorTotal: 99.7, quantidadeLinhas: 2 },
-    { vendedora: 'Bia', quantidadeChips: 1, tiposLinha: 'Portabilidade', valoresUnitarios: 'R$ 49,90', valorTotal: 49.9, quantidadeLinhas: 1 }
+    { vendedora: 'Ana', quantidadeChips: 2, tiposLinha: 'Novo', gb: '20', valoresUnitarios: 'R$ 29,90', valorTotal: 59.8, quantidadeLinhas: 1 },
+    { vendedora: 'Ana', quantidadeChips: 1, tiposLinha: 'Portabilidade', gb: '40', valoresUnitarios: 'R$ 39,90', valorTotal: 39.9, quantidadeLinhas: 1 },
+    { vendedora: 'Bia', quantidadeChips: 1, tiposLinha: 'Portabilidade', gb: '40', valoresUnitarios: 'R$ 49,90', valorTotal: 49.9, quantidadeLinhas: 1 }
   ]);
 
   assert.deepEqual(
     detalhes.map(item => {
       const linha = montarLinhaXlsxVenda({ valor_total: 149.6 }, item, false, 'concluido', new Map());
-      return { tipo: linha.tipo, valorTotal: linha.valor_total };
+      return { tipo: linha.tipo, gb: linha.gb, valorTotal: linha.valor_total };
     }),
     [
-      { tipo: 'Novo\nPortabilidade', valorTotal: 99.7 },
-      { tipo: 'Portabilidade', valorTotal: 49.9 }
+      { tipo: 'Novo', gb: '20', valorTotal: 59.8 },
+      { tipo: 'Portabilidade', gb: '40', valorTotal: 39.9 },
+      { tipo: 'Portabilidade', gb: '40', valorTotal: 49.9 }
     ]
   );
 });
@@ -892,7 +985,7 @@ test('marca vendedora nao informada em venda compartilhada legada', () => {
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Não informado', quantidadeChips: 2, tiposLinha: 'Novo', valoresUnitarios: 'R$ 49,90', valorTotal: 99.8, quantidadeLinhas: 1 }
+    { vendedora: 'Não informado', quantidadeChips: 2, tiposLinha: 'Novo', gb: '', valoresUnitarios: 'R$ 49,90', valorTotal: 99.8, quantidadeLinhas: 1 }
   ]);
 });
 
@@ -915,24 +1008,47 @@ test('nao lista vendedoras por virgula quando venda compartilhada legada nao tem
   );
 });
 
-test('soma os grupos da vendedora principal em venda nao compartilhada', () => {
+test('consolida apenas itens com a mesma categoria, gb e valor unitario', () => {
   const detalhes = montarDetalhesChipsExportacao({
     valores_unitarios_chips: [
-      { quantidade: 1, valor_unitario: 29.9 },
-      { quantidade: 2, valor_unitario: 49.9 }
+      { quantidade: 1, gb: '25', tipo_linha: 'novo', valor_unitario: 29.9 },
+      { quantidade: 2, gb: '25', tipo_linha: 'novo', valor_unitario: 29.9 },
+      { quantidade: 1, gb: '50', tipo_linha: 'novo', valor_unitario: 29.9 },
+      { quantidade: 2, gb: '25', tipo_linha: 'novo', valor_unitario: 49.9 },
+      { quantidade: 1, gb: '25', tipo_linha: 'portabilidade', valor_unitario: 29.9 }
     ],
     vendedora: { id: 10, nome: 'Ana' },
     vendedoras: [{ id: 10, nome: 'Ana' }]
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Ana', quantidadeChips: 3, tiposLinha: 'Novo', valoresUnitarios: 'R$ 29,90\nR$ 49,90', valorTotal: 129.7, quantidadeLinhas: 2 }
+    { vendedora: 'Ana', quantidadeChips: 3, tiposLinha: 'Novo', gb: '25', valoresUnitarios: 'R$ 29,90', valorTotal: 89.7, quantidadeLinhas: 1 },
+    { vendedora: 'Ana', quantidadeChips: 1, tiposLinha: 'Novo', gb: '50', valoresUnitarios: 'R$ 29,90', valorTotal: 29.9, quantidadeLinhas: 1 },
+    { vendedora: 'Ana', quantidadeChips: 2, tiposLinha: 'Novo', gb: '25', valoresUnitarios: 'R$ 49,90', valorTotal: 99.8, quantidadeLinhas: 1 },
+    { vendedora: 'Ana', quantidadeChips: 1, tiposLinha: 'Portabilidade', gb: '25', valoresUnitarios: 'R$ 29,90', valorTotal: 29.9, quantidadeLinhas: 1 }
   ]);
 
-  assert.equal(
-    montarLinhaXlsxVenda({ valor_total: 999 }, detalhes[0], false, 'concluido', new Map()).valor_total,
-    129.7
-  );
+  const linhas = detalhes.map(item => montarLinhaXlsxVenda(
+    { valor_total: 999, quantidade_linhas: 7, gb: '25, 50' },
+    item,
+    false,
+    'concluido',
+    new Map()
+  ));
+
+  assert.deepEqual(linhas.map(linha => ({
+    quantidade: linha.quantidade_chips_vendedora,
+    linhas: linha.quantidade_linhas,
+    tipo: linha.tipo,
+    gb: linha.gb,
+    valorUnitario: linha.valores_unitarios_chips,
+    valorTotal: linha.valor_total
+  })), [
+    { quantidade: 3, linhas: 7, tipo: 'Novo', gb: '25', valorUnitario: 'R$ 29,90', valorTotal: 89.7 },
+    { quantidade: 1, linhas: 7, tipo: 'Novo', gb: '50', valorUnitario: 'R$ 29,90', valorTotal: 29.9 },
+    { quantidade: 2, linhas: 7, tipo: 'Novo', gb: '25', valorUnitario: 'R$ 49,90', valorTotal: 99.8 },
+    { quantidade: 1, linhas: 7, tipo: 'Portabilidade', gb: '25', valorUnitario: 'R$ 29,90', valorTotal: 29.9 }
+  ]);
 });
 
 test('usa o tipo geral da venda apenas como fallback para chips legados sem grupos', () => {

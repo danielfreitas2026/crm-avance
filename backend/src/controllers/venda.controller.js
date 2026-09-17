@@ -497,6 +497,29 @@ async function xlsxClaro(req, res) {
   }
 }
 
+/** Edita a data de conclusao de uma venda finalizada. */
+async function updateConclusao(req, res) {
+  try {
+    const resultado = await vendaService.editarConclusaoVenda(req.params.id, req.body, req.usuario.id);
+
+    if (resultado.status === 'not_found') {
+      return res.status(404).json({ message: 'Venda não encontrada.' });
+    }
+    if (resultado.status === 'forbidden') {
+      return res.status(403).json({ message: resultado.message });
+    }
+    if (resultado.status === 'invalid') {
+      return res.status(400).json({ message: resultado.message });
+    }
+
+    const vendaCompleta = await vendaService.buscarVendaPorId(req.params.id, req.usuario.id);
+    return res.json(vendaCompleta);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Erro ao atualizar a data de conclusão.' });
+  }
+}
+
 /**
  * Atualiza um marcador de aceite ou biometria da venda.
  */
@@ -602,6 +625,7 @@ module.exports = {
   registrarReversao,
   excluirReversao,
   updateStatus,
+  updateConclusao,
   updateAceiteBiometria,
   cancelar,
   reverterCancelamento,

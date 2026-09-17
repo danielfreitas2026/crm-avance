@@ -352,6 +352,14 @@ export async function atualizarStatusVenda(id, dados) {
   });
 }
 
+/** Atualiza a data efetiva de conclusao de uma venda finalizada. */
+export async function atualizarConclusaoVenda(id, concluidaEm) {
+  return apiRequest(`/vendas/${id}/conclusao`, {
+    method: 'PATCH',
+    body: JSON.stringify({ concluida_em: concluidaEm })
+  });
+}
+
 /** Atualiza somente etapa e prioridade do funil comparativo. */
 export async function atualizarStatusVendaFunilAutomacoes(id, dados) {
   return apiRequest(`/vendas/${id}/funil-automacoes/status`, {

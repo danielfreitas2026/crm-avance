@@ -763,6 +763,82 @@ async function registrarHistoricoVenda({
   });
 }
 
+/** Retorna a conclusao efetiva mais recente registrada no historico da etapa. */
+function obterConclusaoEfetivaHistorico(historico = [], etapaFinal) {
+  return historico
+    .filter(item => !item.deleted_at && !item.invalidated_at)
+    .sort((a, b) => (
+      new Date(a.created_at || 0) - new Date(b.created_at || 0)
+      || Number(a.id || 0) - Number(b.id || 0)
+    ))
+    .reduce((conclusao, item) => {
+      if (item.acao === 'venda.conclusao_editada') {
+        const dados = parseDadosHistorico(item.dados);
+        if (dados.status_funil && dados.status_funil !== etapaFinal) return conclusao;
+        const dataEditada = parseUtcDateTime(dados.concluida_em);
+        return dataEditada ? formatarDateTimeSQL(dataEditada) : conclusao;
+      }
+
+      if (item.status_novo === etapaFinal && item.status_anterior !== item.status_novo) {
+        const dataMovimentacao = parseUtcDateTime(item.created_at);
+        return dataMovimentacao ? formatarDateTimeSQL(dataMovimentacao) : conclusao;
+      }
+
+      return conclusao;
+    }, null);
+}
+
+/** Valida e monta a alteracao auditavel da data de conclusao. */
+function prepararEdicaoConclusao({ venda, historico, concluidaEm, usuarioId, etapaFinal, agora = new Date() }) {
+  if (!venda || venda.excluido_em) return { status: 'not_found' };
+  if (venda.cancelada_em) return { status: 'invalid', message: 'Venda cancelada não pode ter a conclusão editada.' };
+  if (venda.status_funil !== etapaFinal) {
+    return { status: 'invalid', message: 'A data de conclusão só pode ser editada enquanto a venda estiver concluída.' };
+  }
+
+  const dataNova = parseUtcDateTime(concluidaEm);
+  if (!dataNova) return { status: 'invalid', message: 'Informe uma data de conclusão válida.' };
+  const enviadaPosVendaEm = parseUtcDateTime(venda.enviada_pos_venda_em);
+  if (!enviadaPosVendaEm) {
+    return { status: 'invalid', message: 'A venda não possui data de envio ao pós-venda. Não é possível editar a conclusão.' };
+  }
+  if (dataNova.getTime() < enviadaPosVendaEm.getTime()) {
+    return { status: 'invalid', message: 'A conclusão não pode ser anterior ao envio ao pós-venda.' };
+  }
+  if (dataNova.getTime() > agora.getTime()) {
+    return { status: 'invalid', message: 'A data de conclusão não pode ser futura.' };
+  }
+
+  const dataAnterior = obterConclusaoEfetivaHistorico(historico, etapaFinal);
+  const instanteAnterior = parseUtcDateTime(dataAnterior);
+  if (instanteAnterior && Math.floor(instanteAnterior.getTime() / 60000) === Math.floor(dataNova.getTime() / 60000)) {
+    return { status: 'invalid', message: 'Escolha uma data diferente da conclusão atual.' };
+  }
+  const dataConclusao = formatarDateTimeSQL(dataNova);
+  const editadoEm = formatarDateTimeSQL(agora);
+
+  return {
+    status: 'ok',
+    patch: { ultima_atividade_em: editadoEm, updated_at: editadoEm },
+    historico: {
+      vendaId: venda.id,
+      usuarioId,
+      acao: 'venda.conclusao_editada',
+      statusAnterior: null,
+      statusNovo: null,
+      observacao: dataAnterior
+        ? `Data alterada de ${dataAnterior} para ${dataConclusao}.`
+        : `Data definida como ${dataConclusao}.`,
+      dados: {
+        status_funil: etapaFinal,
+        concluida_em_anterior: dataAnterior,
+        concluida_em: dataConclusao
+      },
+      createdAt: editadoEm
+    }
+  };
+}
+
 /**
  * Copia notas cliente para venda para o destino esperado.
  */
@@ -2426,7 +2502,7 @@ function rotuloTipoLinhaExportacao(tipoLinha) {
 }
 
 /**
- * Monta uma linha de detalhe por vendedora para a exportacao.
+ * Monta os grupos de chips detalhados para a exportacao.
  */
 function montarDetalhesChipsExportacao(venda = {}) {
   const itens = normalizarItensChips(venda.valores_unitarios_chips);
@@ -2460,23 +2536,38 @@ function montarDetalhesChipsExportacao(venda = {}) {
     const vendedora = vendaCompartilhada
       ? nomesPorId.get(vendedoraId) || 'Não informado'
       : vendedoraPrincipal || 'Não informado';
-    const chave = vendaCompartilhada && !nomesPorId.has(vendedoraId) ? 'nao-informado' : `vendedora:${vendedoraId || vendedora}`;
-    const grupo = grupos.get(chave) || { vendedora, quantidadeChips: 0, itens: [] };
+    const chaveVendedora = vendaCompartilhada && !nomesPorId.has(vendedoraId)
+      ? 'nao-informado'
+      : `vendedora:${vendedoraId || vendedora}`;
+    const chave = JSON.stringify([
+      chaveVendedora,
+      item.tipo_linha,
+      item.gb,
+      item.valor_unitario
+    ]);
+    const grupo = grupos.get(chave) || {
+      vendedora,
+      quantidadeChips: 0,
+      tipoLinha: item.tipo_linha,
+      gb: item.gb,
+      valorUnitario: item.valor_unitario
+    };
 
     grupo.quantidadeChips += Number(item.quantidade || 0);
-    grupo.itens.push(item);
     grupos.set(chave, grupo);
   });
 
   return Array.from(grupos.values()).map(grupo => ({
     vendedora: grupo.vendedora,
     quantidadeChips: grupo.quantidadeChips,
-    tiposLinha: Array.from(new Set(
-      grupo.itens.map(item => rotuloTipoLinhaExportacao(item.tipo_linha)).filter(Boolean)
-    )).join('\n'),
-    valoresUnitarios: grupo.itens.map(item => formatarMoedaExportacao(item.valor_unitario)).join('\n'),
-    valorTotal: calcularTotalChips(grupo.itens),
-    quantidadeLinhas: Math.max(1, grupo.itens.length)
+    tiposLinha: rotuloTipoLinhaExportacao(grupo.tipoLinha),
+    gb: grupo.gb,
+    valoresUnitarios: formatarMoedaExportacao(grupo.valorUnitario),
+    valorTotal: calcularTotalChips([{
+      quantidade: grupo.quantidadeChips,
+      valor_unitario: grupo.valorUnitario
+    }]),
+    quantidadeLinhas: 1
   }));
 }
 
@@ -2585,7 +2676,7 @@ function montarLinhaXlsxVenda(venda, detalhes, vendaRestrita, etapaFinal, mapaEt
     ),
     produto: vendaRestrita ? '' : venda.servico?.nome || venda.produto_fechado || '',
     quantidade_linhas: venda.quantidade_linhas ?? null,
-    gb: venda.gb || '',
+    gb: Object.prototype.hasOwnProperty.call(detalhes, 'gb') ? detalhes.gb : (venda.gb || ''),
     valor_total: detalhes.valorTotal === null || detalhes.valorTotal === undefined
       ? (venda.valor_total === null || venda.valor_total === undefined ? null : Number(venda.valor_total))
       : Number(detalhes.valorTotal),
@@ -2646,9 +2737,9 @@ async function gerarXlsxVendas(filtros = {}, usuarioId) {
 
   vendas.forEach(venda => {
     const vendaRestrita = vendaVisibilidadeService.deveResumirVenda(venda, usuario);
-    const detalhesVendedoras = montarDetalhesChipsExportacao(venda);
+    const detalhesChips = montarDetalhesChipsExportacao(venda);
 
-    detalhesVendedoras.forEach(detalhes => {
+    detalhesChips.forEach(detalhes => {
       const row = worksheet.addRow(montarLinhaXlsxVenda(
         venda,
         detalhes,
@@ -4085,6 +4176,38 @@ async function atualizarAceiteBiometriaVenda(id, dados, usuarioId) {
   return { status: 'ok', venda: vendaAtualizada };
 }
 
+/** Edita a data efetiva de conclusao e preserva a alteracao no historico. */
+async function editarConclusaoVenda(id, dados, usuarioId) {
+  const permitido = await usuarioPodeAcessarVenda(id, usuarioId);
+  if (!permitido) return { status: 'not_found' };
+
+  if (!await usuarioTemPermissao(usuarioId, 'pos_venda')) {
+    return { status: 'forbidden', message: 'Apenas usuários com permissão de pós-venda podem editar a conclusão.' };
+  }
+
+  const etapaFinal = await obterCodigoEtapaFinal();
+
+  return Venda.transaction(async trx => {
+    const venda = await Venda.query(trx).findById(id).forUpdate();
+    const historico = venda
+      ? await VendaHistorico.query(trx).where('venda_id', id).orderBy('created_at', 'asc').orderBy('id', 'asc')
+      : [];
+    const edicao = prepararEdicaoConclusao({
+      venda,
+      historico,
+      concluidaEm: dados?.concluida_em,
+      usuarioId,
+      etapaFinal
+    });
+
+    if (edicao.status !== 'ok') return edicao;
+
+    const vendaAtualizada = await Venda.query(trx).patchAndFetchById(id, edicao.patch);
+    await registrarHistoricoVenda({ ...edicao.historico, trx });
+    return { status: 'ok', venda: vendaAtualizada };
+  });
+}
+
 /**
  * Atualiza status venda com os dados informados.
  */
@@ -4885,6 +5008,7 @@ module.exports = {
   atualizarVenda,
   registrarReversaoVenda,
   excluirReversaoVenda,
+  editarConclusaoVenda,
   atualizarStatusVenda,
   atualizarAceiteBiometriaVenda,
   cancelarVenda,
@@ -4952,6 +5076,8 @@ module.exports = {
     vendaDeveAparecerNoFunil,
     validarAceiteBiometria,
     obterEtapasAtravessadas,
-    montarConclusaoRequisitosGmail
+    montarConclusaoRequisitosGmail,
+    obterConclusaoEfetivaHistorico,
+    prepararEdicaoConclusao
   }
 };

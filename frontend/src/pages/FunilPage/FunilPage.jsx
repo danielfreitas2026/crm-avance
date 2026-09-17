@@ -34,6 +34,7 @@ import { listarClientes } from '../../services/cliente.service';
 import { agruparOpcoesServicos, formatarNomeServico, servicoIdInclui } from '../../utils/servicos';
 import {
   atualizarAceiteBiometriaVenda,
+  atualizarConclusaoVenda,
   atualizarStatusVenda,
   atualizarStatusVendaFunilAutomacoes,
   cancelarVenda,
@@ -47,7 +48,7 @@ import {
   listarVendasFunilAutomacoes,
   listarVendedoras
 } from '../../services/venda.service';
-import { parseUtcDateTime } from '../../utils/datetime';
+import { localDateTimeInputToUtc, parseUtcDateTime, toLocalDateTimeInputFromUtc } from '../../utils/datetime';
 import { getAutorHistorico } from '../../utils/origemHistorico';
 import {
   VISIBILIDADE_OCULTAR,
@@ -227,6 +228,30 @@ function formatDate(d) {
  */
 function formatDateTime(d) {
   return `${formatDate(d)} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+/** Valida no cliente os mesmos limites aplicados pelo servidor à conclusão. */
+function validarConclusaoInput({ valor, dataMinima, dataAtual, agora }) {
+  if (!valor) return { concluidaEm: null, erro: 'Informe uma data de conclusão.' };
+
+  const concluidaEm = localDateTimeInputToUtc(valor);
+  if (!concluidaEm) return { concluidaEm: null, erro: 'Informe uma data de conclusão válida.' };
+  if (!dataMinima) {
+    return { concluidaEm: null, erro: 'A venda não possui data de envio ao pós-venda. Não é possível editar a conclusão.' };
+  }
+
+  const instante = parseUtcDateTime(concluidaEm);
+  if (instante.getTime() < dataMinima.getTime()) {
+    return { concluidaEm: null, erro: 'A conclusão não pode ser anterior ao envio ao pós-venda.' };
+  }
+  if (agora && instante.getTime() > agora.getTime()) {
+    return { concluidaEm: null, erro: 'A data de conclusão não pode ser futura.' };
+  }
+  if (dataAtual && valor === toLocalDateTimeInputFromUtc(dataAtual)) {
+    return { concluidaEm: null, erro: 'Escolha uma data diferente da conclusão atual.' };
+  }
+
+  return { concluidaEm, erro: '' };
 }
 
 /**
@@ -535,6 +560,7 @@ function getHistoryTitle(item, stageLabels = STAGE_LABELS) {
   if (item.acao === 'venda.cancelada') return 'Venda cancelada';
   if (item.acao === 'venda.cancelamento_revertido') return 'Cancelamento revertido';
   if (item.acao === 'venda.prioridade_atualizada') return 'Prioridade atualizada';
+  if (item.acao === 'venda.conclusao_editada') return 'Data de conclusão editada';
   if (item.acao === 'venda.status_atualizado') {
     return `Movido para ${stageLabels[item.status_novo] || item.status_novo}`;
   }
@@ -557,6 +583,18 @@ function getHistoryType(item) {
   return 'move';
 }
 
+/** Converte os dados estruturados de um evento de historico. */
+function parseDadosHistorico(dados) {
+  if (!dados) return {};
+  if (typeof dados === 'object') return dados;
+
+  try {
+    return JSON.parse(dados);
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Mapeia historico venda para o formato usado pela aplicacao.
  */
@@ -570,35 +608,52 @@ function mapHistoricoVenda(venda, stage, updated, created, sellerName, stageLabe
     ];
   }
 
-  return historico.map(item => ({
-    acao: getHistoryLabel(item, stageLabels),
-    titulo: getHistoryTitle(item, stageLabels),
-    acaoRaw: item.acao || null,
-    observacao: item.observacao || null,
-    autor: getHistoryAuthor(item),
-    data: parseDate(item.created_at),
-    tipo: getHistoryType(item),
-    statusAnterior: item.status_anterior || null,
-    statusNovo: item.status_novo || null,
-    excluidoEm: item.deleted_at || null,
-    invalidadoEm: item.invalidated_at || null,
-    motivoInvalidacao: item.invalidation_reason || null
-  }));
+  return historico.map(item => {
+    const dados = parseDadosHistorico(item.dados);
+
+    return {
+      id: item.id || null,
+      acao: getHistoryLabel(item, stageLabels),
+      titulo: getHistoryTitle(item, stageLabels),
+      acaoRaw: item.acao || null,
+      observacao: item.observacao || null,
+      autor: getHistoryAuthor(item),
+      data: parseDate(item.created_at),
+      tipo: getHistoryType(item),
+      statusAnterior: item.status_anterior || null,
+      statusNovo: item.status_novo || null,
+      statusConclusao: item.acao === 'venda.conclusao_editada' ? dados.status_funil || stage : null,
+      conclusaoEm: item.acao === 'venda.conclusao_editada' ? parseUtcDateTime(dados.concluida_em) : null,
+      excluidoEm: item.deleted_at || null,
+      invalidadoEm: item.invalidated_at || null,
+      motivoInvalidacao: item.invalidation_reason || null
+    };
+  });
 }
 
 /** Retorna a ultima entrada valida da venda na etapa informada. */
 function obterEntradaEtapa(historico, etapa) {
   return (Array.isArray(historico) ? historico : [])
     .filter(item => (
-      item.statusNovo === etapa
-      && item.statusAnterior !== item.statusNovo
-      && !item.excluidoEm
+      !item.excluidoEm
       && !item.invalidadoEm
       && item.data instanceof Date
       && !Number.isNaN(item.data.getTime())
+      && (
+        (item.acaoRaw === 'venda.conclusao_editada'
+          && item.statusConclusao === etapa
+          && item.conclusaoEm instanceof Date
+          && !Number.isNaN(item.conclusaoEm.getTime()))
+        || (item.statusNovo === etapa && item.statusAnterior !== item.statusNovo)
+      )
     ))
+    .map(item => ({ ...item, dataConclusao: item.conclusaoEm || item.data }))
     .reduce((maisRecente, item) => (
-      !maisRecente || item.data.getTime() > maisRecente.data.getTime() ? item : maisRecente
+      !maisRecente
+        || item.data.getTime() > maisRecente.data.getTime()
+        || (item.data.getTime() === maisRecente.data.getTime() && Number(item.id || 0) > Number(maisRecente.id || 0))
+        ? item
+        : maisRecente
     ), null);
 }
 
@@ -907,7 +962,7 @@ function mapVendaToSale(venda, stageLabels = STAGE_LABELS) {
 /**
  * Renderiza sale modal.
  */
-export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onUpdatePossuiDocNaCasa, onOpenFullSale, openingFullSale, podeCancelar, podeReverterCancelamento, onCancelSale, onReverterCancelamento, podeEditarVenda, podeVerDocumentos, podeAdicionarDocumentos, finalizada = false, modoAutomacoes = false, onEtapasAtualizadas = () => {}, onArquivosAlterados = () => {} }) {
+export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onUpdateConclusao, onUpdatePossuiDocNaCasa, onOpenFullSale, openingFullSale, podeCancelar, podeReverterCancelamento, onCancelSale, onReverterCancelamento, podeEditarVenda, podeEditarConclusao = false, podeVerDocumentos, podeAdicionarDocumentos, finalizada = false, modoAutomacoes = false, onEtapasAtualizadas = () => {}, onArquivosAlterados = () => {} }) {
   const [tab, setTab] = useState('info');
   const [novaFase, setNovaFase] = useState(sale.stage);
   const [novaPrioridade, setNovaPrioridade] = useState(sale.priority || 'media');
@@ -919,6 +974,9 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
   const [revertModalOpen, setRevertModalOpen] = useState(false);
   const [historicoEventos, setHistoricoEventos] = useState(sale.historico);
   const [historicoCarregando, setHistoricoCarregando] = useState(!modoAutomacoes);
+  const [editandoConclusao, setEditandoConclusao] = useState(false);
+  const [conclusaoInput, setConclusaoInput] = useState('');
+  const [conclusaoAgora, setConclusaoAgora] = useState(null);
   const [possuiDocNaCasa, setPossuiDocNaCasa] = useState(
     sale.raw?.possui_doc_na_casa === true || Number(sale.raw?.possui_doc_na_casa) === 1
   );
@@ -927,6 +985,15 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
   const priorityInfo = getPriorityInfo(sale.priority);
   const podeAcessarDocumentos = Boolean(podeVerDocumentos || podeAdicionarDocumentos);
   const entradaEtapaFinal = finalizada ? obterEntradaEtapa(historicoEventos, sale.stage) : null;
+  const dataMinimaConclusao = parseUtcDateTime(sale.raw?.enviada_pos_venda_em);
+  const conclusaoMinInput = toLocalDateTimeInputFromUtc(dataMinimaConclusao);
+  const conclusaoMaxInput = toLocalDateTimeInputFromUtc(conclusaoAgora);
+  const validacaoConclusao = validarConclusaoInput({
+    valor: conclusaoInput,
+    dataMinima: dataMinimaConclusao,
+    dataAtual: entradaEtapaFinal?.dataConclusao,
+    agora: conclusaoAgora
+  });
 
   useEffect(() => {
     if (modoAutomacoes) return undefined;
@@ -998,6 +1065,39 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
     if (novaFase !== sale.stage || observacao.trim()) return;
 
     submitStatus(sale.stage, '', '', { prioridade });
+  }
+
+  /** Abre a edicao com a data efetiva atual no fuso local do navegador. */
+  function iniciarEdicaoConclusao() {
+    if (!dataMinimaConclusao) {
+      setError('A venda não possui data de envio ao pós-venda. Não é possível editar a conclusão.');
+      return;
+    }
+
+    setConclusaoInput(toLocalDateTimeInputFromUtc(entradaEtapaFinal?.dataConclusao));
+    setConclusaoAgora(new Date());
+    setEditandoConclusao(true);
+    setError('');
+  }
+
+  /** Persiste a nova data e atualiza autor e historico exibidos no modal. */
+  async function salvarConclusao() {
+    if (validacaoConclusao.erro) {
+      setError(validacaoConclusao.erro);
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      const saleAtualizada = await onUpdateConclusao(sale.id, validacaoConclusao.concluidaEm);
+      setHistoricoEventos(saleAtualizada.historico);
+      setEditandoConclusao(false);
+    } catch (err) {
+      setError(err.message || 'Erro ao atualizar a data de conclusão.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   /**
@@ -1192,11 +1292,48 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
                 <div className="value">{timeAgo(sale.updated)}</div>
               </div>
               {finalizada && (
-                <div className="detail-item">
+                <div className={`detail-item${editandoConclusao ? ' detail-item--conclusao-editando' : ''}`}>
                   <div className="label">CONCLUÍDA EM</div>
-                  <div className="value">
-                    {entradaEtapaFinal ? formatDateTime(entradaEtapaFinal.data) : historicoCarregando ? 'Carregando…' : 'Data não registrada'}
-                  </div>
+                  {editandoConclusao ? (
+                    <div className="conclusao-editor">
+                      <input
+                        type="datetime-local"
+                        aria-label="Data de conclusão"
+                        aria-describedby="conclusao-validacao"
+                        value={conclusaoInput}
+                        min={conclusaoMinInput}
+                        max={conclusaoMaxInput}
+                        required
+                        onChange={event => {
+                          setConclusaoInput(event.target.value);
+                          setError('');
+                        }}
+                        disabled={saving}
+                      />
+                      <div className="conclusao-editor__actions">
+                        <button type="button" className="btn btn-primary btn-sm" onClick={salvarConclusao} disabled={saving || Boolean(validacaoConclusao.erro)}>
+                          Salvar
+                        </button>
+                        <button type="button" className="btn btn-sm" onClick={() => { setEditandoConclusao(false); setError(''); }} disabled={saving}>
+                          Cancelar
+                        </button>
+                      </div>
+                      {validacaoConclusao.erro && (
+                        <div id="conclusao-validacao" className="conclusao-editor__feedback" role="status">
+                          {validacaoConclusao.erro}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="value conclusao-resumo">
+                      <span>{entradaEtapaFinal ? formatDateTime(entradaEtapaFinal.dataConclusao) : historicoCarregando ? 'Carregando…' : 'Data não registrada'}</span>
+                      {podeEditarConclusao && !historicoCarregando && (
+                        <button type="button" className="btn btn-icon btn-ghost" onClick={iniciarEdicaoConclusao} title="Editar data de conclusão" aria-label="Editar data de conclusão">
+                          <I.Edit size={13} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               {finalizada && (
@@ -1215,6 +1352,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
                   </span>
                 </div>
               </div>
+              {error && <div className="alert-error" style={{ gridColumn: '1 / -1' }}>{error}</div>}
             </div>
           )}
 
@@ -2816,6 +2954,14 @@ function FunilPage({ modoAutomacoes = false }) {
     }));
   }
 
+  /** Atualiza a data auditavel de conclusao e devolve o resumo remapeado ao modal. */
+  async function handleUpdateConclusao(saleId, concluidaEm) {
+    const vendaAtualizada = await atualizarConclusaoVenda(saleId, concluidaEm);
+    const saleAtualizada = mapVendaToSale(vendaAtualizada, stageLabels);
+    setSales(prev => prev.map(sale => (sale.id === saleId ? saleAtualizada : sale)));
+    return saleAtualizada;
+  }
+
   /**
    * Trata o evento de cancelar venda.
    */
@@ -2955,6 +3101,7 @@ function FunilPage({ modoAutomacoes = false }) {
           stageLabels={stageLabels}
           onClose={() => setSelectedSaleId(null)}
           onUpdateSale={handleUpdateSale}
+          onUpdateConclusao={handleUpdateConclusao}
           onUpdatePossuiDocNaCasa={handleUpdatePossuiDocNaCasa}
           onOpenFullSale={!modoAutomacoes && podeAbrirVendaCompleta ? () => abrirVendaCompleta(selectedSale) : null}
           openingFullSale={abrindoVendaCompletaId === selectedSale.id}
@@ -2963,6 +3110,7 @@ function FunilPage({ modoAutomacoes = false }) {
           onCancelSale={handleCancelarVenda}
           onReverterCancelamento={handleReverterCancelamentoVenda}
           podeEditarVenda={podeEditarVenda}
+          podeEditarConclusao={!modoAutomacoes && podeOperarPosVenda}
           podeVerDocumentos={!modoAutomacoes && podeVerDocumentosVenda}
           podeAdicionarDocumentos={!modoAutomacoes && podeAdicionarDocumentosVenda}
           finalizada={etapasFinaisIds.has(selectedSale.stage)}

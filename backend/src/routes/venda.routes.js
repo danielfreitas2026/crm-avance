@@ -215,6 +215,17 @@ router.delete(
   vendaController.excluirReversao
 );
 router.patch(
+  '/:id/conclusao',
+  exigirUmaPermissao(['pos_venda']),
+  auditar({
+    acao: 'venda.conclusao_editada',
+    entidade: 'vendas',
+    entidade_id: req => req.params.id,
+    dados: req => ({ concluida_em: req.body?.concluida_em || null })
+  }),
+  vendaController.updateConclusao
+);
+router.patch(
   '/:id/status',
   exigirUmaPermissao(['vendas_editar', 'pos_venda']),
   auditar({

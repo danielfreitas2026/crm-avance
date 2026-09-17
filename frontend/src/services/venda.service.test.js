@@ -12,6 +12,7 @@ vi.mock('./api', () => ({
 import { apiDelete, apiGet, apiPost, apiPut, apiRequest } from './api';
 import {
   atualizarAceiteBiometriaVenda,
+  atualizarConclusaoVenda,
   atualizarStatusVenda,
   atualizarStatusVendaFunilAutomacoes,
   atualizarVenda,
@@ -79,6 +80,15 @@ describe('venda.service', () => {
       venda: { nome: 'Corrigido' },
       observacao: 'Correção solicitada',
       versao: '2026-08-13T12:00:00.000Z'
+    });
+  });
+
+  it('atualiza a conclusao em endpoint auditavel separado', async () => {
+    await atualizarConclusaoVenda(7, '2026-09-14T13:30:00.000Z');
+
+    expect(apiRequest).toHaveBeenCalledWith('/vendas/7/conclusao', {
+      method: 'PATCH',
+      body: JSON.stringify({ concluida_em: '2026-09-14T13:30:00.000Z' })
     });
   });
 
