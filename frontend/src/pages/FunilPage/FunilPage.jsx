@@ -580,9 +580,26 @@ function mapHistoricoVenda(venda, stage, updated, created, sellerName, stageLabe
     tipo: getHistoryType(item),
     statusAnterior: item.status_anterior || null,
     statusNovo: item.status_novo || null,
+    excluidoEm: item.deleted_at || null,
     invalidadoEm: item.invalidated_at || null,
     motivoInvalidacao: item.invalidation_reason || null
   }));
+}
+
+/** Retorna a ultima entrada valida da venda na etapa informada. */
+function obterDataEntradaEtapa(historico, etapa) {
+  return (Array.isArray(historico) ? historico : [])
+    .filter(item => (
+      item.statusNovo === etapa
+      && item.statusAnterior !== item.statusNovo
+      && !item.excluidoEm
+      && !item.invalidadoEm
+      && item.data instanceof Date
+      && !Number.isNaN(item.data.getTime())
+    ))
+    .reduce((maisRecente, item) => (
+      !maisRecente || item.data.getTime() > maisRecente.getTime() ? item.data : maisRecente
+    ), null);
 }
 
 /**
@@ -890,7 +907,7 @@ function mapVendaToSale(venda, stageLabels = STAGE_LABELS) {
 /**
  * Renderiza sale modal.
  */
-export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onUpdatePossuiDocNaCasa, onOpenFullSale, openingFullSale, podeCancelar, podeReverterCancelamento, onCancelSale, onReverterCancelamento, podeEditarVenda, podeVerDocumentos, podeAdicionarDocumentos, modoAutomacoes = false, onEtapasAtualizadas = () => {}, onArquivosAlterados = () => {} }) {
+export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onUpdatePossuiDocNaCasa, onOpenFullSale, openingFullSale, podeCancelar, podeReverterCancelamento, onCancelSale, onReverterCancelamento, podeEditarVenda, podeVerDocumentos, podeAdicionarDocumentos, finalizada = false, modoAutomacoes = false, onEtapasAtualizadas = () => {}, onArquivosAlterados = () => {} }) {
   const [tab, setTab] = useState('info');
   const [novaFase, setNovaFase] = useState(sale.stage);
   const [novaPrioridade, setNovaPrioridade] = useState(sale.priority || 'media');
@@ -909,6 +926,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
   const cancelada = Boolean(sale.canceladaEm);
   const priorityInfo = getPriorityInfo(sale.priority);
   const podeAcessarDocumentos = Boolean(podeVerDocumentos || podeAdicionarDocumentos);
+  const concluidaEm = finalizada ? obterDataEntradaEtapa(historicoEventos, sale.stage) : null;
 
   useEffect(() => {
     if (modoAutomacoes) return undefined;
@@ -1173,6 +1191,14 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
                 <div className="label">ATUALIZADA</div>
                 <div className="value">{timeAgo(sale.updated)}</div>
               </div>
+              {finalizada && (
+                <div className="detail-item">
+                  <div className="label">CONCLUÍDA EM</div>
+                  <div className="value">
+                    {concluidaEm ? formatDateTime(concluidaEm) : historicoCarregando ? 'Carregando…' : 'Data não registrada'}
+                  </div>
+                </div>
+              )}
               <div className="detail-item">
                 <div className="label">PRIORIDADE</div>
                 <div className="value">
@@ -2931,6 +2957,7 @@ function FunilPage({ modoAutomacoes = false }) {
           podeEditarVenda={podeEditarVenda}
           podeVerDocumentos={!modoAutomacoes && podeVerDocumentosVenda}
           podeAdicionarDocumentos={!modoAutomacoes && podeAdicionarDocumentosVenda}
+          finalizada={etapasFinaisIds.has(selectedSale.stage)}
           modoAutomacoes={modoAutomacoes}
           onEtapasAtualizadas={handleEtapasAtualizadas}
           onArquivosAlterados={carregarVendas}

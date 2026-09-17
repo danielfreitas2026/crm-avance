@@ -49,6 +49,60 @@ function renderCard(sale, props = {}) {
 }
 
 describe('FunilPage - documentacao e atalhos rapidos', () => {
+  it('exibe quando a venda entrou pela ultima vez na etapa concluida', async () => {
+    const sale = criarSale({
+      stage: 'concluido',
+      historico: []
+    });
+    api.buscarVendaPorId.mockResolvedValue({
+      id: sale.id,
+      status_funil: sale.stage,
+      historico: [
+        {
+          id: 1,
+          acao: 'venda.status_atualizado',
+          status_anterior: 'entrega',
+          status_novo: 'concluido',
+          created_at: '2026-09-14 13:30:00'
+        },
+        {
+          id: 2,
+          acao: 'venda.prioridade_atualizada',
+          status_anterior: 'concluido',
+          status_novo: 'concluido',
+          created_at: '2026-09-15 13:30:00'
+        },
+        {
+          id: 3,
+          acao: 'venda.status_atualizado',
+          status_anterior: 'entrega',
+          status_novo: 'concluido',
+          created_at: '2026-09-16 13:30:00',
+          invalidated_at: '2026-09-16 14:00:00'
+        }
+      ]
+    });
+
+    render(
+      <SaleModal
+        sale={sale}
+        stages={[{ id: 'concluido', name: 'Concluído', etapaFinal: true }]}
+        stageLabels={{ concluido: 'Concluído' }}
+        onClose={vi.fn()}
+        onUpdateSale={vi.fn()}
+        onUpdatePossuiDocNaCasa={vi.fn()}
+        onCancelSale={vi.fn()}
+        onReverterCancelamento={vi.fn()}
+        finalizada
+      />
+    );
+
+    expect(screen.getByText('CONCLUÍDA EM')).toBeInTheDocument();
+    expect(await screen.findByText(/14\/09\/26/)).toBeInTheDocument();
+    expect(screen.queryByText(/15\/09\/26/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/16\/09\/26/)).not.toBeInTheDocument();
+  });
+
   it('destaca no modo automacoes a etapa real divergente', () => {
     renderCard(criarSale({
       stage: 'entrega',
