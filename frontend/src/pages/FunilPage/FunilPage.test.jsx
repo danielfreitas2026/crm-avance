@@ -63,14 +63,16 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
           acao: 'venda.status_atualizado',
           status_anterior: 'entrega',
           status_novo: 'concluido',
-          created_at: '2026-09-14 13:30:00'
+          created_at: '2026-09-14 13:30:00',
+          usuario: { nome: 'Thayara' }
         },
         {
           id: 2,
           acao: 'venda.prioridade_atualizada',
           status_anterior: 'concluido',
           status_novo: 'concluido',
-          created_at: '2026-09-15 13:30:00'
+          created_at: '2026-09-15 13:30:00',
+          usuario: { nome: 'Outro usuário' }
         },
         {
           id: 3,
@@ -78,7 +80,8 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
           status_anterior: 'entrega',
           status_novo: 'concluido',
           created_at: '2026-09-16 13:30:00',
-          invalidated_at: '2026-09-16 14:00:00'
+          invalidated_at: '2026-09-16 14:00:00',
+          usuario: { nome: 'Automação inválida' }
         }
       ]
     });
@@ -98,9 +101,13 @@ describe('FunilPage - documentacao e atalhos rapidos', () => {
     );
 
     expect(screen.getByText('CONCLUÍDA EM')).toBeInTheDocument();
+    expect(screen.getByText('CONCLUÍDA POR')).toBeInTheDocument();
     expect(await screen.findByText(/14\/09\/26/)).toBeInTheDocument();
+    expect(screen.getByText('Thayara')).toBeInTheDocument();
     expect(screen.queryByText(/15\/09\/26/)).not.toBeInTheDocument();
     expect(screen.queryByText(/16\/09\/26/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Outro usuário')).not.toBeInTheDocument();
+    expect(screen.queryByText('Automação inválida')).not.toBeInTheDocument();
   });
 
   it('destaca no modo automacoes a etapa real divergente', () => {

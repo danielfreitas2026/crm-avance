@@ -587,7 +587,7 @@ function mapHistoricoVenda(venda, stage, updated, created, sellerName, stageLabe
 }
 
 /** Retorna a ultima entrada valida da venda na etapa informada. */
-function obterDataEntradaEtapa(historico, etapa) {
+function obterEntradaEtapa(historico, etapa) {
   return (Array.isArray(historico) ? historico : [])
     .filter(item => (
       item.statusNovo === etapa
@@ -598,7 +598,7 @@ function obterDataEntradaEtapa(historico, etapa) {
       && !Number.isNaN(item.data.getTime())
     ))
     .reduce((maisRecente, item) => (
-      !maisRecente || item.data.getTime() > maisRecente.getTime() ? item.data : maisRecente
+      !maisRecente || item.data.getTime() > maisRecente.data.getTime() ? item : maisRecente
     ), null);
 }
 
@@ -926,7 +926,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
   const cancelada = Boolean(sale.canceladaEm);
   const priorityInfo = getPriorityInfo(sale.priority);
   const podeAcessarDocumentos = Boolean(podeVerDocumentos || podeAdicionarDocumentos);
-  const concluidaEm = finalizada ? obterDataEntradaEtapa(historicoEventos, sale.stage) : null;
+  const entradaEtapaFinal = finalizada ? obterEntradaEtapa(historicoEventos, sale.stage) : null;
 
   useEffect(() => {
     if (modoAutomacoes) return undefined;
@@ -1195,7 +1195,15 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
                 <div className="detail-item">
                   <div className="label">CONCLUÍDA EM</div>
                   <div className="value">
-                    {concluidaEm ? formatDateTime(concluidaEm) : historicoCarregando ? 'Carregando…' : 'Data não registrada'}
+                    {entradaEtapaFinal ? formatDateTime(entradaEtapaFinal.data) : historicoCarregando ? 'Carregando…' : 'Data não registrada'}
+                  </div>
+                </div>
+              )}
+              {finalizada && (
+                <div className="detail-item">
+                  <div className="label">CONCLUÍDA POR</div>
+                  <div className="value">
+                    {entradaEtapaFinal?.autor || (historicoCarregando ? 'Carregando…' : 'Responsável não registrado')}
                   </div>
                 </div>
               )}
