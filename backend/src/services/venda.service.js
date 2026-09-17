@@ -2448,6 +2448,7 @@ function montarDetalhesChipsExportacao(venda = {}) {
       quantidadeChips: obterQuantidadeChipsVenda(venda),
       tiposLinha: rotuloTipoLinhaExportacao(tipoLinhaFallback),
       valoresUnitarios: '—',
+      valorTotal: null,
       quantidadeLinhas: 1
     }];
   }
@@ -2474,6 +2475,7 @@ function montarDetalhesChipsExportacao(venda = {}) {
       grupo.itens.map(item => rotuloTipoLinhaExportacao(item.tipo_linha)).filter(Boolean)
     )).join('\n'),
     valoresUnitarios: grupo.itens.map(item => formatarMoedaExportacao(item.valor_unitario)).join('\n'),
+    valorTotal: calcularTotalChips(grupo.itens),
     quantidadeLinhas: Math.max(1, grupo.itens.length)
   }));
 }
@@ -2584,7 +2586,9 @@ function montarLinhaXlsxVenda(venda, detalhes, vendaRestrita, etapaFinal, mapaEt
     produto: vendaRestrita ? '' : venda.servico?.nome || venda.produto_fechado || '',
     quantidade_linhas: venda.quantidade_linhas ?? null,
     gb: venda.gb || '',
-    valor_total: venda.valor_total === null || venda.valor_total === undefined ? null : Number(venda.valor_total),
+    valor_total: detalhes.valorTotal === null || detalhes.valorTotal === undefined
+      ? (venda.valor_total === null || venda.valor_total === undefined ? null : Number(venda.valor_total))
+      : Number(detalhes.valorTotal),
     valores_unitarios_chips: detalhes.valoresUnitarios,
     dia_vencimento: vendaRestrita ? null : venda.dia_vencimento ?? null,
     data_venda: valorDataExcel(venda.data_venda),

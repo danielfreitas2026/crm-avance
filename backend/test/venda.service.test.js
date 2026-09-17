@@ -836,13 +836,19 @@ test('monta uma linha de exportacao para cada vendedora com sua quantidade de ch
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Ana', quantidadeChips: 3, tiposLinha: 'Novo\nPortabilidade', valoresUnitarios: 'R$ 29,90\nR$ 39,90', quantidadeLinhas: 2 },
-    { vendedora: 'Bia', quantidadeChips: 1, tiposLinha: 'Portabilidade', valoresUnitarios: 'R$ 49,90', quantidadeLinhas: 1 }
+    { vendedora: 'Ana', quantidadeChips: 3, tiposLinha: 'Novo\nPortabilidade', valoresUnitarios: 'R$ 29,90\nR$ 39,90', valorTotal: 99.7, quantidadeLinhas: 2 },
+    { vendedora: 'Bia', quantidadeChips: 1, tiposLinha: 'Portabilidade', valoresUnitarios: 'R$ 49,90', valorTotal: 49.9, quantidadeLinhas: 1 }
   ]);
 
   assert.deepEqual(
-    detalhes.map(item => montarLinhaXlsxVenda({}, item, false, 'concluido', new Map()).tipo),
-    ['Novo\nPortabilidade', 'Portabilidade']
+    detalhes.map(item => {
+      const linha = montarLinhaXlsxVenda({ valor_total: 149.6 }, item, false, 'concluido', new Map());
+      return { tipo: linha.tipo, valorTotal: linha.valor_total };
+    }),
+    [
+      { tipo: 'Novo\nPortabilidade', valorTotal: 99.7 },
+      { tipo: 'Portabilidade', valorTotal: 49.9 }
+    ]
   );
 });
 
@@ -856,7 +862,7 @@ test('marca vendedora nao informada em venda compartilhada legada', () => {
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Não informado', quantidadeChips: 2, tiposLinha: 'Novo', valoresUnitarios: 'R$ 49,90', quantidadeLinhas: 1 }
+    { vendedora: 'Não informado', quantidadeChips: 2, tiposLinha: 'Novo', valoresUnitarios: 'R$ 49,90', valorTotal: 99.8, quantidadeLinhas: 1 }
   ]);
 });
 
@@ -870,8 +876,13 @@ test('nao lista vendedoras por virgula quando venda compartilhada legada nao tem
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Não informado', quantidadeChips: 4, tiposLinha: '', valoresUnitarios: '—', quantidadeLinhas: 1 }
+    { vendedora: 'Não informado', quantidadeChips: 4, tiposLinha: '', valoresUnitarios: '—', valorTotal: null, quantidadeLinhas: 1 }
   ]);
+
+  assert.equal(
+    montarLinhaXlsxVenda({ valor_total: 240 }, detalhes[0], false, 'concluido', new Map()).valor_total,
+    240
+  );
 });
 
 test('soma os grupos da vendedora principal em venda nao compartilhada', () => {
@@ -885,8 +896,13 @@ test('soma os grupos da vendedora principal em venda nao compartilhada', () => {
   });
 
   assert.deepEqual(detalhes, [
-    { vendedora: 'Ana', quantidadeChips: 3, tiposLinha: 'Novo', valoresUnitarios: 'R$ 29,90\nR$ 49,90', quantidadeLinhas: 2 }
+    { vendedora: 'Ana', quantidadeChips: 3, tiposLinha: 'Novo', valoresUnitarios: 'R$ 29,90\nR$ 49,90', valorTotal: 129.7, quantidadeLinhas: 2 }
   ]);
+
+  assert.equal(
+    montarLinhaXlsxVenda({ valor_total: 999 }, detalhes[0], false, 'concluido', new Map()).valor_total,
+    129.7
+  );
 });
 
 test('usa o tipo geral da venda apenas como fallback para chips legados sem grupos', () => {
