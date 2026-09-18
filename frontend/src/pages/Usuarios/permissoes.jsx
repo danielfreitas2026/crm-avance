@@ -9,7 +9,8 @@ export const PERMISSOES_ADMIN_EXPLICITAS = new Set([
   'clientes_antigos_ver_historico',
   'configurar_horario_acesso',
   'problemas_pos_venda_responsavel',
-  'funil_automacoes'
+  'funil_automacoes',
+  'vendas_alterar_data'
 ]);
 const PERMISSOES_ADMIN_VENDAS_OBRIGATORIAS = new Set([
   'vendas',
@@ -118,6 +119,11 @@ export const GRUPOS_PERMISSOES = [
             chave: 'vendas_editar',
             nome: 'Editar vendas',
             descricao: 'Permite editar vendas acessíveis.'
+          },
+          {
+            chave: 'vendas_alterar_data',
+            nome: 'Alterar data da venda',
+            descricao: 'Permite alterar a data e a classificação de venda antiga em vendas existentes.'
           },
           {
             chave: 'vendas_permitir_reversoes',

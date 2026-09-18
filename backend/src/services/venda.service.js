@@ -840,6 +840,51 @@ function prepararEdicaoConclusao({ venda, historico, concluidaEm, usuarioId, eta
 }
 
 /**
+ * Resolve os campos de classificacao e data enviados na edicao de uma venda.
+ * Datas nulas de vendas comuns sao ignoradas para manter compatibilidade com
+ * clientes antigos que deixavam a data a cargo do servidor.
+ */
+function resolverDataVendaAtualizacao(dados, vendaAtual) {
+  const classificacaoFoiEnviada = Object.prototype.hasOwnProperty.call(dados || {}, 'venda_antiga');
+  const dataFoiEnviada = Object.prototype.hasOwnProperty.call(dados || {}, 'data_venda');
+  const vendaAntigaAtual = vendaAtual?.venda_antiga === true || Number(vendaAtual?.venda_antiga) === 1;
+  const vendaAntigaDesejada = classificacaoFoiEnviada
+    ? dados.venda_antiga === true || dados.venda_antiga === 1 || dados.venda_antiga === '1' || dados.venda_antiga === 'true'
+    : vendaAntigaAtual;
+  const dataVendaAtual = normalizarData(vendaAtual?.data_venda);
+  const dataNula = dados?.data_venda === null || dados?.data_venda === undefined;
+  let dataVendaDesejada = dataVendaAtual;
+  let aplicarData = false;
+
+  if (dataFoiEnviada && !(dataNula && !vendaAntigaDesejada)) {
+    dataVendaDesejada = normalizarData(dados.data_venda);
+    if (!dataVendaDesejada) {
+      const error = new Error('Informe uma data da venda válida.');
+      error.statusCode = 400;
+      throw error;
+    }
+    aplicarData = true;
+  }
+
+  return {
+    aplicarClassificacao: classificacaoFoiEnviada,
+    aplicarData,
+    vendaAntigaDesejada,
+    dataVendaDesejada,
+    alterou: vendaAntigaDesejada !== vendaAntigaAtual || dataVendaDesejada !== dataVendaAtual
+  };
+}
+
+/** Impede a alteracao da data ou classificacao sem a permissao dedicada. */
+function validarPermissaoAlterarDataVenda(alterou, permitido) {
+  if (!alterou || permitido) return;
+
+  const error = new Error('Você não possui permissão para alterar a data da venda.');
+  error.statusCode = 403;
+  throw error;
+}
+
+/**
  * Copia notas cliente para venda para o destino esperado.
  */
 async function copiarNotasClienteParaVenda({ clienteId, vendaId, createdAt, trx }) {
@@ -3752,41 +3797,23 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
   let payload = montarPayload(dados);
   const etapaFinal = await obterCodigoEtapaFinal();
   const vendaEstaNaEtapaFinal = vendaAtual.status_funil === etapaFinal;
-  const classificacaoFoiEnviada = Object.prototype.hasOwnProperty.call(dados, 'venda_antiga');
+  const alteracaoDataVenda = resolverDataVendaAtualizacao(dados, vendaAtual);
 
-  if (!classificacaoFoiEnviada) {
-    delete payload.venda_antiga;
-    delete payload.data_venda;
+  const usuarioPodeAlterarData = alteracaoDataVenda.alterou
+    ? await usuarioTemPermissao(usuarioId, 'vendas_alterar_data')
+    : false;
+  validarPermissaoAlterarDataVenda(alteracaoDataVenda.alterou, usuarioPodeAlterarData);
+
+  if (alteracaoDataVenda.aplicarClassificacao) {
+    payload.venda_antiga = alteracaoDataVenda.vendaAntigaDesejada;
   } else {
-    const vendaAntigaDesejada = payload.venda_antiga === true;
-    const dataCadastro = parseUtcDateTime(vendaAtual.criado_em || vendaAtual.created_at);
-    const dataVendaAtual = normalizarData(vendaAtual.data_venda);
-    const dataVendaDesejada = vendaAntigaDesejada
-      ? normalizarData(payload.data_venda)
-      : obterDataAtualSaoPaulo(dataCadastro || new Date());
-    const vendaAntigaAtual = vendaAtual.venda_antiga === true || Number(vendaAtual.venda_antiga) === 1;
-    const classificacaoMudou = vendaAntigaDesejada !== vendaAntigaAtual;
-    const dataMudou = dataVendaDesejada !== dataVendaAtual;
+    delete payload.venda_antiga;
+  }
 
-    if (classificacaoMudou || dataMudou) {
-      const usuarioPodeCorrigirData = usuarioPodeOperarPosVenda
-        || (await buscarPermissoesUsuario(usuarioId)).admin;
-
-      if (!usuarioPodeCorrigirData) {
-        const error = new Error('Apenas pós-venda ou administradores podem alterar a data da venda.');
-        error.statusCode = 403;
-        throw error;
-      }
-
-      if (vendaAntigaDesejada) {
-        payload.data_venda = validarDataVendaAntiga(payload.data_venda);
-      }
-    }
-
-    payload.venda_antiga = vendaAntigaDesejada;
-    if (!vendaAntigaDesejada || !(classificacaoMudou || dataMudou)) {
-      payload.data_venda = dataVendaDesejada;
-    }
+  if (alteracaoDataVenda.aplicarData) {
+    payload.data_venda = alteracaoDataVenda.dataVendaDesejada;
+  } else {
+    delete payload.data_venda;
   }
 
   if (!vendaAtual.enviada_pos_venda_em) {
@@ -5047,6 +5074,8 @@ module.exports = {
     normalizarData,
     obterDataAtualSaoPaulo,
     resolverDataVendaCadastro,
+    resolverDataVendaAtualizacao,
+    validarPermissaoAlterarDataVenda,
     validarDataVendaAntiga,
     validarDataVendaNaoFutura,
     vendaDeveNotificarTelegram,

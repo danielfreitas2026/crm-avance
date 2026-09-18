@@ -75,6 +75,15 @@ test('admin precisa de permissao explicita para configurar horario de acesso', (
   }, 'configurar_horario_acesso'), false);
 });
 
+test('alteracao da data da venda exige concessao explicita inclusive para admin', () => {
+  const admin = { ativo: true, role: { nome: 'admin' } };
+  assert.equal(usuarioTemPermissaoLocal(admin, 'vendas_alterar_data'), false);
+  assert.equal(usuarioTemPermissaoLocal({
+    ...admin,
+    permissoes: { vendas_alterar_data: true }
+  }, 'vendas_alterar_data'), true);
+});
+
 test('admin pode ter qualquer permissao negada explicitamente', () => {
   const usuario = {
     ativo: true,

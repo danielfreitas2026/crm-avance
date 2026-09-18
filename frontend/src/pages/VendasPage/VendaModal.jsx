@@ -14,7 +14,8 @@ import { parseUtcDateTime } from '../../utils/datetime';
 import {
   aplicarVendaAntigaAoFormulario,
   criarEstadoDataVenda,
-  normalizarIndicadorVendaAntiga
+  normalizarIndicadorVendaAntiga,
+  obterDataVendaPayload
 } from './venda-data';
 import './VendasPage.css';
 
@@ -4007,7 +4008,7 @@ function VendaModal({
   const vendaBloqueadaParaUsuario = enviadaPosVenda && !usuarioPosVenda && !modoReversao;
   const podeRegistrarReversaoEfetivo = Boolean(venda?.id && podeRegistrarReversao && usuarioPodeAcessarVendaModal);
   const podeExcluirReversaoEfetivo = Boolean(venda?.id && podeExcluirReversao && usuarioPodeAcessarVendaModal);
-  const podeCorrigirDataVenda = !editando || usuarioPosVenda || usuarioAdmin;
+  const podeCorrigirDataVenda = !editando || temPermissao(usuarioLogado, 'vendas_alterar_data');
   const vendaCancelada = Boolean(venda?.cancelada_em || form.cancelada_em);
   const vendaPortabilidade = temChipPortabilidade(form.valores_unitarios_chips);
   const quantidadePortabilidade = somarQuantidadePortabilidadeItensChips(form.valores_unitarios_chips || []);
@@ -4272,10 +4273,10 @@ function VendaModal({
     });
   }
 
-  /** Alterna a classificação histórica e descarta a data manual ao desmarcar. */
+  /** Alterna a classificação histórica preservando a data de vendas existentes. */
   function atualizarVendaAntiga(marcada) {
     if (somenteVisualizacao || vendaBloqueadaParaUsuario || !podeCorrigirDataVenda) return;
-    setForm(prev => aplicarVendaAntigaAoFormulario(prev, marcada));
+    setForm(prev => aplicarVendaAntigaAoFormulario(prev, marcada, editando));
   }
 
   /**
@@ -4697,7 +4698,14 @@ function VendaModal({
         return;
       }
 
-      if (form.venda_antiga && classificacaoDataAlterada && dataVendaManual >= obterDataAtualInput()) {
+      if (editando && podeCorrigirDataVenda && !dataVendaManual) {
+        setErro('Informe uma data da venda válida.');
+        setAbaAtiva('venda');
+        setSalvando(false);
+        return;
+      }
+
+      if (!editando && form.venda_antiga && classificacaoDataAlterada && dataVendaManual >= obterDataAtualInput()) {
         setErro('A data da venda antiga deve ser anterior ao dia atual.');
         setAbaAtiva('venda');
         setSalvando(false);
@@ -4917,7 +4925,11 @@ function VendaModal({
         operadora_id: operadoraDestinoVenda,
         operadora_atual_id: operadoraAtualVenda,
         venda_antiga: Boolean(form.venda_antiga),
-        data_venda: form.venda_antiga ? dataVendaManual : null,
+        data_venda: obterDataVendaPayload({
+          editando,
+          vendaAntiga: Boolean(form.venda_antiga),
+          dataVenda: dataVendaManual
+        }),
         data_ativacao: vendaEmEtapaFinal ? dataAtivacaoPayload : undefined,
         numeros_portados: vendaPortabilidade ? numerosPortados : null,
         numeros_ativados: vendaEmEtapaFinal ? (dataAtivacaoPayload ? numerosAtivados : null) : undefined,
@@ -5405,23 +5417,28 @@ function VendaModal({
                           type="checkbox"
                           checked={Boolean(form.venda_antiga)}
                           onChange={event => atualizarVendaAntiga(event.target.checked)}
-                          disabled={!podeCorrigirDataVenda}
+                          disabled={somenteVisualizacao || vendaBloqueadaParaUsuario || !podeCorrigirDataVenda}
                         />
                         <span>Venda antiga</span>
                       </label>
-                      {form.venda_antiga ? (
+                      {editando || form.venda_antiga ? (
                         <div className="venda-old-sale-date">
                           <label htmlFor="venda-data-antiga">Data da venda <span className="field-required-mark">*</span></label>
                           <input
                             id="venda-data-antiga"
                             type="date"
-                            max={obterDataAnteriorInput()}
+                            min="1900-01-01"
+                            max={editando ? undefined : obterDataAnteriorInput()}
                             value={form.data_venda || ''}
                             onChange={event => atualizarCampo('data_venda', event.target.value)}
-                            disabled={!podeCorrigirDataVenda}
+                            disabled={somenteVisualizacao || vendaBloqueadaParaUsuario || !podeCorrigirDataVenda}
                             required
                           />
-                          <span className="field-hint">A data deve ser anterior ao dia atual.</span>
+                          <span className="field-hint">
+                            {editando
+                              ? 'Usuários autorizados podem informar qualquer data válida.'
+                              : 'A data deve ser anterior ao dia atual.'}
+                          </span>
                         </div>
                       ) : (
                         <span className="field-hint">

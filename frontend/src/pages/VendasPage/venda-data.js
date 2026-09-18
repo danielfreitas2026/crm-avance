@@ -8,11 +8,17 @@ export function normalizarIndicadorVendaAntiga(valor) {
   return valor === true || Number(valor) === 1;
 }
 
-/** Aplica a classificação escolhida e descarta a data manual ao desmarcar. */
-export function aplicarVendaAntigaAoFormulario(form, marcada) {
+/** Aplica a classificação escolhida e opcionalmente preserva a data na edição. */
+export function aplicarVendaAntigaAoFormulario(form, marcada, preservarData = false) {
   return {
     ...form,
     venda_antiga: marcada,
-    data_venda: marcada ? form.data_venda : ''
+    data_venda: marcada || preservarData ? form.data_venda : ''
   };
+}
+
+/** Define a data enviada conforme o fluxo de cadastro ou edição. */
+export function obterDataVendaPayload({ editando, vendaAntiga, dataVenda }) {
+  if (editando) return dataVenda;
+  return vendaAntiga ? dataVenda : null;
 }

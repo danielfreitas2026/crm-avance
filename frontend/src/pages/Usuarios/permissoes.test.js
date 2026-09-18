@@ -15,6 +15,14 @@ describe('catalogo de permissoes de vendas', () => {
       descricao: 'Libera formulário, notas, documentos, reversões e exportações detalhadas após o envio ao pós-venda.'
     });
   });
+
+  it('declara a alteração da data da venda como permissão configurável', () => {
+    expect(getPermissoesDeclaradas()).toContainEqual({
+      chave: 'vendas_alterar_data',
+      nome: 'Alterar data da venda',
+      descricao: 'Permite alterar a data e a classificação de venda antiga em vendas existentes.'
+    });
+  });
 });
 
 const permissoes = [

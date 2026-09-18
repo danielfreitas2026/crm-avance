@@ -28,6 +28,8 @@ const {
   montarPayload,
   normalizarData,
   resolverDataVendaCadastro,
+  resolverDataVendaAtualizacao,
+  validarPermissaoAlterarDataVenda,
   validarDataVendaAntiga,
   validarDataVendaNaoFutura,
   normalizarItensChips,
@@ -694,6 +696,58 @@ test('exige data anterior ao dia atual para venda antiga', () => {
   assert.throws(() => validarDataVendaAntiga(null, agora), /informe a data/i);
   assert.throws(() => validarDataVendaAntiga('2026-08-05', agora), /anterior ao dia atual/i);
   assert.throws(() => validarDataVendaAntiga('2026-08-06', agora), /anterior ao dia atual/i);
+});
+
+test('resolve alteracao da data de venda sem limite temporal', () => {
+  const vendaAtual = { venda_antiga: false, data_venda: '2026-08-04' };
+
+  assert.deepEqual(
+    resolverDataVendaAtualizacao({ venda_antiga: false, data_venda: '2026-08-05' }, vendaAtual),
+    {
+      aplicarClassificacao: true,
+      aplicarData: true,
+      vendaAntigaDesejada: false,
+      dataVendaDesejada: '2026-08-05',
+      alterou: true
+    }
+  );
+  assert.equal(
+    resolverDataVendaAtualizacao({ data_venda: '2035-12-31' }, vendaAtual).dataVendaDesejada,
+    '2035-12-31'
+  );
+});
+
+test('preserva data comum omitida ou nula e rejeita data invalida na edicao', () => {
+  const vendaAtual = { venda_antiga: false, data_venda: '2026-08-04' };
+
+  assert.equal(resolverDataVendaAtualizacao({}, vendaAtual).aplicarData, false);
+  assert.deepEqual(
+    resolverDataVendaAtualizacao({ venda_antiga: false, data_venda: null }, vendaAtual),
+    {
+      aplicarClassificacao: true,
+      aplicarData: false,
+      vendaAntigaDesejada: false,
+      dataVendaDesejada: '2026-08-04',
+      alterou: false
+    }
+  );
+  assert.throws(
+    () => resolverDataVendaAtualizacao({ data_venda: '2026-02-30' }, vendaAtual),
+    error => error.statusCode === 400 && /data da venda válida/i.test(error.message)
+  );
+  assert.throws(
+    () => resolverDataVendaAtualizacao({ data_venda: '' }, vendaAtual),
+    /data da venda válida/i
+  );
+});
+
+test('exige a permissao dedicada quando data ou classificacao muda', () => {
+  assert.doesNotThrow(() => validarPermissaoAlterarDataVenda(false, false));
+  assert.doesNotThrow(() => validarPermissaoAlterarDataVenda(true, true));
+  assert.throws(
+    () => validarPermissaoAlterarDataVenda(true, false),
+    error => error.statusCode === 403 && /permissão para alterar a data/i.test(error.message)
+  );
 });
 
 test('notifica Telegram apenas para vendas com no maximo dois dias de atraso', () => {

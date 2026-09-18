@@ -35,6 +35,11 @@ const PERMISSOES = [
     descricao: 'Permite editar vendas que o usuário pode acessar.'
   },
   {
+    chave: 'vendas_alterar_data',
+    nome: 'Vendas: alterar data',
+    descricao: 'Permite alterar a data e a classificação histórica de vendas existentes.'
+  },
+  {
     chave: 'vendas_permitir_reversoes',
     nome: 'Vendas: permitir reversões',
     descricao: 'Permite registrar alterações auditadas em vendas acessíveis.'

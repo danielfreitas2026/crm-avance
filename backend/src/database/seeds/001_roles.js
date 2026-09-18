@@ -8,7 +8,8 @@ function montarPermissoes(permissoes, permissoesLiberadas = []) {
 const PERMISSOES_ADMIN_EXPLICITAS = new Set([
   'clientes_secretos_ver_todos',
   'clientes_antigos_ver_historico',
-  'vendas_excluir_reversoes'
+  'vendas_excluir_reversoes',
+  'vendas_alterar_data'
 ]);
 
 async function upsertRole(knex, role) {
