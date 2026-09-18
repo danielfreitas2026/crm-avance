@@ -2167,14 +2167,6 @@
   overflow: hidden;
   transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
 }
-.pend-stat::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  background: var(--text-3);
-  opacity: 0.35;
-}
 .pend-stat:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 .pend-stat.zero { opacity: 0.7; }
 .pend-stat.zero:hover { opacity: 0.95; }
@@ -2213,7 +2205,6 @@
 }
 .pend-stat.active { box-shadow: 0 0 0 2px var(--text); }
 .pend-stat.attn { border-width: 1.5px; }
-.pend-stat.attn::before { opacity: 1; width: 5px; }
 
 /* Subtexto em alarme + ponto pulsante (quando ha pendencia) */
 .pend-stat .stat-sub.alarm { font-weight: 600; }
@@ -2302,35 +2293,30 @@
 
 /* Variantes por tipo (alinhadas com as cores dos cards) */
 .pend-stat.danger.attn { background: linear-gradient(160deg, #fee2e2 0%, #fef2f2 70%); border-color: #fca5a5; }
-.pend-stat.danger.attn::before { background: var(--danger); }
 .pend-stat.danger.attn .stat-num,
 .pend-stat.danger.attn .stat-top,
 .pend-stat.danger.attn .stat-icon { color: var(--danger); }
 .pend-stat.active.danger.attn { box-shadow: 0 0 0 2px var(--danger); }
 
 .pend-stat.warn.attn { background: linear-gradient(160deg, #fef3c7 0%, #fffbeb 70%); border-color: #fcd34d; }
-.pend-stat.warn.attn::before { background: #d97706; }
 .pend-stat.warn.attn .stat-num,
 .pend-stat.warn.attn .stat-top,
 .pend-stat.warn.attn .stat-icon { color: #b45309; }
 .pend-stat.active.warn.attn { box-shadow: 0 0 0 2px #d97706; }
 
 .pend-stat.info.attn { background: linear-gradient(160deg, #dbeafe 0%, #eff6ff 70%); border-color: #93c5fd; }
-.pend-stat.info.attn::before { background: #2563eb; }
 .pend-stat.info.attn .stat-num,
 .pend-stat.info.attn .stat-top,
 .pend-stat.info.attn .stat-icon { color: #1d4ed8; }
 .pend-stat.active.info.attn { box-shadow: 0 0 0 2px #2563eb; }
 
 .pend-stat.contact.attn { background: linear-gradient(160deg, #d1fae5 0%, #ecfdf5 70%); border-color: #6ee7b7; }
-.pend-stat.contact.attn::before { background: #059669; }
 .pend-stat.contact.attn .stat-num,
 .pend-stat.contact.attn .stat-top,
 .pend-stat.contact.attn .stat-icon { color: #059669; }
 .pend-stat.active.contact.attn { box-shadow: 0 0 0 2px #059669; }
 
 .pend-stat.stalled.attn { background: linear-gradient(160deg, #ede9fe 0%, #f5f3ff 70%); border-color: #c4b5fd; }
-.pend-stat.stalled.attn::before { background: #7c3aed; }
 .pend-stat.stalled.attn .stat-num,
 .pend-stat.stalled.attn .stat-top,
 .pend-stat.stalled.attn .stat-icon { color: #7c3aed; }
