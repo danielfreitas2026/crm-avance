@@ -2428,7 +2428,6 @@
 .pend-row:last-child { border-bottom: none; }
 .pend-row:hover { background: var(--surface-2); }
 .pend-row:hover .pend-row-chev { color: var(--text); transform: translateX(2px); }
-.pend-row.is-unread { background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
 .pend-row-marker {
   width: 24px;
   height: 24px;
