@@ -100,14 +100,21 @@ function calcularAtrasoRetentativa(tentativas) {
   return Math.min(RETENTATIVA_INICIAL_MS * (2 ** expoente), RETENTATIVA_MAXIMA_MS);
 }
 
-async function reivindicarPublicacao(solicitacaoId = null, agora = new Date()) {
+async function reivindicarSincronizacao(solicitacaoId = null, agora = new Date()) {
   return VendaAprovacaoSolicitacao.transaction(async trx => {
     const query = VendaAprovacaoSolicitacao.query(trx)
-      .where('status', 'pendente')
-      .whereNull('telegram_message_id')
       .where(builder => builder
         .whereNull('telegram_proxima_tentativa_em')
-        .orWhere('telegram_proxima_tentativa_em', '<=', agora));
+        .orWhere('telegram_proxima_tentativa_em', '<=', agora))
+      .where(builder => builder
+        .where(subquery => subquery
+          .where('status', 'pendente')
+          .whereNull('telegram_message_id'))
+        .orWhere(subquery => subquery
+          .whereNotNull('telegram_message_id')
+          .where(statusQuery => statusQuery
+            .whereNull('telegram_status_sincronizado')
+            .orWhereColumn('telegram_status_sincronizado', '<>', 'status'))));
     if (solicitacaoId) query.where('id', Number(solicitacaoId));
 
     const item = await query
@@ -136,7 +143,7 @@ async function registrarFalha(item, error, agora = new Date()) {
   });
 }
 
-async function registrarSucesso(item, resultado, agora = new Date()) {
+async function registrarPublicacaoSucesso(item, resultado, agora = new Date()) {
   return VendaAprovacaoSolicitacao.query()
     .findById(item.id)
     .whereNull('telegram_message_id')
@@ -144,13 +151,25 @@ async function registrarSucesso(item, resultado, agora = new Date()) {
       telegram_chat_id: chatId(),
       telegram_message_id: String(resultado.message_id),
       telegram_notificado_em: agora,
+      telegram_status_sincronizado: 'pendente',
+      telegram_sincronizado_em: agora,
       telegram_proxima_tentativa_em: null,
       telegram_ultimo_erro: null,
       updated_at: agora
     });
 }
 
-async function liberarPublicacao(item, agora = new Date()) {
+async function registrarEdicaoSucesso(item, status, agora = new Date()) {
+  return VendaAprovacaoSolicitacao.query().findById(item.id).patch({
+    telegram_status_sincronizado: status,
+    telegram_sincronizado_em: agora,
+    telegram_proxima_tentativa_em: null,
+    telegram_ultimo_erro: null,
+    updated_at: agora
+  });
+}
+
+async function liberarSincronizacao(item, agora = new Date()) {
   return VendaAprovacaoSolicitacao.query().findById(item.id).patch({
     telegram_proxima_tentativa_em: null,
     telegram_ultimo_erro: null,
@@ -158,7 +177,24 @@ async function liberarPublicacao(item, agora = new Date()) {
   });
 }
 
-async function processarPublicacao(item, opcoes = {}) {
+function dadosEdicao(solicitacao) {
+  const pendente = solicitacao.status === 'pendente';
+  return {
+    chat_id: solicitacao.telegram_chat_id,
+    message_id: solicitacao.telegram_message_id,
+    text: pendente ? montarMensagemSolicitacao(solicitacao) : montarMensagemDecisao(solicitacao),
+    disable_web_page_preview: true,
+    reply_markup: {
+      inline_keyboard: pendente ? botoesDecisao(solicitacao.id) : []
+    }
+  };
+}
+
+function erroMensagemSemAlteracao(error) {
+  return /message is not modified/i.test(String(error?.message || error || ''));
+}
+
+async function processarSincronizacao(item, opcoes = {}) {
   const carregar = opcoes.buscarSolicitacao || buscarSolicitacao;
   const enviar = opcoes.enviar || (solicitacao => chamarApi('sendMessage', {
     chat_id: chatId(),
@@ -166,50 +202,75 @@ async function processarPublicacao(item, opcoes = {}) {
     disable_web_page_preview: true,
     reply_markup: { inline_keyboard: botoesDecisao(solicitacao.id) }
   }));
-  const salvarSucesso = opcoes.registrarSucesso || registrarSucesso;
+  const editar = opcoes.editar || (solicitacao => chamarApi('editMessageText', dadosEdicao(solicitacao)));
+  const salvarPublicacao = opcoes.registrarPublicacaoSucesso || opcoes.registrarSucesso || registrarPublicacaoSucesso;
+  const salvarEdicao = opcoes.registrarEdicaoSucesso || registrarEdicaoSucesso;
   const salvarFalha = opcoes.registrarFalha || registrarFalha;
-  const liberar = opcoes.liberarPublicacao || liberarPublicacao;
+  const liberar = opcoes.liberarSincronizacao || opcoes.liberarPublicacao || liberarSincronizacao;
   const agora = opcoes.agora || new Date();
 
   try {
     const solicitacao = await carregar(item.id);
-    if (!solicitacao || solicitacao.status !== 'pendente' || solicitacao.telegram_message_id) {
+    if (!solicitacao) {
       await liberar(item, agora);
-      return { enviado: false, ignorado: true, motivo: 'solicitacao_nao_pendente' };
+      return { ignorado: true, motivo: 'solicitacao_nao_encontrada' };
     }
 
-    const resultado = await enviar(solicitacao);
-    if (!resultado?.message_id) throw new Error('Telegram não confirmou a publicação.');
-    await salvarSucesso(item, resultado, agora);
-    return { enviado: true, message_id: resultado.message_id };
+    if (solicitacao.status === 'pendente' && !solicitacao.telegram_message_id) {
+      const resultado = await enviar(solicitacao);
+      if (!resultado?.message_id) throw new Error('Telegram não confirmou a publicação.');
+      await salvarPublicacao(item, resultado, agora);
+      return { enviado: true, message_id: resultado.message_id };
+    }
+
+    if (
+      solicitacao.telegram_message_id
+      && solicitacao.telegram_status_sincronizado !== solicitacao.status
+    ) {
+      try {
+        await editar(solicitacao);
+      } catch (error) {
+        if (!erroMensagemSemAlteracao(error)) throw error;
+      }
+      await salvarEdicao(item, solicitacao.status, agora);
+      return { atualizado: true, status: solicitacao.status };
+    }
+
+    await liberar(item, agora);
+    return { ignorado: true, motivo: 'solicitacao_ja_sincronizada' };
   } catch (error) {
     await salvarFalha(item, error, agora);
-    console.error(`Erro ao publicar aprovação #${item.id} no Telegram:`, error.message);
-    return { enviado: false, falhou: true, motivo: error.message };
+    console.error(`Erro ao sincronizar aprovação #${item.id} no Telegram:`, error.message);
+    return { falhou: true, motivo: error.message };
   }
 }
 
-/** Publica uma solicitacao pendente com claim atomico e retentativa duravel. */
-async function notificarSolicitacaoPendente(solicitacaoId, opcoes = {}) {
+/** Converge uma solicitacao com claim atomico e retentativa duravel. */
+async function reconciliarSolicitacao(solicitacaoId, opcoes = {}) {
   if (!configurado()) return { enviado: false, motivo: 'telegram_aprovacoes_nao_configurado' };
-  const reivindicar = opcoes.reivindicar || reivindicarPublicacao;
+  const reivindicar = opcoes.reivindicar || reivindicarSincronizacao;
   const item = await reivindicar(solicitacaoId, opcoes.agora || new Date());
   if (!item) return { enviado: false, motivo: 'solicitacao_indisponivel' };
-  return processarPublicacao(item, opcoes);
+  return processarSincronizacao(item, opcoes);
+}
+
+async function notificarSolicitacaoPendente(solicitacaoId, opcoes = {}) {
+  return reconciliarSolicitacao(solicitacaoId, opcoes);
 }
 
 async function processarPublicacoesPendentes(opcoes = {}) {
-  const resultado = { processadas: 0, enviadas: 0, falhas: 0, ignoradas: 0 };
+  const resultado = { processadas: 0, enviadas: 0, atualizadas: 0, falhas: 0, ignoradas: 0 };
   if (!configurado()) return { ...resultado, configurado: false };
 
   const limite = Math.max(1, Number(opcoes.limite || 20));
-  const reivindicar = opcoes.reivindicar || reivindicarPublicacao;
+  const reivindicar = opcoes.reivindicar || reivindicarSincronizacao;
   for (let indice = 0; indice < limite; indice += 1) {
     const item = await reivindicar(null, opcoes.agora || new Date());
     if (!item) break;
-    const processamento = await processarPublicacao(item, opcoes);
+    const processamento = await processarSincronizacao(item, opcoes);
     resultado.processadas += 1;
     if (processamento.enviado) resultado.enviadas += 1;
+    if (processamento.atualizado) resultado.atualizadas += 1;
     if (processamento.falhou) resultado.falhas += 1;
     if (processamento.ignorado) resultado.ignoradas += 1;
   }
@@ -236,45 +297,33 @@ function nomeExibicaoTelegram(identidade = {}) {
   return [identidade.nome, identidade.username].filter(Boolean).join(' ') || 'Membro do grupo';
 }
 
-async function finalizarMensagem(query, solicitacao, decisao, aprovador) {
-  const texto = montarMensagemDecisao(solicitacao, decisao, aprovador);
-  await chamarApi('editMessageText', {
-    chat_id: query.message.chat.id,
-    message_id: query.message.message_id,
-    text: texto,
-    disable_web_page_preview: true,
-    reply_markup: { inline_keyboard: [] }
-  });
-}
+function montarMensagemDecisao(solicitacao) {
+  if (solicitacao?.status === 'obsoleta') {
+    return `⚪ DESATUALIZADA\n\n${montarMensagemSolicitacao(solicitacao)}`;
+  }
 
-function montarMensagemDecisao(solicitacao, decisao = null, aprovador = null) {
-  const aprovada = (decisao || solicitacao?.status) === 'aprovar' || solicitacao?.status === 'aprovada';
-  const nomeAprovador = aprovador?.nome || solicitacao?.decisor?.nome || 'Não informado';
+  const aprovada = solicitacao?.status === 'aprovada';
+  const nomeAprovador = solicitacao?.telegram_decisor_nome
+    || solicitacao?.decisor?.nome
+    || 'Não informado';
   return `${aprovada ? '✅ APROVADA' : '❌ RECUSADA'} por ${nomeAprovador}\n\n${montarMensagemSolicitacao(solicitacao)}`;
 }
 
-/** Atualiza a mensagem original quando a decisão foi tomada pelo CRM. */
+/** Mantem compatibilidade com consumidores antigos usando a reconciliacao duravel. */
 async function atualizarMensagemDecisao(solicitacao) {
-  if (!token() || !solicitacao?.telegram_chat_id || !solicitacao?.telegram_message_id) {
+  if (!solicitacao?.id) {
     return { atualizado: false, motivo: 'mensagem_telegram_nao_encontrada' };
   }
-
-  await chamarApi('editMessageText', {
-    chat_id: solicitacao.telegram_chat_id,
-    message_id: solicitacao.telegram_message_id,
-    text: montarMensagemDecisao(solicitacao),
-    disable_web_page_preview: true,
-    reply_markup: { inline_keyboard: [] }
-  });
-  return { atualizado: true };
+  return reconciliarSolicitacao(solicitacao.id);
 }
 
-async function processarCallback(query) {
+async function processarCallback(query, opcoes = {}) {
   const [prefixo, decisao, solicitacaoId] = String(query?.data || '').split(':');
   if (prefixo !== 'va' || !['aprovar', 'recusar'].includes(decisao) || !Number(solicitacaoId)) return null;
 
+  const responder = opcoes.responder || (dados => chamarApi('answerCallbackQuery', dados));
   if (!grupoAutorizado(query?.message?.chat?.id)) {
-    return chamarApi('answerCallbackQuery', {
+    return responder({
       callback_query_id: query.id,
       text: 'Este chat não está autorizado para aprovações.',
       show_alert: true
@@ -283,20 +332,24 @@ async function processarCallback(query) {
 
   const aprovador = identidadeTelegram(query?.from);
   const nomeAprovador = nomeExibicaoTelegram(aprovador);
+  const aprovar = opcoes.aprovar || vendaAprovacaoService.aprovarSolicitacao;
+  const recusar = opcoes.recusar || vendaAprovacaoService.recusarSolicitacao;
+  const reconciliar = opcoes.reconciliar || reconciliarSolicitacao;
 
   try {
     const observacao = `${decisao === 'aprovar' ? 'Aprovada' : 'Recusada'} via Telegram por ${nomeAprovador}.`;
     const solicitacao = decisao === 'aprovar'
-      ? await vendaAprovacaoService.aprovarSolicitacao(solicitacaoId, { observacao }, null, { telegram: aprovador })
-      : await vendaAprovacaoService.recusarSolicitacao(solicitacaoId, { observacao }, null, { telegram: aprovador });
+      ? await aprovar(solicitacaoId, { observacao }, null, { telegram: aprovador })
+      : await recusar(solicitacaoId, { observacao }, null, { telegram: aprovador });
 
-    await finalizarMensagem(query, solicitacao, decisao, { nome: nomeAprovador });
-    return chamarApi('answerCallbackQuery', {
+    const sincronizacao = await reconciliar(solicitacao.id);
+    const aguardandoSincronizacao = sincronizacao?.falhou;
+    return responder({
       callback_query_id: query.id,
-      text: decisao === 'aprovar' ? 'Venda aprovada.' : 'Venda recusada.'
+      text: `${decisao === 'aprovar' ? 'Venda aprovada.' : 'Venda recusada.'}${aguardandoSincronizacao ? ' A mensagem será atualizada automaticamente.' : ''}`
     });
   } catch (error) {
-    return chamarApi('answerCallbackQuery', {
+    return responder({
       callback_query_id: query.id,
       text: error.message || 'Não foi possível processar a solicitação.',
       show_alert: true
@@ -324,6 +377,7 @@ module.exports = {
   receberWebhook,
   processarCallback,
   notificarSolicitacaoPendente,
+  reconciliarSolicitacao,
   processarPublicacoesPendentes,
   atualizarMensagemDecisao,
   _internals: {
@@ -333,10 +387,12 @@ module.exports = {
     grupoAutorizado,
     montarMensagemSolicitacao,
     montarMensagemDecisao,
+    dadosEdicao,
     motivosTexto,
     nomesConsultores,
     calcularAtrasoRetentativa,
-    reivindicarPublicacao,
-    processarPublicacao
+    erroMensagemSemAlteracao,
+    reivindicarSincronizacao,
+    processarSincronizacao
   }
 };

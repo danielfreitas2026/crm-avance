@@ -565,6 +565,9 @@ async function decidirSolicitacao(id, dados, usuarioId, decisao, contexto = {}) 
     const atualizada = await VendaAprovacaoSolicitacao.query(trx).patchAndFetchById(solicitacao.id, {
       status,
       decidido_por_id: decisorTelegram ? null : usuarioId,
+      telegram_decisor_nome: decisorTelegram
+        ? [decisorTelegram.nome, decisorTelegram.username].filter(Boolean).join(' ')
+        : null,
       decidido_em: agora,
       observacao_decisao: observacaoDecisao,
       updated_at: agora

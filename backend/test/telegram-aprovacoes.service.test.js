@@ -54,6 +54,29 @@ test('monta mensagem de decisão para refletir o resultado no Telegram', () => {
   assert.match(texto, /Razão social: Empresa Teste/);
 });
 
+test('marca solicitacao obsoleta como desatualizada sem atribuir recusa', () => {
+  const texto = _internals.montarMensagemDecisao({
+    status: 'obsoleta',
+    venda: { razao_social: 'Empresa Alterada' }
+  });
+
+  assert.match(texto, /^⚪ DESATUALIZADA/);
+  assert.doesNotMatch(texto, /RECUSADA|por Não informado/);
+});
+
+test('reconciliacao de pendencia publicada preserva os botoes de decisão', () => {
+  const dados = _internals.dadosEdicao({
+    id: 54,
+    status: 'pendente',
+    telegram_chat_id: '-100123',
+    telegram_message_id: '904',
+    venda: {}
+  });
+
+  assert.match(dados.text, /VENDA AGUARDANDO APROVAÇÃO/);
+  assert.deepEqual(dados.reply_markup.inline_keyboard, _internals.botoesDecisao(54));
+});
+
 test('identifica o membro do grupo sem exigir vínculo com usuário do CRM', () => {
   const identidade = _internals.identidadeTelegram({ id: 123, first_name: 'Ana', last_name: 'Silva', username: 'ana' });
   const chatAnterior = process.env.TELEGRAM_APROVACOES_CHAT_ID;
@@ -82,11 +105,11 @@ test('falha ao publicar aprovacao fica registrada para nova tentativa', async ()
   const erroAnterior = console.error;
   console.error = () => {};
   try {
-    const resultado = await _internals.processarPublicacao({ id: 42, telegram_tentativas: 1 }, {
+    const resultado = await _internals.processarSincronizacao({ id: 42, telegram_tentativas: 1 }, {
       buscarSolicitacao: async id => ({ id, status: 'pendente', venda: {} }),
       enviar: async () => { throw new Error('Telegram indisponível'); },
       registrarFalha: async (item, error) => falhas.push({ item, error }),
-      registrarSucesso: async () => assert.fail('não deveria registrar sucesso')
+      registrarPublicacaoSucesso: async () => assert.fail('não deveria registrar sucesso')
     });
 
     assert.equal(resultado.falhou, true);
@@ -113,11 +136,11 @@ test('worker recupera aprovacoes pendentes que ficaram sem mensagem', async () =
       reivindicar: async () => fila.shift() || null,
       buscarSolicitacao: async id => ({ id, status: 'pendente', venda: {} }),
       enviar: async solicitacao => ({ message_id: solicitacao.id + 100 }),
-      registrarSucesso: async (item, publicacao) => enviadas.push({ item, publicacao }),
+      registrarPublicacaoSucesso: async (item, publicacao) => enviadas.push({ item, publicacao }),
       registrarFalha: async () => assert.fail('não deveria registrar falha')
     });
 
-    assert.deepEqual(resultado, { processadas: 2, enviadas: 2, falhas: 0, ignoradas: 0 });
+    assert.deepEqual(resultado, { processadas: 2, enviadas: 2, atualizadas: 0, falhas: 0, ignoradas: 0 });
     assert.deepEqual(enviadas.map(item => item.item.id), [41, 42]);
   } finally {
     if (tokenAnterior === undefined) delete process.env.TELEGRAM_APROVACOES_BOT_TOKEN;
@@ -143,7 +166,7 @@ test('claim compartilhado impede publicar a mesma aprovacao duas vezes', async (
     },
     buscarSolicitacao: async id => ({ id, status: 'pendente', venda: {} }),
     enviar: async () => { envios += 1; return { message_id: 142 }; },
-    registrarSucesso: async () => {}
+    registrarPublicacaoSucesso: async () => {}
   };
   try {
     const resultados = await Promise.all([
@@ -161,6 +184,104 @@ test('claim compartilhado impede publicar a mesma aprovacao duas vezes', async (
   }
 });
 
+test('worker atualiza mensagem quando o estado confirmado diverge do CRM', async () => {
+  const editadas = [];
+  const confirmacoes = [];
+  const resultado = await _internals.processarSincronizacao({ id: 51, telegram_tentativas: 2 }, {
+    buscarSolicitacao: async id => ({
+      id,
+      status: 'recusada',
+      telegram_status_sincronizado: 'pendente',
+      telegram_chat_id: '-100123',
+      telegram_message_id: '900',
+      decisor: { nome: 'Gestora ADM' },
+      venda: {}
+    }),
+    editar: async solicitacao => editadas.push(solicitacao.id),
+    registrarEdicaoSucesso: async (item, status) => confirmacoes.push({ item, status }),
+    registrarFalha: async () => assert.fail('não deveria registrar falha')
+  });
+
+  assert.deepEqual(resultado, { atualizado: true, status: 'recusada' });
+  assert.deepEqual(editadas, [51]);
+  assert.equal(confirmacoes[0].status, 'recusada');
+});
+
+test('falha ao editar mensagem final fica registrada para retentativa', async () => {
+  const falhas = [];
+  const erroAnterior = console.error;
+  console.error = () => {};
+  try {
+    const resultado = await _internals.processarSincronizacao({ id: 52, telegram_tentativas: 3 }, {
+      buscarSolicitacao: async id => ({
+        id,
+        status: 'aprovada',
+        telegram_status_sincronizado: 'pendente',
+        telegram_message_id: '901',
+        venda: {}
+      }),
+      editar: async () => { throw new Error('Falha temporária'); },
+      registrarEdicaoSucesso: async () => assert.fail('não deveria confirmar a edição'),
+      registrarFalha: async (item, error) => falhas.push({ item, error })
+    });
+
+    assert.equal(resultado.falhou, true);
+    assert.equal(falhas.length, 1);
+    assert.match(falhas[0].error.message, /temporária/);
+  } finally {
+    console.error = erroAnterior;
+  }
+});
+
+test('edicao idempotente confirma estado quando Telegram informa que nada mudou', async () => {
+  const confirmacoes = [];
+  const resultado = await _internals.processarSincronizacao({ id: 53, telegram_tentativas: 1 }, {
+    buscarSolicitacao: async id => ({
+      id,
+      status: 'aprovada',
+      telegram_status_sincronizado: null,
+      telegram_message_id: '902',
+      venda: {}
+    }),
+    editar: async () => { throw new Error('Bad Request: message is not modified'); },
+    registrarEdicaoSucesso: async (item, status) => confirmacoes.push({ item, status }),
+    registrarFalha: async () => assert.fail('não deveria registrar falha')
+  });
+
+  assert.equal(resultado.atualizado, true);
+  assert.equal(confirmacoes[0].status, 'aprovada');
+});
+
+test('callback confirma decisão mesmo quando atualização da mensagem fica para retentativa', async () => {
+  const chatAnterior = process.env.TELEGRAM_APROVACOES_CHAT_ID;
+  process.env.TELEGRAM_APROVACOES_CHAT_ID = '-100123';
+  const respostas = [];
+  let contextoRecebido;
+  try {
+    await service.processarCallback({
+      id: 'callback-1',
+      data: 'va:aprovar:77',
+      message: { chat: { id: '-100123' }, message_id: 903 },
+      from: { id: 5, first_name: 'Ana', username: 'ana' }
+    }, {
+      aprovar: async (id, dados, usuarioId, contexto) => {
+        contextoRecebido = contexto;
+        return { id: Number(id), status: 'aprovada' };
+      },
+      reconciliar: async () => ({ falhou: true }),
+      responder: async dados => respostas.push(dados)
+    });
+
+    assert.equal(contextoRecebido.telegram.nome, 'Ana');
+    assert.equal(respostas[0].show_alert, undefined);
+    assert.match(respostas[0].text, /Venda aprovada/);
+    assert.match(respostas[0].text, /automaticamente/);
+  } finally {
+    if (chatAnterior === undefined) delete process.env.TELEGRAM_APROVACOES_CHAT_ID;
+    else process.env.TELEGRAM_APROVACOES_CHAT_ID = chatAnterior;
+  }
+});
+
 test('migration adiciona metadados duraveis para reconciliar aprovacoes', () => {
   const arquivo = path.join(
     __dirname,
@@ -172,6 +293,20 @@ test('migration adiciona metadados duraveis para reconciliar aprovacoes', () => 
   assert.match(conteudo, /telegram_proxima_tentativa_em/);
   assert.match(conteudo, /telegram_ultimo_erro/);
   assert.match(conteudo, /idx_venda_aprovacao_telegram_fila/);
+});
+
+test('migration adiciona estado confirmado e faz backfill apenas das pendencias publicadas', () => {
+  const arquivo = path.join(
+    __dirname,
+    '../src/database/migrations/20260921120000_add_telegram_sync_state_to_venda_aprovacoes.js'
+  );
+  const conteudo = fs.readFileSync(arquivo, 'utf8');
+
+  assert.match(conteudo, /telegram_status_sincronizado/);
+  assert.match(conteudo, /telegram_sincronizado_em/);
+  assert.match(conteudo, /telegram_decisor_nome/);
+  assert.match(conteudo, /where\('status', 'pendente'\)/);
+  assert.match(conteudo, /whereNotNull\('telegram_message_id'\)/);
 });
 
 test('servidor agenda reconciliacao periodica das aprovacoes no Telegram', () => {

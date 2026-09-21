@@ -3,7 +3,7 @@ const telegramAprovacoesService = require('../services/telegram-aprovacoes.servi
 
 async function sincronizarDecisaoNoTelegram(solicitacao) {
   try {
-    await telegramAprovacoesService.atualizarMensagemDecisao(solicitacao);
+    await telegramAprovacoesService.reconciliarSolicitacao(solicitacao.id);
   } catch (error) {
     // A decisão no CRM já foi concluída e não deve ser revertida por uma falha externa.
     console.error('Erro ao refletir decisão de aprovação no Telegram:', error.message);
