@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { _internals } = require('../src/services/venda-aprovacao.service');
+const VendaAprovacaoSolicitacao = require('../src/models/VendaAprovacaoSolicitacao');
 
 const ETAPA_FINAL = 'concluido';
 const AGORA = new Date('2026-08-11T12:00:00.000Z');
@@ -115,4 +116,27 @@ test('combina os tres motivos e gera descricao automatica adequada', () => {
   ]);
   assert.match(_internals.normalizarMotivoDescricao('', venda, motivos), /cliente com venda em andamento/i);
   assert.doesNotMatch(_internals.normalizarMotivoDescricao('', venda, motivos), /^Venda compartilhada\.$/);
+});
+
+test('obsolescencia preserva o status anterior antes de alterar o estado', async () => {
+  const queryOriginal = VendaAprovacaoSolicitacao.query;
+  const patches = [];
+  VendaAprovacaoSolicitacao.query = () => ({
+    where() { return this; },
+    whereNot() { return this; },
+    async patch(payload) {
+      patches.push(payload);
+      return 1;
+    }
+  });
+
+  try {
+    await _internals.obsoletarSolicitacoes(100);
+    assert.equal(patches.length, 2);
+    assert.ok(patches[0].status_anterior_obsoleta);
+    assert.equal(patches[0].status, undefined);
+    assert.equal(patches[1].status, 'obsoleta');
+  } finally {
+    VendaAprovacaoSolicitacao.query = queryOriginal;
+  }
 });

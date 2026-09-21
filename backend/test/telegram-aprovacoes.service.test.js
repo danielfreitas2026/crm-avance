@@ -57,11 +57,29 @@ test('monta mensagem de decisão para refletir o resultado no Telegram', () => {
 test('marca solicitacao obsoleta como desatualizada sem atribuir recusa', () => {
   const texto = _internals.montarMensagemDecisao({
     status: 'obsoleta',
+    status_anterior_obsoleta: 'pendente',
     venda: { razao_social: 'Empresa Alterada' }
   });
 
   assert.match(texto, /^⚪ DESATUALIZADA/);
+  assert.match(texto, /Situação anterior: SEM DECISÃO/);
   assert.doesNotMatch(texto, /RECUSADA|por Não informado/);
+});
+
+test('mensagem desatualizada informa se a solicitacao havia sido aprovada ou recusada', () => {
+  const aprovada = _internals.montarMensagemDecisao({
+    status: 'obsoleta',
+    status_anterior_obsoleta: 'aprovada',
+    venda: {}
+  });
+  const recusada = _internals.montarMensagemDecisao({
+    status: 'obsoleta',
+    status_anterior_obsoleta: 'recusada',
+    venda: {}
+  });
+
+  assert.match(aprovada, /Situação anterior: ✅ APROVADA/);
+  assert.match(recusada, /Situação anterior: ❌ RECUSADA/);
 });
 
 test('reconciliacao de pendencia publicada preserva os botoes de decisão', () => {
@@ -305,6 +323,7 @@ test('migration adiciona estado confirmado e faz backfill apenas das pendencias 
   assert.match(conteudo, /telegram_status_sincronizado/);
   assert.match(conteudo, /telegram_sincronizado_em/);
   assert.match(conteudo, /telegram_decisor_nome/);
+  assert.match(conteudo, /status_anterior_obsoleta/);
   assert.match(conteudo, /where\('status', 'pendente'\)/);
   assert.match(conteudo, /whereNotNull\('telegram_message_id'\)/);
 });

@@ -1,4 +1,5 @@
 const Notificacao = require('../models/Notificacao');
+const { ref } = require('objection');
 const NotificacaoDestinatario = require('../models/NotificacaoDestinatario');
 const Usuario = require('../models/Usuario');
 const Venda = require('../models/Venda');
@@ -307,6 +308,11 @@ async function buscarSolicitacaoAtual(vendaId, trx = null) {
  * Processa obsoletar solicitacoes conforme as regras do dominio.
  */
 async function obsoletarSolicitacoes(vendaId, trx = null) {
+  await VendaAprovacaoSolicitacao.query(trx)
+    .where('venda_id', vendaId)
+    .whereNot('status', STATUS_OBSOLETA)
+    .patch({ status_anterior_obsoleta: ref('status') });
+
   return VendaAprovacaoSolicitacao.query(trx)
     .where('venda_id', vendaId)
     .whereNot('status', STATUS_OBSOLETA)
@@ -621,6 +627,7 @@ module.exports = {
     avaliarMotivosVenda,
     montarMensagemMotivos,
     normalizarMotivoDescricao,
+    obsoletarSolicitacoes,
     subtrairMeses,
     vendaConcluidaRecentemente,
     vendaEmAndamento

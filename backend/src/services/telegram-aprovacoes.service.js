@@ -299,7 +299,14 @@ function nomeExibicaoTelegram(identidade = {}) {
 
 function montarMensagemDecisao(solicitacao) {
   if (solicitacao?.status === 'obsoleta') {
-    return `⚪ DESATUALIZADA\n\n${montarMensagemSolicitacao(solicitacao)}`;
+    const situacoesAnteriores = {
+      aprovada: '✅ APROVADA',
+      recusada: '❌ RECUSADA',
+      pendente: 'SEM DECISÃO'
+    };
+    const situacaoAnterior = situacoesAnteriores[solicitacao.status_anterior_obsoleta]
+      || 'NÃO IDENTIFICADA';
+    return `⚪ DESATUALIZADA\nSituação anterior: ${situacaoAnterior}\n\n${montarMensagemSolicitacao(solicitacao)}`;
   }
 
   const aprovada = solicitacao?.status === 'aprovada';
