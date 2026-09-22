@@ -5,6 +5,7 @@ const NETWORK_GUARD = Symbol.for('crm-avance.test-network-guard');
 
 const sensitiveEnvironmentPatterns = [
   /^APIFY_/,
+  /^CLARO_IMAP_/,
   /^DASHBOARD_INTEGRATION_/,
   /^EMAIL(?:_|$)/,
   /^GMAIL_VIVO_/,

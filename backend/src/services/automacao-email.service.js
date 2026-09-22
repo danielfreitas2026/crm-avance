@@ -22,10 +22,14 @@ const { chamarApiComToken } = require('./telegram.service');
 const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
 const { parseUtcDateTime } = require('../utils/datetime');
 const { interpretarEmail, textoCanonico } = require('./vivo-email-parser.service');
+const { interpretarEmailClaro, normalizarNome } = require('./claro-email-parser.service');
+const claroImapService = require('./claro-imap.service');
 
 const PERMISSAO_RESPONSAVEL = 'problemas_pos_venda_responsavel';
 const TABELA_ESTADO = 'automacao_email_estado';
 const ESTADO_ID = 1;
+const ORIGEM_VIVO = 'gmail_vivo';
+const ORIGEM_CLARO = 'imap_claro';
 
 function formatarSQL(data = new Date()) { return data.toISOString().slice(0, 19).replace('T', ' '); }
 function json(valor, fallback = {}) { if (!valor) return fallback; if (typeof valor === 'object') return valor; try { return JSON.parse(valor); } catch { return fallback; } }
@@ -115,6 +119,8 @@ async function registrarMensagem(remota, token) {
   const autorizado = remetentesPermitidos().has(emailRemetente(remetente));
   const corpo = autorizado ? extrairCorpoMensagem(mime) : null;
   await AutomacaoEmail.query().insert({
+    origem: ORIGEM_VIVO, operadora: 'Vivo', identificador_remoto: mensagem.id,
+    chave_deduplicacao: crypto.createHash('sha256').update(`${ORIGEM_VIVO}:${mensagem.id}`).digest('hex'),
     gmail_message_id: mensagem.id, gmail_thread_id: mensagem.threadId || null,
     remetente, assunto: mime.subject || null, corpo_texto: corpo,
     corpo_hash: corpo ? crypto.createHash('sha256').update(corpo).digest('hex') : null,
@@ -152,10 +158,12 @@ async function coletarEmails({ desdeInicio = false } = {}, dependencias = {}) {
   return { habilitado: true, coletados };
 }
 
-async function coletarHistorico() {
-  const coleta = await coletarEmails({ desdeInicio: true });
-  if (!coleta.habilitado) throw Object.assign(new Error('A automação Gmail está desabilitada.'), { statusCode: 409 });
-  const processados = await processarPendentes();
+async function coletarHistorico(origem = ORIGEM_VIVO) {
+  const claro = origem === ORIGEM_CLARO;
+  if (![ORIGEM_VIVO, ORIGEM_CLARO].includes(origem)) throw Object.assign(new Error('Origem de automação inválida.'), { statusCode: 400 });
+  const coleta = claro ? await claroImapService.coletarEmailsClaro({ desdeInicio: true }) : await coletarEmails({ desdeInicio: true });
+  if (!coleta.habilitado) throw Object.assign(new Error(`A automação ${claro ? 'IMAP Claro' : 'Gmail'} está desabilitada.`), { statusCode: 409 });
+  const processados = claro ? await processarPendentesOrigem(ORIGEM_CLARO) : await processarPendentesOrigem(ORIGEM_VIVO);
   return { ...coleta, processados };
 }
 
@@ -179,6 +187,62 @@ async function buscarCandidatas(campos) {
     .where(builder => builder.whereRaw(`${exprVenda} = ?`, [doc]).orWhereRaw(`${exprCliente} = ?`, [doc]))
     .whereNull('v.excluido_em').withGraphFetched('[cliente, operadora, tipoVenda, vendedora, vendedoras, criador]');
   return vendas.map(venda => aplicarEstadoFunilAutomacao(venda));
+}
+
+async function buscarCandidatasClaro(campos, recebidoEm = null) {
+  const nome = normalizarNome(campos.empresa);
+  if (!nome) return [];
+  const vendas = await Venda.query().alias('v')
+    .join('operadoras as op', 'op.id', 'v.operadora_id')
+    .leftJoin('venda_funil_automacoes as vfa', 'vfa.venda_id', 'v.id')
+    .leftJoin('funil_etapas as etapa_atual', 'etapa_atual.codigo', 'vfa.status_funil')
+    .select(
+      'v.*', 'vfa.status_funil as status_funil_automacao',
+      'vfa.prioridade_funil as prioridade_funil_automacao',
+      'vfa.cancelada_em as cancelada_automacao_em',
+      'vfa.motivo_cancelamento as motivo_cancelamento_automacao',
+      'etapa_atual.nome as status_funil_nome'
+    )
+    .whereRaw('LOWER(op.nome) = ?', ['claro'])
+    .whereNull('v.excluido_em')
+    .whereNotNull('v.enviada_pos_venda_em')
+    .withGraphFetched('[cliente, operadora, tipoVenda, vendedora, vendedoras, criador]');
+  const recebido = instanteUtc(recebidoEm);
+  return vendas
+    .filter(venda => [venda.nome, venda.razao_social, venda.cliente?.nome, venda.cliente?.razao_social].some(valor => normalizarNome(valor) === nome))
+    .filter(venda => {
+      const criada = instanteUtc(venda.criado_em || venda.created_at);
+      return recebido === null || criada === null || criada <= recebido;
+    })
+    .map(venda => aplicarEstadoFunilAutomacao(venda));
+}
+
+async function resolverVendaClaro(registro, campos) {
+  const candidatas = await buscarCandidatasClaro(campos, registro.recebido_em);
+  const finais = await codigosEtapasFinais();
+  const ativas = candidatas.filter(venda => !venda.cancelada_em && !finais.includes(venda.status_funil));
+  const auditoria = candidatas.map(venda => ({
+    id: venda.id,
+    nome: venda.nome,
+    razao_social: venda.razao_social || venda.nome || '',
+    status_funil: venda.status_funil || null,
+    status_funil_nome: venda.status_funil_nome || venda.status_funil || 'Sem etapa',
+    elegivel: ativas.includes(venda),
+    automaticamente_compativel: ativas.includes(venda),
+    inelegibilidades: ativas.includes(venda) ? [] : ['venda concluída ou cancelada'],
+    divergencias: [],
+    vendedores: []
+  }));
+  if (registro.revisado_por_id && registro.venda_id) {
+    const selecionada = ativas.find(venda => Number(venda.id) === Number(registro.venda_id));
+    return selecionada
+      ? { venda: selecionada, candidatas: auditoria.map(item => ({ ...item, manual: Number(item.id) === Number(selecionada.id) })), erro: null }
+      : { venda: null, candidatas: auditoria, erro: 'A venda Claro selecionada manualmente não está ativa ou não corresponde ao nome do e-mail.' };
+  }
+  if (ativas.length === 1) return { venda: ativas[0], candidatas: auditoria, erro: null };
+  if (ativas.length > 1) return { venda: null, candidatas: auditoria, erro: 'Mais de uma venda Claro ativa possui o mesmo nome/razão social.' };
+  if (candidatas.length) return { venda: null, candidatas: auditoria, erro: 'A venda Claro encontrada está concluída ou cancelada.' };
+  return { venda: null, candidatas: [], erro: 'Não foi encontrada uma venda Claro ativa com nome/razão social exatamente correspondente.' };
 }
 
 function cnpjValido(valor) {
@@ -297,6 +361,16 @@ async function validarVendaSelecionada(registro, dados, dependencias = {}) {
     throw Object.assign(new Error('Selecione uma venda válida.'), { statusCode: 400 });
   }
 
+  if (registro.origem === ORIGEM_CLARO) {
+    const candidatas = await (dependencias.buscarClaro || buscarCandidatasClaro)(atuais, registro.recebido_em);
+    const finais = await (dependencias.etapasFinais || codigosEtapasFinais)();
+    const venda = candidatas.find(item => Number(item.id) === vendaId);
+    if (!venda || venda.cancelada_em || finais.includes(venda.status_funil)) {
+      throw Object.assign(new Error('A venda Claro selecionada não está ativa ou não corresponde ao nome do e-mail.'), { statusCode: 400 });
+    }
+    return { venda, cnpj: null };
+  }
+
   const cnpj = cnpjValido(dados.cnpj_venda || atuais.documento);
   const campos = {
     ...atuais,
@@ -324,6 +398,16 @@ async function listarVendasCandidatas(id, cnpjInformado, dependencias = {}) {
   const registro = await AutomacaoEmail.query().findById(id);
   if (!registro) return null;
   const atuais = json(registro.dados_extraidos);
+  if (registro.origem === ORIGEM_CLARO) {
+    const resultado = await resolverVendaClaro({ ...registro, revisado_por_id: null, venda_id: null }, atuais);
+    return {
+      automacao_id: Number(registro.id),
+      empresa: atuais.empresa || null,
+      cnpj: null,
+      cnpj_original: null,
+      vendas: resultado.candidatas
+    };
+  }
   const original = documento(atuais.documento);
   const cnpj = cnpjValido(cnpjInformado || original);
   const campos = { ...atuais, documento: cnpj };
@@ -345,6 +429,7 @@ async function listarVendasCandidatas(id, cnpjInformado, dependencias = {}) {
 }
 
 async function resolverVenda(registro, campos) {
+  if (registro.origem === ORIGEM_CLARO) return resolverVendaClaro(registro, campos);
   const etapasFinais = await codigosEtapasFinais();
   const cancelamento = campos.classificacao === 'cancelamento' || campos.alvo === 'cancelar_venda';
   if (registro.revisado_por_id && registro.venda_id) {
@@ -483,9 +568,14 @@ async function abrirProblemaAutomatico(registro, venda, mensagem) {
 }
 
 async function processarRegistro(registro) {
-  const camposBase = interpretarEmail(registro.corpo_texto);
+  const claro = registro.origem === ORIGEM_CLARO;
+  const camposBase = claro
+    ? interpretarEmailClaro(registro.assunto, registro.corpo_texto)
+    : interpretarEmail(registro.corpo_texto);
   const override = json(registro.dados_extraidos)._override || {};
   const campos = { ...camposBase, ...override };
+  if (claro && !campos.estrutura_valida) return { status: 'revisao', classificacao: 'desconhecido', erro: 'Formato do e-mail Claro não reconhecido.', dados_extraidos: JSON.stringify(campos) };
+  if (claro && !registro.autenticacao_valida) return { status: 'revisao', erro: 'DKIM/DMARC ausente, inválido ou desalinhado com o remetente.', dados_extraidos: JSON.stringify(campos) };
   const resolucao = await resolverVenda(registro, campos);
   const dadosExtraidos = {
     ...campos,
@@ -494,7 +584,7 @@ async function processarRegistro(registro) {
   };
   const revisaoManual = Boolean(registro.revisado_por_id && registro.venda_id);
   const destinoDispensavel = campos.alvo === 'apos_aceite_biometria';
-  if ((!revisaoManual && !campos.documento) || (!revisaoManual && !campos.destino && !destinoDispensavel)) return { status: 'revisao', erro: 'E-mail sem campos obrigatórios.', dados_extraidos: JSON.stringify(dadosExtraidos) };
+  if ((!claro && !revisaoManual && !campos.documento) || (!revisaoManual && !campos.destino && !destinoDispensavel)) return { status: 'revisao', erro: 'E-mail sem campos obrigatórios.', dados_extraidos: JSON.stringify(dadosExtraidos) };
   if (campos.classificacao === 'desconhecido') return { status: 'revisao', erro: 'Destino do e-mail não reconhecido.', dados_extraidos: JSON.stringify(dadosExtraidos) };
   if (!resolucao.venda) return { status: 'revisao', erro: resolucao.erro || 'Não foi possível identificar uma única venda ativa para o documento.', dados_extraidos: JSON.stringify(dadosExtraidos) };
   const venda = resolucao.venda;
@@ -507,6 +597,9 @@ async function processarRegistro(registro) {
   }
   if (campos.classificacao === 'sem_acao') {
     return { status: 'concluido', classificacao: 'sem_acao', venda_id: venda.id, etapa_destino: null, dados_extraidos: JSON.stringify(dadosExtraidos), erro: null, processado_em: formatarSQL() };
+  }
+  if (claro && !claroImapService.acoesAutomaticasHabilitadas()) {
+    return { status: 'revisao', classificacao: campos.classificacao, venda_id: venda.id, erro: 'Ações automáticas da Claro aguardam homologação.', dados_extraidos: JSON.stringify(dadosExtraidos) };
   }
   if (campos.classificacao === 'cancelamento') {
     const motivoPadrao = /pedido\s+cancelado\s+pelo\s+cliente/.test(textoCanonico(campos.destino))
@@ -531,16 +624,18 @@ async function processarRegistro(registro) {
   if (!etapa) return { status: 'revisao', erro: destinoResolvido.erro, venda_id: venda.id, dados_extraidos: JSON.stringify(dadosExtraidos) };
   const atual = await FunilEtapa.query().findOne({ codigo: venda.status_funil });
   if (atual && Number(etapa.ordem) < Number(atual.ordem)) return { status: 'regressao_funil', erro: 'O e-mail tentaria regredir o funil.', venda_id: venda.id, etapa_destino: etapa.codigo, dados_extraidos: JSON.stringify(dadosExtraidos) };
-  if (venda.status_funil !== etapa.codigo) {
+  const precisaAtualizarMarcadores = claro && (campos.marcar_aceite || campos.marcar_biometria);
+  if (venda.status_funil !== etapa.codigo || precisaAtualizarMarcadores) {
     const movimento = await vendaFunilAutomacaoService.movimentar(
       venda.id,
       {
         status_funil: etapa.codigo,
-        observacao: `Atualização automática pelo Gmail: ${campos.destino || campos.mensagem_operador}`
+        observacao: `Atualização automática por e-mail ${claro ? 'Claro' : 'Gmail'}: ${campos.destino || campos.mensagem_operador}`
       },
       {
-        origem: 'automacao_gmail',
+        origem: claro ? 'automacao_imap_claro' : 'automacao_gmail',
         automacaoEmailId: registro.id,
+        ...(claro ? { marcadores: { aceite: campos.marcar_aceite, biometria: campos.marcar_biometria } } : {}),
         ...(registro.recebido_em ? { recebidoEm: registro.recebido_em } : {})
       }
     );
@@ -572,6 +667,15 @@ async function processarPendentes(limite = 20) {
   for (const item of pendentes) {
     if (await processarPendente(item)) processados += 1;
   }
+  return processados;
+}
+
+async function processarPendentesOrigem(origem, limite = 20) {
+  const limiteTravado = new Date(Date.now() - 10 * 60 * 1000);
+  await AutomacaoEmail.query().where({ status: 'processando', origem }).where('updated_at', '<', formatarSQL(limiteTravado)).patch({ status: 'pendente', erro: 'Processamento anterior interrompido; item recuperado.', updated_at: new Date() });
+  const pendentes = await AutomacaoEmail.query().where({ status: 'pendente', origem }).orderBy('recebido_em').limit(limite);
+  let processados = 0;
+  for (const item of pendentes) if (await processarPendente(item)) processados += 1;
   return processados;
 }
 
@@ -635,7 +739,7 @@ async function registrarFalhaCiclo(fase, error, database = db) {
 async function ciclo(dependencias = {}) {
   const database = dependencias.database || db;
   const coletar = dependencias.coletarEmails || coletarEmails;
-  const processar = dependencias.processarPendentes || processarPendentes;
+  const processar = dependencias.processarPendentes || (() => processarPendentesOrigem(ORIGEM_VIVO));
   const enviarTelegrams = dependencias.repetirTelegrams || repetirTelegrams;
   await registrarInicioCiclo(database);
   let fase = 'coleta';
@@ -653,6 +757,45 @@ async function ciclo(dependencias = {}) {
     return coleta;
   } catch (error) {
     try { await registrarFalhaCiclo(fase, error, database); } catch { }
+    throw error;
+  }
+}
+
+async function salvarEstadoIntegracaoClaro(patch, database = db) {
+  const dados = { ...patch, updated_at: new Date() };
+  const atualizados = await database(TABELA_ESTADO).where({ origem: ORIGEM_CLARO }).update(dados);
+  if (!atualizados) await database(TABELA_ESTADO).insert({ id: 2, origem: ORIGEM_CLARO, ...dados }).onConflict('id').merge();
+}
+
+async function cicloClaro(dependencias = {}) {
+  const database = dependencias.database || db;
+  const coletar = dependencias.coletarEmails || claroImapService.coletarEmailsClaro;
+  const processar = dependencias.processarPendentes || (() => processarPendentesOrigem(ORIGEM_CLARO));
+  await salvarEstadoIntegracaoClaro({ estado: 'processando', fase_erro: null, ultimo_inicio_em: formatarSQL() }, database);
+  let fase = 'coleta';
+  try {
+    const coleta = await coletar();
+    if (!coleta.habilitado) {
+      await salvarEstadoIntegracaoClaro({ estado: 'desabilitado', fase_erro: null, ultimo_fim_em: formatarSQL(), ultimo_erro: null, falhas_consecutivas: 0 }, database);
+      return coleta;
+    }
+    fase = 'processamento';
+    await processar();
+    const agora = formatarSQL();
+    await salvarEstadoIntegracaoClaro({
+      estado: 'ok', fase_erro: null, ultimo_fim_em: agora, ultimo_sucesso_em: agora,
+      ultimo_erro_em: null, ultimo_erro: null, falhas_consecutivas: 0,
+      emails_ultimo_ciclo: Number(coleta.coletados || 0)
+    }, database);
+    return coleta;
+  } catch (error) {
+    try {
+      const atual = await database(TABELA_ESTADO).where({ origem: ORIGEM_CLARO }).first();
+      await salvarEstadoIntegracaoClaro({
+        estado: 'erro', fase_erro: fase, ultimo_fim_em: formatarSQL(), ultimo_erro_em: formatarSQL(),
+        ultimo_erro: mensagemErroIntegracao(error), falhas_consecutivas: Number(atual?.falhas_consecutivas || 0) + 1
+      }, database);
+    } catch { }
     throw error;
   }
 }
@@ -686,6 +829,7 @@ async function listar(filtros = {}) {
   const query = AutomacaoEmail.query().orderBy('recebido_em', 'desc').orderBy('id', 'desc');
   if (filtros.status) query.where('status', filtros.status);
   if (filtros.classificacao) query.where('classificacao', filtros.classificacao);
+  if (filtros.operadora) query.where('operadora', filtros.operadora);
   if (titulo) query.whereRaw("LOCATE(LOWER(?), LOWER(COALESCE(assunto, ''))) > 0", [titulo]);
   const resultado = await query.page(pagina - 1, porPagina);
   const data = await enriquecerEtapasCandidatas(resultado.results.map(item => ({ ...item, dados_extraidos: json(item.dados_extraidos) })));
@@ -693,11 +837,13 @@ async function listar(filtros = {}) {
 }
 
 async function resumo(database = db) {
-  const [linhas, cancelamentos, ultima, estado] = await Promise.all([
+  const claroAtiva = claroImapService.habilitado();
+  const [linhas, cancelamentos, ultima, estado, estadoClaro] = await Promise.all([
     database('automacao_emails').select('status').count('* as total').groupBy('status'),
     database('automacao_emails').where('classificacao', 'cancelamento').count('* as total').first(),
     database('automacao_emails').max('recebido_em as recebido_em').first(),
-    database(TABELA_ESTADO).where({ id: ESTADO_ID }).first()
+    database(TABELA_ESTADO).where({ id: ESTADO_ID }).first(),
+    claroAtiva ? database(TABELA_ESTADO).where({ id: 2 }).first() : Promise.resolve(null)
   ]);
   const habilitada = configurado();
   const intervaloMs = Math.max(30000, Number(process.env.GMAIL_VIVO_POLL_INTERVAL_MS) || 60000);
@@ -708,6 +854,31 @@ async function resumo(database = db) {
   else if (!ultimoInicio || estado?.estado === 'desabilitado') estadoPublico = 'aguardando';
   else if (estado?.estado === 'erro') estadoPublico = 'falha';
   else if (Date.now() - ultimoInicio.getTime() > limiteSemRespostaMs) estadoPublico = 'sem_resposta';
+  function estadoPublicoIntegracao(registro, ativa, intervalo) {
+    const ultimo = parseUtcDateTime(registro?.ultimo_inicio_em);
+    const limite = Math.max(intervalo * 3, 5 * 60 * 1000);
+    if (!ativa) return 'desabilitado';
+    if (!ultimo || registro?.estado === 'desabilitado') return 'aguardando';
+    if (registro?.estado === 'erro') return 'falha';
+    if (Date.now() - ultimo.getTime() > limite) return 'sem_resposta';
+    return 'ativo';
+  }
+  function dadosIntegracao(registro, ativa, intervalo) {
+    return {
+      estado: estadoPublicoIntegracao(registro, ativa, intervalo),
+      fase_erro: registro?.fase_erro || null,
+      ultimo_inicio_em: registro?.ultimo_inicio_em || null,
+      ultimo_fim_em: registro?.ultimo_fim_em || null,
+      ultimo_sucesso_em: registro?.ultimo_sucesso_em || null,
+      ultimo_erro_em: registro?.ultimo_erro_em || null,
+      ultimo_erro: registro?.ultimo_erro || null,
+      falhas_consecutivas: Number(registro?.falhas_consecutivas || 0),
+      emails_ultimo_ciclo: Number(registro?.emails_ultimo_ciclo || 0)
+    };
+  }
+  const vivo = dadosIntegracao(estado, habilitada, intervaloMs);
+  const claroIntervalo = Math.max(30000, Number(process.env.CLARO_IMAP_POLL_INTERVAL_MS) || 60000);
+  const claro = dadosIntegracao(estadoClaro, claroAtiva, claroIntervalo);
   return {
     habilitada,
     ultima_mensagem_em: ultima?.recebido_em || null,
@@ -723,7 +894,9 @@ async function resumo(database = db) {
       ultimo_erro: estado?.ultimo_erro || null,
       falhas_consecutivas: Number(estado?.falhas_consecutivas || 0),
       emails_ultimo_ciclo: Number(estado?.emails_ultimo_ciclo || 0)
-    }
+    },
+    integracoes: { gmail_vivo: vivo, imap_claro: claro },
+    habilitada_claro: claroAtiva
   };
 }
 
@@ -733,14 +906,14 @@ async function revisar(id, dados, usuarioId, dependencias = {}) {
   const atuais = json(registro.dados_extraidos);
   const { venda, cnpj } = await validarVendaSelecionada(registro, dados, dependencias);
   const vendaId = Number(venda.id);
-  const override = { classificacao: dados.classificacao, alvo: dados.etapa_destino || null, mensagem_operador: dados.mensagem_operador || atuais.mensagem_operador, destino: dados.destino || atuais.destino, documento: atuais.documento };
+  const override = { classificacao: dados.classificacao, alvo: dados.etapa_destino || null, mensagem_operador: dados.mensagem_operador || atuais.mensagem_operador, destino: dados.destino || atuais.destino, documento: atuais.documento, ...(registro.origem === ORIGEM_CLARO ? { empresa: atuais.empresa, estrutura_valida: atuais.estrutura_valida } : {}) };
   await AutomacaoEmail.query().patchAndFetchById(id, { venda_id: vendaId, dados_extraidos: JSON.stringify({ ...atuais, cnpj_venda_manual: cnpj, _override: override }), revisado_por_id: usuarioId, justificativa_revisao: justificativa, status: 'pendente', erro: null });
-  await processarPendentes(); return AutomacaoEmail.query().findById(id);
+  await processarPendentesOrigem(registro.origem || ORIGEM_VIVO); return AutomacaoEmail.query().findById(id);
 }
 
 async function prepararRepeticao(item, carregarCorpo = carregarCorpoGmail) {
   const atualizacao = { status: 'pendente', erro: null };
-  if (pontuarCorpoEmail(item.corpo_texto) === 0 && item.gmail_message_id) {
+  if (item.origem !== ORIGEM_CLARO && pontuarCorpoEmail(item.corpo_texto) === 0 && item.gmail_message_id) {
     const corpo = await carregarCorpo(item.gmail_message_id);
     atualizacao.corpo_texto = corpo;
     atualizacao.corpo_hash = corpo ? crypto.createHash('sha256').update(corpo).digest('hex') : null;
@@ -752,7 +925,7 @@ async function repetir(id) {
   const item = await AutomacaoEmail.query().findById(id);
   if (!item) return null;
   await AutomacaoEmail.query().patchAndFetchById(id, await prepararRepeticao(item));
-  await processarPendentes();
+  await processarPendentesOrigem(item.origem || ORIGEM_VIVO);
   return AutomacaoEmail.query().findById(id);
 }
 
@@ -1114,4 +1287,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, coletarEmails, coletarHistorico, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo } };
+module.exports = { ciclo, cicloClaro, coletarEmails, coletarHistorico, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, processarPendentesOrigem, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverVendaClaro, buscarCandidatasClaro, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, salvarEstadoIntegracaoClaro, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo } };

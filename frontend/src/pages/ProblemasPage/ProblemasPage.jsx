@@ -202,7 +202,7 @@ export default function ProblemasPage() {
         <section className="automation-summary" aria-label="Resumo dos problemas">
           <div className={`automation-connection ${totais.abertos > 0 ? 'has-problems' : ''}`}>
             <span className="automation-summary__icon"><I.AlertTriangle size={18} /></span>
-            <div><strong>{totais.abertos} problema{totais.abertos === 1 ? '' : 's'} aberto{totais.abertos === 1 ? '' : 's'}</strong><span>Originados automaticamente pelos e-mails da VIVO</span></div>
+            <div><strong>{totais.abertos} problema{totais.abertos === 1 ? '' : 's'} aberto{totais.abertos === 1 ? '' : 's'}</strong><span>Originados automaticamente pelos e-mails das operadoras</span></div>
           </div>
           <button type="button" className="btn automation-refresh" disabled={carregando} onClick={() => setAtualizacao(valor => valor + 1)}><I.Refresh size={14} /> {carregando ? 'Atualizando...' : 'Atualizar'}</button>
         </section>

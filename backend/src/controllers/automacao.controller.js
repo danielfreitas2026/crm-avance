@@ -3,7 +3,7 @@ const service = require('../services/automacao-email.service');
 function erro(res, error) { console.error(error); return res.status(error.statusCode || 500).json({ message: error.message || 'Erro na automação.' }); }
 async function index(req, res) { try { return res.json(await service.listar(req.query)); } catch (error) { return erro(res, error); } }
 async function resumo(req, res) { try { return res.json(await service.resumo()); } catch (error) { return erro(res, error); } }
-async function coletarHistorico(req, res) { try { return res.json(await service.coletarHistorico()); } catch (error) { return erro(res, error); } }
+async function coletarHistorico(req, res) { try { return res.json(await service.coletarHistorico(req.body?.origem)); } catch (error) { return erro(res, error); } }
 async function vendasCandidatas(req, res) { try { const item = await service.listarVendasCandidatas(req.params.id, req.query?.cnpj); return item ? res.json(item) : res.status(404).json({ message: 'Execução não encontrada.' }); } catch (error) { return erro(res, error); } }
 async function revisar(req, res) { try { const item = await service.revisar(req.params.id, req.body, req.usuario.id); return item ? res.json(item) : res.status(404).json({ message: 'Execução não encontrada.' }); } catch (error) { return erro(res, error); } }
 async function repetir(req, res) { try { const item = await service.repetir(req.params.id); return item ? res.json(item) : res.status(404).json({ message: 'Execução não encontrada.' }); } catch (error) { return erro(res, error); } }

@@ -19,6 +19,8 @@ function estadoInicial(venda, agora = formatarSQL()) {
     prioridade_funil: venda.prioridade_funil || 'media',
     cancelada_em: venda.cancelada_em || null,
     motivo_cancelamento: venda.motivo_cancelamento || null,
+    aceite_concluido_auto: false,
+    biometria_concluida_auto: false,
     ultima_atividade_em: venda.ultima_atividade_em || venda.updated_at || venda.created_at || agora,
     created_at: agora,
     updated_at: agora
@@ -61,7 +63,7 @@ async function registrarHistorico(estado, dados, trx) {
     observacao: dados.observacao || null,
     dados: {
       ...(dados.dados || {}),
-      ...(dados.origem === 'automacao_gmail' ? { origem_movimentacao: 'automacao_gmail' } : {})
+      ...(dados.origem.startsWith('automacao_') ? { origem_movimentacao: dados.origem } : {})
     },
     created_at: dados.agora
   });
@@ -93,11 +95,11 @@ async function movimentar(vendaId, dados, opcoes = {}) {
     if (!venda) return { status: 'not_found' };
     let estado = await garantirEstado(venda, trx);
     estado = await VendaFunilAutomacao.query(trx).findById(vendaId).forUpdate();
-    if (origem === 'automacao_gmail' && await historicoDoEmail(opcoes.automacaoEmailId, trx)) {
+    if (origem.startsWith('automacao_') && await historicoDoEmail(opcoes.automacaoEmailId, trx)) {
       return { status: 'ok', estado, alterada: false };
     }
     if (estado.cancelada_em) return { status: 'invalid', message: 'Venda cancelada no funil automático não pode ser movimentada.' };
-    if (origem === 'automacao_gmail' && estado.status_funil !== status) {
+    if (origem.startsWith('automacao_') && estado.status_funil !== status) {
       const etapaAtual = await FunilEtapa.query(trx).findOne({ codigo: estado.status_funil });
       if (etapaAtual && Number(etapa.ordem) < Number(etapaAtual.ordem)) {
         return { status: 'invalid', message: 'O e-mail tentaria regredir o funil.' };
@@ -109,6 +111,8 @@ async function movimentar(vendaId, dados, opcoes = {}) {
     const atualizada = await VendaFunilAutomacao.query(trx).patchAndFetchById(vendaId, {
       status_funil: status,
       prioridade_funil: prioridade,
+      ...(opcoes.marcadores?.aceite ? { aceite_concluido_auto: true } : {}),
+      ...(opcoes.marcadores?.biometria ? { biometria_concluida_auto: true } : {}),
       ultima_atividade_em: agora,
       updated_at: agora
     });
@@ -198,9 +202,15 @@ async function listar(filtros, usuarioId) {
       prioridade_funil: estado.prioridade_funil || 'media',
       cancelada_em: estado.cancelada_em || null,
       motivo_cancelamento: estado.motivo_cancelamento || null,
+      aceite_concluido: Boolean(estado.aceite_concluido_auto || venda.aceite_concluido),
+      biometria_concluida: Boolean(estado.biometria_concluida_auto || venda.biometria_concluida),
+      aceite_concluido_auto: Boolean(estado.aceite_concluido_auto),
+      biometria_concluida_auto: Boolean(estado.biometria_concluida_auto),
       ultima_atividade_em: estado.ultima_atividade_em || null,
       divergente_automacao: (estado.status_funil || null) !== (venda.status_funil || null)
-        || Boolean(estado.cancelada_em) !== Boolean(venda.cancelada_em),
+        || Boolean(estado.cancelada_em) !== Boolean(venda.cancelada_em)
+        || Boolean(estado.aceite_concluido_auto || venda.aceite_concluido) !== Boolean(venda.aceite_concluido)
+        || Boolean(estado.biometria_concluida_auto || venda.biometria_concluida) !== Boolean(venda.biometria_concluida),
       historico: historicosPorVenda.get(Number(venda.id)) || []
     };
   }).filter(venda => {

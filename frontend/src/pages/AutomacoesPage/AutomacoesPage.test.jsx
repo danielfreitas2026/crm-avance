@@ -262,6 +262,40 @@ describe('Painéis da automação Gmail VIVO', () => {
     if (estado === 'falha') expect(screen.getByRole('alert')).toHaveTextContent('Google 401 · invalid_grant');
   });
 
+  it('exibe saúde independente e filtra/coleta a origem Claro', async () => {
+    const user = userEvent.setup();
+    api.obterResumoAutomacoes.mockResolvedValue({
+      ...resumo,
+      habilitada_claro: true,
+      integracoes: { imap_claro: { estado: 'ativo', ultimo_sucesso_em: '2026-09-22 12:00:00' } }
+    });
+    render(<AutomacoesPage />);
+    expect(await screen.findByText('IMAP Claro ativo')).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Operadora' }), 'Claro');
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: '', operadora: 'Claro', page: 1, perPage: 20 }));
+    await user.click(screen.getByRole('button', { name: 'Buscar e-mails anteriores (Claro)' }));
+    await waitFor(() => expect(api.coletarHistoricoAutomacoes).toHaveBeenCalledWith('imap_claro'));
+  });
+
+  it('vincula revisão Claro pelo nome sem solicitar CNPJ', async () => {
+    api.listarVendasCandidatasAutomacao.mockResolvedValue({
+      automacao_id: 20,
+      empresa: 'Empresa Ágil',
+      cnpj: null,
+      vendas: [{ ...vendaCandidata, id: 77, razao_social: 'Empresa Ágil Ltda' }]
+    });
+    render(<VincularVendaAutomacaoModal
+      item={{ ...execucao, id: 20, operadora: 'Claro', dados_extraidos: { empresa: 'Empresa Ágil' } }}
+      onClose={vi.fn()}
+      onSelecionar={vi.fn()}
+    />);
+    expect(await screen.findByText('Empresa extraída do e-mail')).toBeInTheDocument();
+    expect(screen.getAllByText('Empresa Ágil').length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText('CNPJ para buscar vendas')).not.toBeInTheDocument();
+    expect(screen.getByText('Venda #77')).toBeInTheDocument();
+  });
+
   it('usa status e cancelamentos como filtros mutuamente exclusivos', async () => {
     const user = userEvent.setup();
     render(<AutomacoesPage />);

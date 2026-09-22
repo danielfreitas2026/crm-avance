@@ -137,6 +137,15 @@ function processarEmailsVivo() {
     .finally(() => { processandoEmailsVivo = false; });
 }
 
+let processandoEmailsClaro = false;
+function processarEmailsClaro() {
+  if (processandoEmailsClaro) return;
+  processandoEmailsClaro = true;
+  automacaoEmailService.cicloClaro()
+    .catch(error => console.error('Erro ao processar e-mails da Claro:', error))
+    .finally(() => { processandoEmailsClaro = false; });
+}
+
 function iniciarAgendamentos() {
   setTimeout(limparArquivosVencidos, 60 * 1000);
   setInterval(limparArquivosVencidos, 24 * 60 * 60 * 1000);
@@ -156,6 +165,9 @@ function iniciarAgendamentos() {
   const gmailIntervaloMs = Math.max(30000, Number(process.env.GMAIL_VIVO_POLL_INTERVAL_MS) || 60000);
   setTimeout(processarEmailsVivo, 20000);
   setInterval(processarEmailsVivo, gmailIntervaloMs);
+  const claroIntervaloMs = Math.max(30000, Number(process.env.CLARO_IMAP_POLL_INTERVAL_MS) || 60000);
+  setTimeout(processarEmailsClaro, 22000);
+  setInterval(processarEmailsClaro, claroIntervaloMs);
   setTimeout(() => automacaoEmailService.limparCorposExpirados().catch(error => console.error('Erro ao expirar corpos de e-mail:', error)), 25000);
   setInterval(() => automacaoEmailService.limparCorposExpirados().catch(error => console.error('Erro ao expirar corpos de e-mail:', error)), 24 * 60 * 60 * 1000);
 }

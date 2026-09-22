@@ -100,6 +100,7 @@ function useDialogAcessivel(onClose, bloqueado = false) {
 export function VincularVendaAutomacaoModal({ item, onClose, onSelecionar }) {
   const dialogRef = useDialogAcessivel(onClose);
   const buscaSequenciaRef = useRef(0);
+  const claro = item.operadora === 'Claro';
   const documentoOriginal = String(item.dados_extraidos?.documento || '').replace(/\D/g, '');
   const [dados, setDados] = useState(null);
   const [cnpjInput, setCnpjInput] = useState(formatarCnpj(documentoOriginal));
@@ -115,8 +116,8 @@ export function VincularVendaAutomacaoModal({ item, onClose, onSelecionar }) {
       .then(resultado => {
         if (!ativo) return;
         setDados(resultado);
-        setCnpjInput(formatarCnpj(resultado.cnpj));
-        setCnpjPesquisado(resultado.cnpj);
+        setCnpjInput(formatarCnpj(resultado.cnpj || ''));
+        setCnpjPesquisado(resultado.cnpj || '');
         setBuscaPendente(false);
       })
       .catch(error => {
@@ -186,16 +187,17 @@ export function VincularVendaAutomacaoModal({ item, onClose, onSelecionar }) {
         </div>
 
         <div className="modal-body automation-sale-modal__body">
-          <form className="automation-sale-search" onSubmit={buscarOutroCnpj}>
+          {!claro && <form className="automation-sale-search" onSubmit={buscarOutroCnpj}>
             <label htmlFor="automation-sale-cnpj">CNPJ para buscar vendas</label>
             <div>
               <input id="automation-sale-cnpj" inputMode="numeric" maxLength="18" placeholder="00.000.000/0000-00" value={cnpjInput} onChange={alterarCnpj} disabled={carregando} />
               <button type="submit" className="btn btn-primary" disabled={carregando || cnpjInput.replace(/\D/g, '').length !== 14 || !buscaPendente}>{carregando ? 'Buscando...' : 'Buscar'}</button>
             </div>
             {cnpjOriginal && <small>CNPJ extraído do e-mail: {formatarCnpj(cnpjOriginal)}</small>}
-          </form>
+          </form>}
+          {claro && <div className="automation-sale-search"><strong>Empresa extraída do e-mail</strong><span>{dados?.empresa || item.dados_extraidos?.empresa || 'Não identificada'}</span></div>}
 
-          {carregando && <div className="automation-sale-state">Buscando vendas do mesmo CNPJ...</div>}
+          {carregando && <div className="automation-sale-state">{claro ? 'Buscando vendas Claro com o mesmo nome...' : 'Buscando vendas do mesmo CNPJ...'}</div>}
           {erro && <div className="alert-error" role="alert">{erro}</div>}
           {!carregando && buscaPendente && !erro && <div className="automation-sale-state">Clique em Buscar para atualizar as vendas deste CNPJ.</div>}
 
@@ -203,7 +205,7 @@ export function VincularVendaAutomacaoModal({ item, onClose, onSelecionar }) {
             <>
               {cnpjDiferente && <div className="automation-sale-warning" role="status"><I.AlertTriangle size={16} />O CNPJ pesquisado será usado somente para selecionar a venda. O documento extraído do e-mail não será alterado.</div>}
               {!dados.vendas.length ? (
-                <div className="automation-sale-state">Nenhuma venda foi encontrada para este CNPJ.</div>
+                <div className="automation-sale-state">{claro ? 'Nenhuma venda Claro ativa foi encontrada para este nome.' : 'Nenhuma venda foi encontrada para este CNPJ.'}</div>
               ) : (
                 <div className="automation-sale-list">
                   {dados.vendas.map(venda => (
@@ -429,6 +431,7 @@ function CorrecaoHistoricoModal({ item, onClose, onCorrigido, onErro }) {
 export default function AutomacoesPage() {
   const [status, setStatus] = useState('');
   const [classificacao, setClassificacao] = useState('');
+  const [operadora, setOperadora] = useState('');
   const [tituloInput, setTituloInput] = useState('');
   const [titulo, setTitulo] = useState('');
   const [pagina, setPagina] = useState(1);
@@ -452,7 +455,7 @@ export default function AutomacoesPage() {
     try {
       setErro('');
       const [lista, dadosResumo] = await Promise.all([
-        listarAutomacoes({ status, ...(classificacao ? { classificacao } : {}), ...(titulo ? { titulo } : {}), page: pagina, perPage: porPagina }),
+        listarAutomacoes({ status, ...(operadora ? { operadora } : {}), ...(classificacao ? { classificacao } : {}), ...(titulo ? { titulo } : {}), page: pagina, perPage: porPagina }),
         obterResumoAutomacoes()
       ]);
       if (!ativo.valor) return;
@@ -473,7 +476,7 @@ export default function AutomacoesPage() {
         setAtualizando(false);
       }
     }
-  }, [classificacao, pagina, porPagina, status, titulo]);
+  }, [classificacao, operadora, pagina, porPagina, status, titulo]);
 
   useEffect(() => {
     const agendamento = window.setTimeout(() => {
@@ -491,7 +494,8 @@ export default function AutomacoesPage() {
     setErro('');
     setSucesso('');
     try {
-      const resultado = await coletarHistoricoAutomacoes();
+      const origem = operadora === 'Claro' || (!operadora && !resumo.habilitada && resumo.habilitada_claro) ? 'imap_claro' : 'gmail_vivo';
+      const resultado = await coletarHistoricoAutomacoes(origem);
       setSucesso(`${resultado.coletados} e-mail(is) anterior(es) encontrado(s); ${resultado.processados} processado(s) agora.`);
       await carregar(true);
     } catch (error) {
@@ -554,6 +558,12 @@ export default function AutomacoesPage() {
   const tituloIntegracao = estadoIntegracao === 'falha' && integracao.fase_erro
     ? FASE_LABEL[integracao.fase_erro] || 'Falha na automação'
     : INTEGRACAO_LABEL[estadoIntegracao] || 'Estado do Gmail indisponível';
+  const integracaoClaro = resumo.integracoes?.imap_claro || { estado: resumo.habilitada_claro ? 'aguardando' : 'desabilitado' };
+  const claroComFalha = ['falha', 'sem_resposta'].includes(integracaoClaro.estado);
+  const classeClaro = integracaoClaro.estado === 'ativo' ? 'is-active' : claroComFalha ? 'is-error' : 'is-disabled';
+  const tituloClaro = integracaoClaro.estado === 'falha' && integracaoClaro.fase_erro
+    ? FASE_LABEL[integracaoClaro.fase_erro] || 'Falha na automação Claro'
+    : ({ ativo: 'IMAP Claro ativo', falha: 'Falha na automação Claro', sem_resposta: 'Worker Claro sem resposta', desabilitado: 'IMAP Claro desabilitado', aguardando: 'Claro aguardando primeiro ciclo' }[integracaoClaro.estado] || 'Estado do IMAP Claro indisponível');
   function alterarFiltro(novoFiltro) {
     const novaClassificacao = novoFiltro === 'cancelamento' ? 'cancelamento' : '';
     const novoStatus = novaClassificacao ? '' : novoFiltro;
@@ -576,6 +586,10 @@ export default function AutomacoesPage() {
               {integracao.ultimo_erro && <small className="automation-connection__error" role="alert">{integracao.ultimo_erro}</small>}
             </div>
           </div>
+          <div className={`automation-connection ${classeClaro}`}>
+            <span className="automation-summary__icon">{claroComFalha ? <I.AlertTriangle size={18} /> : <I.Mail size={18} />}</span>
+            <div><strong>{tituloClaro}</strong>{integracaoClaro.ultimo_sucesso_em && <span>Último ciclo concluído: {dataHora(integracaoClaro.ultimo_sucesso_em)}</span>}{integracaoClaro.ultimo_erro && <small className="automation-connection__error" role="alert">{integracaoClaro.ultimo_erro}</small>}</div>
+          </div>
           <button type="button" className={`automation-metric ${status === '' && classificacao === '' ? 'is-selected' : ''}`} aria-label={`Mostrar todas as ${total} execuções`} aria-pressed={status === '' && classificacao === ''} onClick={() => alterarFiltro('')}><strong>{total}</strong><span>Todas</span></button>
           {STATUS.filter(Boolean).map(chave => (
             <button type="button" key={chave} className={`automation-metric status-${chave} ${status === chave ? 'is-selected' : ''}`} aria-label={`Filtrar por ${STATUS_LABEL[chave]}: ${Number(contadores[chave] || 0)}`} aria-pressed={status === chave} onClick={() => alterarFiltro(chave)}><strong>{Number(contadores[chave] || 0)}</strong><span>{STATUS_LABEL[chave]}</span></button>
@@ -593,6 +607,14 @@ export default function AutomacoesPage() {
               </select>
             </label>
             <label>
+              Operadora
+              <select value={operadora} onChange={event => { setOperadora(event.target.value); setPagina(1); setCarregando(true); }}>
+                <option value="">Vivo e Claro</option>
+                <option value="Vivo">Vivo</option>
+                <option value="Claro">Claro</option>
+              </select>
+            </label>
+            <label>
               Título do e-mail
               <span className="automation-title-search">
                 <I.Search size={15} aria-hidden="true" />
@@ -603,7 +625,7 @@ export default function AutomacoesPage() {
           <div className="automation-toolbar__actions">
             <button type="button" className="btn" disabled={barraOcupada || totalRevisoes === 0} onClick={repetirRevisoes}><I.Refresh size={14} /> {repetindoRevisoes ? 'Reprocessando...' : `Repetir revisões e regressões (${totalRevisoes})`}</button>
             <button type="button" className="btn" disabled={barraOcupada} onClick={auditarHistoricos}><I.AlertTriangle size={14} /> {auditandoHistorico ? 'Auditando...' : 'Auditar históricos'}</button>
-            <button type="button" className="btn" disabled={barraOcupada || !resumo.habilitada} onClick={coletarHistorico}><I.History size={14} /> {coletandoHistorico ? 'Buscando histórico...' : 'Buscar e-mails anteriores'}</button>
+            <button type="button" className="btn" disabled={barraOcupada || (operadora === 'Claro' ? !resumo.habilitada_claro : operadora === 'Vivo' ? !resumo.habilitada : !resumo.habilitada && !resumo.habilitada_claro)} onClick={coletarHistorico}><I.History size={14} /> {coletandoHistorico ? 'Buscando histórico...' : `Buscar e-mails anteriores${operadora ? ` (${operadora})` : ''}`}</button>
             <button type="button" className="btn automation-refresh" disabled={barraOcupada} onClick={() => carregar(true)}><I.Refresh size={14} /> {atualizando ? 'Atualizando...' : 'Atualizar'}</button>
           </div>
         </section>
@@ -624,7 +646,7 @@ export default function AutomacoesPage() {
           {!carregando && itens.map(item => (
             <details key={item.id} className={`automation-card status-${item.status}`}>
               <summary>
-                <div className="automation-card__identity"><strong>{item.assunto || '(sem assunto)'}</strong><span>{item.remetente || 'Remetente não informado'}</span></div>
+                <div className="automation-card__identity"><strong>{item.assunto || '(sem assunto)'}</strong><span>{item.operadora || 'Vivo'} · {item.origem || 'gmail_vivo'} · {item.remetente || 'Remetente não informado'}</span></div>
                 <div className="automation-card__meta"><span className="automation-status">{STATUS_LABEL[item.status] || item.status}</span><time>{dataHora(item.recebido_em)}</time><I.ChevronDown className="automation-chevron" size={16} /></div>
               </summary>
               <div className="automation-detail">
@@ -633,6 +655,7 @@ export default function AutomacoesPage() {
                   <div><dt>Classificação</dt><dd>{CLASSIFICACAO_LABEL[item.classificacao || item.dados_extraidos?.classificacao] || '—'}</dd></div>
                   <div><dt>Destino</dt><dd>{item.dados_extraidos?.destino || '—'}</dd></div>
                   <div><dt>Documento</dt><dd>{item.dados_extraidos?.documento || '—'}</dd></div>
+                  {item.operadora === 'Claro' && <div><dt>Autenticação</dt><dd>{item.autenticacao_valida ? 'DKIM/DMARC alinhados' : 'Não validada'}</dd></div>}
                 </dl>
                 {item.erro && <div className={`alert-error automation-alert ${item.status === 'regressao_funil' ? 'automation-regression-alert' : ''}`} role="alert">{item.erro}</div>}
                 <div className="automation-email-body"><strong>Conteúdo recebido</strong><pre>{item.corpo_texto || 'Corpo removido ou não armazenado.'}</pre></div>

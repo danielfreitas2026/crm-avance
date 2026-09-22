@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./api', () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 
 import { apiGet, apiPost } from './api';
-import { corrigirHistoricoAutomacao, listarAutomacoes, listarInconsistenciasHistoricoAutomacoes, listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterPreviaCorrecaoHistoricoAutomacao, obterVendaProblemaAutomatico, resolverProblemaAutomatico } from './automacao.service';
+import { coletarHistoricoAutomacoes, corrigirHistoricoAutomacao, listarAutomacoes, listarInconsistenciasHistoricoAutomacoes, listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterPreviaCorrecaoHistoricoAutomacao, obterVendaProblemaAutomatico, resolverProblemaAutomatico } from './automacao.service';
 
 describe('automacao.service', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -38,6 +38,13 @@ describe('automacao.service', () => {
     await listarAutomacoes({ status: 'concluido', titulo: '  Análise & aceite  ' });
 
     expect(apiGet).toHaveBeenCalledWith('/automacoes?page=1&per_page=20&status=concluido&titulo=An%C3%A1lise+%26+aceite');
+  });
+
+  it('filtra por operadora e seleciona a origem da coleta histórica', async () => {
+    await listarAutomacoes({ operadora: 'Claro' });
+    await coletarHistoricoAutomacoes('imap_claro');
+    expect(apiGet).toHaveBeenCalledWith('/automacoes?page=1&per_page=20&operadora=Claro');
+    expect(apiPost).toHaveBeenCalledWith('/automacoes/coletar-historico', { origem: 'imap_claro' });
   });
 
   it('usa os endpoints de auditoria e correção de histórico', async () => {
