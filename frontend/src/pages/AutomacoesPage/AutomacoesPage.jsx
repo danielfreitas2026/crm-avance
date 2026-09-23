@@ -5,6 +5,7 @@ import Paginacao from '../../components/Paginacao/Paginacao';
 import { formatUtcDateTime } from '../../utils/datetime';
 import {
   coletarHistoricoAutomacoes,
+  diagnosticarImapClaro,
   descartarAutomacao,
   corrigirHistoricoAutomacao,
   listarAutomacoes,
@@ -447,6 +448,7 @@ export default function AutomacoesPage() {
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
   const [coletandoHistorico, setColetandoHistorico] = useState(false);
+  const [diagnosticandoImap, setDiagnosticandoImap] = useState(false);
   const [repetindoRevisoes, setRepetindoRevisoes] = useState(false);
   const [sucesso, setSucesso] = useState('');
   const [inconsistencias, setInconsistencias] = useState(null);
@@ -509,6 +511,28 @@ export default function AutomacoesPage() {
     }
   }
 
+  async function diagnosticarImap() {
+    setDiagnosticandoImap(true);
+    setErro('');
+    setSucesso('');
+    try {
+      const resultado = await diagnosticarImapClaro();
+      const imap = resultado.imap?.ok
+        ? `IMAP 993 conectado a ${resultado.imap.host}`
+        : `IMAP 993 falhou: ${resultado.imap?.codigo || 'erro desconhecido'} · ${resultado.imap?.mensagem || 'sem detalhe'}`;
+      const ip = resultado.ip_saida_https?.ok
+        ? `IP HTTPS ${resultado.ip_saida_https.ip || 'não informado'}`
+        : `IP HTTPS indisponível: ${resultado.ip_saida_https?.codigo || 'erro desconhecido'}`;
+      const mensagem = `Diagnóstico do runtime: ${imap}; ${ip}; executado em ${resultado.executado_em}.`;
+      if (resultado.imap?.ok) setSucesso(mensagem);
+      else setErro(mensagem);
+    } catch (error) {
+      setErro(error.message);
+    } finally {
+      setDiagnosticandoImap(false);
+    }
+  }
+
   async function repetirRevisoes() {
     const quantidade = Number(resumo.contadores?.revisao || 0) + Number(resumo.contadores?.regressao_funil || 0);
     if (!quantidade || !window.confirm(`Repetir a execução das ${quantidade} automações em revisão ou regressão de funil? Isso pode movimentar vendas ou abrir problemas.`)) return;
@@ -554,7 +578,7 @@ export default function AutomacoesPage() {
   const totalCancelamentos = Number(resumo.contadores_classificacao?.cancelamento || 0);
   const total = Object.values(contadores).reduce((soma, quantidade) => soma + Number(quantidade || 0), 0);
   const totalRevisoes = Number(contadores.revisao || 0) + Number(contadores.regressao_funil || 0);
-  const barraOcupada = atualizando || coletandoHistorico || repetindoRevisoes || auditandoHistorico;
+  const barraOcupada = atualizando || coletandoHistorico || diagnosticandoImap || repetindoRevisoes || auditandoHistorico;
   const integracao = resumo.integracao || { estado: resumo.habilitada ? 'ativo' : 'desabilitado' };
   const estadoIntegracao = integracao.estado || (resumo.habilitada ? 'ativo' : 'desabilitado');
   const integracaoComFalha = estadoIntegracao === 'falha' || estadoIntegracao === 'sem_resposta';
@@ -627,6 +651,7 @@ export default function AutomacoesPage() {
             </label>
           </div>
           <div className="automation-toolbar__actions">
+            <button type="button" className="btn" disabled={barraOcupada} onClick={diagnosticarImap}><I.Shield size={14} /> {diagnosticandoImap ? 'Diagnosticando...' : 'Diagnosticar IMAP Claro'}</button>
             <button type="button" className="btn" disabled={barraOcupada || totalRevisoes === 0} onClick={repetirRevisoes}><I.Refresh size={14} /> {repetindoRevisoes ? 'Reprocessando...' : `Repetir revisões e regressões (${totalRevisoes})`}</button>
             <button type="button" className="btn" disabled={barraOcupada} onClick={auditarHistoricos}><I.AlertTriangle size={14} /> {auditandoHistorico ? 'Auditando...' : 'Auditar históricos'}</button>
             <button type="button" className="btn" disabled={barraOcupada || (operadora === 'Claro' ? !resumo.habilitada_claro : operadora === 'Vivo' ? !resumo.habilitada : !resumo.habilitada && !resumo.habilitada_claro)} onClick={coletarHistorico}><I.History size={14} /> {coletandoHistorico ? 'Buscando histórico...' : `Buscar e-mails anteriores${operadora ? ` (${operadora})` : ''}`}</button>

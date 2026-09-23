@@ -320,6 +320,26 @@ test('endpoint em lote precede as rotas parametrizadas e repassa o contrato do s
   }
 });
 
+test('diagnóstico IMAP fica protegido e repassa o resultado do runtime', async () => {
+  const camadas = automacaoRoutes.stack;
+  const indicePermissao = camadas.findIndex(camada => camada.name === 'permissaoMiddleware');
+  const camadaDiagnostico = camadas.find(camada => camada.route?.path === '/diagnostico-imap');
+  assert.ok(indicePermissao >= 0);
+  assert.ok(camadaDiagnostico);
+  assert.ok(camadas.indexOf(camadaDiagnostico) > indicePermissao);
+  assert.equal(camadaDiagnostico.route.methods.post, true);
+
+  const diagnosticarOriginal = automacao.diagnosticarImap;
+  automacao.diagnosticarImap = async () => ({ imap: { ok: true }, ip_saida_https: { ok: true, ip: '203.0.113.10' } });
+  const res = { body: null, json(dados) { this.body = dados; return this; } };
+  try {
+    await automacaoController.diagnosticarImap({}, res);
+    assert.deepEqual(res.body, { imap: { ok: true }, ip_saida_https: { ok: true, ip: '203.0.113.10' } });
+  } finally {
+    automacao.diagnosticarImap = diagnosticarOriginal;
+  }
+});
+
 test('endpoint de candidatas fica protegido e repassa execucao e CNPJ ao servico', async () => {
   const camadas = automacaoRoutes.stack;
   const indicePermissao = camadas.findIndex(camada => camada.name === 'permissaoMiddleware');

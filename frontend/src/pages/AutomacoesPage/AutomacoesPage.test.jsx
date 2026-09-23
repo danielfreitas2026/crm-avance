@@ -6,6 +6,7 @@ import ProblemasPage from '../ProblemasPage/ProblemasPage';
 
 const api = vi.hoisted(() => ({
   coletarHistoricoAutomacoes: vi.fn(),
+  diagnosticarImapClaro: vi.fn(),
   descartarAutomacao: vi.fn(),
   corrigirHistoricoAutomacao: vi.fn(),
   listarAutomacoes: vi.fn(),
@@ -91,6 +92,11 @@ describe('Painéis da automação Gmail VIVO', () => {
     api.repetirAutomacoesEmRevisao.mockResolvedValue({ selecionados: 2, repetidos: 2, falhas: 0 });
     api.descartarAutomacao.mockResolvedValue({});
     api.coletarHistoricoAutomacoes.mockResolvedValue({ coletados: 4, processados: 4 });
+    api.diagnosticarImapClaro.mockResolvedValue({
+      executado_em: '2026-09-23T13:30:00.000Z',
+      imap: { ok: true, host: 'imap.uhserver.com', porta: 993, tls: true },
+      ip_saida_https: { ok: true, ip: '203.0.113.10' }
+    });
     api.listarInconsistenciasHistoricoAutomacoes.mockResolvedValue({ data: [], total: 0 });
     api.obterPreviaCorrecaoHistoricoAutomacao.mockResolvedValue({
       historico_id: 70, venda_id: 42, automacao_id: 10,
@@ -276,6 +282,17 @@ describe('Painéis da automação Gmail VIVO', () => {
     await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: '', operadora: 'Claro', page: 1, perPage: 20 }));
     await user.click(screen.getByRole('button', { name: 'Buscar e-mails anteriores (Claro)' }));
     await waitFor(() => expect(api.coletarHistoricoAutomacoes).toHaveBeenCalledWith('imap_claro'));
+  });
+
+  it('executa o diagnóstico no runtime do backend e exibe o resultado copiável', async () => {
+    const user = userEvent.setup();
+    render(<AutomacoesPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Diagnosticar IMAP Claro' }));
+
+    await waitFor(() => expect(api.diagnosticarImapClaro).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('status')).toHaveTextContent('IMAP 993 conectado a imap.uhserver.com');
+    expect(screen.getByRole('status')).toHaveTextContent('IP HTTPS 203.0.113.10');
   });
 
   it('identifica uma falha de coleta da Claro sem atribui-la ao Gmail', async () => {

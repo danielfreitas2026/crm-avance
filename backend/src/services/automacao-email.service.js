@@ -24,6 +24,7 @@ const { parseUtcDateTime } = require('../utils/datetime');
 const { interpretarEmail, textoCanonico } = require('./vivo-email-parser.service');
 const { interpretarEmailClaro, normalizarNome } = require('./claro-email-parser.service');
 const claroImapService = require('./claro-imap.service');
+const imapDiagnosticoService = require('./imap-diagnostico.service');
 
 const PERMISSAO_RESPONSAVEL = 'problemas_pos_venda_responsavel';
 const TABELA_ESTADO = 'automacao_email_estado';
@@ -165,6 +166,10 @@ async function coletarHistorico(origem = ORIGEM_VIVO) {
   if (!coleta.habilitado) throw Object.assign(new Error(`A automação ${claro ? 'IMAP Claro' : 'Gmail'} está desabilitada.`), { statusCode: 409 });
   const processados = claro ? await processarPendentesOrigem(ORIGEM_CLARO) : await processarPendentesOrigem(ORIGEM_VIVO);
   return { ...coleta, processados };
+}
+
+async function diagnosticarImap() {
+  return imapDiagnosticoService.executarDiagnostico();
 }
 
 async function buscarCandidatas(campos) {
@@ -1288,4 +1293,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, cicloClaro, coletarEmails, coletarHistorico, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, processarPendentesOrigem, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverVendaClaro, buscarCandidatasClaro, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, salvarEstadoIntegracaoClaro, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo, estadoPublicoIntegracao } };
+module.exports = { ciclo, cicloClaro, coletarEmails, coletarHistorico, diagnosticarImap, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, processarPendentesOrigem, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverVendaClaro, buscarCandidatasClaro, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, salvarEstadoIntegracaoClaro, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo, estadoPublicoIntegracao } };

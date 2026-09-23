@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./api', () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 
 import { apiGet, apiPost } from './api';
-import { coletarHistoricoAutomacoes, corrigirHistoricoAutomacao, listarAutomacoes, listarInconsistenciasHistoricoAutomacoes, listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterPreviaCorrecaoHistoricoAutomacao, obterVendaProblemaAutomatico, resolverProblemaAutomatico } from './automacao.service';
+import { coletarHistoricoAutomacoes, corrigirHistoricoAutomacao, diagnosticarImapClaro, listarAutomacoes, listarInconsistenciasHistoricoAutomacoes, listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterPreviaCorrecaoHistoricoAutomacao, obterVendaProblemaAutomatico, resolverProblemaAutomatico } from './automacao.service';
 
 describe('automacao.service', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -45,6 +45,11 @@ describe('automacao.service', () => {
     await coletarHistoricoAutomacoes('imap_claro');
     expect(apiGet).toHaveBeenCalledWith('/automacoes?page=1&per_page=20&operadora=Claro');
     expect(apiPost).toHaveBeenCalledWith('/automacoes/coletar-historico', { origem: 'imap_claro' });
+  });
+
+  it('executa o diagnóstico IMAP no backend autenticado', async () => {
+    await diagnosticarImapClaro();
+    expect(apiPost).toHaveBeenCalledWith('/automacoes/diagnostico-imap', {});
   });
 
   it('usa os endpoints de auditoria e correção de histórico', async () => {

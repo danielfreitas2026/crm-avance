@@ -8,6 +8,7 @@ router.use(authMiddleware, exigirPermissao('automacoes_gerenciar'));
 router.get('/resumo', controller.resumo);
 router.get('/', controller.index);
 router.post('/coletar-historico', controller.coletarHistorico);
+router.post('/diagnostico-imap', controller.diagnosticarImap);
 router.post('/repetir-revisoes', controller.repetirRevisoes);
 router.get('/inconsistencias-historico', controller.inconsistenciasHistorico);
 router.get('/inconsistencias-historico/:historicoId', controller.previaCorrecaoHistorico);
