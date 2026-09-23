@@ -54,6 +54,10 @@ const FASE_LABEL = {
   processamento: 'Falha no processamento',
   telegram: 'Falha na notificação no Telegram'
 };
+const FASE_LABEL_CLARO = {
+  coleta: 'Falha na coleta do IMAP Claro',
+  processamento: 'Falha no processamento da Claro'
+};
 
 function formatarCnpj(valor) {
   const digitos = String(valor || '').replace(/\D/g, '').slice(0, 14);
@@ -562,7 +566,7 @@ export default function AutomacoesPage() {
   const claroComFalha = ['falha', 'sem_resposta'].includes(integracaoClaro.estado);
   const classeClaro = integracaoClaro.estado === 'ativo' ? 'is-active' : claroComFalha ? 'is-error' : 'is-disabled';
   const tituloClaro = integracaoClaro.estado === 'falha' && integracaoClaro.fase_erro
-    ? FASE_LABEL[integracaoClaro.fase_erro] || 'Falha na automação Claro'
+    ? FASE_LABEL_CLARO[integracaoClaro.fase_erro] || 'Falha na automação Claro'
     : ({ ativo: 'IMAP Claro ativo', falha: 'Falha na automação Claro', sem_resposta: 'Worker Claro sem resposta', desabilitado: 'IMAP Claro desabilitado', aguardando: 'Claro aguardando primeiro ciclo' }[integracaoClaro.estado] || 'Estado do IMAP Claro indisponível');
   function alterarFiltro(novoFiltro) {
     const novaClassificacao = novoFiltro === 'cancelamento' ? 'cancelamento' : '';

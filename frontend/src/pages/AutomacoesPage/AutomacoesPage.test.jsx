@@ -278,6 +278,28 @@ describe('Painéis da automação Gmail VIVO', () => {
     await waitFor(() => expect(api.coletarHistoricoAutomacoes).toHaveBeenCalledWith('imap_claro'));
   });
 
+  it('identifica uma falha de coleta da Claro sem atribui-la ao Gmail', async () => {
+    api.obterResumoAutomacoes.mockResolvedValue({
+      ...resumo,
+      habilitada: true,
+      integracao: { estado: 'ativo', ultimo_sucesso_em: '2026-09-23 11:41:53' },
+      habilitada_claro: true,
+      integracoes: {
+        imap_claro: {
+          estado: 'falha',
+          fase_erro: 'coleta',
+          ultimo_erro: 'IMAP NO · AUTHENTICATIONFAILED'
+        }
+      }
+    });
+
+    render(<AutomacoesPage />);
+
+    expect(await screen.findByText('Gmail ativo')).toBeInTheDocument();
+    expect(screen.getByText('Falha na coleta do IMAP Claro')).toBeInTheDocument();
+    expect(screen.queryByText('Falha na coleta do Gmail')).not.toBeInTheDocument();
+  });
+
   it('vincula revisão Claro pelo nome sem solicitar CNPJ', async () => {
     api.listarVendasCandidatasAutomacao.mockResolvedValue({
       automacao_id: 20,

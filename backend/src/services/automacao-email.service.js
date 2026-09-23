@@ -697,10 +697,16 @@ function mensagemErroIntegracao(error) {
     : erroGoogle?.status || erroGoogle?.code || error?.code || null;
   const detalhe = payload?.error_description || erroGoogle?.message || error?.message || 'Falha desconhecida.';
   const prefixo = resposta?.status ? `Google ${resposta.status}` : null;
-  return [prefixo, codigo, detalhe]
-    .filter(Boolean)
+  const falhaImap = error?.authenticationFailed ? 'Falha de autenticação IMAP' : null;
+  const statusImap = error?.responseStatus ? `IMAP ${error.responseStatus}` : null;
+  const codigoImap = error?.serverResponseCode || null;
+  const respostaImap = error?.responseText || null;
+  const mensagemGenerica = error?.message === 'Command failed' && (falhaImap || statusImap || codigoImap || respostaImap)
+    ? null
+    : detalhe;
+  return [...new Set([prefixo, codigo, falhaImap, statusImap, codigoImap, respostaImap, mensagemGenerica].filter(Boolean))]
     .join(' · ')
-    .replace(/(bearer|access[_ -]?token|refresh[_ -]?token|client[_ -]?secret)\s*[:=]?\s*[^\s,;]+/gi, '$1 [removido]')
+    .replace(/(bearer|access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|password|senha)\s*[:=]?\s*[^\s,;]+/gi, '$1 [removido]')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 1000);

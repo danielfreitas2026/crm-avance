@@ -1005,6 +1005,23 @@ test('ciclo registra a fase e relanca o erro original com mensagem sanitizada', 
   assert.doesNotMatch(banco.estado().ultimo_erro, /segredo/);
 });
 
+test('erro do IMAP preserva a resposta util do servidor em vez de Command failed', () => {
+  const falha = Object.assign(new Error('Command failed'), {
+    authenticationFailed: true,
+    responseStatus: 'NO',
+    serverResponseCode: 'AUTHENTICATIONFAILED',
+    responseText: 'Authentication failed: password=segredo'
+  });
+
+  const mensagem = automacao._internals.mensagemErroIntegracao(falha);
+
+  assert.match(mensagem, /Falha de autenticação IMAP/);
+  assert.match(mensagem, /IMAP NO/);
+  assert.match(mensagem, /AUTHENTICATIONFAILED/);
+  assert.doesNotMatch(mensagem, /Command failed/);
+  assert.doesNotMatch(mensagem, /segredo/);
+});
+
 test('usa especificamente o bot de aprovacoes para notificar problemas', () => {
   const tokenAprovacoesAnterior = process.env.TELEGRAM_APROVACOES_BOT_TOKEN;
   const tokenGeralAnterior = process.env.TELEGRAM_BOT_TOKEN;
