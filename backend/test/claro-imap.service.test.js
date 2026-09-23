@@ -69,7 +69,7 @@ test('coletor abre INBOX read-only, busca UID ordenado e baixa fonte por BODY.PE
   };
   try {
     const resultado = await claroImap.coletarEmailsClaro({}, {
-      criarCliente: config => { assert.deepEqual({ host: config.host, port: config.port, secure: config.secure }, { host: 'imap.uhserver.com', port: 993, secure: true }); return client; },
+      criarCliente: config => { assert.deepEqual({ host: config.host, port: config.port, secure: config.secure, connectionTimeout: config.connectionTimeout }, { host: 'imap.uhserver.com', port: 993, secure: true, connectionTimeout: 15000 }); return client; },
       obterEstado: async () => ({ uidvalidity: '77', ultimo_uid: 10 }),
       localizar: async () => null,
       salvarCursor: async (...args) => cursores.push(args.slice(0, 2)),
@@ -83,6 +83,89 @@ test('coletor abre INBOX read-only, busca UID ordenado e baixa fonte por BODY.PE
     assert.deepEqual(cursores, [['77', 11], ['77', 12]]);
     assert.ok(inseridos.every(item => item.origem === 'imap_claro' && item.operadora === 'Claro' && item.autenticacao_valida));
   } finally { restaurar(); }
+});
+
+test('timeout no TLS direto tenta a porta 143 somente com STARTTLS obrigatório', async () => {
+  const restaurar = ambienteClaro();
+  const configuracoes = [];
+  const encerramentos = [];
+  const clientes = [
+    {
+      usable: false,
+      async connect() { throw Object.assign(new Error('timeout'), { code: 'CONNECT_TIMEOUT' }); },
+      close() { encerramentos.push('primario'); }
+    },
+    {
+      mailbox: { uidValidity: 10n }, usable: true,
+      async connect() {},
+      async getMailboxLock() { return { release: () => encerramentos.push('lock') }; },
+      async search() { return []; },
+      async logout() { encerramentos.push('fallback'); this.usable = false; }
+    }
+  ];
+  try {
+    const resultado = await claroImap.coletarEmailsClaro({}, {
+      criarCliente: config => { configuracoes.push(config); return clientes[configuracoes.length - 1]; },
+      obterEstado: async () => ({ uidvalidity: '10', ultimo_uid: 0 }),
+      salvarCursor: async () => {}
+    });
+
+    assert.equal(resultado.coletados, 0);
+    assert.deepEqual(configuracoes.map(config => ({
+      port: config.port,
+      secure: config.secure,
+      doSTARTTLS: config.doSTARTTLS,
+      connectionTimeout: config.connectionTimeout
+    })), [
+      { port: 993, secure: true, doSTARTTLS: undefined, connectionTimeout: 15000 },
+      { port: 143, secure: false, doSTARTTLS: true, connectionTimeout: 15000 }
+    ]);
+    assert.deepEqual(encerramentos, ['primario', 'lock', 'fallback']);
+  } finally { restaurar(); }
+});
+
+test('falhas de autenticação e certificado não tentam STARTTLS alternativo', async () => {
+  for (const falha of [
+    Object.assign(new Error('Command failed'), { code: 'AUTHENTICATIONFAILED', authenticationFailed: true }),
+    Object.assign(new Error('certificate expired'), { code: 'CERT_HAS_EXPIRED' })
+  ]) {
+    let criados = 0;
+    let fechados = 0;
+    await assert.rejects(
+      claroImap._internals.conectarCliente(
+        { host: 'imap.example', port: 993, secure: true, auth: { user: 'conta', pass: 'senha' }, connectionTimeout: 15000 },
+        () => {
+          criados += 1;
+          return { usable: false, async connect() { throw falha; }, close() { fechados += 1; } };
+        }
+      ),
+      error => error === falha
+    );
+    assert.equal(criados, 1);
+    assert.equal(fechados, 1);
+  }
+});
+
+test('falha nos dois transportes informa as portas sem incluir credenciais', async () => {
+  const falhas = [
+    Object.assign(new Error('password=segredo-primario'), { code: 'CONNECT_TIMEOUT' }),
+    Object.assign(new Error('conta@example.com password=segredo-fallback'), { code: 'ETIMEDOUT' })
+  ];
+  let indice = 0;
+
+  await assert.rejects(
+    claroImap._internals.conectarCliente(
+      { host: 'imap.example', port: 993, secure: true, auth: { user: 'conta@example.com', pass: 'senha-real' }, connectionTimeout: 15000 },
+      () => {
+        const falha = falhas[indice++];
+        return { usable: false, async connect() { throw falha; }, close() {} };
+      }
+    ),
+    error => error.code === 'IMAP_CONNECTION_FAILED'
+      && /993: CONNECT_TIMEOUT/.test(error.message)
+      && /143: ETIMEDOUT/.test(error.message)
+      && !/conta@example\.com|segredo|senha-real/.test(error.message)
+  );
 });
 
 test('remetente fora da allowlist é ignorado antes de baixar ou persistir o conteúdo', async () => {

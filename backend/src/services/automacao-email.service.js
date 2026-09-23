@@ -721,7 +721,7 @@ async function salvarEstadoIntegracao(patch, database = db) {
 }
 
 async function registrarInicioCiclo(database = db) {
-  await salvarEstadoIntegracao({ estado: 'processando', fase_erro: null, ultimo_inicio_em: formatarSQL() }, database);
+  await salvarEstadoIntegracao({ estado: 'processando', ultimo_inicio_em: formatarSQL() }, database);
 }
 
 async function registrarSucessoCiclo(coletados, database = db) {
@@ -777,7 +777,7 @@ async function cicloClaro(dependencias = {}) {
   const database = dependencias.database || db;
   const coletar = dependencias.coletarEmails || claroImapService.coletarEmailsClaro;
   const processar = dependencias.processarPendentes || (() => processarPendentesOrigem(ORIGEM_CLARO));
-  await salvarEstadoIntegracaoClaro({ estado: 'processando', fase_erro: null, ultimo_inicio_em: formatarSQL() }, database);
+  await salvarEstadoIntegracaoClaro({ estado: 'processando', ultimo_inicio_em: formatarSQL() }, database);
   let fase = 'coleta';
   try {
     const coleta = await coletar();
@@ -842,6 +842,16 @@ async function listar(filtros = {}) {
   return { data, total: resultado.total, page: pagina, per_page: porPagina };
 }
 
+function estadoPublicoIntegracao(registro, ativa, intervalo) {
+  const ultimo = parseUtcDateTime(registro?.ultimo_inicio_em);
+  const limite = Math.max(intervalo * 3, 5 * 60 * 1000);
+  if (!ativa) return 'desabilitado';
+  if (!ultimo || registro?.estado === 'desabilitado') return 'aguardando';
+  if (registro?.estado === 'erro' || (registro?.estado === 'processando' && registro?.ultimo_erro)) return 'falha';
+  if (Date.now() - ultimo.getTime() > limite) return 'sem_resposta';
+  return 'ativo';
+}
+
 async function resumo(database = db) {
   const claroAtiva = claroImapService.habilitado();
   const [linhas, cancelamentos, ultima, estado, estadoClaro] = await Promise.all([
@@ -853,22 +863,6 @@ async function resumo(database = db) {
   ]);
   const habilitada = configurado();
   const intervaloMs = Math.max(30000, Number(process.env.GMAIL_VIVO_POLL_INTERVAL_MS) || 60000);
-  const limiteSemRespostaMs = Math.max(intervaloMs * 3, 5 * 60 * 1000);
-  const ultimoInicio = parseUtcDateTime(estado?.ultimo_inicio_em);
-  let estadoPublico = 'ativo';
-  if (!habilitada) estadoPublico = 'desabilitado';
-  else if (!ultimoInicio || estado?.estado === 'desabilitado') estadoPublico = 'aguardando';
-  else if (estado?.estado === 'erro') estadoPublico = 'falha';
-  else if (Date.now() - ultimoInicio.getTime() > limiteSemRespostaMs) estadoPublico = 'sem_resposta';
-  function estadoPublicoIntegracao(registro, ativa, intervalo) {
-    const ultimo = parseUtcDateTime(registro?.ultimo_inicio_em);
-    const limite = Math.max(intervalo * 3, 5 * 60 * 1000);
-    if (!ativa) return 'desabilitado';
-    if (!ultimo || registro?.estado === 'desabilitado') return 'aguardando';
-    if (registro?.estado === 'erro') return 'falha';
-    if (Date.now() - ultimo.getTime() > limite) return 'sem_resposta';
-    return 'ativo';
-  }
   function dadosIntegracao(registro, ativa, intervalo) {
     return {
       estado: estadoPublicoIntegracao(registro, ativa, intervalo),
@@ -883,6 +877,7 @@ async function resumo(database = db) {
     };
   }
   const vivo = dadosIntegracao(estado, habilitada, intervaloMs);
+  const estadoPublico = vivo.estado;
   const claroIntervalo = Math.max(30000, Number(process.env.CLARO_IMAP_POLL_INTERVAL_MS) || 60000);
   const claro = dadosIntegracao(estadoClaro, claroAtiva, claroIntervalo);
   return {
@@ -1293,4 +1288,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, cicloClaro, coletarEmails, coletarHistorico, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, processarPendentesOrigem, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverVendaClaro, buscarCandidatasClaro, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, salvarEstadoIntegracaoClaro, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo } };
+module.exports = { ciclo, cicloClaro, coletarEmails, coletarHistorico, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, processarPendentesOrigem, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverVendaClaro, buscarCandidatasClaro, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, salvarEstadoIntegracaoClaro, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo, estadoPublicoIntegracao } };

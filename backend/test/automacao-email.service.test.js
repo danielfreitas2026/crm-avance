@@ -1022,6 +1022,36 @@ test('erro do IMAP preserva a resposta util do servidor em vez de Command failed
   assert.doesNotMatch(mensagem, /segredo/);
 });
 
+test('mantem integração em falha enquanto uma nova tentativa está processando', () => {
+  const intervalo = 60000;
+  const registro = {
+    estado: 'processando',
+    fase_erro: 'coleta',
+    ultimo_inicio_em: new Date().toISOString(),
+    ultimo_erro: 'CONNECT_TIMEOUT',
+    falhas_consecutivas: 2
+  };
+
+  assert.equal(automacao._internals.estadoPublicoIntegracao(registro, true, intervalo), 'falha');
+  assert.equal(automacao._internals.estadoPublicoIntegracao({ ...registro, estado: 'ok', ultimo_erro: null }, true, intervalo), 'ativo');
+});
+
+test('inicio de uma nova tentativa preserva a fase e o erro anteriores', async () => {
+  const banco = criarBancoEstado({
+    id: 1,
+    estado: 'erro',
+    fase_erro: 'coleta',
+    ultimo_erro: 'CONNECT_TIMEOUT',
+    falhas_consecutivas: 2
+  });
+
+  await automacao._internals.registrarInicioCiclo(banco.database);
+
+  assert.equal(banco.estado().estado, 'processando');
+  assert.equal(banco.estado().fase_erro, 'coleta');
+  assert.equal(banco.estado().ultimo_erro, 'CONNECT_TIMEOUT');
+});
+
 test('usa especificamente o bot de aprovacoes para notificar problemas', () => {
   const tokenAprovacoesAnterior = process.env.TELEGRAM_APROVACOES_BOT_TOKEN;
   const tokenGeralAnterior = process.env.TELEGRAM_BOT_TOKEN;

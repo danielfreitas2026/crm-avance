@@ -9,6 +9,10 @@ const { interpretarEmailClaro, autenticarRemetente } = require('./claro-email-pa
 const ORIGEM = 'imap_claro';
 const OPERADORA = 'Claro';
 const LIMITE_PADRAO = 100;
+const TIMEOUT_CONEXAO_MS = 15000;
+const ERROS_COM_FALLBACK = new Set([
+  'CONNECT_TIMEOUT', 'GREETING_TIMEOUT', 'ETIMEDOUT', 'ECONNREFUSED', 'ENETUNREACH', 'EHOSTUNREACH'
+]);
 
 function habilitado() {
   return String(process.env.CLARO_IMAP_AUTOMATION_ENABLED || '').toLowerCase() === 'true';
@@ -33,8 +37,64 @@ function configImap() {
       user: String(process.env.CLARO_IMAP_USER || '').trim(),
       pass: String(process.env.CLARO_IMAP_PASSWORD || '')
     },
+    connectionTimeout: TIMEOUT_CONEXAO_MS,
     logger: false
   };
+}
+
+function permiteFallback(error) {
+  return !error?.authenticationFailed && ERROS_COM_FALLBACK.has(String(error?.code || '').toUpperCase());
+}
+
+function resumirFalhaConexao(error) {
+  return [...new Set([
+    error?.code,
+    error?.responseStatus,
+    error?.serverResponseCode
+  ].filter(Boolean).map(String))].join(' · ') || 'falha sem código';
+}
+
+async function encerrarCliente(client) {
+  if (!client) return;
+  if (client.usable !== false) {
+    try {
+      await client.logout();
+      return;
+    } catch { }
+  }
+  await Promise.resolve(client.close?.()).catch(() => undefined);
+}
+
+async function conectarCliente(config, criarCliente) {
+  const primario = criarCliente(config);
+  try {
+    await primario.connect();
+    return primario;
+  } catch (errorPrimario) {
+    await encerrarCliente(primario);
+    if (!permiteFallback(errorPrimario)) throw errorPrimario;
+
+    const configFallback = {
+      ...config,
+      port: 143,
+      secure: false,
+      doSTARTTLS: true,
+      connectionTimeout: TIMEOUT_CONEXAO_MS
+    };
+    const fallback = criarCliente(configFallback);
+    try {
+      await fallback.connect();
+      return fallback;
+    } catch (errorFallback) {
+      await encerrarCliente(fallback);
+      const error = new Error(
+        `Falha ao conectar ao IMAP Claro por TLS direto (${config.port}: ${resumirFalhaConexao(errorPrimario)}) `
+        + `e STARTTLS (143: ${resumirFalhaConexao(errorFallback)}).`
+      );
+      error.code = 'IMAP_CONNECTION_FAILED';
+      throw error;
+    }
+  }
 }
 
 function validarConfiguracao(config = configImap()) {
@@ -139,12 +199,12 @@ async function coletarEmailsClaro({ desdeInicio = false } = {}, dependencias = {
   const permitidos = dependencias.remetentes || remetentesPermitidos();
   const estado = await (dependencias.obterEstado || obterEstado)(database) || {};
   const criarCliente = dependencias.criarCliente || (opcoes => new ImapFlow(opcoes));
-  const client = criarCliente(config);
+  let client;
   let lock;
   let coletados = 0;
   let ignorados = 0;
   try {
-    await client.connect();
+    client = await conectarCliente(config, criarCliente);
     lock = await client.getMailboxLock('INBOX', { readOnly: true });
     const uidvalidity = String(client.mailbox?.uidValidity || '');
     if (!uidvalidity) throw new Error('Servidor IMAP não informou UIDVALIDITY.');
@@ -177,7 +237,7 @@ async function coletarEmailsClaro({ desdeInicio = false } = {}, dependencias = {
     return { habilitado: true, coletados, ignorados, uidvalidity, ultimo_uid: uids.at(-1) || cursor };
   } finally {
     if (lock) lock.release();
-    if (client?.usable !== false) await client.logout().catch(() => client.close?.());
+    await encerrarCliente(client);
   }
 }
 
@@ -188,5 +248,5 @@ module.exports = {
   acoesAutomaticasHabilitadas,
   coletarEmailsClaro,
   registrarMensagem,
-  _internals: { configImap, validarConfiguracao, remetentesPermitidos, remetenteEnvelope, remetenteMime, chaveDeduplicacao, extrairCorpo, obterEstado, salvarCursor }
+  _internals: { configImap, validarConfiguracao, remetentesPermitidos, remetenteEnvelope, remetenteMime, chaveDeduplicacao, extrairCorpo, obterEstado, salvarCursor, permiteFallback, conectarCliente, encerrarCliente }
 };
