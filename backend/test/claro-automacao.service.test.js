@@ -84,6 +84,51 @@ test('vínculo Claro exige uma única venda ativa, anterior ao e-mail e com nome
   } finally { restaurar(); }
 });
 
+test('razão social higienizada do email identifica somente a venda Claro correspondente', async () => {
+  const restaurar = instalarConsultas([
+    venda(11, { nome: 'Nome fantasia', razao_social: 'Camisária-Barreto, Ltda.' }),
+    venda(12, { nome: 'Outra empresa', razao_social: 'Camisaria Barreto Serviços Ltda' })
+  ], etapas);
+  try {
+    const encontrada = await automacao._internals.resolverVendaClaro(
+      { recebido_em: '2026-09-22 12:00:00' },
+      { empresa: 'CAMISARIA BARRETO LTDA' }
+    );
+    assert.equal(encontrada.venda.id, 11);
+    const ausente = await automacao._internals.resolverVendaClaro(
+      { recebido_em: '2026-09-22 12:00:00' },
+      { empresa: 'CAMISARIA BARRETO S/A' }
+    );
+    assert.equal(ausente.venda, null);
+    assert.match(ausente.erro, /Não foi encontrada/);
+  } finally { restaurar(); }
+});
+
+test('reprocessamento seletivo da Claro preserva revisões não relacionadas', async () => {
+  const corpo = 'Prezado BASARI TELECOM &#x20;\nO aceite do cliente CAMISARIA BARRETO LTDA foi ENVIADO.';
+  const base = { origem: 'imap_claro', status: 'revisao', autenticacao_valida: true, assunto: 'STATUS DE PEDIDO', corpo_texto: corpo, erro: 'Formato do e-mail Claro não reconhecido.', revisado_por_id: null, venda_id: null };
+  const itens = [
+    { ...base, id: 1 },
+    { ...base, id: 2, erro: 'Não foi encontrada uma venda Claro ativa com nome/razão social exatamente correspondente.' },
+    { ...base, id: 3, erro: 'Mais de uma venda Claro ativa possui o mesmo nome/razão social.' },
+    { ...base, id: 4, autenticacao_valida: false },
+    { ...base, id: 5, revisado_por_id: 7 },
+    { ...base, id: 6, corpo_texto: null },
+    { ...base, id: 7, origem: 'gmail_vivo' },
+    { ...base, id: 8, corpo_texto: 'Mensagem sem status da Claro' }
+  ];
+  const reivindicados = [];
+  const processados = [];
+  const resultado = await automacao.repetirInvalidosClaro({
+    consultar: async () => itens,
+    reivindicar: async item => { reivindicados.push(item.id); return 1; },
+    processar: async item => { processados.push(item.id); return true; }
+  });
+  assert.deepEqual(resultado, { selecionados: 2, repetidos: 2, falhas: 0 });
+  assert.deepEqual(reivindicados, [1, 2]);
+  assert.deepEqual(processados, [1, 2]);
+});
+
 test('revisão manual Claro valida a venda pelo nome sem exigir CNPJ', async () => {
   const escolhida = venda(9);
   const resultado = await automacao._internals.validarVendaSelecionada(

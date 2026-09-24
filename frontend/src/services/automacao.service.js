@@ -18,6 +18,7 @@ export const listarVendasCandidatasAutomacao = (id, cnpj) => {
 export const revisarAutomacao = (id, dados) => apiPost(`/automacoes/${id}/revisar`, dados);
 export const repetirAutomacao = id => apiPost(`/automacoes/${id}/repetir`, {});
 export const repetirAutomacoesEmRevisao = () => apiPost('/automacoes/repetir-revisoes', {});
+export const repetirInvalidosClaro = () => apiPost('/automacoes/repetir-invalidos-claro', {});
 export const descartarAutomacao = (id, justificativa) => apiPost(`/automacoes/${id}/descartar`, { justificativa });
 export const listarInconsistenciasHistoricoAutomacoes = () => apiGet('/automacoes/inconsistencias-historico');
 export const obterPreviaCorrecaoHistoricoAutomacao = historicoId => apiGet(`/automacoes/inconsistencias-historico/${historicoId}`);

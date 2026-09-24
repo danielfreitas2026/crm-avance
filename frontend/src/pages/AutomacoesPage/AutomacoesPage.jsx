@@ -15,6 +15,7 @@ import {
   obterResumoAutomacoes,
   repetirAutomacao,
   repetirAutomacoesEmRevisao,
+  repetirInvalidosClaro,
   revisarAutomacao
 } from '../../services/automacao.service';
 import './AutomacoesPage.css';
@@ -450,6 +451,7 @@ export default function AutomacoesPage() {
   const [coletandoHistorico, setColetandoHistorico] = useState(false);
   const [diagnosticandoImap, setDiagnosticandoImap] = useState(false);
   const [repetindoRevisoes, setRepetindoRevisoes] = useState(false);
+  const [repetindoInvalidosClaro, setRepetindoInvalidosClaro] = useState(false);
   const [sucesso, setSucesso] = useState('');
   const [inconsistencias, setInconsistencias] = useState(null);
   const [auditandoHistorico, setAuditandoHistorico] = useState(false);
@@ -517,14 +519,22 @@ export default function AutomacoesPage() {
     setSucesso('');
     try {
       const resultado = await diagnosticarImapClaro();
-      const imap = resultado.imap?.ok
-        ? `IMAP 993 conectado a ${resultado.imap.host}`
-        : `IMAP 993 falhou: ${resultado.imap?.codigo || 'erro desconhecido'} · ${resultado.imap?.mensagem || 'sem detalhe'}`;
+      const formatarTeste = (rotulo, teste) => teste?.ok
+        ? `${rotulo} conectado`
+        : `${rotulo} falhou: ${teste?.codigo || 'erro desconhecido'} · ${teste?.mensagem || 'sem detalhe'}`;
+      const enderecos = resultado.dns_imap?.enderecos?.map(item => `${item.endereco} (IPv${item.familia})`).join(', ');
+      const dns = resultado.dns_imap?.ok
+        ? `DNS ${resultado.dns_imap.host}: ${enderecos || 'sem endereço'}`
+        : `DNS falhou: ${resultado.dns_imap?.codigo || 'erro desconhecido'} · ${resultado.dns_imap?.mensagem || 'sem detalhe'}`;
+      const imap993 = formatarTeste('IMAP 993/TLS', resultado.imap);
+      const imap143 = formatarTeste('IMAP 143/STARTTLS', resultado.imap_starttls);
+      const controle993 = formatarTeste(`Controle ${resultado.controles_tcp?.host || 'externo'}:993/TCP`, resultado.controles_tcp?.porta_993);
+      const controle143 = formatarTeste(`Controle ${resultado.controles_tcp?.host || 'externo'}:143/TCP`, resultado.controles_tcp?.porta_143);
       const ip = resultado.ip_saida_https?.ok
         ? `IP HTTPS ${resultado.ip_saida_https.ip || 'não informado'}`
         : `IP HTTPS indisponível: ${resultado.ip_saida_https?.codigo || 'erro desconhecido'}`;
-      const mensagem = `Diagnóstico do runtime: ${imap}; ${ip}; executado em ${resultado.executado_em}.`;
-      if (resultado.imap?.ok) setSucesso(mensagem);
+      const mensagem = `Diagnóstico do runtime: ${dns}; ${imap993}; ${imap143}; ${controle993}; ${controle143}; ${ip}; executado em ${resultado.executado_em}.`;
+      if (resultado.imap?.ok || resultado.imap_starttls?.ok) setSucesso(mensagem);
       else setErro(mensagem);
     } catch (error) {
       setErro(error.message);
@@ -554,6 +564,22 @@ export default function AutomacoesPage() {
     }
   }
 
+  async function reprocessarInvalidosClaro() {
+    if (!window.confirm('Reprocessar somente emails Claro em revisão por formato ou identificação do cliente? Vendas podem ser movimentadas se as ações automáticas estiverem habilitadas.')) return;
+    setRepetindoInvalidosClaro(true);
+    setErro('');
+    setSucesso('');
+    try {
+      const resultado = await repetirInvalidosClaro();
+      setSucesso(`${Number(resultado.selecionados || 0)} email(s) Claro selecionado(s); ${Number(resultado.repetidos || 0)} repetido(s); ${Number(resultado.falhas || 0)} falha(s).`);
+      await carregar(true);
+    } catch (error) {
+      setErro(error.message);
+    } finally {
+      setRepetindoInvalidosClaro(false);
+    }
+  }
+
   async function auditarHistoricos() {
     setAuditandoHistorico(true);
     setErro('');
@@ -578,7 +604,7 @@ export default function AutomacoesPage() {
   const totalCancelamentos = Number(resumo.contadores_classificacao?.cancelamento || 0);
   const total = Object.values(contadores).reduce((soma, quantidade) => soma + Number(quantidade || 0), 0);
   const totalRevisoes = Number(contadores.revisao || 0) + Number(contadores.regressao_funil || 0);
-  const barraOcupada = atualizando || coletandoHistorico || diagnosticandoImap || repetindoRevisoes || auditandoHistorico;
+  const barraOcupada = atualizando || coletandoHistorico || diagnosticandoImap || repetindoRevisoes || repetindoInvalidosClaro || auditandoHistorico;
   const integracao = resumo.integracao || { estado: resumo.habilitada ? 'ativo' : 'desabilitado' };
   const estadoIntegracao = integracao.estado || (resumo.habilitada ? 'ativo' : 'desabilitado');
   const integracaoComFalha = estadoIntegracao === 'falha' || estadoIntegracao === 'sem_resposta';
@@ -653,6 +679,7 @@ export default function AutomacoesPage() {
           <div className="automation-toolbar__actions">
             <button type="button" className="btn" disabled={barraOcupada} onClick={diagnosticarImap}><I.Shield size={14} /> {diagnosticandoImap ? 'Diagnosticando...' : 'Diagnosticar IMAP Claro'}</button>
             <button type="button" className="btn" disabled={barraOcupada || totalRevisoes === 0} onClick={repetirRevisoes}><I.Refresh size={14} /> {repetindoRevisoes ? 'Reprocessando...' : `Repetir revisões e regressões (${totalRevisoes})`}</button>
+            <button type="button" className="btn" disabled={barraOcupada} onClick={reprocessarInvalidosClaro}><I.Refresh size={14} /> {repetindoInvalidosClaro ? 'Reprocessando Claro...' : 'Reprocessar emails Claro inválidos'}</button>
             <button type="button" className="btn" disabled={barraOcupada} onClick={auditarHistoricos}><I.AlertTriangle size={14} /> {auditandoHistorico ? 'Auditando...' : 'Auditar históricos'}</button>
             <button type="button" className="btn" disabled={barraOcupada || (operadora === 'Claro' ? !resumo.habilitada_claro : operadora === 'Vivo' ? !resumo.habilitada : !resumo.habilitada && !resumo.habilitada_claro)} onClick={coletarHistorico}><I.History size={14} /> {coletandoHistorico ? 'Buscando histórico...' : `Buscar e-mails anteriores${operadora ? ` (${operadora})` : ''}`}</button>
             <button type="button" className="btn automation-refresh" disabled={barraOcupada} onClick={() => carregar(true)}><I.Refresh size={14} /> {atualizando ? 'Atualizando...' : 'Atualizar'}</button>

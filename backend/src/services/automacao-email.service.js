@@ -959,6 +959,43 @@ async function repetirRevisoes(carregarCorpo = carregarCorpoGmail) {
   }
   return resultado;
 }
+
+function elegivelReprocessamentoClaro(item) {
+  return item.origem === ORIGEM_CLARO
+    && item.status === 'revisao'
+    && item.autenticacao_valida
+    && item.corpo_texto
+    && !item.revisado_por_id
+    && !item.venda_id
+    && ['Formato do e-mail Claro não reconhecido.', 'Não foi encontrada uma venda Claro ativa com nome/razão social exatamente correspondente.'].includes(item.erro)
+    && interpretarEmailClaro(item.assunto, item.corpo_texto).estrutura_valida;
+}
+
+async function repetirInvalidosClaro(dependencias = {}) {
+  const consultar = dependencias.consultar || (() => AutomacaoEmail.query()
+    .where({ origem: ORIGEM_CLARO, status: 'revisao', autenticacao_valida: true })
+    .whereNotNull('corpo_texto')
+    .whereNull('revisado_por_id')
+    .whereNull('venda_id')
+    .orderBy('recebido_em').orderBy('id'));
+  const reivindicar = dependencias.reivindicar || (item => AutomacaoEmail.query()
+    .where({ id: item.id, origem: ORIGEM_CLARO, status: 'revisao', erro: item.erro, autenticacao_valida: true })
+    .whereNotNull('corpo_texto').whereNull('revisado_por_id').whereNull('venda_id')
+    .patch({ status: 'pendente', erro: null, updated_at: new Date() }));
+  const processar = dependencias.processar || processarPendente;
+  const itens = (await consultar()).filter(elegivelReprocessamentoClaro);
+  const resultado = { selecionados: itens.length, repetidos: 0, falhas: 0 };
+  for (const item of itens) {
+    try {
+      if (!await reivindicar(item)) continue;
+      if (await processar({ ...item, status: 'pendente', erro: null })) resultado.repetidos += 1;
+      else resultado.falhas += 1;
+    } catch {
+      resultado.falhas += 1;
+    }
+  }
+  return resultado;
+}
 async function descartar(id, justificativa, usuarioId) { if (!String(justificativa || '').trim()) throw Object.assign(new Error('Informe a justificativa.'), { statusCode: 400 }); return AutomacaoEmail.query().patchAndFetchById(id, { status: 'descartado', justificativa_revisao: String(justificativa).trim(), revisado_por_id: usuarioId, processado_em: formatarSQL() }); }
 
 function dadosHistorico(valor) {
@@ -1293,4 +1330,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, cicloClaro, coletarEmails, coletarHistorico, diagnosticarImap, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, processarPendentesOrigem, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverVendaClaro, buscarCandidatasClaro, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, salvarEstadoIntegracaoClaro, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo, estadoPublicoIntegracao } };
+module.exports = { ciclo, cicloClaro, coletarEmails, coletarHistorico, diagnosticarImap, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, repetirInvalidosClaro, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, processarPendentesOrigem, elegivelReprocessamentoClaro, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverVendaClaro, buscarCandidatasClaro, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, salvarEstadoIntegracaoClaro, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo, estadoPublicoIntegracao } };

@@ -10,6 +10,7 @@ router.get('/', controller.index);
 router.post('/coletar-historico', controller.coletarHistorico);
 router.post('/diagnostico-imap', controller.diagnosticarImap);
 router.post('/repetir-revisoes', controller.repetirRevisoes);
+router.post('/repetir-invalidos-claro', controller.repetirInvalidosClaro);
 router.get('/inconsistencias-historico', controller.inconsistenciasHistorico);
 router.get('/inconsistencias-historico/:historicoId', controller.previaCorrecaoHistorico);
 router.post('/inconsistencias-historico/:historicoId/corrigir', controller.corrigirHistorico);

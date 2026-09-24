@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   obterPreviaCorrecaoHistoricoAutomacao: vi.fn(),
   repetirAutomacao: vi.fn(),
   repetirAutomacoesEmRevisao: vi.fn(),
+  repetirInvalidosClaro: vi.fn(),
   revisarAutomacao: vi.fn(),
   listarVendasCandidatasAutomacao: vi.fn(),
   listarProblemasAutomaticos: vi.fn(),
@@ -90,11 +91,19 @@ describe('Painéis da automação Gmail VIVO', () => {
     api.revisarAutomacao.mockResolvedValue({});
     api.repetirAutomacao.mockResolvedValue({});
     api.repetirAutomacoesEmRevisao.mockResolvedValue({ selecionados: 2, repetidos: 2, falhas: 0 });
+    api.repetirInvalidosClaro.mockResolvedValue({ selecionados: 2, repetidos: 2, falhas: 0 });
     api.descartarAutomacao.mockResolvedValue({});
     api.coletarHistoricoAutomacoes.mockResolvedValue({ coletados: 4, processados: 4 });
     api.diagnosticarImapClaro.mockResolvedValue({
       executado_em: '2026-09-23T13:30:00.000Z',
+      dns_imap: { ok: true, host: 'imap.uhserver.com', enderecos: [{ endereco: '192.0.2.10', familia: 4 }] },
       imap: { ok: true, host: 'imap.uhserver.com', porta: 993, tls: true },
+      imap_starttls: { ok: true, host: 'imap.uhserver.com', porta: 143, tls: true, starttls: true },
+      controles_tcp: {
+        host: 'portquiz.net',
+        porta_993: { ok: true, host: 'portquiz.net', porta: 993, tcp: true },
+        porta_143: { ok: true, host: 'portquiz.net', porta: 143, tcp: true }
+      },
       ip_saida_https: { ok: true, ip: '203.0.113.10' }
     });
     api.listarInconsistenciasHistoricoAutomacoes.mockResolvedValue({ data: [], total: 0 });
@@ -291,7 +300,11 @@ describe('Painéis da automação Gmail VIVO', () => {
     await user.click(await screen.findByRole('button', { name: 'Diagnosticar IMAP Claro' }));
 
     await waitFor(() => expect(api.diagnosticarImapClaro).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('status')).toHaveTextContent('IMAP 993 conectado a imap.uhserver.com');
+    expect(screen.getByRole('status')).toHaveTextContent('DNS imap.uhserver.com: 192.0.2.10 (IPv4)');
+    expect(screen.getByRole('status')).toHaveTextContent('IMAP 993/TLS conectado');
+    expect(screen.getByRole('status')).toHaveTextContent('IMAP 143/STARTTLS conectado');
+    expect(screen.getByRole('status')).toHaveTextContent('Controle portquiz.net:993/TCP conectado');
+    expect(screen.getByRole('status')).toHaveTextContent('Controle portquiz.net:143/TCP conectado');
     expect(screen.getByRole('status')).toHaveTextContent('IP HTTPS 203.0.113.10');
   });
 
@@ -390,6 +403,20 @@ describe('Painéis da automação Gmail VIVO', () => {
 
     concluir({ selecionados: 2, repetidos: 1, falhas: 1 });
     expect(await screen.findByRole('status')).toHaveTextContent('1 execução(ões) em revisão/regressão repetida(s); 1 falharam durante a preparação.');
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenCalledTimes(2));
+    confirmar.mockRestore();
+  });
+
+  it('reprocessa seletivamente emails Claro inválidos após confirmação', async () => {
+    const user = userEvent.setup();
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<AutomacoesPage />);
+    await screen.findByText('Nenhuma execução encontrada');
+
+    await user.click(screen.getByRole('button', { name: 'Reprocessar emails Claro inválidos' }));
+
+    expect(api.repetirInvalidosClaro).toHaveBeenCalledOnce();
+    expect(await screen.findByRole('status')).toHaveTextContent('2 email(s) Claro selecionado(s); 2 repetido(s); 0 falha(s).');
     await waitFor(() => expect(api.listarAutomacoes).toHaveBeenCalledTimes(2));
     confirmar.mockRestore();
   });

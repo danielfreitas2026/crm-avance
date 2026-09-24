@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./api', () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 
 import { apiGet, apiPost } from './api';
-import { coletarHistoricoAutomacoes, corrigirHistoricoAutomacao, diagnosticarImapClaro, listarAutomacoes, listarInconsistenciasHistoricoAutomacoes, listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterPreviaCorrecaoHistoricoAutomacao, obterVendaProblemaAutomatico, resolverProblemaAutomatico } from './automacao.service';
+import { coletarHistoricoAutomacoes, corrigirHistoricoAutomacao, diagnosticarImapClaro, listarAutomacoes, listarInconsistenciasHistoricoAutomacoes, listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterPreviaCorrecaoHistoricoAutomacao, obterVendaProblemaAutomatico, repetirInvalidosClaro, resolverProblemaAutomatico } from './automacao.service';
 
 describe('automacao.service', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -50,6 +50,11 @@ describe('automacao.service', () => {
   it('executa o diagnóstico IMAP no backend autenticado', async () => {
     await diagnosticarImapClaro();
     expect(apiPost).toHaveBeenCalledWith('/automacoes/diagnostico-imap', {});
+  });
+
+  it('aciona o reprocessamento seletivo da Claro', async () => {
+    await repetirInvalidosClaro();
+    expect(apiPost).toHaveBeenCalledWith('/automacoes/repetir-invalidos-claro', {});
   });
 
   it('usa os endpoints de auditoria e correção de histórico', async () => {

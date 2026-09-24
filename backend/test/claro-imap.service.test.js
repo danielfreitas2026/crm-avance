@@ -25,6 +25,16 @@ test('parser Claro reconhece os cinco modelos sem depender de caixa ou acentos',
   assert.equal(normalizarNome('  Empresa Ágil S/A '), 'empresa agil s a');
 });
 
+test('parser Claro extrai a razão social após a saudação e decodifica entidades de espaço', () => {
+  const corpo = 'Prezado BASARI TELECOM   &#x20;\nO aceite do cliente CAMISARIA BARRETO LTDA foi ENVIADO.   &#x20;\nIMPORTANTE: Verifique com seu cliente o recebimento.\nAtenciosamente, Equipe Husby';
+  const resultado = interpretarEmailClaro('Status de Pedido', corpo);
+  assert.equal(resultado.estrutura_valida, true);
+  assert.equal(resultado.empresa, 'CAMISARIA BARRETO LTDA');
+  assert.equal(resultado.empresa_normalizada, 'camisaria barreto ltda');
+  assert.equal(resultado.acao, 'aceite_enviado');
+  assert.equal(normalizarNome(' Camisária &amp; Barreto, Ltda. '), 'camisaria barreto ltda');
+});
+
 test('autenticação exige DKIM e DMARC pass alinhados ao domínio exato do remetente', () => {
   const headers = new Map([['authentication-results', 'mx.example; dkim=pass header.d=mailer.goalfy.com.br; dmarc=pass header.from=mailer.goalfy.com.br']]);
   assert.equal(autenticarRemetente(headers, 'no-reply@mailer.goalfy.com.br'), true);
