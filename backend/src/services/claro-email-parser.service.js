@@ -21,7 +21,7 @@ function normalizarNome(valor) {
 
 function interpretarEmailClaro(assunto, corpo) {
   const assuntoCanonico = textoCanonico(assunto).replace(/\s+/g, ' ').trim();
-  if (!/^status de pedido(?:\s*-\s*.+)?$/.test(assuntoCanonico)) {
+  if (!/^(?:status de pedido|atualizacao de pedido)(?:\s*-\s*.+)?$/.test(assuntoCanonico)) {
     return { estrutura_valida: false, empresa: null, classificacao: 'desconhecido', alvo: null };
   }
 

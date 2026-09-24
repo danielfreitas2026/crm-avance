@@ -35,6 +35,27 @@ test('parser Claro extrai a razão social após a saudação e decodifica entida
   assert.equal(normalizarNome(' Camisária &amp; Barreto, Ltda. '), 'camisaria barreto ltda');
 });
 
+test('parser Claro reconhece os seis exemplos com o assunto Atualização de pedido', () => {
+  const exemplos = [
+    ['O pedido do cliente ALFHA AMBIENTAL SOLUCOES E SERVICOS LTDA \u00a0foi APROVADO CRÉDITO.', 'ALFHA AMBIENTAL SOLUCOES E SERVICOS LTDA', 'credito_aprovado'],
+    ['O aceite do cliente POUSADA SOLMAIOR CONSERVATORIA LTDA foi ENVIADO.', 'POUSADA SOLMAIOR CONSERVATORIA LTDA', 'aceite_enviado'],
+    ['O cliente ALFHA AMBIENTAL SOLUCOES E SERVICOS LTDA \u00a0ASSINOU o contrato.', 'ALFHA AMBIENTAL SOLUCOES E SERVICOS LTDA', 'contrato_assinado'],
+    ['O aceite do cliente COLEGIO E CURSO JOAQUIM GOMES DE SOUZA LTDA foi ENVIADO.', 'COLEGIO E CURSO JOAQUIM GOMES DE SOUZA LTDA', 'aceite_enviado'],
+    ['O aceite do cliente ALFHA AMBIENTAL SOLUCOES E SERVICOS LTDA foi ENVIADO.', 'ALFHA AMBIENTAL SOLUCOES E SERVICOS LTDA', 'aceite_enviado'],
+    ['O aceite do cliente XYZ PECAS & ACESSORIOS LTDA foi ENVIADO.', 'XYZ PECAS & ACESSORIOS LTDA', 'aceite_enviado']
+  ];
+  for (const [frase, empresa, acao] of exemplos) {
+    const corpo = `Prezado BASARI TELECOM    ${frase}    IMPORTANTE: Verifique com seu cliente o recebimento.    Atenciosamente, Equipe Husby  Seu melhor parceiro de negócios !`;
+    const resultado = interpretarEmailClaro('Atualização de pedido', corpo);
+    assert.equal(resultado.estrutura_valida, true);
+    assert.equal(resultado.empresa, empresa);
+    assert.equal(resultado.empresa_normalizada, normalizarNome(empresa));
+    assert.equal(resultado.acao, acao);
+  }
+  assert.equal(interpretarEmailClaro('ATUALIZACAO DE PEDIDO', `Prezado BASARI TELECOM ${exemplos[0][0]}`).estrutura_valida, true);
+  assert.equal(interpretarEmailClaro('Outro assunto', exemplos[0][0]).estrutura_valida, false);
+});
+
 test('autenticação exige DKIM e DMARC pass alinhados ao domínio exato do remetente', () => {
   const headers = new Map([['authentication-results', 'mx.example; dkim=pass header.d=mailer.goalfy.com.br; dmarc=pass header.from=mailer.goalfy.com.br']]);
   assert.equal(autenticarRemetente(headers, 'no-reply@mailer.goalfy.com.br'), true);

@@ -106,7 +106,7 @@ test('razão social higienizada do email identifica somente a venda Claro corres
 
 test('reprocessamento seletivo da Claro preserva revisões não relacionadas', async () => {
   const corpo = 'Prezado BASARI TELECOM &#x20;\nO aceite do cliente CAMISARIA BARRETO LTDA foi ENVIADO.';
-  const base = { origem: 'imap_claro', status: 'revisao', autenticacao_valida: true, assunto: 'STATUS DE PEDIDO', corpo_texto: corpo, erro: 'Formato do e-mail Claro não reconhecido.', revisado_por_id: null, venda_id: null };
+  const base = { origem: 'imap_claro', status: 'revisao', autenticacao_valida: true, assunto: 'Atualização de pedido', corpo_texto: corpo, erro: 'Formato do e-mail Claro não reconhecido.', revisado_por_id: null, venda_id: null };
   const itens = [
     { ...base, id: 1 },
     { ...base, id: 2, erro: 'Não foi encontrada uma venda Claro ativa com nome/razão social exatamente correspondente.' },
