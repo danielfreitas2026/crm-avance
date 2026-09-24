@@ -425,6 +425,34 @@ describe('Painéis da automação Gmail VIVO', () => {
     confirmar.mockRestore();
   });
 
+  it('o primeiro clique no reprocessamento abre a prévia sem executar o lote', async () => {
+    const user = userEvent.setup();
+    render(<AutomacoesPage />);
+    await screen.findByText('Nenhuma execução encontrada');
+
+    const botao = screen.getByRole('button', { name: 'Abrir prévia para reprocessar Claro' });
+    expect(botao).toBeEnabled();
+    await user.click(botao);
+
+    expect(api.obterDiagnosticoClaro).toHaveBeenCalledOnce();
+    expect(api.repetirInvalidosClaro).not.toHaveBeenCalled();
+    expect(await screen.findByRole('status')).toHaveTextContent('Prévia Claro carregada');
+    expect(screen.getByRole('button', { name: 'Reprocessar emails Claro' })).toBeEnabled();
+  });
+
+  it('explica a falha da prévia e não executa o lote', async () => {
+    const user = userEvent.setup();
+    api.obterDiagnosticoClaro.mockRejectedValue(new Error('HTTP 404'));
+    render(<AutomacoesPage />);
+    await screen.findByText('Nenhuma execução encontrada');
+
+    await user.click(screen.getByRole('button', { name: 'Abrir prévia para reprocessar Claro' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar a prévia Claro: HTTP 404');
+    expect(api.repetirInvalidosClaro).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Abrir prévia para reprocessar Claro' })).toBeEnabled();
+  });
+
   it('pagina o histórico no servidor e permite alterar a quantidade por página', async () => {
     const user = userEvent.setup();
     api.listarAutomacoes.mockResolvedValue({ data: [execucao], total: 41, page: 1, per_page: 20 });

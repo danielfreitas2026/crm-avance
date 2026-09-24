@@ -569,7 +569,10 @@ export default function AutomacoesPage() {
   }
 
   async function reprocessarInvalidosClaro() {
-    if (!diagnosticoClaro) { setErro('Abra a prévia Claro antes do reprocessamento.'); return; }
+    if (!diagnosticoClaro) {
+      if (await carregarDiagnosticoClaro()) setSucesso('Prévia Claro carregada. Confira os registros e clique novamente para confirmar o reprocessamento.');
+      return;
+    }
     const elegiveis = diagnosticoClaro.registros.filter(item => item.elegivel_reprocessamento).length;
     if (!window.confirm(`Revalidar a origem e reprocessar até ${elegiveis} emails Claro? Apenas mensagens com DKIM válido e venda única elegível poderão movimentar o Funil de Automações.`)) return;
     setRepetindoInvalidosClaro(true);
@@ -592,8 +595,15 @@ export default function AutomacoesPage() {
   async function carregarDiagnosticoClaro() {
     setCarregandoDiagnosticoClaro(true);
     setErro('');
-    try { setDiagnosticoClaro(await obterDiagnosticoClaro()); }
-    catch (error) { setErro(error.message); }
+    try {
+      const previa = await obterDiagnosticoClaro();
+      if (!previa || !Array.isArray(previa.registros)) throw new Error('Resposta inválida do servidor. Verifique se o backend atualizado foi implantado.');
+      setDiagnosticoClaro(previa);
+      return previa;
+    } catch (error) {
+      setErro(`Não foi possível carregar a prévia Claro: ${error.message}`);
+      return null;
+    }
     finally { setCarregandoDiagnosticoClaro(false); }
   }
 
@@ -697,7 +707,7 @@ export default function AutomacoesPage() {
             <button type="button" className="btn" disabled={barraOcupada} onClick={diagnosticarImap}><I.Shield size={14} /> {diagnosticandoImap ? 'Diagnosticando...' : 'Diagnosticar IMAP Claro'}</button>
             <button type="button" className="btn" disabled={barraOcupada} onClick={carregarDiagnosticoClaro}><I.Shield size={14} /> {carregandoDiagnosticoClaro ? 'Analisando...' : 'Prévia das revisões Claro'}</button>
             <button type="button" className="btn" disabled={barraOcupada || totalRevisoes === 0} onClick={repetirRevisoes}><I.Refresh size={14} /> {repetindoRevisoes ? 'Reprocessando...' : `Repetir revisões e regressões (${totalRevisoes})`}</button>
-            <button type="button" className="btn" disabled={barraOcupada || !diagnosticoClaro} onClick={reprocessarInvalidosClaro}><I.Refresh size={14} /> {repetindoInvalidosClaro ? 'Reprocessando Claro...' : 'Reprocessar emails Claro'}</button>
+            <button type="button" className="btn" disabled={barraOcupada} onClick={reprocessarInvalidosClaro}><I.Refresh size={14} /> {repetindoInvalidosClaro ? 'Reprocessando Claro...' : diagnosticoClaro ? 'Reprocessar emails Claro' : 'Abrir prévia para reprocessar Claro'}</button>
             <button type="button" className="btn" disabled={barraOcupada} onClick={auditarHistoricos}><I.AlertTriangle size={14} /> {auditandoHistorico ? 'Auditando...' : 'Auditar históricos'}</button>
             <button type="button" className="btn" disabled={barraOcupada || (operadora === 'Claro' ? !resumo.habilitada_claro : operadora === 'Vivo' ? !resumo.habilitada : !resumo.habilitada && !resumo.habilitada_claro)} onClick={coletarHistorico}><I.History size={14} /> {coletandoHistorico ? 'Buscando histórico...' : `Buscar e-mails anteriores${operadora ? ` (${operadora})` : ''}`}</button>
             <button type="button" className="btn automation-refresh" disabled={barraOcupada} onClick={() => carregar(true)}><I.Refresh size={14} /> {atualizando ? 'Atualizando...' : 'Atualizar'}</button>
