@@ -10,6 +10,7 @@ const NotificacaoDestinatario = require('../models/NotificacaoDestinatario');
 const Usuario = require('../models/Usuario');
 const Venda = require('../models/Venda');
 const VendaFunilAutomacao = require('../models/VendaFunilAutomacao');
+const VendaFunilAutomacaoHistorico = require('../models/VendaFunilAutomacaoHistorico');
 const VendaHistorico = require('../models/VendaHistorico');
 const VendaProblema = require('../models/VendaProblema');
 const VendaProblemaDestinatario = require('../models/VendaProblemaDestinatario');
@@ -902,6 +903,29 @@ async function enriquecerEtapasCandidatas(itens) {
   }));
 }
 
+async function enriquecerMovimentacoes(itens) {
+  const ids = itens.filter(item => item.status === 'concluido' && item.classificacao === 'tipo_1').map(item => item.id);
+  if (!ids.length) return itens;
+  const historicos = await VendaFunilAutomacaoHistorico.query()
+    .whereIn('automacao_email_id', ids)
+    .select('automacao_email_id', 'acao', 'status_anterior', 'status_novo');
+  const movimentacoes = historicos.filter(item => item.acao === 'venda.status_atualizado' && item.status_anterior !== item.status_novo);
+  if (!movimentacoes.length) return itens;
+  const codigos = [...new Set(movimentacoes.flatMap(item => [item.status_anterior, item.status_novo]).filter(Boolean))];
+  const etapas = codigos.length ? await FunilEtapa.query().whereIn('codigo', codigos).select('codigo', 'nome') : [];
+  const nomes = new Map(etapas.map(etapa => [etapa.codigo, etapa.nome]));
+  const porEmail = new Map(movimentacoes.map(item => [Number(item.automacao_email_id), item]));
+  const etapa = codigo => ({ codigo: codigo || null, nome: codigo ? nomes.get(codigo) || codigo : 'Sem etapa' });
+  return itens.map(item => {
+    const movimento = porEmail.get(Number(item.id));
+    return movimento ? {
+      ...item,
+      etapa_anterior: etapa(movimento.status_anterior),
+      etapa_nova: etapa(movimento.status_novo)
+    } : item;
+  });
+}
+
 async function listar(filtros = {}) {
   const pagina = Math.max(1, Number(filtros.page) || 1); const porPagina = Math.min(100, Math.max(10, Number(filtros.per_page) || 25));
   const titulo = String(filtros.titulo || '').trim();
@@ -911,7 +935,7 @@ async function listar(filtros = {}) {
   if (filtros.operadora) query.where('operadora', filtros.operadora);
   if (titulo) query.whereRaw("LOCATE(LOWER(?), LOWER(COALESCE(assunto, ''))) > 0", [titulo]);
   const resultado = await query.page(pagina - 1, porPagina);
-  const data = await enriquecerEtapasCandidatas(resultado.results.map(item => ({ ...item, dados_extraidos: json(item.dados_extraidos) })));
+  const data = await enriquecerMovimentacoes(await enriquecerEtapasCandidatas(resultado.results.map(item => ({ ...item, dados_extraidos: json(item.dados_extraidos) }))));
   return { data, total: resultado.total, page: pagina, per_page: porPagina };
 }
 
@@ -1437,4 +1461,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, cicloClaro, coletarEmails, coletarHistorico, diagnosticarImap, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, repetirInvalidosClaro, diagnosticoClaro, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, processarPendentesOrigem, elegivelReprocessamentoClaro, motivosExclusaoClaro, similaridadeClaro, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverVendaClaro, buscarCandidatasClaro, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, salvarEstadoIntegracaoClaro, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo, estadoPublicoIntegracao } };
+module.exports = { ciclo, cicloClaro, coletarEmails, coletarHistorico, diagnosticarImap, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, repetirInvalidosClaro, diagnosticoClaro, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, processarPendentesOrigem, elegivelReprocessamentoClaro, motivosExclusaoClaro, similaridadeClaro, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverVendaClaro, buscarCandidatasClaro, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, enriquecerMovimentacoes, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, salvarEstadoIntegracaoClaro, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo, estadoPublicoIntegracao } };

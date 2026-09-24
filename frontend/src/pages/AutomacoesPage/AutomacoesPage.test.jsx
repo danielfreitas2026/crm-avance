@@ -587,6 +587,38 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByText('Corrija os dados abaixo antes de reprocessar esta execução.')).toBeInTheDocument();
   });
 
+  it('exibe a movimentação concluída pelo email sem confundir com o destino recebido', async () => {
+    api.listarAutomacoes.mockResolvedValue({
+      data: [{
+        ...execucao,
+        status: 'concluido',
+        classificacao: 'tipo_1',
+        erro: null,
+        etapa_anterior: { codigo: 'analise', nome: 'Em análise' },
+        etapa_nova: { codigo: 'aceite_biometria', nome: 'Aceite e biometria' }
+      }],
+      total: 1
+    });
+    render(<AutomacoesPage />);
+
+    await screen.findByText('Workflow de venda VIVO');
+    expect(screen.getByText('Etapa anterior').nextElementSibling).toHaveTextContent('Em análise');
+    expect(screen.getByText('Nova etapa').nextElementSibling).toHaveTextContent('Aceite e biometria');
+    expect(screen.getByText('Destino').nextElementSibling).toHaveTextContent('Correção do Pedido de Venda Pelo Consultor');
+  });
+
+  it('não atribui movimentação a um email sem histórico efetivo', async () => {
+    api.listarAutomacoes.mockResolvedValue({
+      data: [{ ...execucao, status: 'concluido', classificacao: 'tipo_1', erro: null }],
+      total: 1
+    });
+    render(<AutomacoesPage />);
+
+    await screen.findByText('Workflow de venda VIVO');
+    expect(screen.queryByText('Etapa anterior')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nova etapa')).not.toBeInTheDocument();
+  });
+
   it('destaca regressao de funil em ambar e mantem a revisao manual disponivel', async () => {
     api.listarAutomacoes.mockResolvedValue({
       data: [{

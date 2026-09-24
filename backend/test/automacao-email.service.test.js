@@ -13,6 +13,7 @@ const VendaHistorico = require('../src/models/VendaHistorico');
 const vendaService = require('../src/services/venda.service');
 const vendaFunilAutomacaoService = require('../src/services/venda-funil-automacao.service');
 const VendaFunilAutomacao = require('../src/models/VendaFunilAutomacao');
+const VendaFunilAutomacaoHistorico = require('../src/models/VendaFunilAutomacaoHistorico');
 const vendaNotificacaoCancelamentoService = require('../src/services/venda-notificacao-cancelamento.service');
 const automacaoController = require('../src/controllers/automacao.controller');
 const automacaoRoutes = require('../src/routes/automacao.routes');
@@ -1215,6 +1216,49 @@ test('enriquece candidatas antigas com o nome atual da etapa do funil', async ()
     assert.equal(item.dados_extraidos.candidatas[0].status_funil_nome, 'Entrega');
   } finally {
     FunilEtapa.query = queryOriginal;
+  }
+});
+
+test('mostra as etapas registradas pelo email mesmo depois de outra movimentacao da venda', async () => {
+  const historicoOriginal = VendaFunilAutomacaoHistorico.query;
+  const etapaOriginal = FunilEtapa.query;
+  VendaFunilAutomacaoHistorico.query = () => ({
+    whereIn(campo, ids) {
+      assert.equal(campo, 'automacao_email_id');
+      assert.deepEqual(ids, [21, 22, 23]);
+      return this;
+    },
+    select: async () => [
+      { automacao_email_id: 21, acao: 'venda.status_atualizado', status_anterior: 'analise', status_novo: 'aceite_biometria' },
+      { automacao_email_id: 22, acao: 'venda.observacao_adicionada', status_anterior: 'aceite_biometria', status_novo: 'aceite_biometria' }
+    ]
+  });
+  FunilEtapa.query = () => ({
+    whereIn(campo, codigos) {
+      assert.equal(campo, 'codigo');
+      assert.deepEqual(codigos, ['analise', 'aceite_biometria']);
+      return this;
+    },
+    select: async () => [
+      { codigo: 'analise', nome: 'Em análise' },
+      { codigo: 'aceite_biometria', nome: 'Aceite e biometria' }
+    ]
+  });
+  try {
+    const itens = await automacao._internals.enriquecerMovimentacoes([
+      { id: 21, status: 'concluido', classificacao: 'tipo_1', venda_status_atual: 'concluido' },
+      { id: 22, status: 'concluido', classificacao: 'tipo_1' },
+      { id: 23, status: 'concluido', classificacao: 'tipo_1' },
+      { id: 24, status: 'regressao_funil', classificacao: 'tipo_1' }
+    ]);
+    assert.deepEqual(itens[0].etapa_anterior, { codigo: 'analise', nome: 'Em análise' });
+    assert.deepEqual(itens[0].etapa_nova, { codigo: 'aceite_biometria', nome: 'Aceite e biometria' });
+    assert.equal(itens[1].etapa_anterior, undefined);
+    assert.equal(itens[2].etapa_nova, undefined);
+    assert.equal(itens[3].etapa_anterior, undefined);
+  } finally {
+    VendaFunilAutomacaoHistorico.query = historicoOriginal;
+    FunilEtapa.query = etapaOriginal;
   }
 });
 

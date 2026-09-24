@@ -746,6 +746,10 @@ export default function AutomacoesPage() {
                   <div><dt>Venda</dt><dd>{item.venda_id ? `#${item.venda_id}` : 'Não vinculada'}</dd></div>
                   <div><dt>Classificação</dt><dd>{CLASSIFICACAO_LABEL[item.classificacao || item.dados_extraidos?.classificacao] || '—'}</dd></div>
                   <div><dt>Destino</dt><dd>{item.dados_extraidos?.destino || '—'}</dd></div>
+                  {item.status === 'concluido' && item.classificacao === 'tipo_1' && item.etapa_anterior && item.etapa_nova && <>
+                    <div><dt>Etapa anterior</dt><dd>{item.etapa_anterior.nome}</dd></div>
+                    <div><dt>Nova etapa</dt><dd>{item.etapa_nova.nome}</dd></div>
+                  </>}
                   <div><dt>Documento</dt><dd>{item.dados_extraidos?.documento || '—'}</dd></div>
                   {item.operadora === 'Claro' && <div><dt>Autenticação</dt><dd>{item.autenticacao_valida && item.dados_extraidos?.autenticacao_email?.metodo === 'dkim_original' ? 'DKIM do original validado' : 'Origem não comprovada'}</dd></div>}
                 </dl>
