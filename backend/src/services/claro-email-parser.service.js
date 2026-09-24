@@ -50,22 +50,4 @@ function interpretarEmailClaro(assunto, corpo) {
   };
 }
 
-function dominio(email) {
-  return String(email || '').toLowerCase().split('@')[1] || '';
-}
-
-function alinhado(dominioAssinado, dominioRemetente) {
-  const assinado = String(dominioAssinado || '').toLowerCase().replace(/[;\s].*$/, '');
-  return Boolean(assinado && dominioRemetente && (assinado === dominioRemetente || dominioRemetente.endsWith(`.${assinado}`) || assinado.endsWith(`.${dominioRemetente}`)));
-}
-
-function autenticarRemetente(headers, remetente) {
-  const valores = headers?.get?.('authentication-results') || headers?.get?.('arc-authentication-results') || '';
-  const texto = Array.isArray(valores) ? valores.join(' ') : String(valores || '');
-  const dominioFrom = dominio(remetente);
-  const dkim = texto.match(/\bdkim=pass\b[\s\S]*?\bheader\.d=([^\s;]+)/i);
-  const dmarc = texto.match(/\bdmarc=pass\b[\s\S]*?\bheader\.from=([^\s;]+)/i);
-  return Boolean(dkim && dmarc && alinhado(dkim[1], dominioFrom) && alinhado(dmarc[1], dominioFrom));
-}
-
-module.exports = { interpretarEmailClaro, normalizarNome, autenticarRemetente, _internals: { alinhado, dominio, limparEmpresa } };
+module.exports = { interpretarEmailClaro, normalizarNome, _internals: { limparEmpresa } };

@@ -2,9 +2,10 @@ const crypto = require('crypto');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
 const { htmlToText } = require('html-to-text');
+const { dkimVerify } = require('mailauth/lib/dkim/verify');
 const db = require('../database/connection');
 const AutomacaoEmail = require('../models/AutomacaoEmail');
-const { interpretarEmailClaro, autenticarRemetente } = require('./claro-email-parser.service');
+const { interpretarEmailClaro } = require('./claro-email-parser.service');
 
 const ORIGEM = 'imap_claro';
 const OPERADORA = 'Claro';
@@ -134,6 +135,27 @@ function extrairCorpo(mime) {
   try { return htmlToText(mime.html, { wordwrap: false }).trim(); } catch { return ''; }
 }
 
+async function verificarOrigem(source, remetente, dependencias = {}) {
+  if (!source || !remetentesPermitidosOuInjetados(dependencias).has(remetente)) return { valida: false, motivo: 'Remetente não permitido ou original indisponível.' };
+  try {
+    const verificar = dependencias.verificarDkim || dkimVerify;
+    const resultado = await verificar(source, dependencias.resolverDns ? { resolver: dependencias.resolverDns } : undefined);
+    const dominio = remetente.split('@')[1];
+    const assinatura = resultado.results?.find(item => item.status?.result === 'pass'
+      && String(item.signingDomain || '').toLowerCase() === dominio
+      && !item.canonBodyLengthLimited);
+    return assinatura
+      ? { valida: true, motivo: 'Assinatura DKIM verificada e alinhada.', dominio: assinatura.signingDomain }
+      : { valida: false, motivo: 'Assinatura DKIM ausente, inválida, parcial ou desalinhada.' };
+  } catch {
+    return { valida: false, motivo: 'Não foi possível verificar a assinatura DKIM do original.' };
+  }
+}
+
+function remetentesPermitidosOuInjetados(dependencias) {
+  return dependencias.remetentes || remetentesPermitidos();
+}
+
 async function obterEstado(database = db) {
   return database('automacao_email_estado').where({ origem: ORIGEM }).first();
 }
@@ -156,12 +178,16 @@ async function registrarMensagem({ uid, uidvalidity, envelope, internalDate, sou
   if (!permitidos.has(remetente)) return { ignorada: true, persistida: false };
   const recebidoEm = mime.date || internalDate || new Date();
   const corpo = extrairCorpo(mime);
-  const autenticacaoValida = autenticarRemetente(mime.headers, remetente);
+  const autenticacao = await verificarOrigem(source, remetente, { ...dependencias, remetentes: permitidos });
+  const autenticacaoValida = autenticacao.valida;
   const resultadoAutenticacao = mime.headers?.get?.('authentication-results') || mime.headers?.get?.('arc-authentication-results') || null;
   const campos = {
     ...interpretarEmailClaro(mime.subject || '', corpo),
     autenticacao_email: {
-      dkim_dmarc_alinhados: autenticacaoValida,
+      dkim_alinhado: autenticacaoValida,
+      metodo: 'dkim_original',
+      motivo: autenticacao.motivo,
+      dominio: autenticacao.dominio || null,
       resultado: resultadoAutenticacao ? String(Array.isArray(resultadoAutenticacao) ? resultadoAutenticacao.join(' ') : resultadoAutenticacao).slice(0, 2000) : null
     }
   };
@@ -189,6 +215,65 @@ async function registrarMensagem({ uid, uidvalidity, envelope, internalDate, sou
   const inserir = dependencias.inserir || (dados => AutomacaoEmail.query().insert(dados).onConflict('chave_deduplicacao').ignore());
   const inserido = await inserir(registro);
   return { ignorada: false, persistida: Boolean(inserido?.id), registro };
+}
+
+async function verificarOriginalComCliente(registro, client, dependencias) {
+  const identificador = String(registro.identificador_remoto || '');
+  let uids;
+  const uid = identificador.match(/^(\d+):(\d+)$/);
+  if (uid) {
+    if (String(client.mailbox?.uidValidity) !== uid[1]) return { valida: false, motivo: 'Original indisponível: UIDVALIDITY da caixa mudou.' };
+    uids = [Number(uid[2])];
+  } else if (identificador) {
+    uids = await client.search({ header: { 'message-id': identificador } }, { uid: true });
+    if (!uids.length && /^<[^>]+>$/.test(identificador)) {
+      uids = await client.search({ header: { 'message-id': identificador.slice(1, -1) } }, { uid: true });
+    }
+  } else return { valida: false, motivo: 'Original indisponível: identificador remoto ausente.' };
+  for (const numero of uids.slice(0, 10)) {
+    const mensagem = await client.fetchOne(numero, { source: true, envelope: true, internalDate: true }, { uid: true });
+    if (!mensagem?.source) continue;
+    const mime = await (dependencias.parse || simpleParser)(mensagem.source, { skipImageLinks: true });
+    const remetente = remetenteMime(mime);
+    const recebidoOriginal = mime.date || mensagem.internalDate;
+    const textoRecebido = String(registro.recebido_em || '');
+    const recebidoRegistro = registro.recebido_em instanceof Date
+      ? registro.recebido_em : new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(textoRecebido)
+        ? textoRecebido : `${textoRecebido.replace(' ', 'T')}Z`);
+    if (!remetentesPermitidosOuInjetados(dependencias).has(remetente)
+      || remetenteEnvelope(mensagem.envelope) !== remetente
+      || (!uid && String(mime.messageId || '').toLowerCase() !== identificador.toLowerCase())
+      || (registro.corpo_hash && crypto.createHash('sha256').update(extrairCorpo(mime)).digest('hex') !== registro.corpo_hash)
+      || (!registro.corpo_hash && String(registro.corpo_texto || '').trim() !== extrairCorpo(mime))
+      || (registro.recebido_em && (!recebidoOriginal || Number.isNaN(recebidoRegistro.getTime())
+        || Math.floor(new Date(recebidoOriginal).getTime() / 1000) !== Math.floor(recebidoRegistro.getTime() / 1000)))
+      || (registro.assunto || '') !== (mime.subject || '')) continue;
+    return verificarOrigem(mensagem.source, remetente, dependencias);
+  }
+  return { valida: false, motivo: 'Original do email não localizado ou diferente do registro armazenado.' };
+}
+
+async function verificarRegistrosOriginais(registros, dependencias = {}) {
+  const config = dependencias.config || configImap();
+  const criarCliente = dependencias.criarCliente || (opcoes => new ImapFlow(opcoes));
+  let client;
+  let lock;
+  const resultados = new Map();
+  try {
+    validarConfiguracao(config);
+    client = await conectarCliente(config, criarCliente);
+    lock = await client.getMailboxLock('INBOX', { readOnly: true });
+    for (const registro of registros) {
+      try { resultados.set(registro.id, await verificarOriginalComCliente(registro, client, dependencias)); }
+      catch { resultados.set(registro.id, { valida: false, motivo: 'Falha ao recuperar ou verificar o original no IMAP.' }); }
+    }
+  } catch {
+    for (const registro of registros) if (!resultados.has(registro.id)) resultados.set(registro.id, { valida: false, motivo: 'Original indisponível ou falha na verificação IMAP/DKIM.' });
+  } finally {
+    if (lock) lock.release();
+    await encerrarCliente(client);
+  }
+  return resultados;
 }
 
 async function coletarEmailsClaro({ desdeInicio = false } = {}, dependencias = {}) {
@@ -248,5 +333,6 @@ module.exports = {
   acoesAutomaticasHabilitadas,
   coletarEmailsClaro,
   registrarMensagem,
-  _internals: { configImap, validarConfiguracao, remetentesPermitidos, remetenteEnvelope, remetenteMime, chaveDeduplicacao, extrairCorpo, obterEstado, salvarCursor, permiteFallback, conectarCliente, encerrarCliente }
+  verificarRegistrosOriginais,
+  _internals: { configImap, validarConfiguracao, remetentesPermitidos, remetenteEnvelope, remetenteMime, chaveDeduplicacao, extrairCorpo, obterEstado, salvarCursor, permiteFallback, conectarCliente, encerrarCliente, verificarOrigem }
 };

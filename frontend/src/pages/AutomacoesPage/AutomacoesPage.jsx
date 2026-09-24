@@ -12,6 +12,7 @@ import {
   listarInconsistenciasHistoricoAutomacoes,
   listarVendasCandidatasAutomacao,
   obterPreviaCorrecaoHistoricoAutomacao,
+  obterDiagnosticoClaro,
   obterResumoAutomacoes,
   repetirAutomacao,
   repetirAutomacoesEmRevisao,
@@ -452,6 +453,9 @@ export default function AutomacoesPage() {
   const [diagnosticandoImap, setDiagnosticandoImap] = useState(false);
   const [repetindoRevisoes, setRepetindoRevisoes] = useState(false);
   const [repetindoInvalidosClaro, setRepetindoInvalidosClaro] = useState(false);
+  const [diagnosticoClaro, setDiagnosticoClaro] = useState(null);
+  const [resultadoClaro, setResultadoClaro] = useState(null);
+  const [carregandoDiagnosticoClaro, setCarregandoDiagnosticoClaro] = useState(false);
   const [sucesso, setSucesso] = useState('');
   const [inconsistencias, setInconsistencias] = useState(null);
   const [auditandoHistorico, setAuditandoHistorico] = useState(false);
@@ -565,19 +569,32 @@ export default function AutomacoesPage() {
   }
 
   async function reprocessarInvalidosClaro() {
-    if (!window.confirm('Reprocessar somente emails Claro em revisão por formato ou identificação do cliente? Vendas podem ser movimentadas se as ações automáticas estiverem habilitadas.')) return;
+    if (!diagnosticoClaro) { setErro('Abra a prévia Claro antes do reprocessamento.'); return; }
+    const elegiveis = diagnosticoClaro.registros.filter(item => item.elegivel_reprocessamento).length;
+    if (!window.confirm(`Revalidar a origem e reprocessar até ${elegiveis} emails Claro? Apenas mensagens com DKIM válido e venda única elegível poderão movimentar o Funil de Automações.`)) return;
     setRepetindoInvalidosClaro(true);
     setErro('');
     setSucesso('');
     try {
       const resultado = await repetirInvalidosClaro();
-      setSucesso(`${Number(resultado.selecionados || 0)} email(s) Claro selecionado(s); ${Number(resultado.repetidos || 0)} repetido(s); ${Number(resultado.falhas || 0)} falha(s).`);
+      setResultadoClaro(resultado);
+      const concluidos = resultado.registros?.filter(item => item.status === 'concluido').length || 0;
+      setSucesso(`${Number(resultado.selecionados || 0)} selecionado(s); ${concluidos} concluído(s); ${Number(resultado.falhas || 0)} erro(s). Confira o resultado por ID abaixo.`);
+      setDiagnosticoClaro(await obterDiagnosticoClaro());
       await carregar(true);
     } catch (error) {
       setErro(error.message);
     } finally {
       setRepetindoInvalidosClaro(false);
     }
+  }
+
+  async function carregarDiagnosticoClaro() {
+    setCarregandoDiagnosticoClaro(true);
+    setErro('');
+    try { setDiagnosticoClaro(await obterDiagnosticoClaro()); }
+    catch (error) { setErro(error.message); }
+    finally { setCarregandoDiagnosticoClaro(false); }
   }
 
   async function auditarHistoricos() {
@@ -604,7 +621,7 @@ export default function AutomacoesPage() {
   const totalCancelamentos = Number(resumo.contadores_classificacao?.cancelamento || 0);
   const total = Object.values(contadores).reduce((soma, quantidade) => soma + Number(quantidade || 0), 0);
   const totalRevisoes = Number(contadores.revisao || 0) + Number(contadores.regressao_funil || 0);
-  const barraOcupada = atualizando || coletandoHistorico || diagnosticandoImap || repetindoRevisoes || repetindoInvalidosClaro || auditandoHistorico;
+  const barraOcupada = atualizando || coletandoHistorico || diagnosticandoImap || repetindoRevisoes || repetindoInvalidosClaro || carregandoDiagnosticoClaro || auditandoHistorico;
   const integracao = resumo.integracao || { estado: resumo.habilitada ? 'ativo' : 'desabilitado' };
   const estadoIntegracao = integracao.estado || (resumo.habilitada ? 'ativo' : 'desabilitado');
   const integracaoComFalha = estadoIntegracao === 'falha' || estadoIntegracao === 'sem_resposta';
@@ -678,8 +695,9 @@ export default function AutomacoesPage() {
           </div>
           <div className="automation-toolbar__actions">
             <button type="button" className="btn" disabled={barraOcupada} onClick={diagnosticarImap}><I.Shield size={14} /> {diagnosticandoImap ? 'Diagnosticando...' : 'Diagnosticar IMAP Claro'}</button>
+            <button type="button" className="btn" disabled={barraOcupada} onClick={carregarDiagnosticoClaro}><I.Shield size={14} /> {carregandoDiagnosticoClaro ? 'Analisando...' : 'Prévia das revisões Claro'}</button>
             <button type="button" className="btn" disabled={barraOcupada || totalRevisoes === 0} onClick={repetirRevisoes}><I.Refresh size={14} /> {repetindoRevisoes ? 'Reprocessando...' : `Repetir revisões e regressões (${totalRevisoes})`}</button>
-            <button type="button" className="btn" disabled={barraOcupada} onClick={reprocessarInvalidosClaro}><I.Refresh size={14} /> {repetindoInvalidosClaro ? 'Reprocessando Claro...' : 'Reprocessar emails Claro inválidos'}</button>
+            <button type="button" className="btn" disabled={barraOcupada || !diagnosticoClaro} onClick={reprocessarInvalidosClaro}><I.Refresh size={14} /> {repetindoInvalidosClaro ? 'Reprocessando Claro...' : 'Reprocessar emails Claro'}</button>
             <button type="button" className="btn" disabled={barraOcupada} onClick={auditarHistoricos}><I.AlertTriangle size={14} /> {auditandoHistorico ? 'Auditando...' : 'Auditar históricos'}</button>
             <button type="button" className="btn" disabled={barraOcupada || (operadora === 'Claro' ? !resumo.habilitada_claro : operadora === 'Vivo' ? !resumo.habilitada : !resumo.habilitada && !resumo.habilitada_claro)} onClick={coletarHistorico}><I.History size={14} /> {coletandoHistorico ? 'Buscando histórico...' : `Buscar e-mails anteriores${operadora ? ` (${operadora})` : ''}`}</button>
             <button type="button" className="btn automation-refresh" disabled={barraOcupada} onClick={() => carregar(true)}><I.Refresh size={14} /> {atualizando ? 'Atualizando...' : 'Atualizar'}</button>
@@ -688,6 +706,14 @@ export default function AutomacoesPage() {
 
         {erro && <div className="alert-error automation-alert" role="alert">{erro}</div>}
         {sucesso && <div className="alert-success automation-alert" role="status">{sucesso}</div>}
+
+        {diagnosticoClaro && <section className="automation-history-audit" aria-label="Diagnóstico das revisões Claro">
+          <div className="automation-history-audit__heading"><div><strong>Diagnóstico Claro · {diagnosticoClaro.total} em revisão</strong><span>Ações automáticas: {diagnosticoClaro.acoes_habilitadas ? 'habilitadas' : 'desabilitadas no ambiente'}. Prévia: {diagnosticoClaro.registros.filter(item => item.elegivel_reprocessamento).length} registro(s) com corpo e sem revisão manual; a origem será verificada no IMAP ao executar.</span></div><button type="button" className="btn btn-icon btn-ghost" title="Fechar diagnóstico" onClick={() => setDiagnosticoClaro(null)}><I.Close size={14} /></button></div>
+          {Object.entries(diagnosticoClaro.contagens).map(([motivo, quantidade]) => <div key={motivo}>{quantidade} · {motivo}</div>)}
+          {diagnosticoClaro.registros.map(item => <article key={item.id} className="automation-history-item"><div><strong>Email #{item.id} · {item.empresa || 'Razão não extraída'}</strong><span>Origem: {item.autenticacao_valida ? 'DKIM do original validado' : item.autenticacao?.motivo || 'Não comprovada'} · {item.elegivel_reprocessamento ? 'selecionável' : 'fora da prévia'}</span><small>{item.motivo}</small>{item.motivo_vinculo && <small>{item.motivo_vinculo}</small>}{item.candidatas?.map(venda => <small key={venda.id}>Venda #{venda.id}: {venda.inelegibilidades.length ? venda.inelegibilidades.join(', ') : 'elegível'}</small>)}</div></article>)}
+        </section>}
+
+        {resultadoClaro && <section className="automation-history-audit" aria-label="Resultado do reprocessamento Claro"><div className="automation-history-audit__heading"><strong>Resultado por email</strong><button type="button" className="btn btn-icon btn-ghost" title="Fechar resultado" onClick={() => setResultadoClaro(null)}><I.Close size={14} /></button></div>{resultadoClaro.registros?.map(item => <div key={item.id}>#{item.id} · {item.status} · {item.motivo || 'Sem pendências'}</div>)}</section>}
 
         {inconsistencias && <section className="automation-history-audit" aria-label="Históricos potencialmente inconsistentes">
           <div className="automation-history-audit__heading"><div><strong>Auditoria de históricos</strong><span>{inconsistencias.total} caso(s) aguardando análise individual.</span></div><button type="button" className="btn btn-icon btn-ghost" title="Fechar auditoria" onClick={() => setInconsistencias(null)}><I.Close size={14} /></button></div>
@@ -711,7 +737,7 @@ export default function AutomacoesPage() {
                   <div><dt>Classificação</dt><dd>{CLASSIFICACAO_LABEL[item.classificacao || item.dados_extraidos?.classificacao] || '—'}</dd></div>
                   <div><dt>Destino</dt><dd>{item.dados_extraidos?.destino || '—'}</dd></div>
                   <div><dt>Documento</dt><dd>{item.dados_extraidos?.documento || '—'}</dd></div>
-                  {item.operadora === 'Claro' && <div><dt>Autenticação</dt><dd>{item.autenticacao_valida ? 'DKIM/DMARC alinhados' : 'Não validada'}</dd></div>}
+                  {item.operadora === 'Claro' && <div><dt>Autenticação</dt><dd>{item.autenticacao_valida && item.dados_extraidos?.autenticacao_email?.metodo === 'dkim_original' ? 'DKIM do original validado' : 'Origem não comprovada'}</dd></div>}
                 </dl>
                 {item.erro && <div className={`alert-error automation-alert ${item.status === 'regressao_funil' ? 'automation-regression-alert' : ''}`} role="alert">{item.erro}</div>}
                 <div className="automation-email-body"><strong>Conteúdo recebido</strong><pre>{item.corpo_texto || 'Corpo removido ou não armazenado.'}</pre></div>

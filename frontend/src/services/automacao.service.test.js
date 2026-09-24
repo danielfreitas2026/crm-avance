@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./api', () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 
 import { apiGet, apiPost } from './api';
-import { coletarHistoricoAutomacoes, corrigirHistoricoAutomacao, diagnosticarImapClaro, listarAutomacoes, listarInconsistenciasHistoricoAutomacoes, listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterPreviaCorrecaoHistoricoAutomacao, obterVendaProblemaAutomatico, repetirInvalidosClaro, resolverProblemaAutomatico } from './automacao.service';
+import { coletarHistoricoAutomacoes, corrigirHistoricoAutomacao, diagnosticarImapClaro, listarAutomacoes, listarInconsistenciasHistoricoAutomacoes, listarProblemasAutomaticos, listarVendasCandidatasAutomacao, obterPreviaCorrecaoHistoricoAutomacao, obterDiagnosticoClaro, obterVendaProblemaAutomatico, repetirInvalidosClaro, resolverProblemaAutomatico } from './automacao.service';
 
 describe('automacao.service', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -53,7 +53,9 @@ describe('automacao.service', () => {
   });
 
   it('aciona o reprocessamento seletivo da Claro', async () => {
+    await obterDiagnosticoClaro();
     await repetirInvalidosClaro();
+    expect(apiGet).toHaveBeenCalledWith('/automacoes/diagnostico-claro');
     expect(apiPost).toHaveBeenCalledWith('/automacoes/repetir-invalidos-claro', {});
   });
 

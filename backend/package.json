@@ -33,6 +33,7 @@
     "imapflow": "^1.0.195",
     "jsonwebtoken": "^9.0.3",
     "knex": "^3.2.9",
+    "mailauth": "^5.0.3",
     "mailparser": "^3.9.17",
     "mysql2": "^3.22.2",
     "nodemailer": "^8.0.7",

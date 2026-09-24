@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { interpretarEmailClaro, autenticarRemetente, normalizarNome } = require('../src/services/claro-email-parser.service');
+const { generateKeyPairSync } = require('node:crypto');
+const { dkimSign } = require('mailauth/lib/dkim/sign');
+const { interpretarEmailClaro, normalizarNome } = require('../src/services/claro-email-parser.service');
 const claroImap = require('../src/services/claro-imap.service');
 
 const MODELOS = [
@@ -56,11 +58,26 @@ test('parser Claro reconhece os seis exemplos com o assunto Atualização de ped
   assert.equal(interpretarEmailClaro('Outro assunto', exemplos[0][0]).estrutura_valida, false);
 });
 
-test('autenticação exige DKIM e DMARC pass alinhados ao domínio exato do remetente', () => {
-  const headers = new Map([['authentication-results', 'mx.example; dkim=pass header.d=mailer.goalfy.com.br; dmarc=pass header.from=mailer.goalfy.com.br']]);
-  assert.equal(autenticarRemetente(headers, 'no-reply@mailer.goalfy.com.br'), true);
-  assert.equal(autenticarRemetente(headers, 'fraude@outro.example'), false);
-  assert.equal(autenticarRemetente(new Map([['authentication-results', 'dkim=fail; dmarc=pass header.from=mailer.goalfy.com.br']]), 'no-reply@mailer.goalfy.com.br'), false);
+test('verifica criptograficamente DKIM do MIME, rejeitando adulteração e domínio desalinhado', async () => {
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const original = Buffer.from('From: <no-reply@mailer.example.com>\r\nSubject: Atualização de pedido\r\n\r\nO cliente EMPRESA TESTE ASSINOU o contrato.\r\n');
+  const chave = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+  const resolverDns = async () => [[`v=DKIM1; k=rsa; p=${chave}`]];
+  const remetentes = new Set(['no-reply@mailer.example.com']);
+  async function assinar(dominio) {
+    const resultado = await dkimSign(original, { signatureData: [{ signingDomain: dominio, selector: 'teste', privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }) }] });
+    assert.deepEqual(resultado.errors, []);
+    return Buffer.concat([Buffer.from(resultado.signatures), original]);
+  }
+  const assinado = await assinar('mailer.example.com');
+  assert.equal((await claroImap._internals.verificarOrigem(assinado, 'no-reply@mailer.example.com', { resolverDns, remetentes })).valida, true);
+  const adulterado = Buffer.from(assinado.toString().replace('EMPRESA TESTE', 'EMPRESA FALSA'));
+  assert.equal((await claroImap._internals.verificarOrigem(adulterado, 'no-reply@mailer.example.com', { resolverDns, remetentes })).valida, false);
+  const cabecalhoFalso = Buffer.from('From: <no-reply@mailer.example.com>\r\nAuthentication-Results: mx; dkim=pass header.d=mailer.example.com; dmarc=pass header.from=mailer.example.com\r\n\r\nTexto');
+  assert.equal((await claroImap._internals.verificarOrigem(cabecalhoFalso, 'no-reply@mailer.example.com', { resolverDns, remetentes })).valida, false);
+  const desalinhado = await assinar('outro.example.com');
+  assert.equal((await claroImap._internals.verificarOrigem(desalinhado, 'no-reply@mailer.example.com', { resolverDns, remetentes })).valida, false);
+  assert.equal((await claroImap._internals.verificarOrigem(null, 'no-reply@mailer.example.com', { resolverDns, remetentes })).valida, false);
 });
 
 function ambienteClaro() {
@@ -100,6 +117,7 @@ test('coletor abre INBOX read-only, busca UID ordenado e baixa fonte por BODY.PE
   };
   try {
     const resultado = await claroImap.coletarEmailsClaro({}, {
+      verificarDkim: async () => ({ results: [{ status: { result: 'pass' }, signingDomain: 'mailer.goalfy.com.br' }] }),
       criarCliente: config => { assert.deepEqual({ host: config.host, port: config.port, secure: config.secure, connectionTimeout: config.connectionTimeout }, { host: 'imap.uhserver.com', port: 993, secure: true, connectionTimeout: 15000 }); return client; },
       obterEstado: async () => ({ uidvalidity: '77', ultimo_uid: 10 }),
       localizar: async () => null,
@@ -113,6 +131,29 @@ test('coletor abre INBOX read-only, busca UID ordenado e baixa fonte por BODY.PE
     assert.equal(chamadas.some(item => ['store', 'move', 'copy', 'expunge', 'delete'].includes(item[0])), false);
     assert.deepEqual(cursores, [['77', 11], ['77', 12]]);
     assert.ok(inseridos.every(item => item.origem === 'imap_claro' && item.operadora === 'Claro' && item.autenticacao_valida));
+  } finally { restaurar(); }
+});
+
+test('rebusca original antigo no IMAP somente leitura e rejeita ausência ou divergência', async () => {
+  const restaurar = ambienteClaro();
+  const chamadas = [];
+  const source = Buffer.from('From: <no-reply@mailer.goalfy.com.br>\r\nSubject: Atualização de pedido\r\nMessage-ID: <antigo@example.com>\r\n\r\nO cliente EMPRESA TESTE ASSINOU o contrato.\r\n');
+  const registro = { id: 1, identificador_remoto: '<antigo@example.com>', assunto: 'Atualização de pedido', corpo_hash: require('node:crypto').createHash('sha256').update('O cliente EMPRESA TESTE ASSINOU o contrato.').digest('hex') };
+  const client = {
+    usable: true, mailbox: { uidValidity: 7n },
+    async connect() {},
+    async getMailboxLock(nome, opcoes) { chamadas.push([nome, opcoes]); return { release() {} }; },
+    async search(criterio, opcoes) { chamadas.push([criterio, opcoes]); return [15]; },
+    async fetchOne(uid, query, opcoes) { chamadas.push([uid, query, opcoes]); return { source, envelope: { from: [{ address: 'no-reply@mailer.goalfy.com.br' }] } }; },
+    async logout() { this.usable = false; }
+  };
+  const deps = { criarCliente: () => client, verificarDkim: async () => ({ results: [{ status: { result: 'pass' }, signingDomain: 'mailer.goalfy.com.br' }] }) };
+  try {
+    assert.equal((await claroImap.verificarRegistrosOriginais([registro], deps)).get(1).valida, true);
+    assert.deepEqual(chamadas[0], ['INBOX', { readOnly: true }]);
+    assert.deepEqual(chamadas[2], [15, { source: true, envelope: true, internalDate: true }, { uid: true }]);
+    assert.equal((await claroImap.verificarRegistrosOriginais([{ ...registro, corpo_hash: 'outro' }], deps)).get(1).valida, false);
+    assert.equal((await claroImap.verificarRegistrosOriginais([{ ...registro, identificador_remoto: '8:15' }], deps)).get(1).valida, false);
   } finally { restaurar(); }
 });
 

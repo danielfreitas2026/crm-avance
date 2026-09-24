@@ -133,6 +133,20 @@ test('Gmail nao repete movimento nem historico para o mesmo email', async () => 
   } finally { cenario.restaurar(); }
 });
 
+test('Claro não duplica movimento no Funil de Automações ao repetir o mesmo email', async () => {
+  const cenario = prepararEstado();
+  try {
+    const opcoes = { origem: 'automacao_imap_claro', automacaoEmailId: 101, marcadores: { aceite: true } };
+    const primeira = await service.movimentar(41, { status_funil: 'entrega' }, opcoes);
+    const segunda = await service.movimentar(41, { status_funil: 'entrega' }, opcoes);
+    assert.equal(primeira.alterada, true);
+    assert.equal(segunda.alterada, false);
+    assert.equal(cenario.venda.status_funil, 'aprovacao');
+    assert.equal(cenario.estado.status_funil, 'entrega');
+    assert.equal(cenario.historicos.length, 1);
+  } finally { cenario.restaurar(); }
+});
+
 test('cancelamento automatico fica isolado da venda real e e idempotente', async () => {
   const cenario = prepararEstado();
   try {

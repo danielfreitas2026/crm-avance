@@ -194,38 +194,89 @@ async function buscarCandidatas(campos) {
   return vendas.map(venda => aplicarEstadoFunilAutomacao(venda));
 }
 
-async function buscarCandidatasClaro(campos, recebidoEm = null) {
-  const nome = normalizarNome(campos.empresa);
-  if (!nome) return [];
-  const vendas = await Venda.query().alias('v')
+async function carregarVendasClaro() {
+  return Venda.query().alias('v')
     .join('operadoras as op', 'op.id', 'v.operadora_id')
     .leftJoin('venda_funil_automacoes as vfa', 'vfa.venda_id', 'v.id')
     .leftJoin('funil_etapas as etapa_atual', 'etapa_atual.codigo', 'vfa.status_funil')
     .select(
-      'v.*', 'vfa.status_funil as status_funil_automacao',
+      'v.*', 'op.nome as operadora_nome', 'vfa.status_funil as status_funil_automacao',
       'vfa.prioridade_funil as prioridade_funil_automacao',
       'vfa.cancelada_em as cancelada_automacao_em',
       'vfa.motivo_cancelamento as motivo_cancelamento_automacao',
       'etapa_atual.nome as status_funil_nome'
     )
-    .whereRaw('LOWER(op.nome) = ?', ['claro'])
-    .whereNull('v.excluido_em')
-    .whereNotNull('v.enviada_pos_venda_em')
-    .withGraphFetched('[cliente, operadora, tipoVenda, vendedora, vendedoras, criador]');
-  const recebido = instanteUtc(recebidoEm);
-  return vendas
-    .filter(venda => [venda.nome, venda.razao_social, venda.cliente?.nome, venda.cliente?.razao_social].some(valor => normalizarNome(valor) === nome))
-    .filter(venda => {
-      const criada = instanteUtc(venda.criado_em || venda.created_at);
-      return recebido === null || criada === null || criada <= recebido;
-    })
-    .map(venda => aplicarEstadoFunilAutomacao(venda));
+    .withGraphFetched('[cliente, operadora, tipoVenda]');
 }
 
-async function resolverVendaClaro(registro, campos) {
-  const candidatas = await buscarCandidatasClaro(campos, registro.recebido_em);
-  const finais = await codigosEtapasFinais();
-  const ativas = candidatas.filter(venda => !venda.cancelada_em && !finais.includes(venda.status_funil));
+async function buscarCandidatasClaro(campos, recebidoEm = null, vendasCarregadas = null) {
+  const nome = normalizarNome(campos.empresa);
+  if (!nome) return [];
+  const vendas = vendasCarregadas || await carregarVendasClaro();
+  const exatas = vendas.filter(venda => razoesClaro(venda).includes(nome));
+  if (exatas.length) return exatas.map(venda => aplicarEstadoFunilAutomacao(venda));
+  const pontuadas = vendas.map(venda => ({ venda, pontuacao: Math.max(0, ...razoesClaro(venda).map(outro => similaridadeClaro(nome, outro))) }))
+    .sort((a, b) => b.pontuacao - a.pontuacao);
+  if (!pontuadas.length || pontuadas[0].pontuacao < 0.94
+    || (pontuadas[1] && pontuadas[0].pontuacao - pontuadas[1].pontuacao < 0.08)) return [];
+  return [aplicarEstadoFunilAutomacao(pontuadas[0].venda)];
+}
+
+function razoesClaro(venda) {
+  const legais = [venda.razao_social, venda.cliente?.razao_social].map(normalizarNome).filter(Boolean);
+  const nomes = [venda.nome, venda.cliente?.nome].map(normalizarNome).filter(Boolean);
+  for (const nome of nomes) {
+    if (legais.some(razao => razao === nome || (razao.startsWith(`${nome} `)
+      && /^(?:ltda|s a|sa|eireli|me)$/.test(razao.slice(nome.length + 1))))) legais.push(nome);
+  }
+  return [...new Set(legais)];
+}
+
+function similaridadeClaro(a, b) {
+  const palavrasA = new Set(a.split(' '));
+  const palavrasB = new Set(b.split(' '));
+  const comuns = [...palavrasA].filter(palavra => palavrasB.has(palavra)).length;
+  if (comuns / palavrasA.size < 0.8 || comuns / palavrasB.size < 0.8) return 0;
+  const anterior = Array.from({ length: b.length + 1 }, (_, indice) => indice);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = anterior[0];
+    anterior[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const acima = anterior[j];
+      anterior[j] = Math.min(anterior[j] + 1, anterior[j - 1] + 1, diagonal + Number(a[i - 1] !== b[j - 1]));
+      diagonal = acima;
+    }
+  }
+  return 1 - anterior[b.length] / Math.max(a.length, b.length);
+}
+
+function motivosExclusaoClaro(venda, recebidoEm, finais) {
+  const motivos = [];
+  if (String(venda.operadora?.nome || venda.operadora_nome || '').trim().toLowerCase() !== 'claro') motivos.push('operadora diferente de Claro');
+  if (venda.excluido_em) motivos.push('venda excluída');
+  if (!venda.enviada_pos_venda_em) motivos.push('venda não enviada ao pós-venda');
+  const recebido = instanteUtc(recebidoEm);
+  const criada = instanteUtc(venda.criado_em || venda.created_at);
+  if (recebido !== null && criada !== null && criada > recebido) {
+    const dataVenda = venda.data_venda instanceof Date && !Number.isNaN(venda.data_venda.getTime())
+      ? venda.data_venda.toISOString().slice(0, 10) : String(venda.data_venda || '').slice(0, 10);
+    const instanteVenda = instanteUtc(dataVenda);
+    const dataValida = /^\d{4}-\d{2}-\d{2}$/.test(dataVenda)
+      && instanteVenda !== null && new Date(instanteVenda).toISOString().slice(0, 10) === dataVenda;
+    if (!dataValida || instanteVenda > recebido) motivos.push('venda cadastrada após o email sem data da venda anterior válida');
+  }
+  if (venda.cancelada_em) motivos.push('venda cancelada no Funil de Automações');
+  if (finais.includes(venda.status_funil)) motivos.push('venda concluída no Funil de Automações');
+  return motivos;
+}
+
+async function resolverVendaClaro(registro, campos, contexto = {}) {
+  const candidatas = await buscarCandidatasClaro(campos, registro.recebido_em, contexto.vendas);
+  const finais = contexto.finais || await codigosEtapasFinais();
+  const motivos = new Map(candidatas.map(venda => [venda.id, motivosExclusaoClaro(venda, registro.recebido_em, finais)]));
+  const ativas = candidatas.filter(venda => !motivos.get(venda.id).length);
+  const duplicadas = candidatas.length > 1 && candidatas.every(venda =>
+    razoesClaro(venda).includes(normalizarNome(campos.empresa)));
   const auditoria = candidatas.map(venda => ({
     id: venda.id,
     nome: venda.nome,
@@ -234,7 +285,7 @@ async function resolverVendaClaro(registro, campos) {
     status_funil_nome: venda.status_funil_nome || venda.status_funil || 'Sem etapa',
     elegivel: ativas.includes(venda),
     automaticamente_compativel: ativas.includes(venda),
-    inelegibilidades: ativas.includes(venda) ? [] : ['venda concluída ou cancelada'],
+    inelegibilidades: motivos.get(venda.id),
     divergencias: [],
     vendedores: []
   }));
@@ -244,10 +295,11 @@ async function resolverVendaClaro(registro, campos) {
       ? { venda: selecionada, candidatas: auditoria.map(item => ({ ...item, manual: Number(item.id) === Number(selecionada.id) })), erro: null }
       : { venda: null, candidatas: auditoria, erro: 'A venda Claro selecionada manualmente não está ativa ou não corresponde ao nome do e-mail.' };
   }
+  if (duplicadas) return { venda: null, candidatas: auditoria, erro: 'Mais de uma venda distinta possui a mesma razão social; revisão manual obrigatória.' };
   if (ativas.length === 1) return { venda: ativas[0], candidatas: auditoria, erro: null };
   if (ativas.length > 1) return { venda: null, candidatas: auditoria, erro: 'Mais de uma venda Claro ativa possui o mesmo nome/razão social.' };
-  if (candidatas.length) return { venda: null, candidatas: auditoria, erro: 'A venda Claro encontrada está concluída ou cancelada.' };
-  return { venda: null, candidatas: [], erro: 'Não foi encontrada uma venda Claro ativa com nome/razão social exatamente correspondente.' };
+  if (candidatas.length) return { venda: null, candidatas: auditoria, erro: `Venda encontrada, mas inelegível: ${[...new Set(auditoria.flatMap(item => item.inelegibilidades))].join('; ')}.` };
+  return { venda: null, candidatas: [], erro: 'Não foi encontrada uma venda Claro com razão social correspondente com segurança.' };
 }
 
 function cnpjValido(valor) {
@@ -370,7 +422,7 @@ async function validarVendaSelecionada(registro, dados, dependencias = {}) {
     const candidatas = await (dependencias.buscarClaro || buscarCandidatasClaro)(atuais, registro.recebido_em);
     const finais = await (dependencias.etapasFinais || codigosEtapasFinais)();
     const venda = candidatas.find(item => Number(item.id) === vendaId);
-    if (!venda || venda.cancelada_em || finais.includes(venda.status_funil)) {
+    if (!venda || motivosExclusaoClaro(venda, registro.recebido_em, finais).length) {
       throw Object.assign(new Error('A venda Claro selecionada não está ativa ou não corresponde ao nome do e-mail.'), { statusCode: 400 });
     }
     return { venda, cnpj: null };
@@ -578,9 +630,9 @@ async function processarRegistro(registro) {
     ? interpretarEmailClaro(registro.assunto, registro.corpo_texto)
     : interpretarEmail(registro.corpo_texto);
   const override = json(registro.dados_extraidos)._override || {};
-  const campos = { ...camposBase, ...override };
+  const campos = { ...camposBase, ...override, ...(claro ? { autenticacao_email: json(registro.dados_extraidos).autenticacao_email } : {}) };
   if (claro && !campos.estrutura_valida) return { status: 'revisao', classificacao: 'desconhecido', erro: 'Formato do e-mail Claro não reconhecido.', dados_extraidos: JSON.stringify(campos) };
-  if (claro && !registro.autenticacao_valida) return { status: 'revisao', erro: 'DKIM/DMARC ausente, inválido ou desalinhado com o remetente.', dados_extraidos: JSON.stringify(campos) };
+  if (claro && (!registro.autenticacao_valida || json(registro.dados_extraidos).autenticacao_email?.metodo !== 'dkim_original')) return { status: 'revisao', erro: 'Origem não comprovada por assinatura DKIM do email original.', dados_extraidos: JSON.stringify(campos) };
   const resolucao = await resolverVenda(registro, campos);
   const dadosExtraidos = {
     ...campos,
@@ -963,35 +1015,74 @@ async function repetirRevisoes(carregarCorpo = carregarCorpoGmail) {
 function elegivelReprocessamentoClaro(item) {
   return item.origem === ORIGEM_CLARO
     && item.status === 'revisao'
-    && item.autenticacao_valida
     && item.corpo_texto
     && !item.revisado_por_id
-    && !item.venda_id
-    && ['Formato do e-mail Claro não reconhecido.', 'Não foi encontrada uma venda Claro ativa com nome/razão social exatamente correspondente.'].includes(item.erro)
     && interpretarEmailClaro(item.assunto, item.corpo_texto).estrutura_valida;
+}
+
+async function diagnosticoClaro(dependencias = {}) {
+  const consultar = dependencias.consultar || (() => AutomacaoEmail.query()
+    .where({ origem: ORIGEM_CLARO, status: 'revisao' }).orderBy('recebido_em').orderBy('id'));
+  const itens = await consultar();
+  const contexto = itens.some(item => interpretarEmailClaro(item.assunto, item.corpo_texto).estrutura_valida)
+    ? { vendas: await (dependencias.carregarVendas || carregarVendasClaro)(), finais: await (dependencias.etapasFinais || codigosEtapasFinais)() }
+    : {};
+  const contagens = {};
+  const registros = [];
+  for (const item of itens) {
+    const motivo = item.erro || 'Sem motivo informado';
+    contagens[motivo] = (contagens[motivo] || 0) + 1;
+    const campos = interpretarEmailClaro(item.assunto, item.corpo_texto);
+    const resolucao = campos.estrutura_valida
+      ? await (dependencias.resolver || resolverVendaClaro)(item, campos, contexto)
+      : { candidatas: [], erro: 'Formato do email não reconhecido.' };
+    registros.push({ id: item.id, empresa: campos.empresa, autenticacao: json(item.dados_extraidos).autenticacao_email || null,
+      autenticacao_valida: Boolean(item.autenticacao_valida && json(item.dados_extraidos).autenticacao_email?.metodo === 'dkim_original'),
+      motivo, motivo_vinculo: resolucao.erro, candidatas: resolucao.candidatas,
+      elegivel_reprocessamento: Boolean(elegivelReprocessamentoClaro(item)) });
+  }
+  return { total: itens.length, contagens, acoes_habilitadas: claroImapService.acoesAutomaticasHabilitadas(), registros };
 }
 
 async function repetirInvalidosClaro(dependencias = {}) {
   const consultar = dependencias.consultar || (() => AutomacaoEmail.query()
-    .where({ origem: ORIGEM_CLARO, status: 'revisao', autenticacao_valida: true })
+    .where({ origem: ORIGEM_CLARO, status: 'revisao' })
     .whereNotNull('corpo_texto')
     .whereNull('revisado_por_id')
-    .whereNull('venda_id')
     .orderBy('recebido_em').orderBy('id'));
   const reivindicar = dependencias.reivindicar || (item => AutomacaoEmail.query()
-    .where({ id: item.id, origem: ORIGEM_CLARO, status: 'revisao', erro: item.erro, autenticacao_valida: true })
-    .whereNotNull('corpo_texto').whereNull('revisado_por_id').whereNull('venda_id')
+    .where({ id: item.id, origem: ORIGEM_CLARO, status: 'revisao', erro: item.erro })
+    .whereNotNull('corpo_texto').whereNull('revisado_por_id')
     .patch({ status: 'pendente', erro: null, updated_at: new Date() }));
   const processar = dependencias.processar || processarPendente;
+  const atualizar = dependencias.atualizar || ((id, dados) => AutomacaoEmail.query().patchAndFetchById(id, dados));
+  const obter = dependencias.obter || (id => AutomacaoEmail.query().findById(id));
   const itens = (await consultar()).filter(elegivelReprocessamentoClaro);
-  const resultado = { selecionados: itens.length, repetidos: 0, falhas: 0 };
+  const origens = dependencias.verificar || !itens.length ? null : await claroImapService.verificarRegistrosOriginais(itens);
+  const resultado = { selecionados: itens.length, repetidos: 0, falhas: 0, registros: [] };
   for (const item of itens) {
+    let iniciouProcessamento = false;
     try {
+      const origem = origens ? origens.get(item.id) : await dependencias.verificar(item);
+      if (!origem.valida) {
+        const motivo = origem.motivo || 'Origem do email não comprovada.';
+        await atualizar(item.id, { status: 'revisao', autenticacao_valida: false, erro: motivo });
+        resultado.registros.push({ id: item.id, status: 'revisao', motivo });
+        continue;
+      }
       if (!await reivindicar(item)) continue;
-      if (await processar({ ...item, status: 'pendente', erro: null })) resultado.repetidos += 1;
-      else resultado.falhas += 1;
-    } catch {
+      const dados = { ...json(item.dados_extraidos), autenticacao_email: { metodo: 'dkim_original', motivo: origem.motivo, dominio: origem.dominio } };
+      await atualizar(item.id, { autenticacao_valida: true, dados_extraidos: JSON.stringify(dados) });
+      iniciouProcessamento = true;
+      if (!await processar({ ...item, autenticacao_valida: true, dados_extraidos: JSON.stringify(dados), status: 'pendente', erro: null })) throw new Error('Registro não foi reivindicado para processamento.');
+      resultado.repetidos += 1;
+      const final = await obter(item.id);
+      resultado.registros.push({ id: item.id, status: final?.status || 'erro', motivo: final?.erro || null });
+    } catch (error) {
       resultado.falhas += 1;
+      const motivo = String(error.message || error).slice(0, 2000);
+      if (!iniciouProcessamento) await atualizar(item.id, { status: 'revisao', erro: motivo }).catch(() => undefined);
+      resultado.registros.push({ id: item.id, status: 'erro', motivo });
     }
   }
   return resultado;
@@ -1330,4 +1421,4 @@ async function obterVendaProblemaAutomatico(problemaId) {
   return vendaService.buscarVendaPorId(registro.venda_id);
 }
 
-module.exports = { ciclo, cicloClaro, coletarEmails, coletarHistorico, diagnosticarImap, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, repetirInvalidosClaro, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, processarPendentesOrigem, elegivelReprocessamentoClaro, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverVendaClaro, buscarCandidatasClaro, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, salvarEstadoIntegracaoClaro, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo, estadoPublicoIntegracao } };
+module.exports = { ciclo, cicloClaro, coletarEmails, coletarHistorico, diagnosticarImap, processarPendentes, listar, listarVendasCandidatas, resumo, revisar, repetir, repetirRevisoes, repetirInvalidosClaro, diagnosticoClaro, descartar, listarInconsistenciasHistorico, obterPreviaCorrecaoHistorico, corrigirInconsistenciaHistorico, limparCorposExpirados, listarProblemas, resolverProblemaAutomatico, obterVendaProblemaAutomatico, _internals: { calcularDepois, extrairCorpoMensagem, registrarMensagem, prepararRepeticao, processarPendente, processarPendentesOrigem, elegivelReprocessamentoClaro, motivosExclusaoClaro, similaridadeClaro, divergenciasSecundarias, motivosInelegibilidade, avaliarCandidatas, validarVendaSelecionada, resolverVenda, resolverVendaClaro, buscarCandidatasClaro, resolverEtapaDestino, revalidarResolucaoAutomatica, montarInconsistenciaHistorico, efeitosDerivadosComprovados, vendaTemPortabilidade, emailRemetente, documento, centavos, tokenTelegramProblemas, processarRegistro, filtroProblemas, porPaginaProblemas, resumirVendasProblemas, enriquecerEtapasCandidatas, validarContaGmail, mensagemErroIntegracao, salvarEstadoIntegracao, salvarEstadoIntegracaoClaro, registrarInicioCiclo, registrarSucessoCiclo, registrarFalhaCiclo, estadoPublicoIntegracao } };

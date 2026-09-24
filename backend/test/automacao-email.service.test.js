@@ -340,6 +340,22 @@ test('diagnóstico IMAP fica protegido e repassa o resultado do runtime', async 
   }
 });
 
+test('prévia de revisões Claro usa a permissão de automações e retorna o diagnóstico', async () => {
+  const camadas = automacaoRoutes.stack;
+  const indicePermissao = camadas.findIndex(camada => camada.name === 'permissaoMiddleware');
+  const camada = camadas.find(item => item.route?.path === '/diagnostico-claro');
+  assert.ok(camada);
+  assert.ok(camadas.indexOf(camada) > indicePermissao);
+  assert.equal(camada.route.methods.get, true);
+  const original = automacao.diagnosticoClaro;
+  automacao.diagnosticoClaro = async () => ({ total: 60, registros: [] });
+  const res = { body: null, json(dados) { this.body = dados; return this; } };
+  try {
+    await automacaoController.diagnosticoClaro({}, res);
+    assert.deepEqual(res.body, { total: 60, registros: [] });
+  } finally { automacao.diagnosticoClaro = original; }
+});
+
 test('endpoint de candidatas fica protegido e repassa execucao e CNPJ ao servico', async () => {
   const camadas = automacaoRoutes.stack;
   const indicePermissao = camadas.findIndex(camada => camada.name === 'permissaoMiddleware');

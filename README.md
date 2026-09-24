@@ -49,6 +49,14 @@ A integração lê uma caixa Gmail dedicada com OAuth `gmail.readonly`, sem marc
 
 A publicação interna, a emissão segura do refresh token, o inventário de dados, a revogação e a revisão semestral estão documentados em [`docs/gmail-oauth-interno.md`](docs/gmail-oauth-interno.md).
 
+## Automação IMAP da Claro
+
+Configure `CLARO_IMAP_*` conforme `backend/.env.example` e use Node.js 22.19 ou superior (requisito da biblioteca de validação DKIM). A coleta usa IMAP somente leitura e só considera comprovada a origem quando a assinatura DKIM do MIME original é válida e seu domínio é exatamente o do remetente permitido; cabeçalhos `Authentication-Results` são apenas informativos. Mensagens antigas são rebuscadas no IMAP antes do reprocessamento. Se o original não existir ou não corresponder ao registro, o email permanece em revisão.
+
+Na tela de Automações, abra **Prévia das revisões Claro** para conferir as contagens, razões extraídas, autenticação e motivos de exclusão das vendas. Depois, use **Reprocessar emails Claro** e confira o resultado por ID. A prévia identifica candidatos à tentativa, não garante conclusão: a assinatura e o vínculo são revalidados na execução. Registros sem corpo, com revisão manual ou sem formato reconhecido não entram no lote. O reprocessamento não liga as ações automaticamente.
+
+Mantenha `CLARO_IMAP_AUTO_ACTIONS_ENABLED=false` até conferir os registros reais e validar o fluxo no ambiente. Após essa conferência, o responsável pelo deploy pode definir `CLARO_IMAP_AUTO_ACTIONS_ENABLED=true` no ambiente e reiniciar o worker. As ações atualizam apenas o Funil de Automações, com proteção contra repetição e regressão; nomes ambíguos ou origem não comprovada continuam em revisão.
+
 ## Correção retroativa de botões do Telegram
 
 Para visualizar os encaminhamentos ativos que terão o botão corrigido, execute:

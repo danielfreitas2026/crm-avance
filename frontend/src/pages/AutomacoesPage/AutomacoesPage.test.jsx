@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   listarAutomacoes: vi.fn(),
   listarInconsistenciasHistoricoAutomacoes: vi.fn(),
   obterResumoAutomacoes: vi.fn(),
+  obterDiagnosticoClaro: vi.fn(),
   obterPreviaCorrecaoHistoricoAutomacao: vi.fn(),
   repetirAutomacao: vi.fn(),
   repetirAutomacoesEmRevisao: vi.fn(),
@@ -92,6 +93,7 @@ describe('Painéis da automação Gmail VIVO', () => {
     api.repetirAutomacao.mockResolvedValue({});
     api.repetirAutomacoesEmRevisao.mockResolvedValue({ selecionados: 2, repetidos: 2, falhas: 0 });
     api.repetirInvalidosClaro.mockResolvedValue({ selecionados: 2, repetidos: 2, falhas: 0 });
+    api.obterDiagnosticoClaro.mockResolvedValue({ total: 1, contagens: { 'Venda não encontrada': 1 }, acoes_habilitadas: false, registros: [{ id: 7, empresa: 'EMPRESA TESTE', autenticacao_valida: false, motivo: 'Venda não encontrada', motivo_vinculo: 'Sem candidata', candidatas: [], elegivel_reprocessamento: true }] });
     api.descartarAutomacao.mockResolvedValue({});
     api.coletarHistoricoAutomacoes.mockResolvedValue({ coletados: 4, processados: 4 });
     api.diagnosticarImapClaro.mockResolvedValue({
@@ -413,10 +415,12 @@ describe('Painéis da automação Gmail VIVO', () => {
     render(<AutomacoesPage />);
     await screen.findByText('Nenhuma execução encontrada');
 
-    await user.click(screen.getByRole('button', { name: 'Reprocessar emails Claro inválidos' }));
+    await user.click(screen.getByRole('button', { name: 'Prévia das revisões Claro' }));
+    expect(await screen.findByText(/Diagnóstico Claro/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Reprocessar emails Claro' }));
 
     expect(api.repetirInvalidosClaro).toHaveBeenCalledOnce();
-    expect(await screen.findByRole('status')).toHaveTextContent('2 email(s) Claro selecionado(s); 2 repetido(s); 0 falha(s).');
+    expect(await screen.findByRole('status')).toHaveTextContent('2 selecionado(s); 0 concluído(s); 0 erro(s).');
     await waitFor(() => expect(api.listarAutomacoes).toHaveBeenCalledTimes(2));
     confirmar.mockRestore();
   });

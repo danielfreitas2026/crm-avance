@@ -11,6 +11,7 @@ export const listarAutomacoes = ({ status = '', classificacao = '', titulo = '',
 };
 export const coletarHistoricoAutomacoes = (origem = 'gmail_vivo') => apiPost('/automacoes/coletar-historico', { origem });
 export const diagnosticarImapClaro = () => apiPost('/automacoes/diagnostico-imap', {});
+export const obterDiagnosticoClaro = () => apiGet('/automacoes/diagnostico-claro');
 export const listarVendasCandidatasAutomacao = (id, cnpj) => {
   const digitos = String(cnpj || '').replace(/\D/g, '');
   return apiGet(`/automacoes/${id}/vendas-candidatas${digitos ? `?cnpj=${digitos}` : ''}`);
