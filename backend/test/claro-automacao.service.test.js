@@ -150,6 +150,53 @@ test('razão social higienizada do email identifica somente a venda Claro corres
   } finally { restaurar(); }
 });
 
+test('Claro aceita razão social contida em outra razão completa após higienização', async () => {
+  const registro = { recebido_em: '2026-09-22 12:00:00' };
+  const consultar = async (vendas, empresa) => {
+    const restaurar = instalarConsultas(vendas, etapas);
+    try { return await automacao._internals.resolverVendaClaro(registro, { empresa }); }
+    finally { restaurar(); }
+  };
+
+  const curta = 'ALFHA AMBIENTAL SOLUCOES E SERVICOS LTDA';
+  const longa = 'GRUPO ALFHA AMBIENTAL SOLUÇÕES E SERVIÇOS LTDA';
+  assert.equal((await consultar([venda(1, { razao_social: longa })], curta)).venda.id, 1);
+  assert.equal((await consultar([venda(2, { razao_social: curta })], longa)).venda.id, 2);
+
+  const duplicada = await consultar([
+    venda(3, { razao_social: longa }),
+    venda(4, { razao_social: `${curta} FILIAL` })
+  ], curta);
+  assert.equal(duplicada.venda, null);
+  assert.equal(duplicada.candidatas.filter(item => item.elegivel).length, 2);
+  assert.match(duplicada.erro, /Mais de uma venda Claro elegível/);
+
+  const exata = await consultar([
+    venda(5, { razao_social: curta }),
+    venda(6, { razao_social: longa })
+  ], curta);
+  assert.equal(exata.venda.id, 5);
+  assert.deepEqual(exata.candidatas.map(item => item.id), [5]);
+});
+
+test('Claro não vincula por fragmento de palavra ou nome genérico e audita candidata contida inelegível', async () => {
+  const registro = { recebido_em: '2026-09-22 12:00:00' };
+  const consultar = async (vendas, empresa) => {
+    const restaurar = instalarConsultas(vendas, etapas);
+    try { return await automacao._internals.resolverVendaClaro(registro, { empresa }); }
+    finally { restaurar(); }
+  };
+
+  assert.equal((await consultar([venda(1, { razao_social: 'ALFHA AMBIENTALISTA LTDA' })], 'ALFHA AMBIENTAL')).venda, null);
+  assert.equal((await consultar([venda(2, { razao_social: 'GRUPO XYZ LTDA' })], 'XYZ LTDA')).venda, null);
+
+  const inelegivel = await consultar([
+    venda(3, { razao_social: 'GRUPO ALFHA AMBIENTAL LTDA', operadora: { nome: 'Vivo' } })
+  ], 'ALFHA AMBIENTAL LTDA');
+  assert.equal(inelegivel.venda, null);
+  assert.match(inelegivel.candidatas[0].inelegibilidades.join(' '), /operadora diferente de Claro/);
+});
+
 test('nome fantasia igual à razão do email não cria vínculo automático', async () => {
   const restaurar = instalarConsultas([venda(1, { nome: 'ALFHA AMBIENTAL SOLUCOES E SERVICOS LTDA', razao_social: 'OUTRA EMPRESA LTDA' })], etapas);
   try {

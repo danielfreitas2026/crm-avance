@@ -215,6 +215,8 @@ async function buscarCandidatasClaro(campos, recebidoEm = null, vendasCarregadas
   const vendas = vendasCarregadas || await carregarVendasClaro();
   const exatas = vendas.filter(venda => razoesClaro(venda).includes(nome));
   if (exatas.length) return exatas.map(venda => aplicarEstadoFunilAutomacao(venda));
+  const contidas = vendas.filter(venda => razoesClaro(venda).some(razao => razaoContidaClaro(nome, razao)));
+  if (contidas.length) return contidas.map(venda => aplicarEstadoFunilAutomacao(venda));
   const pontuadas = vendas.map(venda => ({ venda, pontuacao: Math.max(0, ...razoesClaro(venda).map(outro => similaridadeClaro(nome, outro))) }))
     .sort((a, b) => b.pontuacao - a.pontuacao);
   if (!pontuadas.length || pontuadas[0].pontuacao < 0.94
@@ -230,6 +232,12 @@ function razoesClaro(venda) {
       && /^(?:ltda|s a|sa|eireli|me)$/.test(razao.slice(nome.length + 1))))) legais.push(nome);
   }
   return [...new Set(legais)];
+}
+
+function razaoContidaClaro(a, b) {
+  const [curta, longa] = a.length <= b.length ? [a, b] : [b, a];
+  const palavrasDistintivas = curta.split(' ').filter(palavra => !['e', 'de', 'da', 'do', 'dos', 'das', 'ltda', 'sa', 's', 'a', 'me', 'eireli'].includes(palavra));
+  return palavrasDistintivas.length >= 2 && ` ${longa} `.includes(` ${curta} `);
 }
 
 function similaridadeClaro(a, b) {
@@ -294,7 +302,7 @@ async function resolverVendaClaro(registro, campos, contexto = {}) {
       : { venda: null, candidatas: auditoria, erro: 'A venda Claro selecionada manualmente não está ativa ou não corresponde ao nome do e-mail.' };
   }
   if (ativas.length === 1) return { venda: ativas[0], candidatas: auditoria, erro: null };
-  if (ativas.length > 1) return { venda: null, candidatas: auditoria, erro: 'Mais de uma venda Claro elegível possui a mesma razão social; revisão manual obrigatória.' };
+  if (ativas.length > 1) return { venda: null, candidatas: auditoria, erro: 'Mais de uma venda Claro elegível possui razão social correspondente; revisão manual obrigatória.' };
   if (candidatas.length) return { venda: null, candidatas: auditoria, erro: `Venda encontrada, mas inelegível: ${[...new Set(auditoria.flatMap(item => item.inelegibilidades))].join('; ')}.` };
   return { venda: null, candidatas: [], erro: 'Não foi encontrada uma venda Claro com razão social correspondente com segurança.' };
 }
