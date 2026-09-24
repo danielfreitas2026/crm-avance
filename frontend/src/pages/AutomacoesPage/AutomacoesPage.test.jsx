@@ -279,6 +279,28 @@ describe('Painéis da automação Gmail VIVO', () => {
     if (estado === 'falha') expect(screen.getByRole('alert')).toHaveTextContent('Google 401 · invalid_grant');
   });
 
+  it('distingue valor ausente de venda com valor zero', async () => {
+    api.listarVendasCandidatasAutomacao.mockResolvedValueOnce({
+      automacao_id: 20,
+      empresa: 'Empresa Ágil',
+      cnpj: null,
+      vendas: [
+        { ...vendaCandidata, id: 71, valor_total: null },
+        { ...vendaCandidata, id: 72, valor_total: 0 }
+      ]
+    });
+    render(<VincularVendaAutomacaoModal
+      item={{ ...execucao, id: 20, operadora: 'Claro', dados_extraidos: { empresa: 'Empresa Ágil' } }}
+      onClose={vi.fn()}
+      onSelecionar={vi.fn()}
+    />);
+
+    const vendaSemValor = (await screen.findByText('Venda #71')).closest('article');
+    const vendaZerada = screen.getByText('Venda #72').closest('article');
+    expect(within(vendaSemValor).getByText('—')).toBeVisible();
+    expect(within(vendaZerada).getByText('R$ 0,00')).toBeVisible();
+  });
+
   it('exibe saúde independente e filtra/coleta a origem Claro', async () => {
     const user = userEvent.setup();
     api.obterResumoAutomacoes.mockResolvedValue({

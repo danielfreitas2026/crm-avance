@@ -2,17 +2,18 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const automacao = require('../src/services/automacao-email.service');
 const claroImap = require('../src/services/claro-imap.service');
+const AutomacaoEmail = require('../src/models/AutomacaoEmail');
 const Venda = require('../src/models/Venda');
 const FunilEtapa = require('../src/models/FunilEtapa');
 const vendaFunilAutomacaoService = require('../src/services/venda-funil-automacao.service');
 
-function instalarConsultas(vendas, etapas) {
+function instalarConsultas(vendas, etapas, onGraph) {
   const queryVendaOriginal = Venda.query;
   const queryEtapaOriginal = FunilEtapa.query;
   Venda.query = () => ({
     alias() { return this; }, join() { return this; }, leftJoin() { return this; }, select() { return this; },
     whereRaw() { return this; }, whereNull() { return this; }, whereNotNull() { return this; },
-    withGraphFetched: async () => vendas
+    withGraphFetched: async grafo => { onGraph?.(grafo); return vendas; }
   });
   FunilEtapa.query = () => {
     const consulta = {
@@ -47,6 +48,49 @@ function venda(id, extras = {}) {
     excluido_em: null, cancelada_em: null, cliente: null, operadora: { nome: 'Claro' }, ...extras
   };
 }
+
+test('consulta de candidatas Claro retorna os detalhes reais e preserva os bloqueios', async () => {
+  const queryAutomacaoOriginal = AutomacaoEmail.query;
+  let grafoConsultado;
+  const restaurar = instalarConsultas([
+    venda(627, {
+      data_venda: '2026-09-10', valor_total: 149.8, quantidade_linhas: 2,
+      valores_unitarios_chips: JSON.stringify([{ quantidade: 2, tipo_linha: 'novo', valor_unitario: 74.9 }]),
+      vendedora: { id: 3, nome: 'Consultora A' },
+      vendedoras: [{ id: 3, nome: 'Consultora A' }, { id: 4, nome: 'Consultora B' }],
+      criador: { id: 7, nome: 'Gerente' }
+    }),
+    venda(733, { valor_total: 0, tipoVenda: { nome: 'Portabilidade' }, cancelada_automacao_em: '2026-09-20' })
+  ], etapas, grafo => { grafoConsultado = grafo; });
+  AutomacaoEmail.query = () => ({ findById: async () => ({
+    id: 268, origem: 'imap_claro', recebido_em: '2026-09-22 12:00:00',
+    dados_extraidos: JSON.stringify({ empresa: 'Empresa Ágil Ltda' })
+  }) });
+  try {
+    const resultado = await automacao.listarVendasCandidatas(268);
+    assert.match(grafoConsultado, /vendedora, vendedoras, criador/);
+    assert.equal(resultado.empresa, 'Empresa Ágil Ltda');
+    assert.deepEqual(resultado.vendas.map(item => item.id), [627, 733]);
+    assert.equal(resultado.vendas[0].data_venda, '2026-09-10');
+    assert.equal(resultado.vendas[0].valor_total, 149.8);
+    assert.equal(resultado.vendas[0].quantidade_linhas, 2);
+    assert.deepEqual(resultado.vendas[0].vendedores, [
+      { id: 3, nome: 'Consultora A' }, { id: 4, nome: 'Consultora B' }
+    ]);
+    assert.deepEqual(resultado.vendas[0].criador, { id: 7, nome: 'Gerente' });
+    assert.equal(resultado.vendas[0].tipo_venda, 'Novo');
+    assert.deepEqual(resultado.vendas[0].chips, [{ quantidade: 2, tipo_linha: 'novo', valor_unitario: 74.9 }]);
+    assert.equal(resultado.vendas[0].elegivel, true);
+    assert.equal(resultado.vendas[1].valor_total, 0);
+    assert.equal(resultado.vendas[1].tipo_venda, 'Portabilidade');
+    assert.deepEqual(resultado.vendas[1].chips, []);
+    assert.equal(resultado.vendas[1].elegivel, false);
+    assert.deepEqual(resultado.vendas[1].inelegibilidades, ['venda cancelada no Funil de Automações']);
+  } finally {
+    AutomacaoEmail.query = queryAutomacaoOriginal;
+    restaurar();
+  }
+});
 
 test('vínculo Claro exige uma única venda ativa, anterior ao e-mail e com nome normalizado exato', async () => {
   let restaurar = instalarConsultas([venda(1)], etapas);

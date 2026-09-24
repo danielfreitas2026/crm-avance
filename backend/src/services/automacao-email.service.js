@@ -206,7 +206,7 @@ async function carregarVendasClaro() {
       'vfa.motivo_cancelamento as motivo_cancelamento_automacao',
       'etapa_atual.nome as status_funil_nome'
     )
-    .withGraphFetched('[cliente, operadora, tipoVenda]');
+    .withGraphFetched('[cliente, operadora, tipoVenda, vendedora, vendedoras, criador]');
 }
 
 async function buscarCandidatasClaro(campos, recebidoEm = null, vendasCarregadas = null) {
@@ -283,18 +283,29 @@ async function resolverVendaClaro(registro, campos, contexto = {}) {
   const finais = contexto.finais || await codigosEtapasFinais();
   const motivos = new Map(candidatas.map(venda => [venda.id, motivosExclusaoClaro(venda, registro.recebido_em, finais)]));
   const ativas = candidatas.filter(venda => !motivos.get(venda.id).length);
-  const auditoria = candidatas.map(venda => ({
-    id: venda.id,
-    nome: venda.nome,
-    razao_social: venda.razao_social || venda.nome || '',
-    status_funil: venda.status_funil || null,
-    status_funil_nome: venda.status_funil_nome || venda.status_funil || 'Sem etapa',
-    elegivel: ativas.includes(venda),
-    automaticamente_compativel: ativas.includes(venda),
-    inelegibilidades: motivos.get(venda.id),
-    divergencias: [],
-    vendedores: []
-  }));
+  const auditoria = candidatas.map(venda => {
+    const vendedores = [venda.vendedora, ...(Array.isArray(venda.vendedoras) ? venda.vendedoras : [])]
+      .filter(Boolean)
+      .filter((item, indice, lista) => lista.findIndex(outro => Number(outro.id) === Number(item.id)) === indice)
+      .map(item => ({ id: Number(item.id), nome: item.nome || 'Não informado' }));
+    return {
+      id: venda.id,
+      nome: venda.nome,
+      razao_social: venda.razao_social || venda.nome || '',
+      data_venda: venda.data_venda || null,
+      valor_total: venda.valor_total ?? null,
+      quantidade_linhas: venda.quantidade_linhas ?? null,
+      status_funil: venda.status_funil || null,
+      status_funil_nome: venda.status_funil_nome || venda.status_funil || 'Sem etapa',
+      vendedores,
+      criador: venda.criador ? { id: Number(venda.criador.id), nome: venda.criador.nome || 'Não informado' } : null,
+      ...detalhesChipsVenda(venda),
+      elegivel: ativas.includes(venda),
+      automaticamente_compativel: ativas.includes(venda),
+      inelegibilidades: motivos.get(venda.id),
+      divergencias: []
+    };
+  });
   if (registro.revisado_por_id && registro.venda_id) {
     const selecionada = ativas.find(venda => Number(venda.id) === Number(registro.venda_id));
     return selecionada

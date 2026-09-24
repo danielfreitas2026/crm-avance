@@ -219,7 +219,7 @@ export function VincularVendaAutomacaoModal({ item, onClose, onSelecionar }) {
                     <article className={`automation-sale-item${venda.elegivel ? '' : ' is-blocked'}`} key={venda.id}>
                       <div className="automation-sale-item__heading">
                         <div><strong>Venda #{venda.id}</strong><span>{venda.razao_social || venda.nome || 'Razão social não informada'}</span></div>
-                        <strong>{Number(venda.valor_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                        <strong>{venda.valor_total == null || venda.valor_total === '' ? '—' : Number(venda.valor_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                       </div>
                       <div className="automation-sale-item__details">
                         <span>Data<strong>{formatarData(venda.data_venda)}</strong></span>
