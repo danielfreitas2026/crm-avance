@@ -440,6 +440,24 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByRole('button', { name: 'Reprocessar emails Claro' })).toBeEnabled();
   });
 
+  it('distingue o motivo antigo do vínculo único calculado na prévia Claro', async () => {
+    const user = userEvent.setup();
+    api.obterDiagnosticoClaro.mockResolvedValue({
+      total: 1, contagens: { 'Mais de uma venda distinta': 1 }, acoes_habilitadas: false,
+      registros: [{ id: 238, empresa: 'SIMPLICIUS COLETA LTDA', autenticacao_valida: true,
+        motivo: 'Mais de uma venda distinta', motivo_vinculo: null, venda_sugerida_id: 723,
+        elegivel_reprocessamento: true,
+        candidatas: [{ id: 658, inelegibilidades: ['operadora diferente de Claro'] }, { id: 723, inelegibilidades: [] }] }]
+    });
+    render(<AutomacoesPage />);
+    await screen.findByText('Nenhuma execução encontrada');
+    await user.click(screen.getByRole('button', { name: 'Prévia das revisões Claro' }));
+
+    expect(await screen.findByText('Prévia atual: venda #723 é a única elegível.')).toBeInTheDocument();
+    expect(screen.getByText('Motivo registrado: Mais de uma venda distinta')).toBeInTheDocument();
+    expect(screen.getByText('Venda #658: operadora diferente de Claro')).toBeInTheDocument();
+  });
+
   it('explica a falha da prévia e não executa o lote', async () => {
     const user = userEvent.setup();
     api.obterDiagnosticoClaro.mockRejectedValue(new Error('HTTP 404'));

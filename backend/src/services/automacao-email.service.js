@@ -275,8 +275,6 @@ async function resolverVendaClaro(registro, campos, contexto = {}) {
   const finais = contexto.finais || await codigosEtapasFinais();
   const motivos = new Map(candidatas.map(venda => [venda.id, motivosExclusaoClaro(venda, registro.recebido_em, finais)]));
   const ativas = candidatas.filter(venda => !motivos.get(venda.id).length);
-  const duplicadas = candidatas.length > 1 && candidatas.every(venda =>
-    razoesClaro(venda).includes(normalizarNome(campos.empresa)));
   const auditoria = candidatas.map(venda => ({
     id: venda.id,
     nome: venda.nome,
@@ -295,9 +293,8 @@ async function resolverVendaClaro(registro, campos, contexto = {}) {
       ? { venda: selecionada, candidatas: auditoria.map(item => ({ ...item, manual: Number(item.id) === Number(selecionada.id) })), erro: null }
       : { venda: null, candidatas: auditoria, erro: 'A venda Claro selecionada manualmente não está ativa ou não corresponde ao nome do e-mail.' };
   }
-  if (duplicadas) return { venda: null, candidatas: auditoria, erro: 'Mais de uma venda distinta possui a mesma razão social; revisão manual obrigatória.' };
   if (ativas.length === 1) return { venda: ativas[0], candidatas: auditoria, erro: null };
-  if (ativas.length > 1) return { venda: null, candidatas: auditoria, erro: 'Mais de uma venda Claro ativa possui o mesmo nome/razão social.' };
+  if (ativas.length > 1) return { venda: null, candidatas: auditoria, erro: 'Mais de uma venda Claro elegível possui a mesma razão social; revisão manual obrigatória.' };
   if (candidatas.length) return { venda: null, candidatas: auditoria, erro: `Venda encontrada, mas inelegível: ${[...new Set(auditoria.flatMap(item => item.inelegibilidades))].join('; ')}.` };
   return { venda: null, candidatas: [], erro: 'Não foi encontrada uma venda Claro com razão social correspondente com segurança.' };
 }
@@ -1038,7 +1035,7 @@ async function diagnosticoClaro(dependencias = {}) {
       : { candidatas: [], erro: 'Formato do email não reconhecido.' };
     registros.push({ id: item.id, empresa: campos.empresa, autenticacao: json(item.dados_extraidos).autenticacao_email || null,
       autenticacao_valida: Boolean(item.autenticacao_valida && json(item.dados_extraidos).autenticacao_email?.metodo === 'dkim_original'),
-      motivo, motivo_vinculo: resolucao.erro, candidatas: resolucao.candidatas,
+      motivo, motivo_vinculo: resolucao.erro, venda_sugerida_id: resolucao.venda?.id || null, candidatas: resolucao.candidatas,
       elegivel_reprocessamento: Boolean(elegivelReprocessamentoClaro(item)) });
   }
   return { total: itens.length, contagens, acoes_habilitadas: claroImapService.acoesAutomaticasHabilitadas(), registros };

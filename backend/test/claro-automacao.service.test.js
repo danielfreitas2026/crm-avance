@@ -65,7 +65,7 @@ test('vínculo Claro exige uma única venda ativa, anterior ao e-mail e com nome
       { empresa: 'Empresa Ágil' }
     );
     assert.equal(duplicada.venda, null);
-    assert.match(duplicada.erro, /Mais de uma venda distinta/);
+    assert.match(duplicada.erro, /Mais de uma venda Claro elegível/);
     const manual = await automacao._internals.resolverVendaClaro(
       { origem: 'imap_claro', recebido_em: '2026-09-22 12:00:00', revisado_por_id: 7, venda_id: 2 },
       { empresa: 'Empresa Ágil' }
@@ -85,11 +85,48 @@ test('vínculo Claro exige uma única venda ativa, anterior ao e-mail e com nome
 
   restaurar = instalarConsultas([venda(1), venda(2, { excluido_em: '2026-09-20' })], etapas);
   try {
-    const duplicada = await automacao._internals.resolverVendaClaro(
+    const unica = await automacao._internals.resolverVendaClaro(
       { recebido_em: '2026-09-22 12:00:00' }, { empresa: 'Empresa Ágil Ltda' }
     );
-    assert.equal(duplicada.venda, null);
-    assert.match(duplicada.erro, /Mais de uma venda distinta/);
+    assert.equal(unica.venda.id, 1);
+    assert.deepEqual(unica.candidatas.find(item => item.id === 2).inelegibilidades, ['venda excluída']);
+  } finally { restaurar(); }
+});
+
+test('venda de outra operadora ou encerrada não bloqueia a única Claro elegível, mas duas elegíveis exigem revisão', async () => {
+  const registro = { recebido_em: '2026-09-22 12:00:00' };
+  const campos = { empresa: 'SIMPLICIUS COLETA E REMOCAO DE RESIDUOS LTDA' };
+  const base = (id, extras = {}) => venda(id, { razao_social: campos.empresa, ...extras });
+  let restaurar = instalarConsultas([
+    base(658, { operadora: { nome: 'Vivo' }, status_funil: 'final' }), base(723)
+  ], etapas);
+  try {
+    const resultado = await automacao._internals.resolverVendaClaro(registro, campos);
+    assert.equal(resultado.venda.id, 723);
+    assert.equal(resultado.erro, null);
+    assert.deepEqual(resultado.candidatas.find(item => item.id === 658).inelegibilidades,
+      ['operadora diferente de Claro', 'venda concluída no Funil de Automações']);
+  } finally { restaurar(); }
+
+  restaurar = instalarConsultas([
+    base(658, { operadora: { nome: 'Vivo' } }), base(723), base(724), base(725)
+  ], etapas);
+  try {
+    const resultado = await automacao._internals.resolverVendaClaro(registro, campos);
+    assert.equal(resultado.venda, null);
+    assert.match(resultado.erro, /Mais de uma venda Claro elegível/);
+    assert.equal(resultado.candidatas.filter(item => item.elegivel).length, 3);
+  } finally { restaurar(); }
+
+  restaurar = instalarConsultas([
+    base(356, { cancelada_automacao_em: '2026-09-20' }), base(627), base(73)
+  ], etapas);
+  try {
+    const resultado = await automacao._internals.resolverVendaClaro(registro, campos);
+    assert.equal(resultado.venda, null);
+    assert.equal(resultado.candidatas.filter(item => item.elegivel).length, 2);
+    assert.deepEqual(resultado.candidatas.find(item => item.id === 356).inelegibilidades,
+      ['venda cancelada no Funil de Automações']);
   } finally { restaurar(); }
 });
 
@@ -187,6 +224,24 @@ test('prévia Claro apresenta motivos e seleciona apenas registros interpretáve
   assert.equal(resultado.registros[0].elegivel_reprocessamento, true);
   assert.deepEqual(resultado.registros[0].candidatas[0].inelegibilidades, ['venda excluída']);
   assert.equal(resultado.registros[1].elegivel_reprocessamento, false);
+});
+
+test('prévia recalcula vínculo único sem esconder a venda de outra operadora', async () => {
+  const empresa = 'SIMPLICIUS COLETA E REMOCAO DE RESIDUOS LTDA';
+  const registro = { id: 238, origem: 'imap_claro', status: 'revisao', assunto: 'Atualização de pedido',
+    corpo_texto: `O cliente ${empresa} ASSINOU o contrato.`, recebido_em: '2026-09-22 12:00:00',
+    erro: 'Mais de uma venda distinta possui a mesma razão social; revisão manual obrigatória.' };
+  const resultado = await automacao.diagnosticoClaro({
+    consultar: async () => [registro],
+    carregarVendas: async () => [
+      venda(658, { razao_social: empresa, operadora: { nome: 'Vivo' }, status_funil: 'final' }),
+      venda(723, { razao_social: empresa })
+    ],
+    etapasFinais: async () => ['final']
+  });
+  assert.equal(resultado.registros[0].motivo_vinculo, null);
+  assert.equal(resultado.registros[0].venda_sugerida_id, 723);
+  assert.deepEqual(resultado.registros[0].candidatas.map(item => [item.id, item.elegivel]), [[658, false], [723, true]]);
 });
 
 test('reprocessamento seletivo da Claro preserva revisões não relacionadas', async () => {
