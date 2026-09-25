@@ -254,6 +254,29 @@ describe('Painéis da automação Gmail VIVO', () => {
     expect(screen.getByRole('button', { name: 'Mostrar todas as 7 execuções' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('agrupa integrações, contadores, filtros e ações mantendo a seleção sincronizada', async () => {
+    const user = userEvent.setup();
+    render(<AutomacoesPage />);
+    await screen.findByText('Nenhuma execução encontrada');
+
+    const integracoes = screen.getByRole('group', { name: 'Integrações de e-mail' });
+    const contadores = screen.getByRole('group', { name: 'Execuções por status e classificação' });
+    const filtros = screen.getByRole('group', { name: 'Filtros da lista' });
+    const acoes = screen.getByRole('group', { name: 'Ações das automações' });
+    expect(within(integracoes).getByText('Gmail desabilitado')).toBeInTheDocument();
+    expect(within(integracoes).getByText('IMAP Claro desabilitado')).toBeInTheDocument();
+    expect(within(contadores).getAllByRole('button')).toHaveLength(10);
+    expect(within(filtros).getAllByRole('combobox')).toHaveLength(2);
+    expect(within(filtros).getByRole('searchbox', { name: 'Título do e-mail' })).toBeInTheDocument();
+    expect(within(acoes).getAllByRole('button')).toHaveLength(7);
+
+    const revisao = within(contadores).getByRole('button', { name: 'Filtrar por Revisão manual: 2' });
+    await user.click(revisao);
+    expect(revisao).toHaveAttribute('aria-pressed', 'true');
+    expect(within(filtros).getByRole('combobox', { name: 'Status ou classificação' })).toHaveValue('revisao');
+    await waitFor(() => expect(api.listarAutomacoes).toHaveBeenLastCalledWith({ status: 'revisao', page: 1, perPage: 20 }));
+  });
+
   it.each([
     ['ativo', null, 'Gmail ativo'],
     ['sem_resposta', null, 'Worker sem resposta'],

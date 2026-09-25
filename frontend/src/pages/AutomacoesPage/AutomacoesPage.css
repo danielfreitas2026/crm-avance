@@ -13,6 +13,30 @@
   flex-wrap: wrap;
 }
 
+.automation-summary--automacoes {
+  display: grid;
+  gap: 12px;
+  container-type: inline-size;
+}
+
+.automation-connections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 400px));
+  gap: 10px;
+}
+
+.automation-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@container (min-width: 1380px) {
+  .automation-metrics {
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+  }
+}
+
 .automation-connection,
 .automation-metric {
   min-height: 76px;
@@ -34,6 +58,16 @@
 .automation-connection > div {
   display: grid;
   gap: 3px;
+}
+
+.automation-connections .automation-connection,
+.automation-connections .automation-connection > div {
+  min-width: 0;
+}
+
+.automation-connections .automation-connection {
+  max-width: none;
+  overflow-wrap: anywhere;
 }
 
 .automation-connection strong,
@@ -90,7 +124,7 @@
   display: grid;
   align-content: center;
   gap: 2px;
-  min-width: 102px;
+  min-width: 0;
   padding: 12px 14px;
   color: inherit;
   text-align: left;
@@ -130,10 +164,8 @@
 }
 
 .automation-toolbar {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  gap: 14px;
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -154,6 +186,7 @@
   display: flex;
   align-items: end;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .automation-toolbar select,
@@ -197,7 +230,7 @@
 .automation-toolbar__actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 10px;
   flex-wrap: wrap;
 }
@@ -864,6 +897,18 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .automation-summary--automacoes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .automation-connections {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .automation-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .automation-connection,
   .problems-page .automation-refresh {
     grid-column: 1 / -1;
@@ -876,7 +921,6 @@
 
   .automation-toolbar {
     align-items: stretch;
-    flex-direction: column;
   }
 
   .automation-toolbar__filters {

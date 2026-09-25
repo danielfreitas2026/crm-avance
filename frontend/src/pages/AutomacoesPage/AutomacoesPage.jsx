@@ -657,29 +657,33 @@ export default function AutomacoesPage() {
   return (
     <LayoutPrivado>
       <main className="automation-page">
-        <section className="automation-summary" aria-label="Resumo das automações">
-          <div className={`automation-connection ${classeIntegracao}`}>
-            <span className="automation-summary__icon">{integracaoComFalha ? <I.AlertTriangle size={18} /> : <I.Mail size={18} />}</span>
-            <div>
-              <strong>{tituloIntegracao}</strong>
-              <span>Última mensagem: {dataHora(resumo.ultima_mensagem_em)}</span>
-              {integracao.ultimo_sucesso_em && <span>Último ciclo concluído: {dataHora(integracao.ultimo_sucesso_em)}</span>}
-              {integracao.ultimo_erro && <small className="automation-connection__error" role="alert">{integracao.ultimo_erro}</small>}
+        <section className="automation-summary automation-summary--automacoes" aria-label="Resumo das automações">
+          <div className="automation-connections" role="group" aria-label="Integrações de e-mail">
+            <div className={`automation-connection ${classeIntegracao}`}>
+              <span className="automation-summary__icon">{integracaoComFalha ? <I.AlertTriangle size={18} /> : <I.Mail size={18} />}</span>
+              <div>
+                <strong>{tituloIntegracao}</strong>
+                <span>Última mensagem: {dataHora(resumo.ultima_mensagem_em)}</span>
+                {integracao.ultimo_sucesso_em && <span>Último ciclo concluído: {dataHora(integracao.ultimo_sucesso_em)}</span>}
+                {integracao.ultimo_erro && <small className="automation-connection__error" role="alert">{integracao.ultimo_erro}</small>}
+              </div>
+            </div>
+            <div className={`automation-connection ${classeClaro}`}>
+              <span className="automation-summary__icon">{claroComFalha ? <I.AlertTriangle size={18} /> : <I.Mail size={18} />}</span>
+              <div><strong>{tituloClaro}</strong>{integracaoClaro.ultimo_sucesso_em && <span>Último ciclo concluído: {dataHora(integracaoClaro.ultimo_sucesso_em)}</span>}{integracaoClaro.ultimo_erro && <small className="automation-connection__error" role="alert">{integracaoClaro.ultimo_erro}</small>}</div>
             </div>
           </div>
-          <div className={`automation-connection ${classeClaro}`}>
-            <span className="automation-summary__icon">{claroComFalha ? <I.AlertTriangle size={18} /> : <I.Mail size={18} />}</span>
-            <div><strong>{tituloClaro}</strong>{integracaoClaro.ultimo_sucesso_em && <span>Último ciclo concluído: {dataHora(integracaoClaro.ultimo_sucesso_em)}</span>}{integracaoClaro.ultimo_erro && <small className="automation-connection__error" role="alert">{integracaoClaro.ultimo_erro}</small>}</div>
+          <div className="automation-metrics" role="group" aria-label="Execuções por status e classificação">
+            <button type="button" className={`automation-metric ${status === '' && classificacao === '' ? 'is-selected' : ''}`} aria-label={`Mostrar todas as ${total} execuções`} aria-pressed={status === '' && classificacao === ''} onClick={() => alterarFiltro('')}><strong>{total}</strong><span>Todas</span></button>
+            {STATUS.filter(Boolean).map(chave => (
+              <button type="button" key={chave} className={`automation-metric status-${chave} ${status === chave ? 'is-selected' : ''}`} aria-label={`Filtrar por ${STATUS_LABEL[chave]}: ${Number(contadores[chave] || 0)}`} aria-pressed={status === chave} onClick={() => alterarFiltro(chave)}><strong>{Number(contadores[chave] || 0)}</strong><span>{STATUS_LABEL[chave]}</span></button>
+            ))}
+            <button type="button" className={`automation-metric classification-cancelamento ${classificacao === 'cancelamento' ? 'is-selected' : ''}`} aria-label={`Filtrar por Vendas canceladas: ${totalCancelamentos}`} aria-pressed={classificacao === 'cancelamento'} onClick={() => alterarFiltro('cancelamento')}><strong>{totalCancelamentos}</strong><span>Vendas canceladas</span></button>
           </div>
-          <button type="button" className={`automation-metric ${status === '' && classificacao === '' ? 'is-selected' : ''}`} aria-label={`Mostrar todas as ${total} execuções`} aria-pressed={status === '' && classificacao === ''} onClick={() => alterarFiltro('')}><strong>{total}</strong><span>Todas</span></button>
-          {STATUS.filter(Boolean).map(chave => (
-            <button type="button" key={chave} className={`automation-metric status-${chave} ${status === chave ? 'is-selected' : ''}`} aria-label={`Filtrar por ${STATUS_LABEL[chave]}: ${Number(contadores[chave] || 0)}`} aria-pressed={status === chave} onClick={() => alterarFiltro(chave)}><strong>{Number(contadores[chave] || 0)}</strong><span>{STATUS_LABEL[chave]}</span></button>
-          ))}
-          <button type="button" className={`automation-metric classification-cancelamento ${classificacao === 'cancelamento' ? 'is-selected' : ''}`} aria-label={`Filtrar por Vendas canceladas: ${totalCancelamentos}`} aria-pressed={classificacao === 'cancelamento'} onClick={() => alterarFiltro('cancelamento')}><strong>{totalCancelamentos}</strong><span>Vendas canceladas</span></button>
         </section>
 
         <section className="automation-toolbar" aria-label="Filtros das automações">
-          <div className="automation-toolbar__filters">
+          <div className="automation-toolbar__filters" role="group" aria-label="Filtros da lista">
             <label>
               Status ou classificação
               <select value={classificacao || status} onChange={event => alterarFiltro(event.target.value)}>
@@ -703,7 +707,7 @@ export default function AutomacoesPage() {
               </span>
             </label>
           </div>
-          <div className="automation-toolbar__actions">
+          <div className="automation-toolbar__actions" role="group" aria-label="Ações das automações">
             <button type="button" className="btn" disabled={barraOcupada} onClick={diagnosticarImap}><I.Shield size={14} /> {diagnosticandoImap ? 'Diagnosticando...' : 'Diagnosticar IMAP Claro'}</button>
             <button type="button" className="btn" disabled={barraOcupada} onClick={carregarDiagnosticoClaro}><I.Shield size={14} /> {carregandoDiagnosticoClaro ? 'Analisando...' : 'Prévia das revisões Claro'}</button>
             <button type="button" className="btn" disabled={barraOcupada || totalRevisoes === 0} onClick={repetirRevisoes}><I.Refresh size={14} /> {repetindoRevisoes ? 'Reprocessando...' : `Repetir revisões e regressões (${totalRevisoes})`}</button>
