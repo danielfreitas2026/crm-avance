@@ -1575,6 +1575,12 @@ button.urgent-alert-panel__header {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 12px;
+  background: #fff;
+  border-radius: 10px;
+  margin-inline: auto;
   margin-bottom: 20px;
 }
 .login-card h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
