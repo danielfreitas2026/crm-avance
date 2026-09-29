@@ -101,7 +101,8 @@ async function exportar(req, res) {
 async function verificarDocumento(req, res) {
   try {
     const resultado = await clienteService.verificarDocumentoCliente(req.params.documento, {
-      ignorarId: req.query.ignorar_id
+      ignorarId: req.query.ignorar_id,
+      usuarioId: req.usuario.id
     });
 
     return res.json(resultado);
@@ -123,14 +124,14 @@ async function verificarDocumento(req, res) {
  */
 async function store(req, res) {
   try {
-    const cliente = await clienteService.criarCliente(req.body, req.usuario.id);
-    const clienteCompleto = await clienteService.buscarClientePorId(cliente.id, req.usuario.id);
+    const { cliente, acao } = await clienteService.criarCliente(req.body, req.usuario.id);
+    req.clienteCadastroAcao = acao;
 
-    return res.status(201).json(clienteCompleto);
+    return res.status(201).json(cliente);
   } catch (error) {
     console.error(error);
 
-    return res.status(400).json({
+    return res.status(error.statusCode || 400).json({
       message: error.message || 'Erro ao criar cliente.'
     });
   }

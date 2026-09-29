@@ -938,7 +938,7 @@ async function buscarClienteDuplicadoPorCnpj(cnpjDigitos, ignorarId = null, trx 
   if (!cnpjDigitos) return null;
 
   const query = Cliente.query(trx)
-    .select('id', 'nome', 'razao_social', 'cnpj', 'excluido_em')
+    .select('id', 'nome', 'razao_social', 'cnpj', 'cnpj_digitos', 'criado_por_id', 'excluido_em')
     .where(builder => {
       builder
         .where('cnpj_digitos', cnpjDigitos)
@@ -948,6 +948,8 @@ async function buscarClienteDuplicadoPorCnpj(cnpjDigitos, ignorarId = null, trx 
   if (ignorarId) {
     query.whereNot('id', Number(ignorarId));
   }
+
+  if (trx) query.forUpdate();
 
   return query.first();
 }
@@ -966,7 +968,11 @@ async function verificarDocumentoCliente(documento, opcoes = {}) {
     opcoes.ignorarId
   );
 
-  if (!cliente) {
+  const visivel = cliente && opcoes.usuarioId && await usuarioPodeAcessarCliente(
+    cliente.id, opcoes.usuarioId, { incluirLixeira: true }
+  );
+
+  if (!cliente || (opcoes.usuarioId && !visivel)) {
     return {
       existe: false,
       documento: documentoNormalizado.cnpj,
@@ -1728,43 +1734,75 @@ async function atualizarConsultorasCliente(id, consultoraIds, usuarioId) {
  *
  * @param {Object} dados - Dados do formulario de cliente.
  * @param {number|string} usuarioId - Usuario criador.
- * @returns {Promise<Object>} Cliente criado e formatado.
+ * @returns {Promise<{cliente: Object, acao: string}>} Cliente acessivel e resultado do cadastro.
  */
 async function criarCliente(dados, usuarioId) {
-  const payload = montarPayload(dados);
-  const recebeuConsultoras = Object.prototype.hasOwnProperty.call(dados, 'consultora_ids');
-  const consultoraIds = recebeuConsultoras ? await normalizarConsultoraIds(dados.consultora_ids) : [];
-  if (recebeuConsultoras && !(await buscarEscopoClientes(usuarioId)).podeAtribuirConsultoras) {
-    const error = new Error('Você não tem permissão para vincular consultoras a clientes.');
-    error.statusCode = 403;
-    throw error;
-  }
-  const duplicado = await buscarClienteDuplicadoPorCnpj(payload.cnpj_digitos);
+  const documento = normalizarDocumentoObrigatorio(dados?.cnpj);
+  const escopo = await buscarEscopoClientes(usuarioId);
+  const cadastrar = () => Cliente.transaction(async trx => {
+    const existente = await buscarClienteDuplicadoPorCnpj(documento.cnpj_digitos, null, trx);
+    if (existente) {
+      const vinculado = await trx('cliente_consultoras')
+        .where({ cliente_id: existente.id, usuario_id: usuarioId })
+        .first();
+      if (escopo.podeVerTodos || (escopo.podeVerProprios &&
+        (Number(existente.criado_por_id) === Number(usuarioId) || vinculado))) {
+        lancarErroCnpjDuplicado(existente);
+      }
+      if (!escopo.podeVerProprios) {
+        throw criarHttpError(403, 'Você não tem permissão para acessar clientes próprios.');
+      }
 
-  if (duplicado) {
-    lancarErroCnpjDuplicado(duplicado);
-  }
+      const restaurado = Boolean(existente.excluido_em);
+      if (restaurado) {
+        await trx('clientes').where('id', existente.id).update({
+          excluido_em: null,
+          excluir_definitivo_em: null,
+          excluido_por_id: null,
+          updated_at: formatarDateTimeSQL()
+        });
+      }
+      await trx('cliente_consultoras')
+        .insert({ cliente_id: existente.id, usuario_id: usuarioId })
+        .onConflict(['cliente_id', 'usuario_id']).ignore();
+      return { id: existente.id, acao: restaurado ? 'restaurado' : 'vinculado' };
+    }
 
-  const cliente = await Cliente.transaction(async trx => {
+    const payload = montarPayload(dados);
+    const recebeuConsultoras = Object.prototype.hasOwnProperty.call(dados, 'consultora_ids');
+    const consultoraIds = recebeuConsultoras ? await normalizarConsultoraIds(dados.consultora_ids) : [];
+    if (recebeuConsultoras && !escopo.podeAtribuirConsultoras) {
+      throw criarHttpError(403, 'Você não tem permissão para vincular consultoras a clientes.');
+    }
     const criado = await Cliente.query(trx).insertAndFetch({
       ...payload,
       criado_por_id: usuarioId
     });
-
     if (consultoraIds.length) {
       await trx('cliente_consultoras').insert(consultoraIds.map(usuario_id => ({ cliente_id: criado.id, usuario_id })));
     }
-
     await sincronizarOperadorasCliente(criado.id, dados.operadoras_atuais || dados.operadorasAtuais || normalizarOperadorasCliente(dados), trx);
-    return formatarCliente(await Cliente.query(trx)
-      .findById(criado.id)
-      .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador, consultoras]')
-      .modifyGraph('consultoras', builder => builder.select('id', 'nome', 'email')));
+    return { id: criado.id, acao: 'criado' };
   });
 
-  await notificacaoService.sincronizarFidelidadeCliente(cliente.id);
+  let resultado;
+  try {
+    resultado = await cadastrar();
+  } catch (error) {
+    if (!['ER_DUP_ENTRY', 'ER_LOCK_DEADLOCK'].includes(error.code) && ![1062, 1213].includes(error.errno)) throw error;
+    try {
+      resultado = await cadastrar();
+    } catch (segundaFalha) {
+      if (!['ER_DUP_ENTRY', 'ER_LOCK_DEADLOCK'].includes(segundaFalha.code) && ![1062, 1213].includes(segundaFalha.errno)) throw segundaFalha;
+      throw criarHttpError(409, 'Não foi possível concluir o cadastro. Tente novamente.');
+    }
+  }
 
-  return cliente;
+  if (resultado.acao !== 'vinculado') {
+    await notificacaoService.sincronizarFidelidadeCliente(resultado.id);
+  }
+  const cliente = await buscarClientePorId(resultado.id, usuarioId);
+  return { cliente, acao: resultado.acao };
 }
 
 /**
