@@ -1333,39 +1333,55 @@ test('nao monta sincronizacao sem cliente ou sem operadora vendida', () => {
   assert.equal(montarDadosSincronizacaoClienteVenda({ operadora_id: 5 }), null);
 });
 
-test('oculta venda concluida parada por duas semanas no funil', () => {
+test('oculta venda concluida parada por dois meses de calendario no funil', () => {
   const referencia = new Date('2026-05-18T12:00:00Z');
 
   assert.equal(
     obterDataLimiteConcluidaAntiga(referencia).toISOString(),
-    '2026-05-04T12:00:00.000Z'
+    '2026-03-18T12:00:00.000Z'
   );
   assert.equal(
     obterUltimaAtividadeFunil({
       ultima_atividade_em: null,
-      updated_at: '2026-05-04 12:00:01',
+      updated_at: '2026-03-18 12:00:01',
       created_at: '2026-05-01 12:00:00'
     }).toISOString(),
-    '2026-05-04T12:00:01.000Z'
+    '2026-03-18T12:00:01.000Z'
   );
 
   assert.equal(vendaDeveAparecerNoFunil({
     status_funil: 'concluido',
-    ultima_atividade_em: '2026-05-04 12:00:01'
+    ultima_atividade_em: '2026-03-18 12:00:01'
   }, 'concluido', referencia), true);
 
   assert.equal(vendaDeveAparecerNoFunil({
     status_funil: 'concluido',
-    ultima_atividade_em: '2026-05-04 12:00:00'
+    ultima_atividade_em: '2026-03-18 12:00:00'
   }, 'concluido', referencia), false);
 
   assert.equal(vendaDeveAparecerNoFunil({
     status_funil: 'concluido',
-    ultima_atividade_em: '2026-05-04 11:59:59'
+    ultima_atividade_em: '2026-03-18 11:59:59'
   }, 'concluido', referencia), false);
 
   assert.equal(vendaDeveAparecerNoFunil({
     status_funil: 'ativacao',
     ultima_atividade_em: '2026-04-01 12:00:00'
+  }, 'concluido', referencia), true);
+});
+
+test('limite de dois meses ajusta o dia ao fim do mes de destino', () => {
+  const referencia = new Date('2026-04-30T12:00:00Z');
+  assert.equal(
+    obterDataLimiteConcluidaAntiga(referencia).toISOString(),
+    '2026-02-28T12:00:00.000Z'
+  );
+  assert.equal(vendaDeveAparecerNoFunil({
+    status_funil: 'concluido',
+    ultima_atividade_em: '2026-02-28 12:00:00'
+  }, 'concluido', referencia), false);
+  assert.equal(vendaDeveAparecerNoFunil({
+    status_funil: 'concluido',
+    ultima_atividade_em: '2026-02-28 12:00:01'
   }, 'concluido', referencia), true);
 });

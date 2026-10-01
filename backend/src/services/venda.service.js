@@ -145,7 +145,7 @@ const FUNIL_STATUS_LABELS = {
 const PERMISSAO_AUTO_POS_VENDA = 'vendas_auto_pos_venda';
 const PERMISSAO_LIMITAR_VENDAS_ULTIMOS_6_MESES = 'vendas_limitar_ultimos_6_meses';
 const MESES_LIMITE_VENDAS_RECENTES = 6;
-const DIAS_OCULTAR_CONCLUIDAS_FUNIL = 14;
+const MESES_OCULTAR_CONCLUIDAS_FUNIL = 2;
 const FUNIL_PRIORIDADES = ['alta', 'media', 'baixa'];
 const PROMESSA_CUMPRIDA_OPCOES = ['pendente', 'sim', 'nao'];
 const CLIENTE_SOLICITOU_RESOLVIDO_OPCOES = ['sim', 'nao'];
@@ -1701,7 +1701,13 @@ function obterDataLimiteVendasRecentes(referencia = new Date()) {
  */
 function obterDataLimiteConcluidaAntiga(referencia = new Date()) {
   const dataReferencia = parseUtcDateTime(referencia) || new Date();
-  return adicionarDias(dataReferencia, -DIAS_OCULTAR_CONCLUIDAS_FUNIL);
+  const limite = new Date(dataReferencia);
+  const dia = limite.getUTCDate();
+  limite.setUTCDate(1);
+  limite.setUTCMonth(limite.getUTCMonth() - MESES_OCULTAR_CONCLUIDAS_FUNIL);
+  const ultimoDia = new Date(Date.UTC(limite.getUTCFullYear(), limite.getUTCMonth() + 1, 0)).getUTCDate();
+  limite.setUTCDate(Math.min(dia, ultimoDia));
+  return limite;
 }
 
 /**
@@ -2451,8 +2457,8 @@ async function listarVendas(filtros = {}, usuarioId, opcoes = {}) {
         .whereNot('status_funil', etapaFinal)
         .orWhereNull('status_funil')
         .orWhereRaw(
-          'COALESCE(ultima_atividade_em, updated_at, created_at) > DATE_SUB(NOW(), INTERVAL ? DAY)',
-          [DIAS_OCULTAR_CONCLUIDAS_FUNIL]
+          'COALESCE(ultima_atividade_em, updated_at, created_at) > DATE_SUB(NOW(), INTERVAL ? MONTH)',
+          [MESES_OCULTAR_CONCLUIDAS_FUNIL]
         );
     });
   }

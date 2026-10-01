@@ -73,6 +73,7 @@ input, select, textarea { font-family: inherit; }
   height: 64px;
   padding: 8px 20px;
   border-bottom: 1px solid var(--border);
+  background: #f7fbff;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -1578,10 +1579,15 @@ button.urgent-alert-panel__header {
   width: fit-content;
   max-width: 100%;
   padding: 8px 12px;
-  background: #fff;
+  background: #f7fbff;
   border-radius: 10px;
   margin-inline: auto;
   margin-bottom: 20px;
+}
+.login-logo img,
+.sidebar-logo-img,
+.public-info__header img {
+  background: linear-gradient(90deg, #183675 0 72%, #f7fbff 72% 100%);
 }
 .login-card h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
 .login-card .sub { font-size: 13px; color: var(--text-2); margin: 0 0 22px; }
