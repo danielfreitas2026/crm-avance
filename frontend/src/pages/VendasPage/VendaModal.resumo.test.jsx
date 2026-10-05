@@ -69,6 +69,7 @@ describe('VendaModal - resumo protegido da consultora', () => {
 
     const modal = screen.getByRole('dialog', { name: 'Resumo da venda' });
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(modal).toHaveTextContent('ID da venda: 7');
     expect(modal).toHaveTextContent('Empresa Teste Ltda');
     expect(modal).toHaveTextContent('12.345.678/0001-90');
     expect(modal).toHaveTextContent('19/08/2026');

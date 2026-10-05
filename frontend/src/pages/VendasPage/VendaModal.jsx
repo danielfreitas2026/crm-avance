@@ -5031,6 +5031,7 @@ function VendaModal({
             <div className="modal-header-row">
               <div>
                 <div className="modal-client">{exibindoProblema ? 'Problemas da venda' : 'Resumo da venda'}</div>
+                {venda?.id && <div className="modal-sub">ID da venda: {venda.id}</div>}
                 <div className="modal-sub">
                   {exibindoProblema
                     ? 'Acompanhe e responda às correções solicitadas pelo pós-venda.'
@@ -5065,6 +5066,7 @@ function VendaModal({
           <div className="modal-header-row">
             <div>
               <div className="modal-client">{venda ? ((somenteVisualizacao || vendaBloqueadaParaUsuario) ? 'Visualizar venda' : 'Editar venda') : 'Nova venda'}</div>
+              {venda?.id && <div className="modal-sub">ID da venda: {venda.id}</div>}
               <div className="modal-sub">
                 {vendaBloqueadaParaUsuario
                   ? 'Venda enviada ao pós-venda. Apenas a equipe de pós-venda pode editar.'
