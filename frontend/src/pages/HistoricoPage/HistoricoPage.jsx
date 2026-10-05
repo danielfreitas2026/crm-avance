@@ -21,6 +21,7 @@ import { STAGES as FALLBACK_STAGES } from '../../config/constants';
 import { formatUtcDateTime, getUtcDateTimeTimestamp } from '../../utils/datetime';
 import { getAutorHistorico } from '../../utils/origemHistorico';
 import AlteracoesHistorico from './AlteracoesHistorico';
+import HistoricoDetalheModal from './HistoricoDetalheModal';
 import '../VendasPage/VendasPage.css';
 import '../Clientes/Clientes.css';
 
@@ -425,7 +426,15 @@ function HistoricoItem({ log, selecionado, compacto, onClick }) {
   return (
     <div 
       className={`history-item ${compacto ? 'history-item--compact' : ''} ${tipo} ${selecionado ? 'selected' : ''}`}
-      onClick={() => onClick(log)}
+      role="button"
+      tabIndex={0}
+      onClick={event => { event.currentTarget.focus(); onClick(log); }}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick(log);
+        }
+      }}
       style={{ cursor: 'pointer' }}
     >
       <div className="history-marker">
@@ -774,7 +783,7 @@ function VendaHistoricoGrupo({ grupo, etapasFunil, stageNamesMap, logSelecionado
 /**
  * Renderiza detalhe card.
  */
-function DetalheCard({ log, stageNamesMap = DEFAULT_STAGE_NAMES_MAP, onClose, onAbrirVenda, onAbrirCliente, podeAbrirCliente, modalCarregando }) {
+function DetalheCard({ log, stageNamesMap = DEFAULT_STAGE_NAMES_MAP, onClose, onAbrirVenda, onAbrirCliente, podeAbrirCliente, modalCarregando, suspenso }) {
   const dados = parseDados(log.dados);
   const motivoCancelamento = extrairMotivoCancelamento(log);
   const podeAbrirVenda = log.entidade === 'vendas' && log.entidade_id;
@@ -784,10 +793,8 @@ function DetalheCard({ log, stageNamesMap = DEFAULT_STAGE_NAMES_MAP, onClose, on
     : null;
 
   return (
-    <div className="history-detail-card">
-      <div className="history-detail-header">
-        <h3>Detalhes do Registro</h3>
-        <div className="history-detail-actions">
+    <HistoricoDetalheModal onClose={onClose} suspenso={suspenso} actions={
+      <>
           {podeAbrirVenda && (
             <button
               type="button"
@@ -808,88 +815,83 @@ function DetalheCard({ log, stageNamesMap = DEFAULT_STAGE_NAMES_MAP, onClose, on
               <I.External size={12} /> {modalCarregando === `cliente:${log.entidade_id}` ? 'Abrindo...' : 'Abrir cliente'}
             </button>
           )}
-          <button className="history-detail-close" onClick={onClose} aria-label="Fechar">
-          ×
-          </button>
-        </div>
+      </>
+    }>
+
+      <div className="history-detail-row">
+        <span className="history-detail-label">Ação:</span>
+        <span className="history-detail-value">{formatarAcao(log.acao)}</span>
       </div>
 
-      <div className="history-detail-body">
+      {stageDe && (
         <div className="history-detail-row">
-          <span className="history-detail-label">Ação:</span>
-          <span className="history-detail-value">{formatarAcao(log.acao)}</span>
+          <span className="history-detail-label">Etapa do funil:</span>
+          <span className="history-detail-value">{stageDe}</span>
         </div>
+      )}
 
-        {stageDe && (
-          <div className="history-detail-row">
-            <span className="history-detail-label">Etapa do funil:</span>
-            <span className="history-detail-value">{stageDe}</span>
-          </div>
-        )}
-
-        {dados.alteracoes?.observacao && (
-          <div className="history-detail-row">
-            <span className="history-detail-label">Observação:</span>
-            <span className="history-detail-value">{dados.alteracoes.observacao}</span>
-          </div>
-        )}
-
+      {dados.alteracoes?.observacao && (
         <div className="history-detail-row">
-          <span className="history-detail-label">Usuário:</span>
-          <span className="history-detail-value">
-            {getAutorHistorico(log)}
-          </span>
+          <span className="history-detail-label">Observação:</span>
+          <span className="history-detail-value">{dados.alteracoes.observacao}</span>
         </div>
+      )}
 
-        <div className="history-detail-row">
-          <span className="history-detail-label">Data/Hora:</span>
-          <span className="history-detail-value">{formatarData(log.created_at)}</span>
-        </div>
-
-        <div className="history-detail-row">
-          <span className="history-detail-label">Método:</span>
-          <span className="history-detail-value">{log.metodo || 'API'}</span>
-        </div>
-
-        <div className="history-detail-row">
-          <span className="history-detail-label">Rota:</span>
-          <span className="history-detail-value">{log.rota || 'N/A'}</span>
-        </div>
-
-        {log.entidade && (
-          <div className="history-detail-row">
-            <span className="history-detail-label">Entidade:</span>
-            <span className="history-detail-value">{log.entidade}</span>
-          </div>
-        )}
-
-        {log.entidade_id && (
-          <div className="history-detail-row">
-            <span className="history-detail-label">ID da Entidade:</span>
-            <span className="history-detail-value">#{log.entidade_id}</span>
-          </div>
-        )}
-
-        {log.etapasPuladas?.length > 0 && (
-          <div className="history-detail-section history-detail-section--warning">
-            <h4>Etapas puladas no funil</h4>
-            <div className="history-skipped-detail">
-              <I.AlertTriangle size={15} />
-              <span>{log.etapasPuladas.map(etapa => etapa.nome).join(', ')}</span>
-            </div>
-          </div>
-        )}
-
-        {motivoCancelamento && (
-          <div className="history-detail-row">
-            <span className="history-detail-label">Motivo do cancelamento:</span>
-            <span className="history-detail-value">{motivoCancelamento}</span>
-          </div>
-        )}
-        
-        <DadosOperacao dados={dados} stageNamesMap={stageNamesMap} />
+      <div className="history-detail-row">
+        <span className="history-detail-label">Usuário:</span>
+        <span className="history-detail-value">
+          {getAutorHistorico(log)}
+        </span>
       </div>
-    </div>
+
+      <div className="history-detail-row">
+        <span className="history-detail-label">Data/Hora:</span>
+        <span className="history-detail-value">{formatarData(log.created_at)}</span>
+      </div>
+
+      <div className="history-detail-row">
+        <span className="history-detail-label">Método:</span>
+        <span className="history-detail-value">{log.metodo || 'API'}</span>
+      </div>
+
+      <div className="history-detail-row">
+        <span className="history-detail-label">Rota:</span>
+        <span className="history-detail-value">{log.rota || 'N/A'}</span>
+      </div>
+
+      {log.entidade && (
+        <div className="history-detail-row">
+          <span className="history-detail-label">Entidade:</span>
+          <span className="history-detail-value">{log.entidade}</span>
+        </div>
+      )}
+
+      {log.entidade_id && (
+        <div className="history-detail-row">
+          <span className="history-detail-label">ID da Entidade:</span>
+          <span className="history-detail-value">#{log.entidade_id}</span>
+        </div>
+      )}
+
+      {log.etapasPuladas?.length > 0 && (
+        <div className="history-detail-section history-detail-section--warning">
+          <h4>Etapas puladas no funil</h4>
+          <div className="history-skipped-detail">
+            <I.AlertTriangle size={15} />
+            <span>{log.etapasPuladas.map(etapa => etapa.nome).join(', ')}</span>
+          </div>
+        </div>
+      )}
+
+      {motivoCancelamento && (
+        <div className="history-detail-row">
+          <span className="history-detail-label">Motivo do cancelamento:</span>
+          <span className="history-detail-value">{motivoCancelamento}</span>
+        </div>
+      )}
+
+      <DadosOperacao dados={dados} stageNamesMap={stageNamesMap} />
+    </HistoricoDetalheModal>
   );
 }
 
@@ -1287,6 +1289,7 @@ function HistoricoPage() {
             {logSelecionado && (
               <DetalheCard 
                 log={logSelecionado} 
+                suspenso={Boolean(vendaModal || clienteModal)}
                 stageNamesMap={stageNamesMap}
                 onClose={() => setLogSelecionado(null)} 
                 onAbrirVenda={abrirVenda}
