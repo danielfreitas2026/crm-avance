@@ -1,5 +1,6 @@
 ﻿const test = require('node:test');
 const assert = require('node:assert/strict');
+const telegramService = require('../src/services/telegram.service');
 const { enviarResumoDoDia, _internals } = require('../src/services/resumo-vendas-telegram.service');
 
 const aceita = { consultores: 'Árlisson, Nathalia', data_registro: '2026-02-27', data_venda: '2026-02-26', data_ativacao: '2026-02-28', consultor: 'Nayara', razao_social: 'Empresa A', cnpj: '12.345.678/0001-90', quantidade_linhas: 2, valor_total: 199.8, operadora: 'Vivo', tipo_venda: 'Portabilidade', numeros_portados: '11999990000', possui_doc_na_casa: true, status_funil: 'ativacao' };
@@ -56,7 +57,8 @@ test('agenda o próximo resumo somente em dia útil', () => {
   assert.equal(_internals.proximaExecucao(new Date('2026-02-28T10:00:00-03:00')).toISOString(), '2026-03-02T21:00:00.000Z');
   assert.equal(_internals.proximaExecucao(new Date('2026-03-01T10:00:00-03:00')).toISOString(), '2026-03-02T21:00:00.000Z');
 });
-test('ignora o envio quando a data é sábado ou domingo', async () => {
+test('ignora o envio quando a data é sábado ou domingo', async t => {
+  t.mock.method(telegramService, 'resumoVendasAtivo', () => true);
   assert.deepEqual(await enviarResumoDoDia('2026-02-28'), { data: '2026-02-28', mensagens: 0, ignorado: 'fim_de_semana' });
   assert.deepEqual(await enviarResumoDoDia('2026-03-01'), { data: '2026-03-01', mensagens: 0, ignorado: 'fim_de_semana' });
 });

@@ -153,6 +153,7 @@ async function concluirExecucaoAgendada(dataReferencia, dados) {
 
 async function enviarResumoDoDia(data = new Date(), opcoes = {}) {
   const fim = typeof data === 'string' ? data : dataSqlHoje(data);
+  if (!telegramService.resumoVendasAtivo()) return { data: fim, mensagens: 0, ignorado: 'telegram_resumo_vendas_desativado' };
   const dataReferencia = typeof data === 'string' ? new Date(`${data}T12:00:00-03:00`) : data;
   if (!ehDiaUtil(dataReferencia)) return { data: fim, mensagens: 0, ignorado: 'fim_de_semana' };
   if (opcoes.agendada && !(await reservarExecucaoAgendada(fim))) {
@@ -179,7 +180,7 @@ function proximaExecucao(data = new Date()) {
   return alvo;
 }
 function iniciarAgendamentoResumoVendas() {
-  if (!agendamentoAtivo() || agendamentoIniciado) return false;
+  if (!telegramService.resumoVendasAtivo() || !agendamentoAtivo() || agendamentoIniciado) return false;
   agendamentoIniciado = true;
   const agendar = () => { const espera = Math.max(0, proximaExecucao().getTime() - Date.now()); setTimeout(async () => { try { const resultado = await enviarResumoDoDia(new Date(), { agendada: true }); console.log(`Resumo de vendas processado (${resultado.data}, ${resultado.mensagens} mensagens${resultado.ignorado ? `, ${resultado.ignorado}` : ''}).`); } catch (error) { console.error('Erro ao enviar resumo diário de vendas no Telegram:', error); } agendar(); }, espera); };
   agendar();

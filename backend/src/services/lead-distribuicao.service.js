@@ -579,6 +579,10 @@ async function enviarNotificacaoVendaFechada(venda, atribuicao, opcoes = {}) {
     console.error('Erro ao sinalizar venda registrada no Telegram:', error.message);
   }
 
+  if (!telegramService.acompanhamentoAtivo()) {
+    return { ...resultado, motivo: 'telegram_acompanhamento_desativado' };
+  }
+
   try {
     const mensagem = await chamarApi('sendMessage', {
       chat_id: chatId,
@@ -617,6 +621,10 @@ async function enviarNotificacaoRetornoAgendado(atribuicao, linha, retorno, opco
       resultado.erros.push({ operacao: 'atualizar_botao', mensagem: error.message });
       console.error('Erro ao manter botao de cancelamento do retorno agendado no Telegram:', error.message);
     }
+  }
+
+  if (!telegramService.acompanhamentoAtivo()) {
+    return { ...resultado, motivo: 'telegram_acompanhamento_desativado' };
   }
 
   try {
@@ -791,7 +799,8 @@ async function reconciliarMensagemTelegram(atribuicaoId) {
   const chatId = atribuicao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID;
   if (!chatId || !atribuicao.telegram_message_id) return { ignorado: true };
 
-  if (atribuicao.aceite_status === ACEITE_AGUARDANDO) {
+  if (atribuicao.aceite_status === ACEITE_AGUARDANDO
+    || (atribuicao.aceite_status === ACEITE_ACEITO && !telegramService.acompanhamentoAtivo())) {
     await editarMensagemTelegram('editMessageReplyMarkup', {
       chat_id: chatId,
       message_id: atribuicao.telegram_message_id,

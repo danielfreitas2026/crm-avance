@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const telegramService = require('../src/services/telegram.service');
 
 const leadDistribuicaoService = require('../src/services/lead-distribuicao.service');
 const { _internals: leadPlanilhaInternals } = require('../src/services/lead-planilha.service');
@@ -357,7 +358,8 @@ test('monta mensagem de retorno com razao social, CNPJ, consultora e horario', (
   ].join('\n'));
 });
 
-test('mantem o botao de cancelamento e envia o retorno ao grupo da atribuicao aceita', async () => {
+test('mantem o botao de cancelamento e envia o retorno ao grupo da atribuicao aceita', async t => {
+  t.mock.method(telegramService, 'acompanhamentoAtivo', () => true);
   const chamadas = [];
   const resultado = await enviarNotificacaoRetornoAgendado({
     aceite_status: leadDistribuicaoService.ACEITE_ACEITO,
@@ -387,7 +389,8 @@ test('mantem o botao de cancelamento e envia o retorno ao grupo da atribuicao ac
   assert.match(chamadas[1].dados.text, /Retorno: 31\/07\/2026, 12:30/);
 });
 
-test('nao envia retorno sem atribuicao aceita e isola falhas do Telegram', async () => {
+test('nao envia retorno sem atribuicao aceita e isola falhas do Telegram', async t => {
+  t.mock.method(telegramService, 'acompanhamentoAtivo', () => true);
   assert.deepEqual(await enviarNotificacaoRetornoAgendado({
     aceite_status: leadDistribuicaoService.ACEITE_AGUARDANDO,
     telegram_chat_id: '-100123'
@@ -512,7 +515,8 @@ test('usa quantidade de linhas como fallback quando nao ha itens de chips', () =
   assert.match(texto, /Valor total da venda: Não informado/);
 });
 
-test('sinaliza venda registrada e envia o aviso de venda fechada ao mesmo grupo', async () => {
+test('sinaliza venda registrada e envia o aviso de venda fechada ao mesmo grupo', async t => {
+  t.mock.method(telegramService, 'acompanhamentoAtivo', () => true);
   const chamadas = [];
   const venda = {
     id: 91,
@@ -587,7 +591,8 @@ test('venda vinculada corresponde quando a responsavel e vendedora principal ou 
   }, atribuicao), true);
 });
 
-test('falhas do Telegram nao interrompem o processamento da venda fechada', async () => {
+test('falhas do Telegram nao interrompem o processamento da venda fechada', async t => {
+  t.mock.method(telegramService, 'acompanhamentoAtivo', () => true);
   const erroAnterior = console.error;
   console.error = () => {};
   try {

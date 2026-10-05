@@ -183,7 +183,13 @@ test('usa chats distintos para resumo e novas vendas', () => {
   }
 });
 
-test('nao considera uma venda enviada quando o bot ou o grupo nao estao configurados', async () => {
+test('nao considera uma venda enviada quando o bot ou o grupo nao estao configurados', async t => {
+  const ativoAnterior = process.env.TELEGRAM_VENDAS_ATIVO;
+  process.env.TELEGRAM_VENDAS_ATIVO = 'true';
+  t.after(() => {
+    if (ativoAnterior === undefined) delete process.env.TELEGRAM_VENDAS_ATIVO;
+    else process.env.TELEGRAM_VENDAS_ATIVO = ativoAnterior;
+  });
   const tokenAnterior = process.env.TELEGRAM_BOT_TOKEN;
   const vendasAnterior = process.env.TELEGRAM_VENDAS_CHAT_ID;
   delete process.env.TELEGRAM_BOT_TOKEN;
