@@ -1584,11 +1584,6 @@ button.urgent-alert-panel__header {
   margin-inline: auto;
   margin-bottom: 20px;
 }
-.login-logo img,
-.sidebar-logo-img,
-.public-info__header img {
-  background: linear-gradient(90deg, #183675 0 72%, #f7fbff 72% 100%);
-}
 .login-card h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
 .login-card .sub { font-size: 13px; color: var(--text-2); margin: 0 0 22px; }
 .login-card .form-field { margin-bottom: 12px; }
