@@ -11,7 +11,9 @@ async function show(req, res) {
 
 async function update(req, res) {
   try {
-    return res.json(await horarioAcessoService.atualizarConfiguracao(req.body));
+    return res.json(await horarioAcessoService.atualizarConfiguracao(req.body, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    }));
   } catch (error) {
     console.error(error);
     return res.status(400).json({ message: error.message || 'Erro ao atualizar o horário de acesso.' });

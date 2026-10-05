@@ -184,7 +184,9 @@ async function importarBaseAnterior(req, res) {
  */
 async function update(req, res) {
   try {
-    const cliente = await clienteService.atualizarCliente(req.params.id, req.body, req.usuario.id);
+    const cliente = await clienteService.atualizarCliente(req.params.id, req.body, req.usuario.id, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    });
 
     if (!cliente) {
       return res.status(404).json({
@@ -207,7 +209,9 @@ async function update(req, res) {
 /** Atualiza exclusivamente as consultoras vinculadas ao cliente. */
 async function atualizarConsultoras(req, res) {
   try {
-    const cliente = await clienteService.atualizarConsultorasCliente(req.params.id, req.body?.consultora_ids, req.usuario.id);
+    const cliente = await clienteService.atualizarConsultorasCliente(req.params.id, req.body?.consultora_ids, req.usuario.id, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    });
     if (!cliente) return res.status(404).json({ message: 'Cliente não encontrado.' });
     return res.json(cliente);
   } catch (error) {

@@ -38,7 +38,9 @@ async function historico(req, res) {
  */
 async function atualizar(req, res) {
   try {
-    const resultado = await clienteAntigoService.atualizar(req.params.id, req.body);
+    const resultado = await clienteAntigoService.atualizar(req.params.id, req.body, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    });
     return res.json(resultado);
   } catch (error) {
     if (!error.statusCode) console.error(error);

@@ -88,7 +88,7 @@ function etapasPendentes(venda) {
  * Aplica a conclusao (ou o retorno para pendente) de uma etapa na venda.
  * Etapas com `coluna_resultado` tambem registram o resultado escolhido.
  */
-async function aplicarConclusao(vendaId, etapa, concluida, usuarioId, resultado = null) {
+async function aplicarConclusao(vendaId, etapa, concluida, usuarioId, resultado = null, registrarAuditoria) {
   const agora = formatarDateTimeSQL();
 
   const patch = {
@@ -102,7 +102,15 @@ async function aplicarConclusao(vendaId, etapa, concluida, usuarioId, resultado 
     patch[etapa.coluna_resultado] = concluida ? resultado : null;
   }
 
-  await Venda.query().patch(patch).findById(vendaId);
+  if (registrarAuditoria) {
+    await Venda.transaction(async trx => {
+      const anterior = await Venda.query(trx).findById(vendaId).forUpdate();
+      const atualizado = await Venda.query(trx).patchAndFetchById(vendaId, patch);
+      await registrarAuditoria({ ...anterior }, { ...atualizado }, trx);
+    });
+  } else {
+    await Venda.query().patch(patch).findById(vendaId);
+  }
 }
 
 /**
@@ -146,7 +154,7 @@ async function sincronizarEtapaPorArquivos(vendaId, categoria, usuarioId) {
  * Registra o resultado da etapa 1 (verificacao com o 0800).
  * Qualquer resultado valido conclui a etapa; `null` volta a etapa para pendente.
  */
-async function definirEtapa0800(vendaId, resultado, usuarioId) {
+async function definirEtapa0800(vendaId, resultado, usuarioId, { registrarAuditoria } = {}) {
   await garantirAcessoVenda(vendaId, usuarioId);
 
   const valor = resultado || null;
@@ -158,7 +166,7 @@ async function definirEtapa0800(vendaId, resultado, usuarioId) {
   }
 
   const etapa = ETAPAS.find(item => item.chave === '0800');
-  await aplicarConclusao(vendaId, etapa, Boolean(valor), usuarioId, valor);
+  await aplicarConclusao(vendaId, etapa, Boolean(valor), usuarioId, valor, registrarAuditoria);
 
   return obterEtapas(vendaId, usuarioId, { validarAcesso: false });
 }

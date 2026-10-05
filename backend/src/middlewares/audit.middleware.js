@@ -1,4 +1,5 @@
 const auditLogService = require('../services/audit-log.service');
+const { montarAlteracoesAuditoria } = require('../utils/alteracoes-auditoria');
 
 /**
  * Resolve valores estaticos ou funcoes de configuracao de auditoria.
@@ -27,6 +28,25 @@ function auditar(config) {
     const jsonOriginal = res.json.bind(res);
     const sendOriginal = res.send.bind(res);
     let registrado = false;
+
+    // O serviço chama este registro dentro da transação, após persistir a edição.
+    // O bloqueio da entidade garante que o estado anterior pertence a esta edição.
+    req.registrarAlteracaoAuditoria = async (anterior, novo, trx, resultado = novo) => {
+      const dados = resolverValor(config.dados, req, resultado) || {};
+      if (Object.prototype.hasOwnProperty.call(dados, 'movimentacao') && !dados.movimentacao) {
+        dados.movimentacao = {
+          status_anterior: anterior.status_funil || null,
+          status_novo: novo.status_funil || null
+        };
+      }
+      await auditLogService.registrar(req, {
+        acao: resolverValor(config.acao, req, resultado),
+        entidade: resolverValor(config.entidade, req, resultado),
+        entidade_id: resolverValor(config.entidade_id, req, resultado),
+        dados: { ...dados, alteracoes_detalhadas: montarAlteracoesAuditoria(anterior, novo) }
+      }, trx);
+      registrado = true;
+    };
 
     /**
      * Registra o evento de auditoria apenas para respostas bem-sucedidas.

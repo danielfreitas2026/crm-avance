@@ -5,6 +5,7 @@ import * as I from '../../components/Icons';
 import Paginacao from '../../components/Paginacao/Paginacao';
 import { listarHistoricoVendasAgrupado } from '../../services/audit-log.service';
 import { formatUtcDateTime, getUtcDateTimeTimestamp } from '../../utils/datetime';
+import AlteracoesHistorico from './AlteracoesHistorico';
 
 const ACAO_LABELS = {
   'venda.criada': 'Venda criada',
@@ -423,9 +424,13 @@ function DetalheCard({ log, onClose }) {
         {dados && Object.keys(dados).length > 0 && (
           <div className="history-detail-section">
             <h4>Dados da Operação</h4>
+            <AlteracoesHistorico dados={dados} stageNamesMap={STAGE_NAMES_MAP} />
+            <details className="history-raw-data">
+              <summary>Ver dados técnicos em JSON</summary>
             <pre className="history-detail-data">
               {JSON.stringify(dados, null, 2)}
             </pre>
+            </details>
           </div>
         )}
       </div>

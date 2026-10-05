@@ -50,7 +50,7 @@ async function montarUsuarioComPermissoes(usuario) {
 /**
  * Atualiza perfil com os dados informados.
  */
-async function atualizarPerfil(usuarioId, dados) {
+async function atualizarPerfil(usuarioId, dados, { registrarAuditoria } = {}) {
   const dadosAtualizacao = {};
 
   if (dados.nome !== undefined) {
@@ -69,20 +69,22 @@ async function atualizarPerfil(usuarioId, dados) {
     dadosAtualizacao.foto_perfil = validarFotoPerfil(dados.foto_perfil);
   }
 
-  if (dados.permissoes !== undefined) {
-    const usuarioAtual = await Usuario.query()
-      .findById(usuarioId)
-      .withGraphFetched('role');
-
-    if (usuarioAtual?.role?.nome === 'admin') {
+  const usuario = await Usuario.transaction(async trx => {
+    const usuarioAtual = await Usuario.query(trx).findById(usuarioId).forUpdate().withGraphFetched('role');
+    if (!usuarioAtual) throw new Error('Usuário não encontrado.');
+    if (dados.permissoes !== undefined && usuarioAtual.role?.nome === 'admin') {
       dadosAtualizacao.permissoes = JSON.stringify(dados.permissoes || []);
     }
-  }
-
-  const usuario = await Usuario.query()
-    .patchAndFetchById(usuarioId, dadosAtualizacao)
-    .withGraphFetched('role');
-
+    const atualizado = await Usuario.query(trx).patchAndFetchById(usuarioId, dadosAtualizacao).withGraphFetched('role');
+    if (registrarAuditoria) {
+      const antes = { ...usuarioAtual };
+      const depois = { ...atualizado };
+      delete antes.role;
+      delete depois.role;
+      await registrarAuditoria(antes, depois, trx);
+    }
+    return atualizado;
+  });
   return montarUsuarioComPermissoes(usuario);
 }
 

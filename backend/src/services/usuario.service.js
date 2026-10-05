@@ -42,7 +42,7 @@ async function criarUsuario(dados) {
 /**
  * Atualiza usuario com os dados informados.
  */
-async function atualizarUsuario(id, dados) {
+async function atualizarUsuario(id, dados, { registrarAuditoria } = {}) {
   const dadosAtualizacao = {};
 
   if (dados.permissoes !== undefined) {
@@ -69,7 +69,13 @@ async function atualizarUsuario(id, dados) {
     dadosAtualizacao.senha = await bcrypt.hash(dados.senha, 10);
   }
 
-  return Usuario.query().patchAndFetchById(id, dadosAtualizacao);
+  return Usuario.transaction(async trx => {
+    const anterior = await Usuario.query(trx).findById(id).forUpdate();
+    if (!anterior) return null;
+    const atualizado = await Usuario.query(trx).patchAndFetchById(id, dadosAtualizacao);
+    if (registrarAuditoria) await registrarAuditoria({ ...anterior }, { ...atualizado }, trx);
+    return atualizado;
+  });
 }
 
 /**

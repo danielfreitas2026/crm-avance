@@ -1704,7 +1704,7 @@ async function normalizarConsultoraIds(ids) {
 }
 
 /** Substitui, transacionalmente, os vínculos de consultoras do cliente. */
-async function atualizarConsultorasCliente(id, consultoraIds, usuarioId) {
+async function atualizarConsultorasCliente(id, consultoraIds, usuarioId, { registrarAuditoria } = {}) {
   const escopo = await buscarEscopoClientes(usuarioId);
   if (!escopo.podeAtribuirConsultoras) {
     const error = new Error('Você não tem permissão para vincular consultoras a clientes.');
@@ -1714,12 +1714,17 @@ async function atualizarConsultorasCliente(id, consultoraIds, usuarioId) {
 
   const ids = await normalizarConsultoraIds(consultoraIds);
   const cliente = await Cliente.transaction(async trx => {
-    const existente = await Cliente.query(trx).findById(id).whereNull('excluido_em');
+    const existente = await Cliente.query(trx).findById(id).whereNull('excluido_em').forUpdate();
     if (!existente) return null;
+    const anteriores = registrarAuditoria ? await trx('cliente_consultoras').where('cliente_id', id).pluck('usuario_id') : [];
     await trx('cliente_consultoras').where('cliente_id', id).delete();
     if (ids.length) {
       await trx('cliente_consultoras').insert(ids.map(usuario_id => ({ cliente_id: Number(id), usuario_id })));
     }
+    if (registrarAuditoria) await registrarAuditoria(
+      { consultora_ids: anteriores.map(Number).sort((a, b) => a - b) },
+      { id: Number(id), consultora_ids: [...ids].sort((a, b) => a - b) }, trx
+    );
     return formatarCliente(await Cliente.query(trx).findById(id)
       .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador, consultoras]')
       .modifyGraph('consultoras', builder => builder.select('id', 'nome', 'email')));
@@ -1813,7 +1818,7 @@ async function criarCliente(dados, usuarioId) {
  * @param {number|string} usuarioId - Usuario logado.
  * @returns {Promise<Object|null>} Cliente atualizado ou null quando inacessivel/inexistente.
  */
-async function atualizarCliente(id, dados, usuarioId) {
+async function atualizarCliente(id, dados, usuarioId, { registrarAuditoria } = {}) {
   const permitido = await usuarioPodeAcessarCliente(id, usuarioId);
 
   if (!permitido) {
@@ -1835,6 +1840,9 @@ async function atualizarCliente(id, dados, usuarioId) {
   }
 
   const cliente = await Cliente.transaction(async trx => {
+    const anterior = await Cliente.query(trx).findById(id).forUpdate();
+    if (!anterior || anterior.excluido_em) return null;
+    const estadoAnterior = registrarAuditoria ? await obterEstadoAuditoriaCliente(anterior, trx) : null;
     const atualizado = await Cliente.query(trx).patchAndFetchById(id, {
       ...payload,
       updated_at: new Date()
@@ -1855,6 +1863,10 @@ async function atualizarCliente(id, dados, usuarioId) {
       await sincronizarOperadorasCliente(id, dados.operadoras_atuais || dados.operadorasAtuais || normalizarOperadorasCliente(dados), trx);
     }
 
+    if (registrarAuditoria) {
+      const salvo = await Cliente.query(trx).findById(id);
+      await registrarAuditoria(estadoAnterior, await obterEstadoAuditoriaCliente(salvo, trx), trx);
+    }
     return formatarCliente(await Cliente.query(trx)
       .findById(id)
       .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador, consultoras]')
@@ -1866,6 +1878,13 @@ async function atualizarCliente(id, dados, usuarioId) {
   }
 
   return cliente;
+}
+
+async function obterEstadoAuditoriaCliente(cliente, trx) {
+  const operadoras = await ClienteOperadora.query(trx).where('cliente_id', cliente.id)
+    .select('operadora_id', 'quantidade_chips', 'valor_pago', 'fidelidade_fim').orderBy('operadora_id');
+  const consultoras = await trx('cliente_consultoras').where('cliente_id', cliente.id).pluck('usuario_id');
+  return { ...cliente, operadoras_atuais: operadoras.map(item => ({ ...item })), consultora_ids: consultoras.map(Number).sort((a, b) => a - b) };
 }
 
 

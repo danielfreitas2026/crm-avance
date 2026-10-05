@@ -3884,8 +3884,12 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
   }
 
   const vendaAtualizada = await Venda.transaction(async trx => {
+    const vendaBloqueada = await Venda.query(trx).findById(id).forUpdate();
+    if (!vendaBloqueada || vendaBloqueada.excluido_em) return null;
+    const vendedorasAnteriores = opcoes.registrarAuditoria
+      ? await trx('venda_vendedoras').where('venda_id', id).pluck('usuario_id')
+      : [];
     if (reversao) {
-      const vendaBloqueada = await Venda.query(trx).findById(id).select('id', 'updated_at').forUpdate();
       if (normalizarInstanteVersao(vendaBloqueada?.updated_at) !== normalizarInstanteVersao(opcoes.versao)) {
         const error = new Error('Esta venda foi alterada por outra pessoa. Reabra a venda antes de registrar a reversão.');
         error.statusCode = 409;
@@ -3936,9 +3940,18 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
       });
     }
 
+    if (opcoes.registrarAuditoria) {
+      const vendedorasNovas = await trx('venda_vendedoras').where('venda_id', id).pluck('usuario_id');
+      await opcoes.registrarAuditoria(
+        { ...vendaBloqueada, vendedoras: vendedorasAnteriores.map(Number).sort((a, b) => a - b) },
+        { ...venda, vendedoras: vendedorasNovas.map(Number).sort((a, b) => a - b) },
+        trx
+      );
+    }
     return venda;
   });
 
+  if (!vendaAtualizada) return null;
   vendaAtualizada.integracao_dashboard = await dashboardIntegracaoService.sincronizarVendaAtualizada(vendaAtualizada.id);
   await solicitarPacoteSeVendaFinalizada(vendaAtualizada, usuarioId);
 
@@ -3946,8 +3959,9 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
 }
 
 /** Registra uma edicao auditada sem alterar o comportamento da edicao comum. */
-async function registrarReversaoVenda(id, dados, usuarioId) {
+async function registrarReversaoVenda(id, dados, usuarioId, opcoes = {}) {
   return atualizarVenda(id, dados?.venda || {}, usuarioId, {
+    registrarAuditoria: opcoes.registrarAuditoria,
     reversao: true,
     observacao: dados?.observacao,
     versao: dados?.versao
@@ -4161,7 +4175,7 @@ async function validarAceiteBiometria(venda, statusDestino, etapasInformadas = n
  * Atualiza um dos marcadores operacionais da venda. O acesso segue o mesmo
  * escopo de visualizacao usado pelo funil.
  */
-async function atualizarAceiteBiometriaVenda(id, dados, usuarioId) {
+async function atualizarAceiteBiometriaVenda(id, dados, usuarioId, { registrarAuditoria } = {}) {
   if (!await usuarioPodeAcessarVenda(id, usuarioId)) {
     return { status: 'not_found' };
   }
@@ -4194,23 +4208,28 @@ async function atualizarAceiteBiometriaVenda(id, dados, usuarioId) {
     [coluna]: dados.concluido,
     updated_at: formatarDateTimeSQL()
   };
-  const atualizadas = await Venda.query()
-    .where({ id: Number(id), status_funil: venda.status_funil })
-    .whereNull('excluido_em')
-    .whereNull('cancelada_em')
-    .patch(patch);
+  const executar = async trx => {
+    const anterior = registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
+    const atualizadas = await Venda.query(trx)
+      .where({ id: Number(id), status_funil: venda.status_funil })
+      .whereNull('excluido_em')
+      .whereNull('cancelada_em')
+      .patch(patch);
 
-  if (!atualizadas) {
-    return { status: 'conflict', message: 'A venda mudou de etapa ou estado. Atualize o funil e tente novamente.' };
-  }
+    if (!atualizadas) {
+      return { status: 'conflict', message: 'A venda mudou de etapa ou estado. Atualize o funil e tente novamente.' };
+    }
 
-  const vendaAtualizada = await Venda.query().findById(id);
+    const vendaAtualizada = await Venda.query(trx).findById(id);
+    if (registrarAuditoria) await registrarAuditoria({ ...anterior }, { ...vendaAtualizada }, trx);
 
-  return { status: 'ok', venda: vendaAtualizada };
+    return { status: 'ok', venda: vendaAtualizada };
+  };
+  return registrarAuditoria ? Venda.transaction(executar) : executar();
 }
 
 /** Edita a data efetiva de conclusao e preserva a alteracao no historico. */
-async function editarConclusaoVenda(id, dados, usuarioId) {
+async function editarConclusaoVenda(id, dados, usuarioId, { registrarAuditoria } = {}) {
   const permitido = await usuarioPodeAcessarVenda(id, usuarioId);
   if (!permitido) return { status: 'not_found' };
 
@@ -4237,6 +4256,10 @@ async function editarConclusaoVenda(id, dados, usuarioId) {
 
     const vendaAtualizada = await Venda.query(trx).patchAndFetchById(id, edicao.patch);
     await registrarHistoricoVenda({ ...edicao.historico, trx });
+    if (registrarAuditoria) await registrarAuditoria(
+      { concluida_em: edicao.historico.dados.concluida_em_anterior },
+      { concluida_em: edicao.historico.dados.concluida_em }, trx, vendaAtualizada
+    );
     return { status: 'ok', venda: vendaAtualizada };
   });
 }
@@ -4323,6 +4346,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
 
     if (venda.status_funil === 'retorno') {
       const vendaAtualizada = await Venda.transaction(async trx => {
+        const anteriorAuditoria = opcoes.registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
         const atualizada = await Venda.query(trx).patchAndFetchById(id, {
           motivo_retorno: motivo,
           prioridade_funil: prioridade,
@@ -4345,6 +4369,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
           trx
         });
 
+        if (opcoes.registrarAuditoria) await opcoes.registrarAuditoria({ ...anteriorAuditoria }, { ...atualizada }, trx);
         return atualizada;
       });
 
@@ -4356,6 +4381,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
       : (venda.status_anterior_retorno || 'aprovacao');
 
     const vendaAtualizada = await Venda.transaction(async trx => {
+      const anteriorAuditoria = opcoes.registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
       const atualizada = await Venda.query(trx).patchAndFetchById(id, {
         status_funil: 'retorno',
         prioridade_funil: prioridade,
@@ -4393,6 +4419,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
         trx
       });
 
+      if (opcoes.registrarAuditoria) await opcoes.registrarAuditoria({ ...anteriorAuditoria }, { ...atualizada }, trx);
       return atualizada;
     });
 
@@ -4411,6 +4438,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
 
     let clienteSincronizadoId = null;
     const vendaAtualizada = await Venda.transaction(async trx => {
+      const anteriorAuditoria = opcoes.registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
       const dadosAtualizacao = {
         status_funil: destino,
         prioridade_funil: prioridade,
@@ -4446,6 +4474,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
         clienteSincronizadoId = await sincronizarClienteComVendaConcluida(atualizada, agora, trx);
       }
 
+      if (opcoes.registrarAuditoria) await opcoes.registrarAuditoria({ ...anteriorAuditoria }, { ...atualizada }, trx);
       return atualizada;
     });
 
@@ -4455,6 +4484,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
 
   let clienteSincronizadoId = null;
   const vendaAtualizada = await Venda.transaction(async trx => {
+    const anteriorAuditoria = opcoes.registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
     const dadosAtualizacao = {
       ...requisitosAutomaticos.patch,
       status_funil: status,
@@ -4535,6 +4565,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
       clienteSincronizadoId = await sincronizarClienteComVendaConcluida(atualizada, agora, trx);
     }
 
+    if (opcoes.registrarAuditoria) await opcoes.registrarAuditoria({ ...anteriorAuditoria }, { ...atualizada }, trx);
     return atualizada;
   });
 
@@ -4897,7 +4928,8 @@ async function cancelarVenda(id, {
   origemMovimentacao = null,
   automacaoEmailId = null,
   automacaoRecebidaEm = null,
-  statusFunilEsperado = undefined
+  statusFunilEsperado = undefined,
+  registrarAuditoria
 }) {
   const motivoLimpo = String(motivo || '').trim();
 
@@ -4961,6 +4993,7 @@ async function cancelarVenda(id, {
       trx
     });
 
+    if (registrarAuditoria) await registrarAuditoria({ ...venda }, { ...atualizada }, trx);
     return { status: 'ok', venda: atualizada, alterada: true };
   });
 }
@@ -4993,6 +5026,7 @@ async function reverterCancelamentoVenda(id, usuarioId, dados = {}) {
   const agora = formatarDateTimeSQL();
 
   const vendaAtualizada = await Venda.transaction(async trx => {
+    const anteriorAuditoria = dados.registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
     const atualizada = await Venda.query(trx).patchAndFetchById(id, {
       cancelada_em: null,
       cancelada_por_id: null,
@@ -5018,6 +5052,7 @@ async function reverterCancelamentoVenda(id, usuarioId, dados = {}) {
 
     await vendaNotificacaoCancelamentoService.desativarNotificacaoCancelamento(id, trx);
 
+    if (dados.registrarAuditoria) await dados.registrarAuditoria({ ...anteriorAuditoria }, { ...atualizada }, trx);
     return atualizada;
   });
 

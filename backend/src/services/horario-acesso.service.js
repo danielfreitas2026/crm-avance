@@ -90,7 +90,7 @@ async function buscarConfiguracaoAdministrativa() {
   };
 }
 
-async function atualizarConfiguracao(dados) {
+async function atualizarConfiguracao(dados, { registrarAuditoria } = {}) {
   if (typeof dados?.ativo !== 'boolean') {
     throw new Error('O estado da trava deve ser verdadeiro ou falso.');
   }
@@ -104,6 +104,11 @@ async function atualizarConfiguracao(dados) {
   }
 
   await db.transaction(async trx => {
+    let anterior;
+    if (registrarAuditoria) {
+      await trx('configuracoes_horario_acesso').where({ id: CONFIGURACAO_ID }).forUpdate().first();
+      anterior = estadoAuditoriaConfiguracao(await buscarConfiguracao(trx));
+    }
     await trx('configuracoes_horario_acesso').where({ id: CONFIGURACAO_ID }).update({
       ativo: Boolean(dados.ativo),
       updated_at: trx.fn.now()
@@ -115,8 +120,17 @@ async function atualizarConfiguracao(dados) {
     if (usuarioIds.length) {
       await trx('horario_acesso_usuarios').insert(usuarioIds.map(usuario_id => ({ configuracao_id: CONFIGURACAO_ID, usuario_id })));
     }
+    if (registrarAuditoria) await registrarAuditoria(anterior, estadoAuditoriaConfiguracao(await buscarConfiguracao(trx)), trx);
   });
   return buscarConfiguracaoAdministrativa();
+}
+
+function estadoAuditoriaConfiguracao(configuracao) {
+  return {
+    ativo: configuracao.ativo,
+    dias: configuracao.dias.map(({ dia_semana, ativo, abertura, fechamento }) => ({ dia_semana, ativo, abertura, fechamento })),
+    usuario_ids: [...configuracao.usuario_ids].sort((a, b) => a - b)
+  };
 }
 
 async function avaliarAcesso(usuarioId, agora = new Date()) {

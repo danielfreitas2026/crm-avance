@@ -237,7 +237,9 @@ async function envios(req, res) {
  */
 async function atualizarNomeEnvio(req, res) {
   try {
-    return res.json(await leadPlanilhaService.atualizarNomeEnvio(req.params.id, req.body?.nome));
+    return res.json(await leadPlanilhaService.atualizarNomeEnvio(req.params.id, req.body?.nome, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    }));
   } catch (error) {
     console.error(error);
     return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao atualizar nome do envio.' });
@@ -279,7 +281,9 @@ async function minhasLinhas(req, res) {
  */
 async function atualizarMeuCampo(req, res) {
   try {
-    return res.json(await leadPlanilhaService.atualizarCampoLinhaRecebida(req.params.id, req.usuario.id, req.body || {}));
+    return res.json(await leadPlanilhaService.atualizarCampoLinhaRecebida(req.params.id, req.usuario.id, req.body || {}, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    }));
   } catch (error) {
     console.error(error);
     const statusCode = error.statusCode || 400;
@@ -715,7 +719,9 @@ async function excluirFuturoClienteDefinitivo(req, res) {
 
 async function adminAtualizarCampoLead(req, res) {
   try {
-    return res.json(await leadPlanilhaService.atualizarCampoLinhaRecebida(req.params.id, req.usuario.id, req.body || {}, { comoAdmin: true }));
+    return res.json(await leadPlanilhaService.atualizarCampoLinhaRecebida(req.params.id, req.usuario.id, req.body || {}, {
+      comoAdmin: true, registrarAuditoria: req.registrarAlteracaoAuditoria
+    }));
   } catch (error) {
     console.error(error);
     return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao atualizar lead.' });

@@ -78,7 +78,9 @@ async function store(req, res) {
  */
 async function update(req, res) {
   try {
-    const usuario = await usuarioService.atualizarUsuario(req.params.id, req.body);
+    const usuario = await usuarioService.atualizarUsuario(req.params.id, req.body, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    });
 
     if (!usuario) {
       return res.status(404).json({

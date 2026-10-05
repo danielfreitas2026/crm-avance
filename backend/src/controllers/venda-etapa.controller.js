@@ -30,7 +30,8 @@ async function update0800(req, res) {
     const etapas = await vendaEtapaService.definirEtapa0800(
       req.params.id,
       req.body?.resultado || null,
-      req.usuario.id
+      req.usuario.id,
+      { registrarAuditoria: req.registrarAlteracaoAuditoria }
     );
 
     return res.json({ etapas });

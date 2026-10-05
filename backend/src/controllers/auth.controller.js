@@ -76,20 +76,8 @@ async function me(req, res) {
  */
 async function updateMe(req, res) {
   try {
-    const usuario = await authService.atualizarPerfil(req.usuario.id, req.body);
-    const alteracoes = { ...req.body };
-
-    if (Object.prototype.hasOwnProperty.call(alteracoes, 'foto_perfil')) {
-      alteracoes.foto_perfil = alteracoes.foto_perfil ? '[foto atualizada]' : '[foto removida]';
-    }
-
-    await auditLogService.registrarSemBloquear(req, {
-      acao: 'auth.perfil_atualizado',
-      entidade: 'usuarios',
-      entidade_id: usuario.id,
-      dados: {
-        alteracoes
-      }
+    const usuario = await authService.atualizarPerfil(req.usuario.id, req.body, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
     });
 
     return res.json(usuario);

@@ -2,6 +2,7 @@
  * Servico de registro e consulta de eventos de auditoria.
  */
 const AuditLog = require('../models/AuditLog');
+const { CAMPO_SENSIVEL } = require('../utils/alteracoes-auditoria');
 
 const CAMPOS_SENSIVEIS = [
   'senha',
@@ -31,10 +32,13 @@ function sanitizar(valor) {
   }
 
   if (valor && typeof valor === 'object') {
+    if (typeof valor.campo === 'string' && (CAMPO_SENSIVEL.test(valor.campo) || valor.campo === 'foto_perfil')) {
+      valor = { ...valor, anterior: '[removido]', novo: '[removido]', protegido: true };
+    }
     return Object.entries(valor).reduce((acc, [chave, item]) => {
       const chaveNormalizada = chave.toLowerCase();
 
-      if (CAMPOS_SENSIVEIS.some(campo => chaveNormalizada.includes(campo))) {
+      if (CAMPOS_SENSIVEIS.some(campo => chaveNormalizada.includes(campo)) || CAMPO_SENSIVEL.test(chaveNormalizada) || chaveNormalizada === 'foto_perfil') {
         acc[chave] = '[removido]';
         return acc;
       }
@@ -161,7 +165,7 @@ async function listar({ busca, entidade, tipo, page, per_page } = {}) {
   }
 
   const result = await query.page(pagina - 1, perPage);
-  return { data: result.results, total: result.total };
+  return { data: result.results.map(sanitizarLog), total: result.total };
 }
 
 /**
@@ -239,7 +243,16 @@ async function listarHistoricoVendasAgrupado({ status, busca, page, per_page } =
     .withGraphFetched('usuario')
     .orderBy('audit_logs.created_at', 'desc');
 
-  return { data: logs, total };
+  return { data: logs.map(sanitizarLog), total };
+}
+
+/** Também protege registros antigos ao consultar o histórico. */
+function sanitizarLog(log) {
+  let dados = log.dados;
+  if (typeof dados === 'string') {
+    try { dados = JSON.parse(dados); } catch { dados = {}; }
+  }
+  return { ...log, dados: sanitizar(dados) };
 }
 
 module.exports = {

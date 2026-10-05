@@ -20,6 +20,7 @@ import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import { STAGES as FALLBACK_STAGES } from '../../config/constants';
 import { formatUtcDateTime, getUtcDateTimeTimestamp } from '../../utils/datetime';
 import { getAutorHistorico } from '../../utils/origemHistorico';
+import AlteracoesHistorico from './AlteracoesHistorico';
 import '../VendasPage/VendasPage.css';
 import '../Clientes/Clientes.css';
 
@@ -191,37 +192,6 @@ function extrairMotivoCancelamento(log) {
 }
 
 /**
- * Retorna resumo alteracoes a partir dos dados informados.
- */
-function getResumoAlteracoes(alteracoes = {}, stageNamesMap = DEFAULT_STAGE_NAMES_MAP) {
-  if (!isPlainObject(alteracoes)) return [];
-
-  const rows = [];
-  const usados = new Set();
-
-  if (alteracoes.status_anterior || alteracoes.status_funil) {
-    rows.push({
-      campo: 'Etapa do funil',
-      de: formatarValor(alteracoes.status_anterior, 'status_funil', stageNamesMap),
-      para: formatarValor(alteracoes.status_funil, 'status_funil', stageNamesMap)
-    });
-    usados.add('status_anterior');
-    usados.add('status_funil');
-  }
-
-  Object.entries(alteracoes).forEach(([campo, valor]) => {
-    if (usados.has(campo) || isPlainObject(valor) || Array.isArray(valor)) return;
-
-    rows.push({
-      campo: formatarCampo(campo),
-      para: formatarValor(valor, campo, stageNamesMap)
-    });
-  });
-
-  return rows;
-}
-
-/**
  * Retorna campos visiveis a partir dos dados informados.
  */
 function getCamposVisiveis(objeto = {}, ocultar = []) {
@@ -242,37 +212,6 @@ function montarMapaReferencias(referencias = [], campo) {
     if (item?.chave) mapa.set(item.chave, Number(item[campo] || 0));
   });
   return mapa;
-}
-
-/**
- * Retorna resumo alteracoes no formato esperado pelo fluxo.
- */
-function ResumoAlteracoes({ alteracoes, stageNamesMap }) {
-  const rows = getResumoAlteracoes(alteracoes, stageNamesMap);
-
-  if (rows.length === 0) return null;
-
-  return (
-    <div className="history-data-block history-data-block--highlight">
-      <h5>Alteracoes realizadas</h5>
-      <div className="history-change-list">
-        {rows.map((row, index) => (
-          <div className="history-change-row" key={`${row.campo}-${index}`}>
-            <span className="history-change-field">{row.campo}</span>
-            {row.de ? (
-              <span className="history-change-values">
-                <span className="history-change-old">{row.de}</span>
-                <I.ArrowRight size={12} />
-                <span className="history-change-new">{row.para}</span>
-              </span>
-            ) : (
-              <span className="history-change-new">{row.para}</span>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 /**
@@ -312,13 +251,13 @@ function DadosOperacao({ dados, stageNamesMap }) {
     ['Dados enviados', dados.payload]
   ];
 
-  const chavesOcultas = new Set(['alteracoes', 'venda', 'cliente', 'usuario', 'movimentacao', 'payload']);
+  const chavesOcultas = new Set(['alteracoes', 'alteracoes_detalhadas', 'venda', 'cliente', 'usuario', 'movimentacao', 'payload']);
   const demaisDados = Object.fromEntries(Object.entries(dados).filter(([campo]) => !chavesOcultas.has(campo)));
 
   return (
     <div className="history-detail-section">
       <h4>Dados da Operacao</h4>
-      <ResumoAlteracoes alteracoes={dados.alteracoes} stageNamesMap={stageNamesMap} />
+      <AlteracoesHistorico dados={dados} stageNamesMap={stageNamesMap} />
       {gruposConhecidos.map(([titulo, grupo, ocultar]) => (
         <ListaCampos key={titulo} titulo={titulo} dados={grupo} ocultar={ocultar} stageNamesMap={stageNamesMap} />
       ))}
