@@ -101,7 +101,7 @@ function formatCampanhaPeriodo(campanha) {
   const inicio = formatCampanhaDate(campanha.data_inicio);
   const fim = formatCampanhaDate(campanha.data_fim);
   return campanha.hora_inicio && campanha.hora_fim
-    ? `${inicio} às ${campanha.hora_inicio} a ${fim} às ${campanha.hora_fim} (São Paulo)`
+    ? `${inicio} às ${campanha.hora_inicio} a ${fim} às ${campanha.hora_fim}`
     : `${inicio} a ${fim}`;
 }
 

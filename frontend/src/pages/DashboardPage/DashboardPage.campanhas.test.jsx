@@ -64,13 +64,14 @@ describe('DashboardPage - campanhas coletivas', () => {
     });
   });
 
-  it('exibe a categoria futuros clientes e o período com horários de São Paulo', async () => {
+  it('exibe a categoria futuros clientes e o período com horários sem o sufixo de fuso', async () => {
     api.getCampanhas.mockResolvedValue([{ ...campanha, categoria: 'registro_futuro_cliente', hora_inicio: '14:00', hora_fim: '18:00' }]);
     render(<DashboardPage />);
     const periodos = await screen.findAllByText(/Registro de futuro cliente/);
     for (const periodo of periodos) {
       expect(periodo).toHaveTextContent('14:00');
-      expect(periodo).toHaveTextContent('18:00 (São Paulo)');
+      expect(periodo).toHaveTextContent('18:00');
+      expect(periodo).not.toHaveTextContent('(São Paulo)');
     }
   });
 

@@ -318,12 +318,14 @@ function AdminCampanhasPage() {
             <div className="admin-campanhas-fields admin-campanhas-fields--four">
               <label className="admin-campanhas-field--wide">Nome da campanha<input value={campanha.desc || ''} onChange={e => change(campanha.id, 'desc', e.target.value)} placeholder="Ex.: Registre 10 clientes" /></label>
               <label>Data inicial{campanha.periodo_bloqueado && <small>Bloqueada após o primeiro resgate.</small>}<input type="date" value={campanha.data_inicio || ''} disabled={campanha.periodo_bloqueado} onChange={e => change(campanha.id, 'data_inicio', e.target.value)} required /></label>
+              <label>Hora inicial<input type="time" value={campanha.hora_inicio || ''} disabled={campanha.periodo_bloqueado} onChange={e => change(campanha.id, 'hora_inicio', e.target.value || null)} /></label>
               <label>Data final{campanha.periodo_bloqueado && <small>Bloqueada após o primeiro resgate.</small>}<input type="date" value={campanha.data_fim || ''} disabled={campanha.periodo_bloqueado} min={campanha.data_inicio || undefined} onChange={e => change(campanha.id, 'data_fim', e.target.value)} required /></label>
-              <label>Hora inicial (São Paulo)<input type="time" value={campanha.hora_inicio || ''} disabled={campanha.periodo_bloqueado} onChange={e => change(campanha.id, 'hora_inicio', e.target.value || null)} /></label>
-              <label>Hora final (São Paulo)<input type="time" value={campanha.hora_fim || ''} disabled={campanha.periodo_bloqueado} onChange={e => change(campanha.id, 'hora_fim', e.target.value || null)} /></label>
-              <small>Horários opcionais. Preencha ambos para um intervalo contínuo, com término exclusivo. Nas vendas com horário, vale o cadastro no CRM.</small>
-              <label>Categoria<select value={campanha.categoria} onChange={e => change(campanha.id, 'categoria', e.target.value)}>{categoriasDisponiveis(campanha.categoria).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-              <label>{campanha.categoria === 'valor_monetario' ? 'Meta (R$)' : 'Alvo'}<input type="number" min="0.01" step={campanha.categoria === 'valor_monetario' ? '0.01' : '1'} value={campanha.target} onChange={e => change(campanha.id, 'target', Number(e.target.value) || 0)} /></label>
+              <label>Hora final<input type="time" value={campanha.hora_fim || ''} disabled={campanha.periodo_bloqueado} onChange={e => change(campanha.id, 'hora_fim', e.target.value || null)} /></label>
+              <small className="admin-campanhas-field--wide admin-campanhas-period-hint">Horários opcionais. Preencha ambos para um intervalo contínuo, com término exclusivo. Nas vendas com horário, vale o cadastro no CRM.</small>
+              <div className="admin-campanhas-fields admin-campanhas-fields--two admin-campanhas-field--wide">
+                <label>Categoria<select value={campanha.categoria} onChange={e => change(campanha.id, 'categoria', e.target.value)}>{categoriasDisponiveis(campanha.categoria).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+                <label>{campanha.categoria === 'valor_monetario' ? 'Meta (R$)' : 'Alvo'}<input type="number" min="0.01" step={campanha.categoria === 'valor_monetario' ? '0.01' : '1'} value={campanha.target} onChange={e => change(campanha.id, 'target', Number(e.target.value) || 0)} /></label>
+              </div>
               {campanha.categoria === 'outros' && <label className="admin-campanhas-field--wide">Nome da categoria<input value={campanha.categoria_personalizada || ''} onChange={e => change(campanha.id, 'categoria_personalizada', e.target.value)} placeholder="Ex.: Seguro" /></label>}
             </div>
           </div>
