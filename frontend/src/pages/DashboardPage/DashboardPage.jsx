@@ -37,6 +37,7 @@ const formatGoalValue = (campanha, value) => (
 
 const CATEGORY_LABELS = {
   registro_cliente: 'Registro de cliente',
+  registro_futuro_cliente: 'Registro de futuro cliente',
   venda: 'Venda',
   chip_novo: 'Chip novo',
   portabilidade: 'Portabilidade',
@@ -94,10 +95,18 @@ function formatCampanhaDate(valor) {
 }
 
 /**
- * Retorna campanha scope a partir dos dados informados.
+ * Formata o período da campanha, incluindo horários quando configurados.
  */
+function formatCampanhaPeriodo(campanha) {
+  const inicio = formatCampanhaDate(campanha.data_inicio);
+  const fim = formatCampanhaDate(campanha.data_fim);
+  return campanha.hora_inicio && campanha.hora_fim
+    ? `${inicio} às ${campanha.hora_inicio} a ${fim} às ${campanha.hora_fim} (São Paulo)`
+    : `${inicio} a ${fim}`;
+}
+
 function getCampanhaScope(campanha) {
-  const periodo = `${formatCampanhaDate(campanha.data_inicio)} a ${formatCampanhaDate(campanha.data_fim)}`;
+  const periodo = formatCampanhaPeriodo(campanha);
   const categoria = CATEGORY_LABELS[campanha.categoria] || campanha.categoria || 'Campanha';
   const operadoras = campanha.operadoras?.map(item => item.nome).join(', ') || campanha.operadora_nome || '';
   const grupo = campanha.em_grupo ? ' · Meta em grupo' : '';
@@ -396,7 +405,7 @@ function CampaignRankingModal({ dados, loading, error, busca, onBusca, usuarioId
           <div>
             <span className="campaign-ranking-modal__eyebrow">Ranking da campanha</span>
             <h2 id="campaign-ranking-title">{campanha.desc}</h2>
-            <p>{formatCampanhaDate(campanha.data_inicio)} a {formatCampanhaDate(campanha.data_fim)}</p>
+            <p>{formatCampanhaPeriodo(campanha)}</p>
           </div>
           <button type="button" className="btn btn-icon btn-ghost" onClick={onClose} aria-label="Fechar ranking"><I.Close size={18} /></button>
         </header>

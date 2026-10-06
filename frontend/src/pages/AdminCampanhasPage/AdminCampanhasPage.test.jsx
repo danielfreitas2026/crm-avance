@@ -56,13 +56,14 @@ describe('AdminCampanhasPage - regras individuais', () => {
     api.updateCampanhas.mockResolvedValue({});
   });
 
-  it('oferece somente as quatro categorias ativas', async () => {
+  it('oferece somente as cinco categorias ativas', async () => {
     api.getCampanhas.mockResolvedValue([campanhaBase({ categoria: 'registro_cliente' })]);
     render(<AdminCampanhasPage />);
 
     const categoria = await screen.findByLabelText('Categoria');
     expect([...categoria.options].map(option => [option.value, option.textContent])).toEqual([
       ['registro_cliente', 'Registro de cliente'],
+      ['registro_futuro_cliente', 'Registro de futuro cliente'],
       ['valor_monetario', 'Valor em vendas'],
       ['quantidade_chip', 'Quantidade de chip'],
       ['outros', 'Outro']
@@ -77,9 +78,48 @@ describe('AdminCampanhasPage - regras individuais', () => {
     const categoria = await screen.findByLabelText('Categoria');
     expect(categoria).toHaveValue('venda');
     expect([...categoria.options].map(option => option.value)).toEqual([
-      'registro_cliente', 'valor_monetario', 'quantidade_chip', 'outros', 'venda'
+      'registro_cliente', 'registro_futuro_cliente', 'valor_monetario', 'quantidade_chip', 'outros', 'venda'
     ]);
     expect(screen.getByRole('option', { name: 'Venda' })).toBeInTheDocument();
+  });
+
+  it('salva futuros clientes com horários e remove exceções de vendas', async () => {
+    const user = userEvent.setup();
+    api.getCampanhas.mockResolvedValue([campanhaBase({ venda_excecao_ids: [20], vendas_excecao: [{ id: 20 }] })]);
+    render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
+    await user.selectOptions(screen.getByLabelText('Categoria'), 'registro_futuro_cliente');
+    expect(screen.getByLabelText('Público')).toBeDisabled();
+    expect(screen.getByLabelText('Tipo considerado')).toBeDisabled();
+    expect(screen.getByLabelText('Tipo de chip')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Adicionar exceção/ })).not.toBeInTheDocument();
+    const inicio = screen.getByLabelText('Hora inicial (São Paulo)');
+    const fim = screen.getByLabelText('Hora final (São Paulo)');
+    await user.type(inicio, '14:00');
+    await user.type(fim, '18:00');
+    await user.click(screen.getByRole('button', { name: /Salvar alterações/ }));
+    await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalledWith([
+      expect.objectContaining({ categoria: 'registro_futuro_cliente', hora_inicio: '14:00', hora_fim: '18:00', venda_excecao_ids: [] })
+    ]));
+  });
+
+  it('rejeita um único horário', async () => {
+    const user = userEvent.setup();
+    render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
+    await user.type(screen.getByLabelText('Hora inicial (São Paulo)'), '14:00');
+    await user.click(screen.getByRole('button', { name: /Salvar alterações/ }));
+    expect(api.updateCampanhas).not.toHaveBeenCalled();
+    expect(screen.getByText('Informe um período válido em todas as campanhas.')).toBeInTheDocument();
+  });
+
+  it('bloqueia horários após o primeiro resgate', async () => {
+    const user = userEvent.setup();
+    api.getCampanhas.mockResolvedValue([campanhaBase({ periodo_bloqueado: true, hora_inicio: '14:00', hora_fim: '18:00' })]);
+    render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
+    expect(screen.getByLabelText('Hora inicial (São Paulo)')).toBeDisabled();
+    expect(screen.getByLabelText('Hora final (São Paulo)')).toBeDisabled();
   });
 
   it('cria novas campanhas com a categoria registro de cliente', async () => {

@@ -1,7 +1,8 @@
+const { intervaloCampanha } = require('../utils/campanha-periodo');
 const db = require('../database/connection');
 
 const PERIODOS_VALIDOS = ['personalizado'];
-const CATEGORIAS_VALIDAS = ['registro_cliente', 'venda', 'chip_novo', 'portabilidade', 'internet', 'valor_monetario', 'quantidade_chip', 'outros'];
+const CATEGORIAS_VALIDAS = ['registro_cliente', 'registro_futuro_cliente', 'venda', 'chip_novo', 'portabilidade', 'internet', 'valor_monetario', 'quantidade_chip', 'outros'];
 const PUBLICOS_BASE_VALIDOS = ['ambos', 'base', 'nao_base'];
 const TIPOS_REGRA_VALIDOS = ['categoria', 'chip_novo', 'portabilidade', 'novo_portabilidade', 'internet'];
 const TIPOS_CHIP_REGRA_VALIDOS = ['ambos', 'novo', 'portabilidade'];
@@ -21,7 +22,9 @@ function normalizarDataISO(valor) {
 
 function periodoFoiAlterado(atual, proximo) {
   return normalizarDataISO(atual?.data_inicio) !== normalizarDataISO(proximo?.data_inicio)
-    || normalizarDataISO(atual?.data_fim) !== normalizarDataISO(proximo?.data_fim);
+    || normalizarDataISO(atual?.data_fim) !== normalizarDataISO(proximo?.data_fim)
+    || (atual?.hora_inicio || null) !== (proximo?.hora_inicio || null)
+    || (atual?.hora_fim || null) !== (proximo?.hora_fim || null);
 }
 
 function normalizarRegras(campanha, categoria, operadoraIds, publicoBase) {
@@ -38,13 +41,13 @@ function normalizarRegras(campanha, categoria, operadoraIds, publicoBase) {
   return origem.reduce((regras, regra) => {
     const operadora = Number(regra?.operadora_id);
     const operadoraId = Number.isInteger(operadora) && operadora > 0 ? operadora : null;
-    const publico = categoria === 'registro_cliente'
+    const publico = ['registro_cliente', 'registro_futuro_cliente'].includes(categoria)
       ? 'ambos'
       : (PUBLICOS_BASE_VALIDOS.includes(regra?.publico_base) ? regra.publico_base : 'ambos');
-    const tipo = categoria === 'registro_cliente'
+    const tipo = ['registro_cliente', 'registro_futuro_cliente'].includes(categoria)
       ? 'categoria'
       : (TIPOS_REGRA_VALIDOS.includes(regra?.tipo) ? regra.tipo : 'categoria');
-    const tipoChip = categoria === 'registro_cliente'
+    const tipoChip = ['registro_cliente', 'registro_futuro_cliente'].includes(categoria)
       ? 'ambos'
       : tipo === 'chip_novo'
         ? 'novo'
@@ -64,7 +67,7 @@ function normalizarRegras(campanha, categoria, operadoraIds, publicoBase) {
 function normalizarCampanha(campanha) {
   const periodo = 'personalizado';
   const categoria = CATEGORIAS_VALIDAS.includes(campanha.categoria) ? campanha.categoria : 'registro_cliente';
-  const publicoBase = categoria === 'registro_cliente'
+  const publicoBase = ['registro_cliente', 'registro_futuro_cliente'].includes(categoria)
     ? 'ambos'
     : (PUBLICOS_BASE_VALIDOS.includes(campanha.publico_base) ? campanha.publico_base : 'ambos');
   const operadoraIds = idsValidos(campanha.operadora_ids);
@@ -79,6 +82,8 @@ function normalizarCampanha(campanha) {
     periodo,
     data_inicio: normalizarDataISO(campanha.data_inicio),
     data_fim: normalizarDataISO(campanha.data_fim),
+    hora_inicio: campanha.hora_inicio || null,
+    hora_fim: campanha.hora_fim || null,
     categoria,
     target: Number(campanha.target || 0),
     desc: String(campanha.desc || '').trim(),
@@ -169,7 +174,7 @@ class Campanha {
       regras: regrasPorCampanha[c.id] || [{
         operadora_id: c.operadora_id ? Number(c.operadora_id) : null,
         operadora_nome: c.operadora_nome || null,
-        publico_base: c.categoria === 'registro_cliente' ? 'ambos' : (c.publico_base || 'ambos'),
+        publico_base: ['registro_cliente', 'registro_futuro_cliente'].includes(c.categoria) ? 'ambos' : (c.publico_base || 'ambos'),
         tipo: 'categoria',
         tipo_chip: 'ambos'
       }],
@@ -237,7 +242,7 @@ class Campanha {
     return db.transaction(async trx => {
       for (const campanha of campanhasArray) {
         const dados = normalizarCampanha(campanha);
-        const atual = await trx(this.tableName).where({ id: campanha.id }).select('data_inicio', 'data_fim').first();
+        const atual = await trx(this.tableName).where({ id: campanha.id }).select('data_inicio', 'data_fim', 'hora_inicio', 'hora_fim').first();
         const temResgate = await trx('campanha_resgates').where({ campanha_id: campanha.id }).first('id');
         if (temResgate && atual && periodoFoiAlterado(atual, dados)) {
           const erro = new Error('O período não pode ser alterado após o primeiro resgate.');
@@ -247,6 +252,7 @@ class Campanha {
         await trx(this.tableName).where({ id: campanha.id }).update({
           tipo: dados.tipo, periodo: dados.periodo, categoria: dados.categoria, target: dados.target,
           data_inicio: dados.data_inicio, data_fim: dados.data_fim,
+          hora_inicio: dados.hora_inicio, hora_fim: dados.hora_fim,
           desc: dados.desc, reward: dados.reward, operadora_id: dados.operadora_id,
           publico_base: dados.publico_base, categoria_personalizada: dados.categoria_personalizada, updated_at: db.fn.now()
         });
@@ -264,6 +270,7 @@ class Campanha {
       const [campanhaId] = await trx(this.tableName).insert({
         tipo: dados.tipo, periodo: dados.periodo, categoria: dados.categoria, target: dados.target, desc: dados.desc,
         data_inicio: dados.data_inicio, data_fim: dados.data_fim,
+        hora_inicio: dados.hora_inicio, hora_fim: dados.hora_fim,
         reward: dados.reward, is_gift: dados.is_gift, operadora_id: dados.operadora_id, publico_base: dados.publico_base,
         categoria_personalizada: dados.categoria_personalizada, created_at: db.fn.now(), updated_at: db.fn.now()
       });
@@ -279,9 +286,9 @@ class Campanha {
 
   static async deleteById(id, hoje = null) {
     return db.transaction(async trx => {
-      const campanha = await trx(this.tableName).where({ id }).where('is_gift', true).first('id', 'data_fim');
+      const campanha = await trx(this.tableName).where({ id }).where('is_gift', true).first('id', 'data_inicio', 'data_fim', 'hora_inicio', 'hora_fim');
       if (!campanha) return 0;
-      if (hoje && normalizarDataISO(campanha.data_fim) < normalizarDataISO(hoje)) {
+      if (hoje && intervaloCampanha(campanha, hoje).estado === 'encerrada') {
         const erro = new Error('Campanhas encerradas são mantidas no histórico e não podem ser excluídas.');
         erro.code = 'CAMPANHA_ENCERRADA';
         throw erro;

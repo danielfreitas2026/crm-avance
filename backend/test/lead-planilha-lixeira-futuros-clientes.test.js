@@ -123,3 +123,16 @@ test('rota Todos exige visualizacao, gerenciamento global e permissao da acao', 
     Usuario.query = originalQuery;
   }
 });
+
+
+test('primeiro registro é gravado atomicamente e não é apagado ao excluir para permitir novo cadastro', () => {
+  const db = require('../src/database/connection');
+  const patch = _internals.montarPrimeiroRegistroFuturoCliente(db, '2026-10-06 17:00:00', 17);
+  const consulta = db('lead_linhas').where('id', 1).update(patch).toSQL();
+  assert.match(consulta.sql, /`futuro_cliente_primeiro_registro_em` = COALESCE\(`futuro_cliente_primeiro_registro_em`, \?\)/);
+  assert.match(consulta.sql, /`futuro_cliente_primeiro_registro_por_id` = COALESCE\(`futuro_cliente_primeiro_registro_por_id`, \?\)/);
+  assert.deepEqual(consulta.bindings, ['2026-10-06 17:00:00', 17, 1]);
+  const exclusao = montarPatchExclusaoFuturoCliente();
+  assert.equal(Object.hasOwn(exclusao, 'futuro_cliente_primeiro_registro_em'), false);
+  assert.equal(Object.hasOwn(exclusao, 'futuro_cliente_primeiro_registro_por_id'), false);
+});

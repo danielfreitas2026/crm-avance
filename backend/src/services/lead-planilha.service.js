@@ -304,8 +304,16 @@ function criarHttpError(statusCode, message) {
 }
 
 /**
- * Formata date time sql para exibicao ou envio.
+ * Preserva a autoria e a data do primeiro registro mesmo em atualizações concorrentes.
  */
+function montarPrimeiroRegistroFuturoCliente(trx, ocorridoEm, usuarioId) {
+  return {
+    futuro_cliente_primeiro_registro_em: trx.raw('COALESCE(??, ?)', ['futuro_cliente_primeiro_registro_em', ocorridoEm]),
+    futuro_cliente_primeiro_registro_por_id: trx.raw('COALESCE(??, ?)', ['futuro_cliente_primeiro_registro_por_id', usuarioId])
+  };
+}
+
+/** Formata data/hora em UTC para persistência SQL. */
 function formatarDateTimeSQL(data = new Date()) {
   /**
    * Preenche valores numericos com zero a esquerda.
@@ -3176,6 +3184,7 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
         futuro_cliente_retorno_realizado_por_id: null
       } : {}),
       futuro_cliente_marcado_em: marcadoEm, futuro_cliente_marcado_por_id: donoSondagemId,
+      ...montarPrimeiroRegistroFuturoCliente(trx, marcadoEm, donoSondagemId),
       ...(novoFuturoCliente ? { futuro_cliente_destino: destinoFuturoCliente } : {}),
       retorno_agendado_em: null, retorno_agendado_observacao: null, retorno_agendado_por_id: null,
       retorno_agendado_realizado_em: null, retorno_agendado_realizado_por_id: null,
@@ -5441,6 +5450,7 @@ module.exports = {
     montarPatchReversaoFuturoCliente,
     montarPatchReversaoVendaRecusada,
     montarPatchExclusaoFuturoCliente,
+    montarPrimeiroRegistroFuturoCliente,
     obterResponsavelEscopoLixeira,
     calcularVencimentoLixeiraFuturoCliente,
     deveNotificarNovoFuturoCliente,
