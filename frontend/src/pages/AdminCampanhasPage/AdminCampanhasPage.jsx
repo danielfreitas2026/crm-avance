@@ -255,6 +255,16 @@ function AdminCampanhasPage() {
     finally { setSaving(false); setAdding(false); }
   };
   const save = async () => {
+    const alvoInvalido = campanhas.find(campanha => campanha.is_gift && (
+      !Number.isFinite(Number(campanha.target)) || Number(campanha.target) <= 0
+      || (campanha.categoria !== 'valor_monetario' && !Number.isInteger(Number(campanha.target)))
+    ));
+    if (alvoInvalido) {
+      setMessage({ type: 'error', text: alvoInvalido.categoria === 'valor_monetario'
+        ? 'Meta financeira deve ser maior que zero.'
+        : 'Alvo deve ser um número inteiro positivo para metas não monetárias.' });
+      return;
+    }
     const periodoInvalido = campanhas.find(campanha => campanha.is_gift && (
       !campanha.data_inicio || !campanha.data_fim || campanha.data_inicio > campanha.data_fim
       || Boolean(campanha.hora_inicio) !== Boolean(campanha.hora_fim)
@@ -324,7 +334,7 @@ function AdminCampanhasPage() {
               <small className="admin-campanhas-field--wide admin-campanhas-period-hint">Horários opcionais. Preencha ambos para um intervalo contínuo, com término exclusivo. Nas vendas com horário, vale o cadastro no CRM.</small>
               <div className="admin-campanhas-fields admin-campanhas-fields--two admin-campanhas-field--wide">
                 <label>Categoria<select value={campanha.categoria} onChange={e => change(campanha.id, 'categoria', e.target.value)}>{categoriasDisponiveis(campanha.categoria).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-                <label>{campanha.categoria === 'valor_monetario' ? 'Meta (R$)' : 'Alvo'}<input type="number" min="0.01" step={campanha.categoria === 'valor_monetario' ? '0.01' : '1'} value={campanha.target} onChange={e => change(campanha.id, 'target', Number(e.target.value) || 0)} /></label>
+                <label>{campanha.categoria === 'valor_monetario' ? 'Meta (R$)' : 'Alvo'}<input type="number" min={campanha.categoria === 'valor_monetario' ? '0.01' : '1'} step={campanha.categoria === 'valor_monetario' ? '0.01' : '1'} value={campanha.target} onChange={e => change(campanha.id, 'target', Number(e.target.value) || 0)} /></label>
               </div>
               {campanha.categoria === 'outros' && <label className="admin-campanhas-field--wide">Nome da categoria<input value={campanha.categoria_personalizada || ''} onChange={e => change(campanha.id, 'categoria_personalizada', e.target.value)} placeholder="Ex.: Seguro" /></label>}
             </div>

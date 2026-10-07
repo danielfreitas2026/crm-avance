@@ -24,6 +24,47 @@ const item = (quantidade, tipo_linha, operadora_id, valor_unitario = 50) => ({
   quantidade, tipo_linha, operadora_id, valor_unitario
 });
 
+test('aceita alvos inteiros em todas as categorias e decimais somente em dinheiro', () => {
+  const base = {
+    periodo: 'personalizado', desc: 'Campanha', categoria_personalizada: 'Seguro',
+    data_inicio: '2026-10-01', data_fim: '2026-10-31'
+  };
+  for (const categoria of Campanha.categoriasValidas) {
+    for (const target of [1, 1021, '2']) {
+      assert.equal(validarCampanha({ ...base, categoria, target }), null);
+    }
+    for (const target of [1.021, '2.5', 0.01]) {
+      const erro = validarCampanha({ ...base, categoria, target });
+      if (categoria === 'valor_monetario') assert.equal(erro, null);
+      else assert.match(erro, /inteiro/i);
+    }
+    for (const target of [0, -1, NaN, Infinity, 'Infinity']) {
+      assert.ok(validarCampanha({ ...base, categoria, target }));
+    }
+  }
+});
+
+test('criacao e atualizacao rejeitam alvo fracionado antes de persistir', async t => {
+  const criar = t.mock.method(Campanha, 'create', async () => {});
+  const atualizar = t.mock.method(Campanha, 'updateAll', async () => {});
+  const campanha = {
+    is_gift: true, periodo: 'personalizado', categoria: 'registro_futuro_cliente',
+    target: 1.021, desc: 'Registrar futuros clientes',
+    data_inicio: '2026-10-01', data_fim: '2026-10-31'
+  };
+  for (const [metodo, body] of [['store', campanha], ['updateBulk', { campanhas: [campanha] }]]) {
+    const res = {
+      status(code) { this.statusCode = code; return this; },
+      json(payload) { this.payload = payload; return this; }
+    };
+    await campanhaController[metodo]({ body }, res);
+    assert.equal(res.statusCode, 400);
+    assert.match(res.payload.error, /inteiro/i);
+  }
+  assert.equal(criar.mock.callCount(), 0);
+  assert.equal(atualizar.mock.callCount(), 0);
+});
+
 test('combina regras de operadora, base e portabilidade com semantica OU', () => {
   const campanha = {
     categoria: 'venda',

@@ -51,8 +51,12 @@ function validarCampanha(campanha) {
     return 'Alvo e descricao sao obrigatorios.';
   }
 
-  if (Number(campanha.target) < 1) {
+  if (!Number.isFinite(Number(campanha.target)) || Number(campanha.target) <= 0) {
     return 'Alvo deve ser maior que zero.';
+  }
+
+  if (campanha.categoria !== 'valor_monetario' && !Number.isInteger(Number(campanha.target))) {
+    return 'Alvo deve ser um número inteiro positivo para metas não monetárias.';
   }
 
   if (!Campanha.periodosValidos.includes(campanha.periodo)) {

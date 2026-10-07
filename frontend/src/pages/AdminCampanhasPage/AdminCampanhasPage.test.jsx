@@ -56,6 +56,47 @@ describe('AdminCampanhasPage - regras individuais', () => {
     api.updateCampanhas.mockResolvedValue({});
   });
 
+  it.each(['registro_cliente', 'registro_futuro_cliente', 'quantidade_chip', 'outros', 'venda', 'chip_novo', 'portabilidade', 'internet'])('rejeita alvo fracionado na categoria %s e permite corrigir para inteiro', async categoria => {
+    const user = userEvent.setup();
+    api.getCampanhas.mockResolvedValue([campanhaBase({ categoria, categoria_personalizada: 'Seguro' })]);
+    render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
+    const alvo = screen.getByLabelText('Alvo');
+    expect(alvo).toHaveAttribute('min', '1');
+    expect(alvo).toHaveAttribute('step', '1');
+    await user.clear(alvo);
+    await user.type(alvo, '1.021');
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+    expect(api.updateCampanhas).not.toHaveBeenCalled();
+    expect(screen.getByText(/Alvo deve ser um número inteiro positivo/)).toBeInTheDocument();
+    await user.clear(alvo);
+    await user.type(alvo, '1021');
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+    await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalledWith([
+      expect.objectContaining({ categoria, target: 1021 })
+    ]));
+  });
+
+  it('permite centavos apenas na categoria monetaria e revalida ao trocar a categoria', async () => {
+    const user = userEvent.setup();
+    api.getCampanhas.mockResolvedValue([campanhaBase({ categoria: 'valor_monetario', target: 0.01 })]);
+    render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
+    expect(screen.getByLabelText('Meta (R$)')).toHaveAttribute('min', '0.01');
+    expect(screen.getByLabelText('Meta (R$)')).toHaveAttribute('step', '0.01');
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+    await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalledWith([
+      expect.objectContaining({ categoria: 'valor_monetario', target: 0.01 })
+    ]));
+    await screen.findByText('Campanhas atualizadas com sucesso.');
+    api.updateCampanhas.mockClear();
+    await user.selectOptions(screen.getByLabelText('Categoria'), 'registro_cliente');
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+    expect(api.updateCampanhas).not.toHaveBeenCalled();
+    expect(screen.getByText(/Alvo deve ser um número inteiro positivo/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Alvo')).toHaveValue(0.01);
+  });
+
   it('oferece somente as cinco categorias ativas', async () => {
     api.getCampanhas.mockResolvedValue([campanhaBase({ categoria: 'registro_cliente' })]);
     render(<AdminCampanhasPage />);
