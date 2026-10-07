@@ -3996,6 +3996,11 @@ function VendaModal({
     || usuarioEhResponsavelVenda
     || (temPermissao(usuarioLogado, 'ver_vendas_compartilhadas') && usuarioEstaNaVendaCompartilhada)
   );
+  const podeEnviarVendaPosVenda = Boolean(venda?.id && (
+    temPermissao(usuarioLogado, 'vendas_ver_todas')
+    || (temPermissao(usuarioLogado, 'vendas_ver_proprias') && usuarioEhResponsavelVenda)
+    || (temPermissao(usuarioLogado, 'ver_vendas_compartilhadas') && usuarioEstaNaVendaCompartilhada)
+  ));
   const podeEditarVendaEfetivo = Boolean(
     (temPermissao(usuarioLogado, 'vendas_editar') && usuarioPodeAcessarVendaModal)
     || (
@@ -5705,7 +5710,7 @@ function VendaModal({
                   <I.History size={14} /> Registrar Reversão
                 </button>
               )}
-              {podeEditarVendaEfetivo && !enviadaPosVenda && (
+              {podeEnviarVendaPosVenda && !enviadaPosVenda && (
                 <button type="button" className="btn venda-pos-venda-send-btn" disabled={salvando} onClick={handleEnviarPosVenda}>
                   <I.ArrowRight size={14} /> {salvando ? 'Aguarde...' : sendToPosVendaLabel}
                 </button>

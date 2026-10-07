@@ -4578,7 +4578,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
  * Envia venda para pos venda para processamento.
  */
 async function enviarVendaParaPosVenda(id, usuarioId, dados = {}) {
-  const permitido = await usuarioPodeEditarVenda(id, usuarioId);
+  const permitido = await usuarioPodeAcessarVenda(id, usuarioId);
 
   if (!permitido) {
     return { status: 'not_found' };

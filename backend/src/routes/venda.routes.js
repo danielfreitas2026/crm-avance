@@ -118,7 +118,7 @@ router.post(
 );
 router.post(
   '/:id/enviar-pos-venda',
-  exigirUmaPermissao(['vendas_editar', 'editar_vendas_compartilhadas']),
+  exigirUmaPermissao(['vendas_ver_proprias', 'ver_vendas_compartilhadas', 'vendas_ver_todas']),
   auditar({
     acao: 'venda.enviada_pos_venda',
     entidade: 'vendas',
