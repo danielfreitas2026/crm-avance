@@ -115,4 +115,5 @@ export async function atualizarPerfil(dados) {
 export function logout() {
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
+  window.dispatchEvent(new Event('auth:sessao-encerrada'));
 }

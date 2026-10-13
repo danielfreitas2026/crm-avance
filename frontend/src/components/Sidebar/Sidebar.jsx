@@ -45,6 +45,7 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
   ].filter(it => !it.permission || temPermissao(usuario, it.permission));
 
   const admin = [
+    { id: 'senhas', label: 'Gerenciador de senhas', icon: <I.Shield />, adminOnly: true },
     { id: 'usuarios', label: 'Usuários', icon: <I.Users />, permission: ['crud_usuarios', 'usuarios_listar', 'usuarios_criar', 'usuarios_editar', 'usuarios_excluir', 'gerenciar_permissoes'] },
     { id: 'config', label: 'Configurações', icon: <I.Settings />, permission: ['crud_operadoras', 'crud_links', 'crud_tipos_venda', 'crud_servicos', 'clientes_antigos_gerenciar', 'configurar_notificacoes', 'configurar_horario_acesso'] },
     { id: 'campanhas', label: 'Configurar Campanhas', icon: <I.Settings />, permission: ['gerenciar_campanhas'] },
@@ -53,7 +54,9 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
     { id: 'cruzar-vendas', label: 'Cruzar Vendas', icon: <I.TableSheet />, permission: 'vendas_cruzar' },
     { id: 'consultar-cnpj', label: 'Consultar CNPJ', icon: <I.Search />, permission: 'clientes_importar_planilhas' },
     { id: 'automacoes', label: 'Automações', icon: <I.Settings />, permission: 'automacoes_gerenciar' },
-  ].filter(it => !it.permission || temPermissao(usuario, it.permission));
+  ].filter(it => it.adminOnly
+    ? usuario?.role?.nome === 'admin' && [true, 1].includes(usuario?.ativo)
+    : !it.permission || temPermissao(usuario, it.permission));
 
   /**
    * Retorna initials a partir dos dados informados.

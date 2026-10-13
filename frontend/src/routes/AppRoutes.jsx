@@ -3,6 +3,8 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import LoginPage from '../pages/LoginPage/LoginPage';
 import PerfilPage from '../pages/PerfilPage/PerfilPage';
 import Usuarios from '../pages/Usuarios/Usuarios';
+import GerenciadorSenhasPage from '../pages/GerenciadorSenhasPage/GerenciadorSenhasPage';
+import AdminRoute from './AdminRoute';
 import CadastroUsuario from '../pages/CadastroUsuario/CadastroUsuario';
 import FunilPage from '../pages/FunilPage/FunilPage';
 import FunilAutomacoesPage from '../pages/FunilPage/FunilAutomacoesPage';
@@ -71,6 +73,7 @@ function AppRoutes() {
       <Route path="/vendas/lixeira" element={<PrivateRoute permission={['vendas_ver_proprias', 'vendas_ver_todas']}><VendasLixeiraPage /></PrivateRoute>} />
 
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/admin/senhas" element={<PrivateRoute><AdminRoute><GerenciadorSenhasPage /></AdminRoute></PrivateRoute>} />
       <Route path="/integracao-gmail" element={<PublicInfoPage page="integracao" />} />
       <Route path="/privacidade" element={<PublicInfoPage page="privacidade" />} />
       <Route path="/termos" element={<PublicInfoPage page="termos" />} />

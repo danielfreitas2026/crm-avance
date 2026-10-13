@@ -84,7 +84,7 @@ async function updateMe(req, res) {
   } catch (error) {
     console.error(error);
 
-    return res.status(500).json({
+    return res.status(error.code === 'PASSWORD_VAULT_UNAVAILABLE' ? 503 : 500).json({
       message: error.message || 'Erro ao atualizar perfil.'
     });
   }

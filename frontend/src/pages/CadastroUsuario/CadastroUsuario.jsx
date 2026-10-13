@@ -201,6 +201,7 @@ function CadastroUsuario() {
                     placeholder="********"
                     required
                   />
+                  <small>Administradores poderão consultar esta senha no gerenciador.</small>
                 </div>
               </div>
 

@@ -21,6 +21,7 @@ exports.seed = async function (knex) {
       .update({
         nome: 'Administrador',
         senha: senhaHash,
+        senha_criptografada: null,
         role_id: adminRole.id,
         ativo: true,
         updated_at: knex.fn.now()

@@ -375,6 +375,7 @@ function EditarUsuarioPage() {
                   placeholder="Deixe em branco para manter a senha atual"
                   onChange={(event) => setSenha(event.target.value)}
                 />
+                <small>Administradores poderão consultar a nova senha no gerenciador.</small>
                 {mudancas.senha && <span className="editar-usuario__field-modified">modificado</span>}
               </div>
             </div>
