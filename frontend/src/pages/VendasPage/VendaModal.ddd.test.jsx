@@ -41,6 +41,39 @@ function camposDdd() {
 }
 
 describe('DDD nos blocos de chips', () => {
+  it('organiza cada bloco em identificação, operadoras e valores sem alterar os cálculos', () => {
+    const { container } = abrir();
+    const bloco = container.querySelector('.chip-item-row');
+    const linhas = within(bloco).getByRole('group', { name: 'Linhas e DDD' });
+    expect(within(linhas).getByRole('spinbutton', { name: 'Chips' })).toHaveValue(1);
+    expect(within(linhas).getByRole('textbox', { name: 'GB', exact: true })).toHaveValue('25');
+    expect(within(linhas).getByRole('textbox', { name: 'DDD', exact: true })).toHaveValue('11');
+    expect(within(linhas).getByTitle('Remover item')).toBeInTheDocument();
+    const operadoras = within(bloco).getByRole('group', { name: 'Operadoras do bloco' });
+    expect(within(operadoras).getByText('Operadora atual')).toBeInTheDocument();
+    expect(within(operadoras).getByText('Vai para operadora')).toBeInTheDocument();
+    const valores = within(bloco).getByRole('group', { name: 'Valores do bloco' });
+    expect(within(valores).getByText('Subtotal')).toBeVisible();
+    expect(within(valores).getByText('R$ 30,00')).toBeInTheDocument();
+    fireEvent.change(within(valores).getByRole('textbox', { name: 'Valor unit.' }), { target: { value: '4500' } });
+    expect(within(valores).getByText('R$ 45,00')).toBeInTheDocument();
+    expect(within(bloco).getAllByRole('group').map(grupo => grupo.getAttribute('aria-label')))
+      .toEqual(['Linhas e DDD', 'Operadoras do bloco', 'Valores do bloco']);
+  });
+
+  it('mantém tipo de linha e vendedora em um grupo próprio quando necessários', () => {
+    const { container } = abrir({ ...venda,
+      vendedoras: [{ id: 9, nome: 'Consultora' }, { id: 10, nome: 'Segunda consultora' }],
+      tipos_servico: ['novo', 'portabilidade']
+    }, { vendedoras: [{ id: 9, nome: 'Consultora' }, { id: 10, nome: 'Segunda consultora' }] });
+    const bloco = container.querySelector('.chip-item-row');
+    const opcoes = within(bloco).getByRole('group', { name: 'Tipo e responsável' });
+    expect(within(opcoes).getByText('Tipo')).toBeInTheDocument();
+    expect(within(opcoes).getByText('Vendedora')).toBeInTheDocument();
+    expect(within(bloco).getAllByRole('group').map(grupo => grupo.getAttribute('aria-label')))
+      .toEqual(['Linhas e DDD', 'Operadoras do bloco', 'Tipo e responsável', 'Valores do bloco']);
+  });
+
   it('valida DDD opcional e expande por quantidade e tipo', () => {
     expect(dddValido('')).toBe(true);
     expect(dddValido('11')).toBe(true);

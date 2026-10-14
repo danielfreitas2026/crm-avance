@@ -1710,20 +1710,7 @@ function ItensChipsInput({
   }
 
   return (
-    <div className={`chip-items chip-items--com-operadora${mostrarVendedora ? ' chip-items--com-vendedora' : ''}${!mostrarTipoLinha ? ' chip-items--sem-tipo' : ''}`}>
-      <div className="chip-items__head">
-        <span>Qtd.</span>
-        <span>GB</span>
-        <span>DDD</span>
-        {mostrarTipoLinha && <span>Tipo</span>}
-        <span>Operadora atual</span>
-        <span>Vai para</span>
-        <span>Valor unit.</span>
-        <span>Subtotal</span>
-        {mostrarVendedora && <span>Vendedora</span>}
-        <span></span>
-      </div>
-
+    <div className="chip-items">
       {itens.map((item, index) => {
         const subtotal = Number(item.quantidade || 0) * parseValorInput(item.valor_unitario);
         const outros = itens.reduce((acc, chip, itemIndex) => (
@@ -1733,100 +1720,113 @@ function ItensChipsInput({
 
         return (
           <div key={index} className="chip-item-row">
-            <label className="chip-item-field chip-item-field--quantidade">
-              <span className="chip-item-field__label">Chips</span>
-              <input
-                type="number"
-                min="1"
-                max={maximoQuantidadeLinha}
-                value={item.quantidade}
-                onChange={e => atualizarItem(index, 'quantidade', e.target.value)}
-                placeholder="3"
-              />
-            </label>
-            <label className="chip-item-field chip-item-field--gb">
-              <span className="chip-item-field__label">GB</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={getMaxLengthCampo('gb')}
-                value={item.gb}
-                onChange={e => atualizarItem(index, 'gb', formatarCampoVenda('gb', e.target.value))}
-                placeholder="20"
-              />
-            </label>
-            <label className="chip-item-field chip-item-field--ddd">
-              <span className="chip-item-field__label">DDD</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={2}
-                value={item.ddd || ''}
-                onChange={e => atualizarItem(index, 'ddd', formatarCampoVenda('ddd', e.target.value))}
-                placeholder="11"
-                aria-invalid={!dddValido(item.ddd)}
-              />
-            </label>
-            {mostrarTipoLinha && (
-              <label className="chip-item-field chip-item-field--tipo">
-                <span className="chip-item-field__label">Tipo</span>
-                <SelectFiltro
-                  value={item.tipo_linha || 'novo'}
-                  onChange={val => atualizarItem(index, 'tipo_linha', val)}
-                  options={TIPOS_LINHA_CHIP}
-                  placeholder="Novo"
+            <div className="chip-item-details" role="group" aria-label="Linhas e DDD">
+              <label className="chip-item-field chip-item-field--quantidade">
+                <span className="chip-item-field__label">Chips</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={maximoQuantidadeLinha}
+                  value={item.quantidade}
+                  onChange={e => atualizarItem(index, 'quantidade', e.target.value)}
+                  placeholder="3"
                 />
               </label>
-            )}
-            <label className="chip-item-field chip-item-field--operadora">
-              <span className="chip-item-field__label">Operadora atual</span>
-              <SelectFiltro
-                value={item.operadora_atual_id || ''}
-                onChange={val => atualizarItem(index, 'operadora_atual_id', val)}
-                options={operadoras.map(operadora => ({ value: String(operadora.id), label: operadora.nome }))}
-                placeholder="Selecione"
-              />
-            </label>
-            <label className="chip-item-field chip-item-field--operadora-destino">
-              <span className="chip-item-field__label">Vai para operadora</span>
-              <SelectFiltro
-                value={item.operadora_id || ''}
-                onChange={val => atualizarItem(index, 'operadora_id', val)}
-                options={operadoras.map(operadora => ({ value: String(operadora.id), label: operadora.nome }))}
-                placeholder="Selecione"
-              />
-            </label>
-            <label className="chip-item-field chip-item-field--valor">
-              <span className="chip-item-field__label">Valor unit.</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={item.valor_unitario}
-                onChange={e => atualizarItem(index, 'valor_unitario', formatarInputMoedaBR(e.target.value))}
-                placeholder="29,99"
-              />
-            </label>
-            <div className="chip-item-subtotal">{formatarMoeda(subtotal)}</div>
-            {mostrarVendedora && (
-              <label className="chip-item-field chip-item-field--vendedora">
-                <span className="chip-item-field__label">Vendedora</span>
-                <SelectFiltro
-                  value={item.vendedora_id || ''}
-                  onChange={val => atualizarItem(index, 'vendedora_id', val)}
-                  options={vendedoras.map(v => ({ value: String(v.id), label: v.nome }))}
-                  placeholder="—"
+              <label className="chip-item-field chip-item-field--gb">
+                <span className="chip-item-field__label">GB</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={getMaxLengthCampo('gb')}
+                  value={item.gb}
+                  onChange={e => atualizarItem(index, 'gb', formatarCampoVenda('gb', e.target.value))}
+                  placeholder="20"
                 />
               </label>
+              <label className="chip-item-field chip-item-field--ddd">
+                <span className="chip-item-field__label">DDD</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={2}
+                  value={item.ddd || ''}
+                  onChange={e => atualizarItem(index, 'ddd', formatarCampoVenda('ddd', e.target.value))}
+                  placeholder="11"
+                  aria-invalid={!dddValido(item.ddd)}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-icon btn-ghost btn-danger-icon"
+                onClick={() => removerItem(index)}
+                title="Remover item"
+                disabled={limite > 0 && itens.length === 1 && quantidadeTotal <= limite}
+              >
+                <I.Trash size={13} />
+              </button>
+            </div>
+            <div className="chip-item-operators" role="group" aria-label="Operadoras do bloco">
+              <label className="chip-item-field chip-item-field--operadora">
+                <span className="chip-item-field__label">Operadora atual</span>
+                <SelectFiltro
+                  value={item.operadora_atual_id || ''}
+                  onChange={val => atualizarItem(index, 'operadora_atual_id', val)}
+                  options={operadoras.map(operadora => ({ value: String(operadora.id), label: operadora.nome }))}
+                  placeholder="Selecione"
+                />
+              </label>
+              <label className="chip-item-field chip-item-field--operadora-destino">
+                <span className="chip-item-field__label">Vai para operadora</span>
+                <SelectFiltro
+                  value={item.operadora_id || ''}
+                  onChange={val => atualizarItem(index, 'operadora_id', val)}
+                  options={operadoras.map(operadora => ({ value: String(operadora.id), label: operadora.nome }))}
+                  placeholder="Selecione"
+                />
+              </label>
+            </div>
+            {(mostrarTipoLinha || mostrarVendedora) && (
+              <div className="chip-item-options" role="group" aria-label="Tipo e responsável">
+                {mostrarTipoLinha && (
+                  <label className="chip-item-field chip-item-field--tipo">
+                    <span className="chip-item-field__label">Tipo</span>
+                    <SelectFiltro
+                      value={item.tipo_linha || 'novo'}
+                      onChange={val => atualizarItem(index, 'tipo_linha', val)}
+                      options={TIPOS_LINHA_CHIP}
+                      placeholder="Novo"
+                    />
+                  </label>
+                )}
+                {mostrarVendedora && (
+                  <label className="chip-item-field chip-item-field--vendedora">
+                    <span className="chip-item-field__label">Vendedora</span>
+                    <SelectFiltro
+                      value={item.vendedora_id || ''}
+                      onChange={val => atualizarItem(index, 'vendedora_id', val)}
+                      options={vendedoras.map(v => ({ value: String(v.id), label: v.nome }))}
+                      placeholder="—"
+                    />
+                  </label>
+                )}
+              </div>
             )}
-            <button
-              type="button"
-              className="btn btn-icon btn-ghost btn-danger-icon"
-              onClick={() => removerItem(index)}
-              title="Remover item"
-              disabled={limite > 0 && itens.length === 1 && quantidadeTotal <= limite}
-            >
-              <I.Trash size={13} />
-            </button>
+            <div className="chip-item-pricing" role="group" aria-label="Valores do bloco">
+              <label className="chip-item-field chip-item-field--valor">
+                <span className="chip-item-field__label">Valor unit.</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={item.valor_unitario}
+                  onChange={e => atualizarItem(index, 'valor_unitario', formatarInputMoedaBR(e.target.value))}
+                  placeholder="29,99"
+                />
+              </label>
+              <div className="chip-item-subtotal">
+                <span className="chip-item-field__label">Subtotal</span>
+                <strong>{formatarMoeda(subtotal)}</strong>
+              </div>
+            </div>
           </div>
         );
       })}
