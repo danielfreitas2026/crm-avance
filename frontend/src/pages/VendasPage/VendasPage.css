@@ -2848,9 +2848,10 @@ input.is-invalid {
 }
 
 .chip-item-subtotal strong {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  display: block;
+  height: auto;
+  min-height: 36px;
+  overflow-wrap: anywhere;
   background: var(--surface-2);
   font-family: var(--font-mono);
   font-size: 12.5px;
@@ -2869,6 +2870,7 @@ input.is-invalid {
 
 .chip-items__footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -2876,12 +2878,22 @@ input.is-invalid {
 }
 
 .chip-items__footer strong {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono);
   font-size: 14px;
 }
 
+.chip-items__footer .btn {
+  flex-shrink: 0;
+}
+
 .chip-items__summary {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: 12px;
   color: var(--text-3);

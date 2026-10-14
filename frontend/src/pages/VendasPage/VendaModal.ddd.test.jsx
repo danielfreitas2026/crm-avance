@@ -41,6 +41,23 @@ function camposDdd() {
 }
 
 describe('DDD nos blocos de chips', () => {
+  it('limita a entrada monetária sem truncar valores colados ou alterar o valor anterior', () => {
+    abrir();
+    const input = screen.getAllByRole('textbox', { name: 'Valor unit.' })[0];
+    fireEvent.change(input, { target: { value: '999999999999' } });
+    expect(input).toHaveValue('9.999.999.999,99');
+    fireEvent.change(input, { target: { value: '9999999999999' } });
+    expect(input).toHaveValue('9.999.999.999,99');
+    fireEvent.change(input, { target: { value: '434343434343425000000000000' } });
+    expect(input).toHaveValue('9.999.999.999,99');
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input).toHaveValue('');
+    fireEvent.change(input, { target: { value: 'R$ 1.234,56' } });
+    expect(input).toHaveValue('1.234,56');
+    fireEvent.change(input, { target: { value: '000000000000001' } });
+    expect(input).toHaveValue('0,01');
+  });
+
   it('organiza cada bloco em identificação, operadoras e valores sem alterar os cálculos', () => {
     const { container } = abrir();
     const bloco = container.querySelector('.chip-item-row');

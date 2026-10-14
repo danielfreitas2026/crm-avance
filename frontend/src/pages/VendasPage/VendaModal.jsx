@@ -749,10 +749,14 @@ function parseValorInput(valor) {
 /**
  * Formata input moeda br para exibicao ou envio.
  */
-function formatarInputMoedaBR(valor) {
-  const digitos = String(valor || '').replace(/\D/g, '');
+function formatarInputMoedaBR(valor, valorAnterior) {
+  const digitos = String(valor || '').replace(/\D/g, '').replace(/^0+/, '');
 
-  if (!digitos) return '';
+  if (!String(valor || '').replace(/\D/g, '')) return '';
+
+  // valor_total usa DECIMAL(12, 2): dez dígitos inteiros e dois centavos.
+  // Rejeitar a edição inteira evita transformar um valor colado em outro valor.
+  if (digitos.length > 12) return valorAnterior;
 
   const numero = Number(digitos) / 100;
 
@@ -1818,7 +1822,7 @@ function ItensChipsInput({
                   type="text"
                   inputMode="decimal"
                   value={item.valor_unitario}
-                  onChange={e => atualizarItem(index, 'valor_unitario', formatarInputMoedaBR(e.target.value))}
+                  onChange={e => atualizarItem(index, 'valor_unitario', formatarInputMoedaBR(e.target.value, item.valor_unitario))}
                   placeholder="29,99"
                 />
               </label>
