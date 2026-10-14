@@ -58,24 +58,29 @@ describe('DDD nos blocos de chips', () => {
     expect(input).toHaveValue('0,01');
   });
 
-  it('organiza cada bloco em identificação, operadoras e valores sem alterar os cálculos', () => {
+  it('agrupa DDD, Chips, GB e preço no cabeçalho e exibe subtotal no rodapé', () => {
     const { container } = abrir();
     const bloco = container.querySelector('.chip-item-row');
-    const linhas = within(bloco).getByRole('group', { name: 'Linhas e DDD' });
+    const linhas = within(bloco).getByRole('group', { name: 'Dados do bloco' });
     expect(within(linhas).getByRole('spinbutton', { name: 'Chips' })).toHaveValue(1);
     expect(within(linhas).getByRole('textbox', { name: 'GB', exact: true })).toHaveValue('25');
     expect(within(linhas).getByRole('textbox', { name: 'DDD', exact: true })).toHaveValue('11');
     expect(within(linhas).getByTitle('Remover item')).toBeInTheDocument();
+    const inputs = [...linhas.querySelectorAll('input')];
+    expect(inputs.map(input => input.closest('label').textContent))
+      .toEqual(['DDD', 'Chips', 'GB', 'Valor unit.']);
+    expect(within(linhas).getByRole('textbox', { name: 'Valor unit.' })).toHaveValue('30');
     const operadoras = within(bloco).getByRole('group', { name: 'Operadoras do bloco' });
     expect(within(operadoras).getByText('Operadora atual')).toBeInTheDocument();
     expect(within(operadoras).getByText('Vai para operadora')).toBeInTheDocument();
-    const valores = within(bloco).getByRole('group', { name: 'Valores do bloco' });
+    const valores = within(bloco).getByRole('group', { name: 'Subtotal do bloco' });
     expect(within(valores).getByText('Subtotal')).toBeVisible();
+    expect(within(valores).queryByRole('textbox')).not.toBeInTheDocument();
     expect(within(valores).getByText('R$ 30,00')).toBeInTheDocument();
-    fireEvent.change(within(valores).getByRole('textbox', { name: 'Valor unit.' }), { target: { value: '4500' } });
+    fireEvent.change(within(linhas).getByRole('textbox', { name: 'Valor unit.' }), { target: { value: '4500' } });
     expect(within(valores).getByText('R$ 45,00')).toBeInTheDocument();
     expect(within(bloco).getAllByRole('group').map(grupo => grupo.getAttribute('aria-label')))
-      .toEqual(['Linhas e DDD', 'Operadoras do bloco', 'Valores do bloco']);
+      .toEqual(['Dados do bloco', 'Operadoras do bloco', 'Subtotal do bloco']);
   });
 
   it('mantém tipo de linha e vendedora em um grupo próprio quando necessários', () => {
@@ -88,7 +93,7 @@ describe('DDD nos blocos de chips', () => {
     expect(within(opcoes).getByText('Tipo')).toBeInTheDocument();
     expect(within(opcoes).getByText('Vendedora')).toBeInTheDocument();
     expect(within(bloco).getAllByRole('group').map(grupo => grupo.getAttribute('aria-label')))
-      .toEqual(['Linhas e DDD', 'Operadoras do bloco', 'Tipo e responsável', 'Valores do bloco']);
+      .toEqual(['Dados do bloco', 'Operadoras do bloco', 'Tipo e responsável', 'Subtotal do bloco']);
   });
 
   it('valida DDD opcional e expande por quantidade e tipo', () => {

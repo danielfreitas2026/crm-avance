@@ -2782,13 +2782,18 @@ input.is-invalid {
 
 .chip-item-details {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) 32px;
-  gap: 10px;
+  grid-template-columns: 56px 56px 64px minmax(0, 1fr) 32px;
+  grid-template-areas: "ddd quantidade gb valor remover";
+  gap: 8px;
   align-items: end;
 }
 
-.chip-item-operators,
-.chip-item-pricing {
+.chip-item-field--ddd { grid-area: ddd; }
+.chip-item-field--quantidade { grid-area: quantidade; }
+.chip-item-field--gb { grid-area: gb; }
+.chip-item-field--valor { grid-area: valor; }
+
+.chip-item-operators {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
@@ -2805,8 +2810,7 @@ input.is-invalid {
   flex: 1;
 }
 
-.chip-item-field,
-.chip-item-subtotal {
+.chip-item-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -2824,8 +2828,7 @@ input.is-invalid {
 }
 
 .chip-item-row input,
-.chip-item-row select,
-.chip-item-subtotal strong {
+.chip-item-row select {
   height: 36px;
   width: 100%;
   min-width: 0;
@@ -2847,17 +2850,32 @@ input.is-invalid {
   font-variant-numeric: tabular-nums;
 }
 
+.chip-item-subtotal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.chip-item-subtotal > .chip-item-field__label {
+  flex-shrink: 0;
+}
+
 .chip-item-subtotal strong {
   display: block;
+  flex: 1;
+  min-width: 0;
   height: auto;
-  min-height: 36px;
   overflow-wrap: anywhere;
-  background: var(--surface-2);
   font-family: var(--font-mono);
   font-size: 12.5px;
 }
 
 .chip-item-details > .btn-icon {
+  grid-area: remover;
   width: 32px;
   height: 36px;
 }
@@ -2898,6 +2916,15 @@ input.is-invalid {
   gap: 12px;
   color: var(--text-3);
   font-size: 12px;
+}
+
+@container chipItems (max-width: 400px) {
+  .chip-item-details {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 32px;
+    grid-template-areas:
+      "ddd quantidade gb remover"
+      "valor valor valor valor";
+  }
 }
 
 @container chipItems (max-width: 320px) {

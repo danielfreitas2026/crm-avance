@@ -1724,7 +1724,19 @@ function ItensChipsInput({
 
         return (
           <div key={index} className="chip-item-row">
-            <div className="chip-item-details" role="group" aria-label="Linhas e DDD">
+            <div className="chip-item-details" role="group" aria-label="Dados do bloco">
+              <label className="chip-item-field chip-item-field--ddd">
+                <span className="chip-item-field__label">DDD</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={2}
+                  value={item.ddd || ''}
+                  onChange={e => atualizarItem(index, 'ddd', formatarCampoVenda('ddd', e.target.value))}
+                  placeholder="11"
+                  aria-invalid={!dddValido(item.ddd)}
+                />
+              </label>
               <label className="chip-item-field chip-item-field--quantidade">
                 <span className="chip-item-field__label">Chips</span>
                 <input
@@ -1747,16 +1759,14 @@ function ItensChipsInput({
                   placeholder="20"
                 />
               </label>
-              <label className="chip-item-field chip-item-field--ddd">
-                <span className="chip-item-field__label">DDD</span>
+              <label className="chip-item-field chip-item-field--valor">
+                <span className="chip-item-field__label">Valor unit.</span>
                 <input
                   type="text"
-                  inputMode="numeric"
-                  maxLength={2}
-                  value={item.ddd || ''}
-                  onChange={e => atualizarItem(index, 'ddd', formatarCampoVenda('ddd', e.target.value))}
-                  placeholder="11"
-                  aria-invalid={!dddValido(item.ddd)}
+                  inputMode="decimal"
+                  value={item.valor_unitario}
+                  onChange={e => atualizarItem(index, 'valor_unitario', formatarInputMoedaBR(e.target.value, item.valor_unitario))}
+                  placeholder="29,99"
                 />
               </label>
               <button
@@ -1815,21 +1825,9 @@ function ItensChipsInput({
                 )}
               </div>
             )}
-            <div className="chip-item-pricing" role="group" aria-label="Valores do bloco">
-              <label className="chip-item-field chip-item-field--valor">
-                <span className="chip-item-field__label">Valor unit.</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={item.valor_unitario}
-                  onChange={e => atualizarItem(index, 'valor_unitario', formatarInputMoedaBR(e.target.value, item.valor_unitario))}
-                  placeholder="29,99"
-                />
-              </label>
-              <div className="chip-item-subtotal">
-                <span className="chip-item-field__label">Subtotal</span>
-                <strong>{formatarMoeda(subtotal)}</strong>
-              </div>
+            <div className="chip-item-subtotal" role="group" aria-label="Subtotal do bloco">
+              <span className="chip-item-field__label">Subtotal</span>
+              <strong>{formatarMoeda(subtotal)}</strong>
             </div>
           </div>
         );
