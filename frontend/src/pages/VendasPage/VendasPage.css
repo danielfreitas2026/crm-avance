@@ -2773,14 +2773,14 @@ input.is-invalid {
 .chip-items__head,
 .chip-item-row {
   display: grid;
-  grid-template-columns: minmax(44px, 0.36fr) minmax(52px, 0.42fr) minmax(68px, 0.56fr) minmax(100px, 0.86fr) minmax(100px, 0.86fr) minmax(82px, 0.68fr) minmax(92px, 0.78fr) 32px;
+  grid-template-columns: minmax(44px, 0.36fr) minmax(52px, 0.42fr) minmax(48px, 0.38fr) minmax(68px, 0.56fr) minmax(100px, 0.86fr) minmax(100px, 0.86fr) minmax(82px, 0.68fr) minmax(92px, 0.78fr) 32px;
   gap: 8px;
   align-items: center;
 }
 
 .chip-items--com-vendedora .chip-items__head,
 .chip-items--com-vendedora .chip-item-row {
-  grid-template-columns: minmax(38px, 0.3fr) minmax(44px, 0.34fr) minmax(62px, 0.5fr) minmax(90px, 0.75fr) minmax(90px, 0.75fr) minmax(68px, 0.56fr) minmax(78px, 0.64fr) minmax(82px, 0.68fr) 30px;
+  grid-template-columns: minmax(38px, 0.3fr) minmax(44px, 0.34fr) minmax(48px, 0.38fr) minmax(62px, 0.5fr) minmax(90px, 0.75fr) minmax(90px, 0.75fr) minmax(68px, 0.56fr) minmax(78px, 0.64fr) minmax(82px, 0.68fr) 30px;
   column-gap: 6px;
 }
 
@@ -2800,12 +2800,12 @@ input.is-invalid {
 
 .chip-items--sem-tipo .chip-items__head,
 .chip-items--sem-tipo .chip-item-row {
-  grid-template-columns: minmax(48px, 0.38fr) minmax(58px, 0.46fr) minmax(108px, 0.88fr) minmax(108px, 0.88fr) minmax(84px, 0.68fr) minmax(94px, 0.78fr) 32px;
+  grid-template-columns: minmax(48px, 0.38fr) minmax(58px, 0.46fr) minmax(48px, 0.38fr) minmax(108px, 0.88fr) minmax(108px, 0.88fr) minmax(84px, 0.68fr) minmax(94px, 0.78fr) 32px;
 }
 
 .chip-items--sem-tipo.chip-items--com-vendedora .chip-items__head,
 .chip-items--sem-tipo.chip-items--com-vendedora .chip-item-row {
-  grid-template-columns: minmax(42px, 0.34fr) minmax(50px, 0.4fr) minmax(96px, 0.78fr) minmax(96px, 0.78fr) minmax(74px, 0.6fr) minmax(82px, 0.66fr) minmax(82px, 0.66fr) 32px;
+  grid-template-columns: minmax(42px, 0.34fr) minmax(50px, 0.4fr) minmax(48px, 0.38fr) minmax(96px, 0.78fr) minmax(96px, 0.78fr) minmax(74px, 0.6fr) minmax(82px, 0.66fr) minmax(82px, 0.66fr) 32px;
 }
 
 .chip-items__head {
@@ -2945,11 +2945,11 @@ input.is-invalid {
   .chip-item-field--quantidade { grid-column: 1; grid-row: 1; }
   .chip-item-field--gb { grid-column: 2; grid-row: 1; }
   .chip-item-field--valor { grid-column: 3; grid-row: 1; }
-  .chip-item-field--operadora { grid-column: 1 / 3; grid-row: 2; }
-  .chip-item-field--operadora-destino { grid-column: 3 / 5; grid-row: 2; }
-  .chip-item-field--tipo { grid-column: 1 / -1; grid-row: 3; }
-  .chip-item-field--vendedora { grid-column: 1 / -1; grid-row: 4; }
-  .chip-items--sem-tipo .chip-item-field--vendedora { grid-row: 3; }
+  .chip-item-field--operadora { grid-column: 1 / 3; grid-row: 3; }
+  .chip-item-field--operadora-destino { grid-column: 3 / 5; grid-row: 3; }
+  .chip-item-field--tipo { grid-column: 1 / -1; grid-row: 4; }
+  .chip-item-field--vendedora { grid-column: 1 / -1; grid-row: 5; }
+  .chip-items--sem-tipo .chip-item-field--vendedora { grid-row: 4; }
 
   .chip-item-row > .btn,
   .chip-item-row > .btn-icon {
@@ -2962,7 +2962,7 @@ input.is-invalid {
 
   .chip-item-subtotal {
     grid-column: 1 / -1;
-    grid-row: 4;
+    grid-row: 5;
     min-width: 0;
     justify-content: space-between;
   }
@@ -2977,9 +2977,10 @@ input.is-invalid {
     text-transform: uppercase;
   }
 
-  .chip-items--com-vendedora .chip-item-subtotal { grid-row: 5; }
-  .chip-items--sem-tipo .chip-item-subtotal { grid-row: 3; }
-  .chip-items--sem-tipo.chip-items--com-vendedora .chip-item-subtotal { grid-row: 4; }
+  .chip-items--com-vendedora .chip-item-subtotal { grid-row: 6; }
+  .chip-items--sem-tipo .chip-item-subtotal { grid-row: 4; }
+  .chip-items--sem-tipo.chip-items--com-vendedora .chip-item-subtotal { grid-row: 5; }
+  .chip-item-field--ddd { grid-column: 1 / -1; grid-row: 2; }
 }
 
 .ported-numbers {
@@ -4441,13 +4442,13 @@ input.is-invalid {
   .venda-modal .chip-item-field--quantidade { grid-column: 1; grid-row: 1; }
   .venda-modal .chip-item-field--gb { grid-column: 2; grid-row: 1; }
   .venda-modal .chip-item-field--valor { grid-column: 3; grid-row: 1; }
-  .venda-modal .chip-item-field--tipo { grid-column: 1 / -1; grid-row: 2; }
-  .venda-modal .chip-item-field--operadora { grid-column: 1 / -1; grid-row: 3; }
-  .venda-modal .chip-item-field--operadora-destino { grid-column: 1 / -1; grid-row: 4; }
-  .venda-modal .chip-item-field--vendedora { grid-column: 1 / -1; grid-row: 5; }
-  .venda-modal .chip-items--sem-tipo .chip-item-field--operadora { grid-row: 2; }
-  .venda-modal .chip-items--sem-tipo .chip-item-field--operadora-destino { grid-row: 3; }
-  .venda-modal .chip-items--sem-tipo .chip-item-field--vendedora { grid-row: 4; }
+  .venda-modal .chip-item-field--tipo { grid-column: 1 / -1; grid-row: 3; }
+  .venda-modal .chip-item-field--operadora { grid-column: 1 / -1; grid-row: 4; }
+  .venda-modal .chip-item-field--operadora-destino { grid-column: 1 / -1; grid-row: 5; }
+  .venda-modal .chip-item-field--vendedora { grid-column: 1 / -1; grid-row: 6; }
+  .venda-modal .chip-items--sem-tipo .chip-item-field--operadora { grid-row: 3; }
+  .venda-modal .chip-items--sem-tipo .chip-item-field--operadora-destino { grid-row: 4; }
+  .venda-modal .chip-items--sem-tipo .chip-item-field--vendedora { grid-row: 5; }
   .venda-modal .chip-item-row > .btn,
   .venda-modal .chip-item-row > .btn-icon {
     grid-column: 4;
@@ -4458,7 +4459,7 @@ input.is-invalid {
   }
   .venda-modal .chip-item-subtotal {
     grid-column: 1 / -1;
-    grid-row: 5;
+    grid-row: 6;
     height: auto;
     min-height: 34px;
     padding: 7px 10px;
@@ -4470,17 +4471,18 @@ input.is-invalid {
   }
 
   .venda-modal .chip-items--com-vendedora .chip-item-subtotal {
-    grid-row: 6;
+    grid-row: 7;
   }
 
   .venda-modal .chip-items--sem-tipo .chip-item-subtotal {
-    grid-row: 4;
-  }
-
-  .venda-modal .chip-items--sem-tipo.chip-items--com-vendedora .chip-item-subtotal {
     grid-row: 5;
   }
 
+  .venda-modal .chip-items--sem-tipo.chip-items--com-vendedora .chip-item-subtotal {
+    grid-row: 6;
+  }
+
+  .venda-modal .chip-item-field--ddd { grid-column: 1 / -1; grid-row: 2; }
   .venda-modal .chip-item-subtotal::before {
     content: "Subtotal";
     color: var(--text-3);

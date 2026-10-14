@@ -1,6 +1,7 @@
 /**
  * Servico principal de vendas, funil, relatorios, importacoes e pos-venda.
  */
+const { normalizarDdd } = require('../utils/ddd');
 const Venda = require('../models/Venda');
 const VendaFunilAutomacao = require('../models/VendaFunilAutomacao');
 const VendaHistorico = require('../models/VendaHistorico');
@@ -975,6 +976,7 @@ function normalizarItensChips(valor) {
   if (Array.isArray(valor)) {
     return valor
       .map(item => ({
+        ...(item.ddd !== undefined ? { ddd: normalizarDdd(item.ddd) } : {}),
         quantidade: Number(item.quantidade || 0),
         gb: normalizarGigas(item.gb),
         tipo_linha: normalizarTipoLinhaChip(item.tipo_linha || item.tipo || item.categoria),
@@ -989,9 +991,9 @@ function normalizarItensChips(valor) {
   }
 
   if (typeof valor === 'string') {
+    let parsed;
     try {
-      const parsed = JSON.parse(valor);
-      return normalizarItensChips(parsed);
+      parsed = JSON.parse(valor);
     } catch {
       return valor
         .split(/\r?\n/)
@@ -1011,6 +1013,7 @@ function normalizarItensChips(valor) {
         })
         .filter(Boolean);
     }
+    return normalizarItensChips(parsed);
   }
 
   return [];
@@ -1350,7 +1353,9 @@ function montarPayload(dados) {
       : null;
   }
 
-  const itensChips = normalizarItensChips(dados.valores_unitarios_chips);
+  const itensChips = normalizarItensChips(dados.valores_unitarios_chips).map(item => (
+    item.ddd === undefined && dados.ddd ? { ...item, ddd: normalizarDdd(dados.ddd) } : item
+  ));
 
   if (dados.valores_unitarios_chips !== undefined) {
     const quantidadeItens = somarQuantidadeItensChips(itensChips);
@@ -1360,6 +1365,7 @@ function montarPayload(dados) {
       throw new Error('A quantidade de chips nao pode ser maior que a quantidade de linhas fechadas.');
     }
 
+    payload.ddd = itensChips.find(item => item.ddd)?.ddd || null;
     payload.valores_unitarios_chips = itensChips.length > 0 ? JSON.stringify(itensChips) : null;
     payload.valor_total = calcularTotalChips(itensChips);
     payload.gb = resumirGigasItensChips(itensChips) || payload.gb || null;
@@ -3800,7 +3806,9 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
 
   const agora = formatarDateTimeSQL();
   const vendedorasIds = Array.isArray(dados.vendedoras) ? normalizarIdsVendedoras(dados.vendedoras) : null;
-  let payload = montarPayload(dados);
+  let payload = montarPayload(dados.valores_unitarios_chips !== undefined
+    ? { ...dados, ddd: dados.ddd !== undefined ? dados.ddd : vendaAtual.ddd }
+    : dados);
   const etapaFinal = await obterCodigoEtapaFinal();
   const vendaEstaNaEtapaFinal = vendaAtual.status_funil === etapaFinal;
   const alteracaoDataVenda = resolverDataVendaAtualizacao(dados, vendaAtual);

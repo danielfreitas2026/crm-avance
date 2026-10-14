@@ -17,6 +17,7 @@ import {
   normalizarIndicadorVendaAntiga,
   obterDataVendaPayload
 } from './venda-data';
+import { DDDS_VALIDOS, dddValido, dddsPorLinha } from './venda-ddd';
 import './VendasPage.css';
 
 const VENDA_VAZIA = {
@@ -127,6 +128,7 @@ const CAMPOS_ENDERECO_REAL_VENDA = [
 ];
 
 const ITEM_CHIP_VAZIO = {
+  ddd: '',
   quantidade: '',
   gb: '',
   valor_unitario: '',
@@ -218,18 +220,6 @@ const CAMPOS_RG_VENDA = [
 ];
 const LIMITE_CARACTERES_RG = 14;
 
-const DDDS_VALIDOS = new Set([
-  11, 12, 13, 14, 15, 16, 17, 18, 19,
-  21, 22, 24, 27, 28,
-  31, 32, 33, 34, 35, 37, 38,
-  41, 42, 43, 44, 45, 46, 47, 48, 49,
-  51, 53, 54, 55,
-  61, 62, 63, 64, 65, 66, 67, 68, 69,
-  71, 73, 74, 75, 77, 79,
-  81, 82, 83, 84, 85, 86, 87, 88, 89,
-  91, 92, 93, 94, 95, 96, 97, 98, 99
-]);
-
 /**
  * Valida numero telefone e retorna o resultado esperado.
  */
@@ -279,7 +269,6 @@ const CAMPOS = [
   { section: 'Produto e valores' },
   { name: 'servico_id', label: 'Produto', type: 'service', required: true },
   { name: 'quantidade_linhas', label: 'Quantidade de linhas fechadas', type: 'number' },
-  { name: 'ddd', label: 'Qual DDD' },
   { name: 'dia_vencimento', label: 'Dia de vencimento', type: 'number', min: 1, max: 31 },
   { name: 'tipos_servico', label: 'Serviço', type: 'serviceType', span: true },
   { name: 'cliente_da_base', label: 'Classificação do cliente', type: 'clientBase', span: true },
@@ -377,6 +366,11 @@ const CAMPOS_HISTORICO_CHIP = [
     }
   },
   {
+    chave: 'ddd',
+    label: 'DDD',
+    formatar: valor => valor || 'Não informado'
+  },
+  {
     chave: 'tipo_linha',
     label: 'Tipo de linha',
     formatar: valor => formatarTipoLinhaChipLabel(valor)
@@ -419,6 +413,7 @@ function obterNomeReferencia(lista = [], id, fallback = '') {
 function prepararChipHistorico(item = {}, referencias = {}) {
   return {
     quantidade: item.quantidade,
+    ddd: item.ddd,
     gb: item.gb,
     tipo_linha: item.tipo_linha || item.tipo || item.categoria,
     operadora_atual: obterNomeReferencia(referencias.operadoras, item.operadora_atual_id, item.operadora_atual_nome),
@@ -1159,11 +1154,12 @@ function contarVendasPorCliente(vendas = []) {
 /**
  * Converte itens chips para o formato interno esperado.
  */
-function parseItensChips(valor, gbPadrao = '', tipoLinhaPadrao = 'novo', operadoraAtualPadrao = '', operadoraDestinoPadrao = '') {
-  if (!valor) return [{ ...ITEM_CHIP_VAZIO }];
+function parseItensChips(valor, gbPadrao = '', tipoLinhaPadrao = 'novo', operadoraAtualPadrao = '', operadoraDestinoPadrao = '', dddPadrao = '') {
+  if (!valor) return [{ ...ITEM_CHIP_VAZIO, ddd: dddPadrao }];
 
   if (Array.isArray(valor)) {
     const itens = valor.map(item => ({
+      ddd: String(item.ddd ?? dddPadrao),
       quantidade: item.quantidade ? String(item.quantidade) : '',
       gb: formatarCampoVenda('gb', item.gb || gbPadrao || ''),
       valor_unitario: item.valor_unitario ? String(item.valor_unitario).replace('.', ',') : '',
@@ -1173,12 +1169,12 @@ function parseItensChips(valor, gbPadrao = '', tipoLinhaPadrao = 'novo', operado
       vendedora_id: item.vendedora_id ? String(item.vendedora_id) : ''
     }));
 
-    return itens.length > 0 ? itens : [{ ...ITEM_CHIP_VAZIO }];
+    return itens.length > 0 ? itens : [{ ...ITEM_CHIP_VAZIO, ddd: dddPadrao }];
   }
 
   if (typeof valor === 'string') {
     try {
-      return parseItensChips(JSON.parse(valor), gbPadrao, tipoLinhaPadrao, operadoraAtualPadrao, operadoraDestinoPadrao);
+      return parseItensChips(JSON.parse(valor), gbPadrao, tipoLinhaPadrao, operadoraAtualPadrao, operadoraDestinoPadrao, dddPadrao);
     } catch {
       const itens = valor
         .split(/\r?\n/)
@@ -1190,6 +1186,7 @@ function parseItensChips(valor, gbPadrao = '', tipoLinhaPadrao = 'novo', operado
           if (!match) return null;
 
           return {
+            ddd: dddPadrao,
             quantidade: match[1],
             gb: formatarCampoVenda('gb', gbPadrao || ''),
             valor_unitario: match[2],
@@ -1200,11 +1197,11 @@ function parseItensChips(valor, gbPadrao = '', tipoLinhaPadrao = 'novo', operado
         })
         .filter(Boolean);
 
-      return itens.length > 0 ? itens : [{ ...ITEM_CHIP_VAZIO }];
+      return itens.length > 0 ? itens : [{ ...ITEM_CHIP_VAZIO, ddd: dddPadrao }];
     }
   }
 
-  return [{ ...ITEM_CHIP_VAZIO }];
+  return [{ ...ITEM_CHIP_VAZIO, ddd: dddPadrao }];
 }
 
 /**
@@ -1446,7 +1443,8 @@ function normalizarVenda(venda) {
       venda.gb,
       tipoLinhaPadrao,
       venda.operadora_atual_id,
-      venda.operadora_id
+      venda.operadora_id,
+      venda.ddd || ''
     ),
     tipos_servico: Array.isArray(venda.tipos_servico) && venda.tipos_servico.length > 0
       ? venda.tipos_servico
@@ -1455,7 +1453,8 @@ function normalizarVenda(venda) {
         venda.gb,
         tipoLinhaPadrao,
         venda.operadora_atual_id,
-        venda.operadora_id
+        venda.operadora_id,
+        venda.ddd || ''
       )),
     cliente_da_base: venda.cliente_da_base === null || venda.cliente_da_base === undefined
       ? null
@@ -1715,6 +1714,7 @@ function ItensChipsInput({
       <div className="chip-items__head">
         <span>Qtd.</span>
         <span>GB</span>
+        <span>DDD</span>
         {mostrarTipoLinha && <span>Tipo</span>}
         <span>Operadora atual</span>
         <span>Vai para</span>
@@ -1753,6 +1753,18 @@ function ItensChipsInput({
                 value={item.gb}
                 onChange={e => atualizarItem(index, 'gb', formatarCampoVenda('gb', e.target.value))}
                 placeholder="20"
+              />
+            </label>
+            <label className="chip-item-field chip-item-field--ddd">
+              <span className="chip-item-field__label">DDD</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={2}
+                value={item.ddd || ''}
+                onChange={e => atualizarItem(index, 'ddd', formatarCampoVenda('ddd', e.target.value))}
+                placeholder="11"
+                aria-invalid={!dddValido(item.ddd)}
               />
             </label>
             {mostrarTipoLinha && (
@@ -1983,16 +1995,16 @@ function numeroLinhaTemApenasDddOuVazio(valor) {
 /**
  * Processa ajustar quantidade numeros portados conforme as regras do dominio.
  */
-function ajustarQuantidadeNumerosPortados(value, quantidade, dddPadrao = '') {
+function ajustarQuantidadeNumerosPortados(value, quantidade, ddds = []) {
   const total = Math.max(Number(quantidade || 0), 0);
-  const prefixoDdd = montarPrefixoDdd(dddPadrao);
-  if (total === 0) return [prefixoDdd || NUMERO_PORTADO_VAZIO];
+  if (total === 0) return [NUMERO_PORTADO_VAZIO];
 
   const atuais = Array.isArray(value) ? value : parseNumerosPortados(value);
   const preenchidos = atuais.length > 0 ? atuais : [NUMERO_PORTADO_VAZIO];
 
   return Array.from({ length: total }, (_, index) => {
     const atual = preenchidos[index] || NUMERO_PORTADO_VAZIO;
+    const prefixoDdd = montarPrefixoDdd(ddds[index]);
     return numeroLinhaTemApenasDddOuVazio(atual) ? (prefixoDdd || NUMERO_PORTADO_VAZIO) : atual;
   });
 }
@@ -2000,11 +2012,11 @@ function ajustarQuantidadeNumerosPortados(value, quantidade, dddPadrao = '') {
 /**
  * Renderiza numeros linha input.
  */
-function NumerosLinhaInput({ value, onChange, quantidadeEsperada = 0, dddPadrao = '', labelAdicionar = 'Adicionar número' }) {
+function NumerosLinhaInput({ value, onChange, quantidadeEsperada = 0, ddds = [], labelAdicionar = 'Adicionar número' }) {
   const numeros = Array.isArray(value) && value.length > 0 ? value : [NUMERO_PORTADO_VAZIO];
   const limite = Math.max(Number(quantidadeEsperada || 0), 0);
   const limiteAtingido = limite > 0 && numeros.length >= limite;
-  const numeroVazio = montarPrefixoDdd(dddPadrao) || NUMERO_PORTADO_VAZIO;
+  const numeroVazio = montarPrefixoDdd(ddds[numeros.length]) || NUMERO_PORTADO_VAZIO;
 
   /**
    * Atualiza numero com os dados informados.
@@ -3857,6 +3869,10 @@ function VendaModal({
       const baseComDraft = initialValues
         ? base
         : { ...base, ...(savedDraft || initialDraft || {}) };
+      baseComDraft.valores_unitarios_chips = parseItensChips(
+        baseComDraft.valores_unitarios_chips, baseComDraft.gb, 'novo',
+        baseComDraft.operadora_atual_id, baseComDraft.operadora_id, baseComDraft.ddd || ''
+      );
       baseComDraft.venda_antiga = normalizarIndicadorVendaAntiga(baseComDraft.venda_antiga);
       if (!baseComDraft.venda_antiga) baseComDraft.data_venda = '';
       if (!venda && usuarioLogado?.id && vendedoras?.some(v => String(v.id) === String(usuarioLogado.id))) {
@@ -4621,17 +4637,19 @@ function VendaModal({
     };
   }, [form.cep_real, somenteVisualizacao]);
 
-  const chaveNumerosDerivados = `${somenteVisualizacao ? 1 : 0}:${vendaPortabilidade ? 1 : 0}:${quantidadePortabilidade}:${vendaAtivada ? 1 : 0}:${quantidadeNumerosAtivados}:${form.ddd}`;
-  const [chaveNumerosAplicada, setChaveNumerosAplicada] = useState(chaveNumerosDerivados);
+  const dddsPortados = dddsPorLinha(form.valores_unitarios_chips, true);
+  const dddsAtivados = dddsPorLinha(form.valores_unitarios_chips);
+  const chaveNumerosDerivados = `${somenteVisualizacao ? 1 : 0}:${vendaPortabilidade ? 1 : 0}:${quantidadePortabilidade}:${vendaAtivada ? 1 : 0}:${quantidadeNumerosAtivados}:${dddsPortados.join(',')}:${dddsAtivados.join(',')}`;
+  const [chaveNumerosAplicada, setChaveNumerosAplicada] = useState('');
   if (!somenteVisualizacao && chaveNumerosAplicada !== chaveNumerosDerivados) {
     setChaveNumerosAplicada(chaveNumerosDerivados);
     setForm(prev => ({
       ...prev,
       numeros_portados: vendaPortabilidade
-        ? ajustarQuantidadeNumerosPortados(prev.numeros_portados, quantidadePortabilidade, prev.ddd)
+        ? ajustarQuantidadeNumerosPortados(prev.numeros_portados, quantidadePortabilidade, dddsPortados)
         : prev.numeros_portados,
       numeros_ativados: vendaAtivada
-        ? ajustarQuantidadeNumerosPortados(prev.numeros_ativados, quantidadeNumerosAtivados, prev.ddd)
+        ? ajustarQuantidadeNumerosPortados(prev.numeros_ativados, quantidadeNumerosAtivados, dddsAtivados)
         : []
     }));
   }
@@ -4679,6 +4697,12 @@ function VendaModal({
     }
 
     setErro('');
+    if ((form.valores_unitarios_chips || []).some(item => !dddValido(item.ddd))) {
+      setErro('Informe um DDD brasileiro válido em cada bloco preenchido.');
+      setAbaAtiva('venda');
+      return;
+    }
+
     setSalvando(true);
 
     try {
@@ -4895,6 +4919,7 @@ function VendaModal({
 
       const chipsProcessados = (form.valores_unitarios_chips || [])
         .map(item => ({
+          ddd: item.ddd || '',
           quantidade: Number(item.quantidade || 0),
           gb: String(item.gb || '').trim(),
           tipo_linha: normalizarTipoLinhaChip(item.tipo_linha),
@@ -4927,6 +4952,7 @@ function VendaModal({
       const payload = {
         ...form,
         cliente_id: clienteIdResolvido,
+        ddd: chipsProcessados.find(item => item.ddd)?.ddd || null,
         operadora_id: operadoraDestinoVenda,
         operadora_atual_id: operadoraAtualVenda,
         venda_antiga: Boolean(form.venda_antiga),
@@ -5493,14 +5519,14 @@ function VendaModal({
                       value={form[campo.name]}
                       onChange={valor => atualizarCampo(campo.name, valor)}
                       quantidadeEsperada={quantidadePortabilidade}
-                      dddPadrao={form.ddd}
+                      ddds={dddsPortados}
                     />
                   ) : campo.type === 'activatedNumbers' ? (
                     <NumerosAtivadosInput
                       value={form[campo.name]}
                       onChange={valor => atualizarCampo(campo.name, valor)}
                       quantidadeEsperada={quantidadeNumerosAtivados}
-                      dddPadrao={form.ddd}
+                      ddds={dddsAtivados}
                     />
                   ) : campo.name === 'protocolo' ? (
                     <>

@@ -159,3 +159,43 @@ test('rejeita operadora sem template de email', () => {
     return true;
   });
 });
+
+
+for (const operadora of ['Claro', 'Vivo']) {
+  test(`e-mail ${operadora} associa cada DDD ao plano, quantidade e preço do bloco`, () => {
+    const venda = {
+      operadora: { nome: operadora }, ddd: '31', quantidade_linhas: 3,
+      valores_unitarios_chips: JSON.stringify([
+        { quantidade: 2, gb: '25', valor_unitario: 30, ddd: '11' },
+        { quantidade: 1, gb: '50', valor_unitario: 40, ddd: '21' }
+      ])
+    };
+    const { texto } = renderEmailVenda(venda);
+    assert.match(texto, /25GB[^\n]*2X30,00[^\n]*DDD 11/);
+    assert.match(texto, /50GB[^\n]*1X40,00[^\n]*DDD 21/);
+    assert.doesNotMatch(texto, /DDD 31/);
+    const unico = renderEmailVenda({ ...venda, valores_unitarios_chips: [
+      { quantidade: 3, gb: '25', valor_unitario: 30, ddd: '11' }
+    ] }).texto;
+    assert.match(unico, /DDD 11/);
+    assert.doesNotMatch(unico, /DDD 31/);
+    const vazio = renderEmailVenda({ ...venda, valores_unitarios_chips: [
+      { quantidade: 3, gb: '25', valor_unitario: 30, ddd: '' }
+    ] }).texto;
+    assert.doesNotMatch(vazio, /DDD 31/);
+  });
+}
+
+
+test('não atribui o DDD de um bloco ao outro que foi deixado em branco', () => {
+  for (const operadora of ['Claro', 'Vivo']) {
+    const { texto } = renderEmailVenda({ operadora: { nome: operadora }, ddd: '11',
+      valores_unitarios_chips: [
+        { quantidade: 1, gb: '25', valor_unitario: 30, ddd: '11' },
+        { quantidade: 1, gb: '50', valor_unitario: 40, ddd: '' }
+      ]
+    });
+    assert.match(texto, /25GB[^\n]*DDD 11/);
+    assert.doesNotMatch(texto, /50GB[^\n]*DDD/);
+  }
+});
