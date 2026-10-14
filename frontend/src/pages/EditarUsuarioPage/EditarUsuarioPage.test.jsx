@@ -33,13 +33,31 @@ describe('Senha atual na edição de usuários', () => {
     abrir();
     fireEvent.click(await screen.findByRole('button', { name: 'Visualizar senha atual' }));
     expect(await screen.findByLabelText('Senha atual')).toHaveValue('atual');
-    fireEvent.change(screen.getByPlaceholderText('Deixe em branco para manter a senha atual'), { target: { value: 'nova' } });
+    fireEvent.change(screen.getByLabelText('Nova senha'), { target: { value: 'nova' } });
     fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
     await waitFor(() => expect(usuarios.atualizarUsuario).toHaveBeenCalledWith('2', {
       nome: 'Ana', email: 'ana@teste.com', ativo: true, role_id: 2, senha: 'nova'
     }));
     await waitFor(() => expect(screen.queryByLabelText('Senha atual')).not.toBeInTheDocument());
-    expect(screen.getByPlaceholderText('Deixe em branco para manter a senha atual')).toHaveValue('');
+    expect(screen.getByLabelText('Nova senha')).toHaveValue('');
+  });
+
+  it('permite conferir a nova senha sem consultar a atual e volta a ocultá-la ao salvar', async () => {
+    abrir();
+    const campo = await screen.findByLabelText('Nova senha');
+    expect(campo).toHaveAttribute('type', 'password');
+    expect(campo).toHaveAttribute('autocomplete', 'new-password');
+    fireEvent.change(campo, { target: { value: 'nova' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Visualizar nova senha' }));
+    expect(campo).toHaveAttribute('type', 'text');
+    expect(campo).toHaveValue('nova');
+    expect(usuarios.visualizarSenhaUsuario).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultar nova senha' }));
+    expect(campo).toHaveAttribute('type', 'password');
+    fireEvent.click(screen.getByRole('button', { name: 'Visualizar nova senha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+    await waitFor(() => expect(campo).toHaveValue(''));
+    expect(campo).toHaveAttribute('type', 'password');
   });
 
   it.each([

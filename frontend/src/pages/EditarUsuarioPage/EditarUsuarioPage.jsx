@@ -52,6 +52,7 @@ function EditarUsuarioPage() {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [mostrarNovaSenha, setMostrarNovaSenha] = useState(false);
   const [roleId, setRoleId] = useState(2);
   const [roleIdOriginal, setRoleIdOriginal] = useState(2);
   const [ativo, setAtivo] = useState(true);
@@ -110,6 +111,7 @@ function EditarUsuarioPage() {
           permissoes: [...permissoesSelecionadasParsed]
         };
 
+        setMostrarNovaSenha(false);
         setNome(nomeVal);
         setEmail(emailVal);
         setRoleId(roleAtual);
@@ -219,6 +221,7 @@ function EditarUsuarioPage() {
     setErro('');
     setSucesso('');
     setSalvando(true);
+    setMostrarNovaSenha(false);
 
     try {
       const dados = {
@@ -371,19 +374,44 @@ function EditarUsuarioPage() {
                 {mudancas.email && <span className="editar-usuario__field-modified">modificado</span>}
               </div>
 
-              <div className={`editar-usuario__field-wrapper editar-usuario__field-wrapper--full ${mudancas.senha ? 'modified' : ''}`}>
-                <CampoTexto
-                  label="Nova senha"
-                  type="password"
-                  value={senha}
-                  placeholder="Deixe em branco para manter a senha atual"
-                  onChange={(event) => setSenha(event.target.value)}
-                />
-                {mudancas.senha && <span className="editar-usuario__field-modified">modificado</span>}
+              <div className="editar-usuario__passwords editar-usuario__field-wrapper--full">
+                <div className="editar-usuario__passwords-heading">
+                  <h3>Senhas de acesso</h3>
+                  <p>Consulte a senha atual ou defina uma nova senha.</p>
+                </div>
+                <div className="editar-usuario__password-grid">
+                  {podeVisualizarSenha && (
+                    <SenhaAtual key={`${id}-${salvando}`} id={id} disabled={salvando} />
+                  )}
+                  <div className={`editar-usuario__password-card editar-usuario__field-wrapper ${mudancas.senha ? 'modified' : ''}`}>
+                    <div className="form-field">
+                      <label htmlFor="nova-senha">Nova senha</label>
+                      <div className="editar-usuario__password-control">
+                        <input
+                          id="nova-senha"
+                          type={mostrarNovaSenha ? 'text' : 'password'}
+                          value={senha}
+                          autoComplete="new-password"
+                          aria-describedby="nova-senha-ajuda"
+                          placeholder="Digite a nova senha"
+                          onChange={(event) => setSenha(event.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="editar-usuario__password-toggle"
+                          aria-label={mostrarNovaSenha ? 'Ocultar nova senha' : 'Visualizar nova senha'}
+                          title={mostrarNovaSenha ? 'Ocultar nova senha' : 'Visualizar nova senha'}
+                          onClick={() => setMostrarNovaSenha(atual => !atual)}
+                        >
+                          {mostrarNovaSenha ? <I.EyeOff size={18} /> : <I.Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+                    <p id="nova-senha-ajuda" className="editar-usuario__password-help">Deixe em branco para manter a senha atual.</p>
+                    {mudancas.senha && <span className="editar-usuario__field-modified">modificado</span>}
+                  </div>
+                </div>
               </div>
-              {podeVisualizarSenha && (
-                <SenhaAtual key={`${id}-${salvando}`} id={id} disabled={salvando} />
-              )}
             </div>
           </section>
 

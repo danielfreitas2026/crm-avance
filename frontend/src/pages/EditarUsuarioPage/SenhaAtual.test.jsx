@@ -12,8 +12,10 @@ describe('Visualização da senha atual', () => {
     visualizarSenhaUsuario.mockResolvedValueOnce({ senha: 'primeira' }).mockResolvedValueOnce({ senha: 'segunda' });
     render(<SenhaAtual id="2" />);
     expect(visualizarSenhaUsuario).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Senha atual')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Visualizar senha atual' }));
     expect(await screen.findByLabelText('Senha atual')).toHaveValue('primeira');
+    expect(screen.getByLabelText('Senha atual')).toHaveAttribute('readonly');
     expect(visualizarSenhaUsuario).toHaveBeenCalledWith('2');
     fireEvent.click(screen.getByRole('button', { name: 'Ocultar senha' }));
     expect(screen.queryByLabelText('Senha atual')).not.toBeInTheDocument();
