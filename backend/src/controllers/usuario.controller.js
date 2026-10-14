@@ -1,4 +1,31 @@
 const usuarioService = require('../services/usuario.service');
+const auditLogService = require('../services/audit-log.service');
+const { recuperarSenha } = require('../utils/senha-usuario');
+
+async function visualizarSenha(req, res) {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const usuario = await usuarioService.buscarUsuarioPorId(req.params.id);
+    if (!usuario) return res.status(404).json({ message: 'Usuário não encontrado.' });
+    if (!usuario.senha_criptografada) {
+      return res.status(409).json({
+        code: 'SENHA_NAO_DISPONIVEL',
+        message: 'A senha atual não está disponível para visualização. Ela ficará disponível após uma nova troca de senha.'
+      });
+    }
+    const senha = recuperarSenha(usuario.senha_criptografada);
+    await auditLogService.registrar(req, {
+      acao: 'usuario.senha_visualizada',
+      entidade: 'usuarios',
+      entidade_id: usuario.id,
+      dados: { usuario_consultado_id: usuario.id }
+    });
+    return res.json({ senha });
+  } catch {
+    // Não imprimir erros que possam carregar dados da consulta ou da auditoria.
+    return res.status(500).json({ message: 'Não foi possível visualizar a senha.' });
+  }
+}
 
 /**
  * Lista usuarios conforme filtros de consulta.
@@ -61,7 +88,7 @@ async function store(req, res) {
 
     return res.status(201).json(usuario);
   } catch (error) {
-    console.error(error);
+    console.error('Erro ao criar usuário.');
 
     return res.status(500).json({
       message: 'Erro ao criar usuário.'
@@ -90,7 +117,7 @@ async function update(req, res) {
 
     return res.json(usuario);
   } catch (error) {
-    console.error(error);
+    console.error('Erro ao atualizar usuário.');
 
     return res.status(500).json({
       message: 'Erro ao atualizar usuário.'
@@ -126,6 +153,7 @@ async function destroy(req, res) {
 }
 
 module.exports = {
+  visualizarSenha,
   index,
   show,
   store,

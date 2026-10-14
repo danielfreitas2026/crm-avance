@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Botao from '../../components/Botao/Botao';
 import CampoTexto from '../../components/CampoTexto/CampoTexto';
 import Card from '../../components/Card/Card';
+import SenhaAtual from './SenhaAtual';
 import * as I from '../../components/Icons';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 
@@ -67,6 +68,9 @@ function EditarUsuarioPage() {
   const [dadosOriginais, setDadosOriginais] = useState(null);
 
   const isAdminEditado = Number(roleId) === 1;
+  const usuarioLogado = getUsuarioLocal();
+  const podeVisualizarSenha = temPermissao(usuarioLogado, 'usuarios_editar') &&
+    (Number(roleIdOriginal) !== 1 || usuarioLogado?.role?.nome === 'admin');
   const iniciaisUsuario = nome
     .split(' ')
     .filter(Boolean)
@@ -377,6 +381,9 @@ function EditarUsuarioPage() {
                 />
                 {mudancas.senha && <span className="editar-usuario__field-modified">modificado</span>}
               </div>
+              {podeVisualizarSenha && (
+                <SenhaAtual key={`${id}-${salvando}`} id={id} disabled={salvando} />
+              )}
             </div>
           </section>
 

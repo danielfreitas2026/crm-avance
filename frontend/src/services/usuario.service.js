@@ -17,6 +17,10 @@ export async function buscarUsuarioPorId(id) {
   return apiGet(`/usuarios/${id}`);
 }
 
+export async function visualizarSenhaUsuario(id) {
+  return apiPost(`/usuarios/${id}/visualizar-senha`, {});
+}
+
 /**
  * Lista permissoes conforme os filtros e parametros informados.
  */
