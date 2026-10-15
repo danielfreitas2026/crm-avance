@@ -4733,6 +4733,10 @@ async function excluirVenda(id, usuarioId) {
   const agora = new Date();
 
   return Venda.transaction(async trx => {
+    // Serializa a exclusao com as decisoes de aprovacao da mesma venda.
+    const venda = await trx('vendas').where('id', id).forUpdate().first();
+    if (!venda || venda.excluido_em) return 0;
+
     const atualizados = await trx('vendas')
       .where('id', id)
       .whereNull('excluido_em')
@@ -4744,6 +4748,7 @@ async function excluirVenda(id, usuarioId) {
       });
 
     if (atualizados) {
+      await vendaAprovacaoService.obsoletarSolicitacoes(id, trx);
       await excluirNotificacoesVendas(id, trx);
     }
 
