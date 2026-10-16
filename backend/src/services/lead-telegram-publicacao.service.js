@@ -168,38 +168,47 @@ async function reivindicarRepublicacao(linhaId = null, agora = new Date()) {
   });
 }
 
-/** Guarda a mensagem confirmada pelo Telegram para permitir atualizacoes posteriores. */
+function classificarPublicacao(historicoAnterior, atendimentoAnterior, contexto = {}) {
+  return historicoAnterior || atendimentoAnterior || contexto.tipo === 'retorno' ? 'republicacao' : 'primeiro_envio';
+}
+
+/** Serializa por lead e conserva a confirmação de cada mensagem junto do estado da fila. */
 async function registrar(linhaId, publicacao = {}, database = db) {
   const id = Number(linhaId);
   const chatId = String(publicacao.telegram_chat_id || process.env.TELEGRAM_FUTUROS_CLIENTES_CHAT_ID || '').trim();
   const messageId = String(publicacao.telegram_message_id || publicacao.message_id || '').trim();
   if (!id || !chatId || !messageId) return false;
-
   const agora = new Date();
-  await database('lead_telegram_republicacoes')
-    .insert({
-      lead_linha_id: id,
-      status: 'publicado',
-      tentativas: 1,
-      telegram_chat_id: chatId,
-      telegram_message_id: messageId,
-      proxima_tentativa_em: null,
-      ultimo_erro: null,
-      publicado_em: agora,
-      created_at: agora,
-      updated_at: agora
-    })
-    .onConflict('lead_linha_id')
-    .merge({
-      status: 'publicado',
-      telegram_chat_id: chatId,
-      telegram_message_id: messageId,
-      proxima_tentativa_em: null,
-      ultimo_erro: null,
-      publicado_em: agora,
-      updated_at: agora
+
+  const salvar = async trx => {
+    const linha = await trx('lead_linhas').where('id', id).forUpdate().first('id');
+    if (!linha) return false;
+    const existente = await trx('lead_telegram_publicacoes')
+      .where({ telegram_chat_id: chatId, telegram_message_id: messageId }).first('id');
+    if (existente) return true;
+    const historico = await trx('lead_telegram_publicacoes').where('lead_linha_id', id).first('id');
+    const anterior = await trx('lead_atribuicoes').where({ lead_linha_id: id, etapa: 'venda' })
+      .whereNotNull('aceite_status').whereNotNull('finalizado_em').first('id');
+    const sondagem = await trx('lead_atribuicoes').where({ lead_linha_id: id, etapa: 'sondagem' })
+      .orderBy('atribuido_em', 'desc').orderBy('id', 'desc').first('id');
+    await trx('lead_telegram_publicacoes').insert({
+      lead_linha_id: id, atribuicao_sondagem_id: sondagem?.id || null,
+      usuario_id: Number(publicacao.usuario_id) || null,
+      tipo: classificarPublicacao(historico, anterior, publicacao.contexto_publicacao_telegram),
+      telegram_chat_id: chatId, telegram_message_id: messageId,
+      publicado_em: agora, created_at: agora
     });
-  return true;
+    await trx('lead_telegram_republicacoes').insert({
+      lead_linha_id: id, status: 'publicado', tentativas: 1,
+      telegram_chat_id: chatId, telegram_message_id: messageId,
+      proxima_tentativa_em: null, ultimo_erro: null, publicado_em: agora, created_at: agora, updated_at: agora
+    }).onConflict('lead_linha_id').merge({
+      status: 'publicado', telegram_chat_id: chatId, telegram_message_id: messageId,
+      proxima_tentativa_em: null, ultimo_erro: null, publicado_em: agora, updated_at: agora
+    });
+    return true;
+  };
+  return database.isTransaction ? salvar(database) : database.transaction(salvar);
 }
 
 /** Registra uma tentativa sem publicacao para permitir nova tentativa segura. */
@@ -250,7 +259,7 @@ async function processarItem(item, opcoes = {}) {
     if (!resultado?.enviado || !resultado?.message_id) {
       throw new Error(resultado?.motivo || 'Telegram nao confirmou a publicacao');
     }
-    if (!await salvarSucesso(item.lead_linha_id, resultado)) {
+    if (!await salvarSucesso(item.lead_linha_id, { ...resultado, contexto_publicacao_telegram: linha.contexto_publicacao_telegram })) {
       throw new Error('Telegram confirmou o envio, mas a identificacao da mensagem esta incompleta');
     }
     return { publicado: true, message_id: resultado.message_id };
@@ -310,6 +319,7 @@ module.exports = {
   processarRepublicacaoDaLinha,
   processarRepublicacoesPendentes,
   _internals: {
+    classificarPublicacao,
     calcularAtrasoRetentativa,
     montarContextoPublicacao,
     carregarContextoPublicacao,

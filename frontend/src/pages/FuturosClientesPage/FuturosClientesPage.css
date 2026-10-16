@@ -3560,3 +3560,35 @@
   .future-scope-switch { display: flex; }
   .future-scope-switch button { flex: 1; }
 }
+
+.future-stats__user-numbers--movements {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.future-stats__activity-total {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.future-stats__events {
+  min-width: 240px;
+  max-width: 480px;
+}
+
+.future-stats__events summary {
+  cursor: pointer;
+}
+
+.future-stats__events ol {
+  display: grid;
+  gap: 12px;
+  padding-left: 20px;
+  margin: 12px 0;
+}
+
+.future-stats__events li > span {
+  display: block;
+  color: var(--text-2);
+  margin-top: 4px;
+  font-size: 0.85rem;
+}

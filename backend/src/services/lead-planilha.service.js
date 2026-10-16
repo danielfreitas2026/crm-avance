@@ -38,13 +38,6 @@ const UPDATED_COLUMN_SUFFIX = ' (atualizado)';
 const EXCEL_IMPORT_BATCH_SIZE = 5000;
 const PALAVRAS_COLUNA_DOCUMENTO = ['cnpj', 'cpf', 'documento'];
 const EXCEL_IMPORT_MAX_BYTES = Number(process.env.LEAD_EXCEL_IMPORT_MAX_BYTES || 50 * 1024 * 1024);
-const FUSO_ESTATISTICAS = 'America/Sao_Paulo';
-const FORMATADOR_DATA_ESTATISTICAS = new Intl.DateTimeFormat('en-CA', {
-  timeZone: FUSO_ESTATISTICAS,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit'
-});
 const ACOES_PRIMEIRA_LIGACAO = [
   'lead_linha.futuro_cliente_marcado',
   'lead_linha.futuro_cliente_marcado_admin',
@@ -3000,12 +2993,15 @@ function resolverDestinoNovoFuturoCliente(linha, dados = {}) {
   return destino;
 }
 
-async function publicarFuturoClienteTelegram(linhaFormatada) {
+async function publicarFuturoClienteTelegram(linhaFormatada, usuarioId = null) {
   try {
     const linhaPublicacao = await leadTelegramPublicacaoService.prepararLinhaPublicacao(linhaFormatada);
     const publicacao = await telegramService.enviarFuturoCliente(linhaPublicacao);
     if (publicacao.enviado && publicacao.message_id) {
-      await leadTelegramPublicacaoService.registrar(linhaFormatada.id, publicacao);
+      await leadTelegramPublicacaoService.registrar(linhaFormatada.id, {
+        ...publicacao, usuario_id: usuarioId,
+        contexto_publicacao_telegram: linhaPublicacao.contexto_publicacao_telegram
+      });
     } else {
       await leadTelegramPublicacaoService.registrarFalha(linhaFormatada.id);
     }
@@ -3193,7 +3189,7 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
     await leadDistribuicaoService.notificarRetornoAgendadoTelegram(linhaId, retorno);
   }
   if (deveNotificarTelegram) {
-    await publicarFuturoClienteTelegram(linhaFormatada);
+    await publicarFuturoClienteTelegram(linhaFormatada, usuarioId);
   }
 
   return {
@@ -3257,7 +3253,7 @@ async function enviarFuturoClienteParaDistribuicao(linhaId, usuarioId) {
   const linhaFormatada = formatarLinha(atualizada);
   const publicacao = finalizacao
     ? finalizacao.publicacao
-    : await publicarFuturoClienteTelegram(linhaFormatada);
+    : await publicarFuturoClienteTelegram(linhaFormatada, usuarioId);
   return { linha: linhaFormatada, publicacao };
 }
 
@@ -3970,18 +3966,6 @@ async function listarFuturosClientesRecebidos(filtros = {}, usuarioId) {
   };
 }
 
-function primeiraAcaoLinha(linha) {
-  if (Object.prototype.hasOwnProperty.call(linha, 'estatistica_primeira_acao_em')) {
-    return linha.estatistica_primeira_acao_em;
-  }
-  return linha.primeira_ligacao_em
-    || linha.futuro_cliente_marcado_em
-    || linha.cliente_recusou_em
-    || linha.chamada_nao_atendida_em
-    || linha.venda_recusada_em
-    || null;
-}
-
 const STATUS_ATRIBUICAO_ATIVOS = new Set([
   leadDistribuicaoService.ACEITE_AGUARDANDO,
   leadDistribuicaoService.ACEITE_ACEITO
@@ -4228,352 +4212,7 @@ async function listarResponsaveisFuturosClientes() {
     .orderBy('usuarios.nome', 'asc');
 }
 
-function dataIsoEstatisticas(valor) {
-  const data = parseUtcDateTime(valor);
-  if (!data) return null;
-  const partes = Object.fromEntries(
-    FORMATADOR_DATA_ESTATISTICAS.formatToParts(data)
-      .filter(item => item.type !== 'literal')
-      .map(item => [item.type, item.value])
-  );
-  return `${partes.year}-${partes.month}-${partes.day}`;
-}
-
-function dataDentroPeriodo(valor, filtros = {}) {
-  const iso = dataIsoEstatisticas(valor);
-  if (!iso) return false;
-  if (filtros.data_inicio && iso < filtros.data_inicio) return false;
-  if (filtros.data_fim && iso > filtros.data_fim) return false;
-  return true;
-}
-
-function dataNaJanelaAtribuicao(valor, inicio, fimExclusivo) {
-  const data = parseUtcDateTime(valor);
-  const dataInicio = parseUtcDateTime(inicio);
-  const dataFim = parseUtcDateTime(fimExclusivo);
-  if (!data || !dataInicio || data < dataInicio) return false;
-  return !dataFim || data < dataFim;
-}
-
-function primeiraAcaoDaAtribuicao(linha, auditorias = [], proximaAtribuicaoEm = null) {
-  const finalizacaoValida = ['atribuido', 'cancelado'].includes(linha.estatistica_atribuicao_status)
-    ? null
-    : linha.estatistica_finalizado_em;
-  const candidatos = [
-    ...auditorias.map(item => item.created_at),
-    finalizacaoValida,
-    linha.primeira_ligacao_em,
-    linha.estatistica_sondagem_respondido_em,
-    linha.futuro_cliente_marcado_em,
-    linha.cliente_recusou_em,
-    linha.chamada_nao_atendida_em,
-    linha.venda_recusada_em
-  ];
-  return candidatos
-    .filter(valor => dataNaJanelaAtribuicao(valor, linha.recebido_em, proximaAtribuicaoEm))
-    .sort((a, b) => parseUtcDateTime(a) - parseUtcDateTime(b))[0]
-    || null;
-}
-
-function avaliarLinhaEstatistica(linha, filtros = {}, referencia = new Date()) {
-  const primeiraAcao = parseUtcDateTime(primeiraAcaoLinha(linha));
-  const recebidaEm = parseUtcDateTime(linha.recebido_em);
-  const recebidaNoPeriodo = Boolean(
-    recebidaEm
-    && recebidaEm <= referencia
-    && dataDentroPeriodo(recebidaEm, filtros)
-  );
-  const dentroDoFechamento = primeiraAcao
-    && recebidaEm
-    && primeiraAcao >= recebidaEm
-    && primeiraAcao <= referencia
-    && (!filtros.data_fim || dataIsoEstatisticas(primeiraAcao) <= filtros.data_fim);
-  return {
-    recebidaNoPeriodo,
-    trabalhada: Boolean(recebidaNoPeriodo && dentroDoFechamento),
-    primeiraAcaoEm: dentroDoFechamento ? primeiraAcaoLinha(linha) : null
-  };
-}
-
-function linhasDaCoorte(linhas, filtros = {}, referencia = new Date()) {
-  return linhas.flatMap(linha => {
-    const avaliacao = avaliarLinhaEstatistica(linha, filtros, referencia);
-    if (!avaliacao.recebidaNoPeriodo) return [];
-    return [{
-      ...linha,
-      estatistica_primeira_acao_considerada_em: avaliacao.primeiraAcaoEm,
-      estatistica_trabalhada: avaliacao.trabalhada
-    }];
-  });
-}
-
-function novoResumoEstatistica(base = {}) {
-  return {
-    ...base,
-    recebidos: 0,
-    trabalhados: 0,
-    pendentes: 0,
-    tentativas_registradas: 0,
-    retornos_agendados: 0,
-    clientes_recusaram: 0,
-    chamadas_nao_atendidas: 0,
-    qualificados: 0,
-    enviados_telegram: 0,
-    aceitos_telegram: 0,
-    recusados_expirados_telegram: 0,
-    vendas_futuro_cliente: 0,
-    vendas_antigas: 0,
-    vendas_recusadas: 0,
-    potencial_mensal: 0,
-    valor_vendido: 0,
-    tempo_primeira_acao_total_min: 0,
-    tempo_primeira_acao_amostra: 0
-  };
-}
-
-function finalizarResumoEstatistica(resumo) {
-  return {
-    ...resumo,
-    produtividade_pct: resumo.recebidos ? Number(((resumo.trabalhados / resumo.recebidos) * 100).toFixed(1)) : 0,
-    qualificacao_pct: resumo.trabalhados ? Number(((resumo.qualificados / resumo.trabalhados) * 100).toFixed(1)) : 0,
-    conversao_pct: resumo.qualificados ? Number(((resumo.vendas_futuro_cliente / resumo.qualificados) * 100).toFixed(1)) : 0,
-    tempo_medio_primeira_acao_min: resumo.tempo_primeira_acao_amostra
-      ? Math.round(resumo.tempo_primeira_acao_total_min / resumo.tempo_primeira_acao_amostra)
-      : null
-  };
-}
-
-function somarResumosEstatistica(resumos) {
-  return finalizarResumoEstatistica(resumos.reduce((acc, item) => {
-    Object.keys(acc).forEach(chave => {
-      if (typeof acc[chave] === 'number' && !chave.endsWith('_pct') && chave !== 'tempo_medio_primeira_acao_min') {
-        acc[chave] += Number(item[chave] || 0);
-      }
-    });
-    return acc;
-  }, novoResumoEstatistica({ id: 'total' })));
-}
-
-async function carregarLinhasEstatisticas(filtros = {}) {
-  const query = db('lead_atribuicoes as la')
-    .join('lead_linhas as ll', 'll.id', 'la.lead_linha_id')
-    .join('lead_envios as le', 'le.id', 'la.envio_id')
-    .join('usuarios as u', 'u.id', 'la.usuario_id')
-    .leftJoin('lead_sondagens as ls', 'ls.lead_linha_id', 'll.id')
-    .leftJoin('vendas as v', 'v.id', 'll.venda_id')
-    .where('la.etapa', 'sondagem')
-    .where('le.origem', 'mailing')
-    .select(
-      'll.*',
-      'la.id as estatistica_atribuicao_id',
-      'la.usuario_id as estatistica_usuario_id',
-      'la.atribuido_em as recebido_em',
-      'la.finalizado_em as estatistica_finalizado_em',
-      'la.status as estatistica_atribuicao_status',
-      'le.id as estatistica_envio_id',
-      'le.nome as estatistica_envio_nome',
-      'le.created_at as envio_created_at',
-      'u.nome as estatistica_usuario_nome',
-      'ls.valor_mensal_estimado',
-      'ls.respondido_em as estatistica_sondagem_respondido_em',
-      'v.valor_total as venda_valor_total'
-    );
-  if (filtros.usuario_id) query.where('la.usuario_id', Number(filtros.usuario_id));
-  if (filtros.envio_id) query.where('la.envio_id', Number(filtros.envio_id));
-  const linhas = await query;
-  const preparadas = linhas.map(linha => ({
-    ...linha,
-    mailing_recebido_em: linha.recebido_em,
-    dados_json: parseJson(linha.dados_json, {}),
-    envio: {
-      id: Number(linha.estatistica_envio_id),
-      nome: linha.estatistica_envio_nome,
-      created_at: linha.envio_created_at
-    }
-  }));
-  const classificadas = await adicionarClassificacaoVendas(preparadas);
-  const ids = classificadas.map(linha => Number(linha.id));
-  const atribuicoes = ids.length ? await db('lead_atribuicoes')
-    .whereIn('lead_linha_id', ids)
-    .where('etapa', 'sondagem')
-    .orderBy('atribuido_em', 'asc')
-    .orderBy('id', 'asc')
-    .select('id', 'lead_linha_id', 'atribuido_em') : [];
-  const auditorias = ids.length ? await db('audit_logs')
-    .where('entidade', 'lead_linhas')
-    .whereIn('entidade_id', ids.map(String))
-    .whereIn('acao', ACOES_PRIMEIRA_LIGACAO)
-    .orderBy('created_at', 'asc')
-    .orderBy('id', 'asc')
-    .select('id', 'entidade_id', 'usuario_id', 'acao', 'created_at') : [];
-  const atribuicoesPorLinha = new Map();
-  atribuicoes.forEach(item => {
-    const linhaId = Number(item.lead_linha_id);
-    if (!atribuicoesPorLinha.has(linhaId)) atribuicoesPorLinha.set(linhaId, []);
-    atribuicoesPorLinha.get(linhaId).push(item);
-  });
-  const auditoriasPorLinha = new Map();
-  auditorias.forEach(item => {
-    const linhaId = Number(item.entidade_id);
-    if (!auditoriasPorLinha.has(linhaId)) auditoriasPorLinha.set(linhaId, []);
-    auditoriasPorLinha.get(linhaId).push(item);
-  });
-  const distribuicoes = ids.length ? await db('lead_atribuicoes')
-    .whereIn('lead_linha_id', ids)
-    .where('etapa', 'venda')
-    .whereNotNull('aceite_status')
-    .select('lead_linha_id', 'aceite_status') : [];
-  const distribuicoesPorLinha = new Map();
-  distribuicoes.forEach(item => {
-    const linhaId = Number(item.lead_linha_id);
-    const resumo = distribuicoesPorLinha.get(linhaId) || { enviados: 0, aceitos: 0, recusados_expirados: 0 };
-    resumo.enviados += 1;
-    if (item.aceite_status === leadDistribuicaoService.ACEITE_ACEITO) resumo.aceitos += 1;
-    if ([leadDistribuicaoService.ACEITE_RECUSADO, leadDistribuicaoService.ACEITE_EXPIRADO].includes(item.aceite_status)) resumo.recusados_expirados += 1;
-    distribuicoesPorLinha.set(linhaId, resumo);
-  });
-  return classificadas.map(linha => {
-    const atribuicoesLinha = atribuicoesPorLinha.get(Number(linha.id)) || [];
-    const indiceAtribuicao = atribuicoesLinha.findIndex(item => Number(item.id) === Number(linha.estatistica_atribuicao_id));
-    const proximaAtribuicaoEm = indiceAtribuicao >= 0 ? atribuicoesLinha[indiceAtribuicao + 1]?.atribuido_em : null;
-    const auditoriasAtribuicao = (auditoriasPorLinha.get(Number(linha.id)) || [])
-      .filter(item => dataNaJanelaAtribuicao(item.created_at, linha.recebido_em, proximaAtribuicaoEm));
-    const primeiraAcao = primeiraAcaoDaAtribuicao(linha, auditoriasAtribuicao, proximaAtribuicaoEm);
-    return {
-      ...linha,
-      estatistica_primeira_acao_em: primeiraAcao,
-      tentativas_conhecidas: Math.max(auditoriasAtribuicao.length, primeiraAcao ? 1 : 0),
-      estatistica_distribuicao: distribuicoesPorLinha.get(Number(linha.id)) || { enviados: 0, aceitos: 0, recusados_expirados: 0 }
-    };
-  });
-}
-
-function agregarEstatisticas(linhas, filtros = {}, chaveFn) {
-  const grupos = new Map();
-  linhas.forEach(linha => {
-    const avaliacao = avaliarLinhaEstatistica(linha, filtros);
-    if (!avaliacao.recebidaNoPeriodo) return;
-    const chave = chaveFn(linha);
-    if (!grupos.has(chave.id)) grupos.set(chave.id, novoResumoEstatistica(chave));
-    const resumo = grupos.get(chave.id);
-    resumo.recebidos += 1;
-    if (!avaliacao.trabalhada) {
-      resumo.pendentes += 1;
-      return;
-    }
-    const primeiraAcao = avaliacao.primeiraAcaoEm;
-    resumo.trabalhados += 1;
-    resumo.tentativas_registradas += Number(linha.tentativas_conhecidas || 0);
-    resumo.retornos_agendados += linha.retorno_agendado_em ? 1 : 0;
-    resumo.clientes_recusaram += linha.cliente_recusou ? 1 : 0;
-    resumo.chamadas_nao_atendidas += linha.chamada_nao_atendida ? 1 : 0;
-    resumo.qualificados += linha.futuro_cliente ? 1 : 0;
-    resumo.enviados_telegram += Number(linha.estatistica_distribuicao?.enviados || 0);
-    resumo.aceitos_telegram += Number(linha.estatistica_distribuicao?.aceitos || 0);
-    resumo.recusados_expirados_telegram += Number(linha.estatistica_distribuicao?.recusados_expirados || 0);
-    resumo.vendas_recusadas += linha.venda_recusada_em || linha.venda_recusada_motivo ? 1 : 0;
-    resumo.vendas_futuro_cliente += linha.venda_classificacao?.tipo === 'venda_futuro_cliente' ? 1 : 0;
-    resumo.vendas_antigas += linha.venda_classificacao?.tipo === 'venda_antiga_registrada' ? 1 : 0;
-    resumo.potencial_mensal += Number(linha.valor_mensal_estimado || 0);
-    resumo.valor_vendido += linha.venda_classificacao?.tipo === 'venda_futuro_cliente'
-      ? Number(linha.venda_classificacao.valor_total || linha.venda_valor_total || 0) : 0;
-    const inicio = parseUtcDateTime(linha.recebido_em);
-    const fim = parseUtcDateTime(primeiraAcao);
-    if (inicio && fim && fim >= inicio) {
-      resumo.tempo_primeira_acao_total_min += Math.round((fim - inicio) / 60000);
-      resumo.tempo_primeira_acao_amostra += 1;
-    }
-  });
-  return [...grupos.values()].map(finalizarResumoEstatistica);
-}
-
-async function obterEstatisticasResumo(filtros = {}) {
-  const linhas = await carregarLinhasEstatisticas(filtros);
-  const usuarios = agregarEstatisticas(linhas, filtros, linha => ({
-    id: Number(linha.estatistica_usuario_id),
-    usuario_id: Number(linha.estatistica_usuario_id),
-    usuario_nome: linha.estatistica_usuario_nome || 'Usuario removido'
-  }));
-  const total = somarResumosEstatistica(usuarios);
-  return { total, usuarios };
-}
-
-async function obterEstatisticasMailings(filtros = {}) {
-  const linhas = await carregarLinhasEstatisticas(filtros);
-  return agregarEstatisticas(linhas, filtros, linha => ({
-    id: Number(linha.estatistica_envio_id),
-    envio_id: Number(linha.estatistica_envio_id),
-    envio_nome: linha.estatistica_envio_nome
-  }));
-}
-
-async function obterEstatisticasLinhas(filtros = {}) {
-  const page = Math.max(1, Number(filtros.page || 1));
-  const pageSize = Math.min(200, Math.max(1, Number(filtros.page_size || 50)));
-  let linhas = linhasDaCoorte(await carregarLinhasEstatisticas(filtros), filtros);
-  const busca = String(filtros.busca || '').trim().toLowerCase();
-  if (busca) linhas = linhas.filter(linha => JSON.stringify(linha.dados_json || {}).toLowerCase().includes(busca));
-  return {
-    data: linhas.slice((page - 1) * pageSize, page * pageSize),
-    total: linhas.length,
-    page,
-    page_size: pageSize
-  };
-}
-
-async function gerarXlsxEstatisticasFuturosClientes(filtros = {}) {
-  if (filtros.data_inicio && filtros.data_fim && filtros.data_inicio > filtros.data_fim) {
-    throw criarHttpError(400, 'A data inicial deve ser anterior ou igual a data final.');
-  }
-  const linhas = linhasDaCoorte(await carregarLinhasEstatisticas(filtros), filtros);
-  const usuarios = agregarEstatisticas(linhas, filtros, linha => ({
-    id: Number(linha.estatistica_usuario_id),
-    usuario_nome: linha.estatistica_usuario_nome || 'Usuario removido'
-  }));
-  const mailings = agregarEstatisticas(linhas, filtros, linha => ({
-    id: `${linha.estatistica_usuario_id}:${linha.estatistica_envio_id}`,
-    usuario_nome: linha.estatistica_usuario_nome || 'Usuario removido',
-    envio_nome: linha.estatistica_envio_nome || `Mailing #${linha.estatistica_envio_id}`
-  }));
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'CRM Avance';
-  workbook.created = new Date();
-  const colunasResumo = [
-    ['Usuario', 'usuario_nome'], ['Recebidos', 'recebidos'], ['Trabalhados', 'trabalhados'], ['Pendentes', 'pendentes'],
-    ['Tentativas', 'tentativas_registradas'], ['Retornos', 'retornos_agendados'], ['Clientes recusaram', 'clientes_recusaram'],
-    ['Nao atendidas', 'chamadas_nao_atendidas'], ['Qualificados', 'qualificados'], ['Telegram', 'enviados_telegram'],
-    ['Aceites', 'aceitos_telegram'], ['Recusas/expiracoes', 'recusados_expirados_telegram'], ['Vendas futuro cliente', 'vendas_futuro_cliente'],
-    ['Vendas antigas', 'vendas_antigas'], ['Produtividade %', 'produtividade_pct'], ['Conversao %', 'conversao_pct'],
-    ['Tempo medio primeira acao (min)', 'tempo_medio_primeira_acao_min'], ['Potencial mensal', 'potencial_mensal'], ['Valor vendido', 'valor_vendido']
-  ];
-  const adicionarTabela = (nome, colunas, dados) => {
-    const ws = workbook.addWorksheet(nome);
-    ws.addRow(colunas.map(([titulo]) => titulo));
-    dados.forEach(item => ws.addRow(colunas.map(([, chave]) => item[chave] ?? '')));
-    ws.views = [{ state: 'frozen', ySplit: 1 }];
-    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, ws.rowCount), column: colunas.length } };
-    ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
-    ws.columns = colunas.map(([titulo]) => ({ width: Math.max(14, Math.min(34, titulo.length + 4)) }));
-    return ws;
-  };
-  adicionarTabela('Resumo por usuário', colunasResumo, usuarios);
-  adicionarTabela('Mailings', [['Usuario', 'usuario_nome'], ['Mailing', 'envio_nome'], ...colunasResumo.slice(1)], mailings);
-  adicionarTabela('Leads', [
-    ['Usuario', 'estatistica_usuario_nome'], ['Mailing', 'estatistica_envio_nome'], ['Lead ID', 'id'], ['Recebido em', 'recebido_em'],
-    ['Primeira acao', 'primeira_acao_exportacao'], ['Tentativas', 'tentativas_conhecidas'], ['Status da venda', 'venda_tipo_exportacao'],
-    ['Venda ID', 'venda_id_exportacao'], ['Valor vendido', 'venda_valor_exportacao'], ['Dados', 'dados_exportacao']
-  ], linhas.map(linha => ({
-    ...linha,
-    primeira_acao_exportacao: linha.estatistica_primeira_acao_considerada_em,
-    venda_tipo_exportacao: linha.venda_classificacao?.tipo || '',
-    venda_id_exportacao: linha.venda_classificacao?.venda_id || '',
-    venda_valor_exportacao: linha.venda_classificacao?.valor_total || '',
-    dados_exportacao: JSON.stringify(linha.dados_json || {})
-  })));
-  const sufixo = filtros.data_inicio || filtros.data_fim ? `${filtros.data_inicio || 'inicio'}-a-${filtros.data_fim || 'hoje'}` : 'todo-periodo';
-  return { buffer: await workbook.xlsx.writeBuffer(), nome: `estatisticas-futuros-clientes-${sufixo}.xlsx` };
-}
+const { obterEstatisticasResumo, obterEstatisticasMailings, obterEstatisticasLinhas, gerarXlsxEstatisticasFuturosClientes } = require('./lead-estatisticas.service');
 
 function subtrairMesesUtc(valor, meses) {
   const data = parseUtcDateTime(valor);
@@ -5155,9 +4794,19 @@ async function realizarRetornoLead(linhaId, usuarioId, dados = {}, opcoes = {}) 
   if (!configuracao.data) throw criarHttpError(409, 'Este lead nao possui retorno agendado.');
 
   if (!configuracao.realizadoEm) {
-    await LeadLinha.query().patchAndFetchById(linha.id, {
-      [configuracao.campoEm]: formatarDateTimeSQL(),
-      [configuracao.campoPor]: Number(usuarioId)
+    await LeadLinha.transaction(async trx => {
+      const atual = await LeadLinha.query(trx).findById(linha.id).forUpdate();
+      if (atual[configuracao.campoEm]) return;
+      const ocorridoEm = formatarDateTimeSQL();
+      await LeadLinha.query(trx).patchAndFetchById(linha.id, {
+        [configuracao.campoEm]: ocorridoEm,
+        [configuracao.campoPor]: Number(usuarioId)
+      });
+      await require('./audit-log.service').registrar(null, {
+        usuario_id: Number(usuarioId), acao: 'lead_linha.retorno_realizado',
+        entidade: 'lead_linhas', entidade_id: String(linha.id),
+        dados: { origem, ocorrido_em: ocorridoEm }
+      }, trx);
     });
   }
 
@@ -5439,15 +5088,6 @@ module.exports = {
     resolverEstadoAtualFuturoCliente,
     montarEventosHistoricoFuturoCliente,
     adicionarClassificacaoVendas,
-    dataIsoEstatisticas,
-    dataDentroPeriodo,
-    dataNaJanelaAtribuicao,
-    primeiraAcaoDaAtribuicao,
-    avaliarLinhaEstatistica,
-    linhasDaCoorte,
-    agregarEstatisticas,
-    finalizarResumoEstatistica,
-    somarResumosEstatistica,
     selecionarVendaAntiga,
     subtrairMesesUtc,
     sqlEntradaEtapaFinal
