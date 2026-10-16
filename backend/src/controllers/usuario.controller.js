@@ -63,8 +63,8 @@ async function store(req, res) {
   } catch (error) {
     console.error(error);
 
-    return res.status(error.code === 'PASSWORD_VAULT_UNAVAILABLE' ? 503 : 500).json({
-      message: error.code === 'PASSWORD_VAULT_UNAVAILABLE' ? error.message : 'Erro ao criar usuário.'
+    return res.status(500).json({
+      message: 'Erro ao criar usuário.'
     });
   }
 }
@@ -92,8 +92,8 @@ async function update(req, res) {
   } catch (error) {
     console.error(error);
 
-    return res.status(error.code === 'PASSWORD_VAULT_UNAVAILABLE' ? 503 : 500).json({
-      message: error.code === 'PASSWORD_VAULT_UNAVAILABLE' ? error.message : 'Erro ao atualizar usuário.'
+    return res.status(500).json({
+      message: 'Erro ao atualizar usuário.'
     });
   }
 }

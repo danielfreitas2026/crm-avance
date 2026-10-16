@@ -26,7 +26,6 @@ Object.assign(process.env, {
   AUTO_MIGRATE: 'false',
   JWT_SECRET: 'crm-avance-test-only-secret',
   JWT_EXPIRES_IN: '1h',
-  CRM_PASSWORD_VAULT_KEY: Buffer.alloc(32, 7).toString('base64'),
   TEST_DB_CLIENT: 'mysql2',
   TEST_DB_HOST: '127.0.0.1',
   TEST_DB_PORT: '3306',

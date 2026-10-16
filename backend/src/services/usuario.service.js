@@ -3,7 +3,6 @@ const Usuario = require('../models/Usuario');
  * Servico de usuarios, roles e permissoes efetivas.
  */
 const bcrypt = require('bcrypt');
-const { obterChave, criptografarSenha } = require('../utils/cofre-senhas');
 
 
 /**
@@ -28,14 +27,12 @@ async function buscarUsuarioPorId(id) {
  * Cria usuario com os dados informados.
  */
 async function criarUsuario(dados) {
-  obterChave();
   const senhaHash = await bcrypt.hash(dados.senha, 10);
 
   return Usuario.query().insert({
     nome: dados.nome,
     email: dados.email,
     senha: senhaHash,
-    senha_criptografada: criptografarSenha(dados.senha, senhaHash),
     role_id: dados.role_id,
     permissoes: JSON.stringify(dados.permissoes || []),
     ativo: dados.ativo ?? true
@@ -69,9 +66,7 @@ async function atualizarUsuario(id, dados, { registrarAuditoria } = {}) {
   }
 
   if (dados.senha !== undefined && dados.senha !== '') {
-    obterChave();
     dadosAtualizacao.senha = await bcrypt.hash(dados.senha, 10);
-    dadosAtualizacao.senha_criptografada = criptografarSenha(dados.senha, dadosAtualizacao.senha);
   }
 
   return Usuario.transaction(async trx => {

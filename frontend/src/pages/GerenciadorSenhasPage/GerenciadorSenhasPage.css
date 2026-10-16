@@ -1,7 +1,0 @@
-.gerenciador-senhas h1 { margin: 0; font-size: 20px; }
-.gerenciador-senhas .form-field { max-width: 480px; margin: 20px 0; }
-.gerenciador-senhas__scroll { overflow-x: auto; }
-.gerenciador-senhas__table { width: 100%; border-collapse: collapse; text-align: left; }
-.gerenciador-senhas__table th, .gerenciador-senhas__table td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-.gerenciador-senhas__table th { color: var(--text-2); font-size: 12px; }
-.gerenciador-senhas__senha { font-family: monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

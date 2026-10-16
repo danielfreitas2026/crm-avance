@@ -94,7 +94,7 @@ describe('api service', () => {
   it.each([
     { status: 401, body: { message: 'Sessão expirada' } },
     { status: 423, body: { code: 'SYSTEM_CLOSED', message: 'Sistema fechado' } }
-  ])('avisa encerramento da sessão para limpar credenciais: $status', async ({ status, body }) => {
+  ])('avisa encerramento da sessão: $status', async ({ status, body }) => {
     window.history.replaceState({}, '', '/login');
     localStorage.setItem('token', 'abc123');
     localStorage.setItem('usuario', '{}');
@@ -102,7 +102,7 @@ describe('api service', () => {
     window.addEventListener('auth:sessao-encerrada', listener);
     try {
       fetch.mockResolvedValueOnce(jsonResponse(body, { status }));
-      await expect(apiGet('/admin/senhas')).rejects.toMatchObject({ status });
+      await expect(apiGet('/auth/me')).rejects.toMatchObject({ status });
       expect(listener).toHaveBeenCalledTimes(1);
       expect(localStorage.getItem('usuario')).toBeNull();
     } finally {

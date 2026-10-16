@@ -5,7 +5,6 @@ const { loadEnvironment } = require('./config/environment');
 loadEnvironment();
 const db = require('./config/database');
 const usuarioRoutes = require('./routes/usuario.routes');
-const gerenciadorSenhasRoutes = require('./routes/gerenciador-senhas.routes');
 const roleRoutes = require('./routes/role.routes');
 const authRoutes = require('./routes/auth.routes');
 const permissaoRoutes = require('./routes/permissao.routes');
@@ -57,7 +56,6 @@ app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
 app.use('/api/usuarios', usuarioRoutes);
-app.use('/api/admin/senhas', gerenciadorSenhasRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/permissoes', permissaoRoutes);
