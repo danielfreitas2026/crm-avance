@@ -1,14 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import * as I from '../Icons';
 import { listarLinksExternos } from '../../services/config.service';
+import { filtrarNotificacoes, intervaloNotificacoesInvalido, nomeTipoNotificacao } from './notificacao-filtros';
 
 /**
  * Renderiza header.
  */
-function Header({ title, subtitle, onNew, onMenuClick, mobileMenuOpen = false, alertasUrgentes = [], estiloAlerta, tomAlerta, onAbrirAlerta, onExcluirAlerta }) {
+function Header({ title, subtitle, onNew, onMenuClick, mobileMenuOpen = false, alertasUrgentes = [], estiloAlerta, tomAlerta, onAbrirAlerta, onExcluirAlerta, onMarcarTodasLidas, marcandoTodasLidas = false, erroMarcarTodasLidas = '' }) {
   const [linksExternos, setLinksExternos] = useState([]);
   const [linksOpen, setLinksOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [filtros, setFiltros] = useState({ busca: '', tipo: '', de: '', ate: '' });
+  const notificacoesFiltradas = filtrarNotificacoes(alertasUrgentes, filtros);
+  const temFiltros = Object.values(filtros).some(Boolean);
+  const intervaloInvalido = intervaloNotificacoesInvalido(filtros);
+  const tipos = [...new Set([...alertasUrgentes.map(item => item.tipo), filtros.tipo].filter(Boolean))]
+    .sort((a, b) => nomeTipoNotificacao(a).localeCompare(nomeTipoNotificacao(b), 'pt-BR'));
+  function alterarFiltro(event) {
+    const { name, value } = event.target;
+    setFiltros(atuais => ({ ...atuais, [name]: value }));
+  }
   const linksMenuRef = useRef(null);
   const notificationsMenuRef = useRef(null);
 
@@ -129,7 +140,8 @@ function Header({ title, subtitle, onNew, onMenuClick, mobileMenuOpen = false, a
             title="Exibir avisos pendentes"
             onClick={() => setNotificationsOpen(open => !open)}
             aria-expanded={notificationsOpen}
-            aria-haspopup="menu"
+            aria-haspopup="dialog"
+            aria-controls="avisos-pendentes-painel"
           >
             <span className={`notification-bell${alertasUrgentes.length > 0 ? ' notification-bell--urgent' : ''}`}>
               {alertasUrgentes.length > 0 && <span className="urgent-alert-panel__pulse" aria-hidden="true" />}
@@ -141,20 +153,53 @@ function Header({ title, subtitle, onNew, onMenuClick, mobileMenuOpen = false, a
           </button>
 
           {notificationsOpen && (
-            <div className={`notification-popover notification-popover--urgent${alertasUrgentes.length > 0 ? ' notification-popover--attention' : ''}`} role="menu">
+            <div id="avisos-pendentes-painel" className={`notification-popover notification-popover--urgent${alertasUrgentes.length > 0 ? ' notification-popover--attention' : ''}`} role="dialog" aria-label="Avisos pendentes" onKeyDown={event => {
+              if (event.key === 'Escape') {
+                setNotificationsOpen(false);
+                notificationsMenuRef.current?.querySelector('button')?.focus();
+              }
+            }}>
               <div className="notification-popover__header">
                 <strong className="notification-popover__urgent-title">
                   {alertasUrgentes.length > 0 && <span className="urgent-alert-panel__pulse" aria-hidden="true" />}
                   Avisos pendentes
                 </strong>
-                <span className="notification-popover__count">{alertasUrgentes.length} {alertasUrgentes.length === 1 ? 'aviso' : 'avisos'}</span>
+                <span className="notification-popover__count" aria-live="polite">{temFiltros ? `${notificacoesFiltradas.length} de ${alertasUrgentes.length} avisos` : `${alertasUrgentes.length} ${alertasUrgentes.length === 1 ? 'aviso' : 'avisos'}`}</span>
+              </div>
+
+              <div className="notification-filters">
+                <label className="notification-filters__search">Buscar notificações
+                  <input type="search" name="busca" value={filtros.busca} onChange={alterarFiltro} placeholder="Título ou mensagem" />
+                </label>
+                <label>Tipo
+                  <select name="tipo" value={filtros.tipo} onChange={alterarFiltro}>
+                    <option value="">Todos os tipos</option>
+                    {tipos.map(tipo => <option key={tipo} value={tipo}>{nomeTipoNotificacao(tipo)}</option>)}
+                  </select>
+                </label>
+                <button type="button" className="btn btn-ghost btn-sm" disabled={!temFiltros} onClick={() => setFiltros({ busca: '', tipo: '', de: '', ate: '' })}>Limpar filtros</button>
+                <div className="notification-filters__dates">
+                  <label>De<input type="date" name="de" value={filtros.de} onChange={alterarFiltro} aria-invalid={intervaloInvalido} aria-describedby={intervaloInvalido ? 'avisos-periodo-erro' : undefined} /></label>
+                  <label>Até<input type="date" name="ate" value={filtros.ate} onChange={alterarFiltro} aria-invalid={intervaloInvalido} aria-describedby={intervaloInvalido ? 'avisos-periodo-erro' : undefined} /></label>
+                </div>
+                {intervaloInvalido && <p id="avisos-periodo-erro" className="notification-filters__error" role="alert">A data inicial deve ser anterior ou igual à data final.</p>}
+              </div>
+
+              <div className="notification-bulk-actions">
+                <button type="button" className="btn btn-secondary btn-sm" disabled={marcandoTodasLidas || alertasUrgentes.length === 0 || !onMarcarTodasLidas} onClick={onMarcarTodasLidas}>
+                  {marcandoTodasLidas ? 'Marcando…' : 'Marcar todas como lidas'}
+                </button>
+                <span>Inclui todos os avisos pendentes, mesmo com filtros ativos.</span>
+                {erroMarcarTodasLidas && <p className="notification-filters__error" role="alert">{erroMarcarTodasLidas}</p>}
               </div>
 
               {alertasUrgentes.length === 0 ? (
                 <div className="notification-empty">Nenhuma notificação ativa.</div>
+              ) : notificacoesFiltradas.length === 0 ? (
+                <div className="notification-empty" role="status">Nenhuma notificação encontrada para os filtros informados.</div>
               ) : (
                 <div className="urgent-alert-stack header-urgent-alert-stack" aria-live="polite">
-                  {alertasUrgentes.map(alerta => (
+                  {notificacoesFiltradas.map(alerta => (
                     <div key={alerta.destinatario_id || alerta.id} className={`urgent-alert-card urgent-alert-card--${tomAlerta?.(alerta) || 'danger'}`} style={estiloAlerta?.(alerta)}>
                       <div className="urgent-alert-card__icon"><I.AlertTriangle size={18} /></div>
                       <div className="urgent-alert-card__body">

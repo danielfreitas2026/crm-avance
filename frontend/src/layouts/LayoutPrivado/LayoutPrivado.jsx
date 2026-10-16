@@ -16,6 +16,7 @@ import { criarNotaEntidade } from '../../services/nota.service';
 import {
   excluirNotificacao,
   listarNotificacoesUrgentes,
+  marcarTodasNotificacoesLidas,
   marcarPopupNotificacaoVisto
 } from '../../services/notificacao.service';
 import {
@@ -327,6 +328,10 @@ function LayoutPrivado({ children }) {
   const atualizacaoAlertasUrgentesPendenteRef = useRef(false);
   const assinaturaAlertasUrgentesRef = useRef(null);
   const exclusoesAlertasPendentesRef = useRef(new Set());
+  const versaoAlertasRef = useRef(0);
+  const marcandoTodasLidasRef = useRef(false);
+  const [marcandoTodasLidas, setMarcandoTodasLidas] = useState(false);
+  const [erroMarcarTodasLidas, setErroMarcarTodasLidas] = useState('');
   const [aprovacoesPendentes, setAprovacoesPendentes] = useState(0);
   const [mensagensNaoLidas, setMensagensNaoLidas] = useState(0);
   const [futurosClientesPendentes, setFuturosClientesPendentes] = useState(0);
@@ -430,18 +435,21 @@ function LayoutPrivado({ children }) {
   useEffect(() => {
     if (!usuario) return undefined;
 
+    let ativo = true;
     async function carregarAlertasUrgentes() {
       // Em producao a sincronizacao no servidor pode levar mais que o intervalo
       // de consulta. Evita requisicoes concorrentes, sem perder uma atualizacao
       // solicitada por uma alteracao feita pelo usuario.
-      if (carregandoAlertasUrgentesRef.current) {
+      if (carregandoAlertasUrgentesRef.current || marcandoTodasLidasRef.current) {
         atualizacaoAlertasUrgentesPendenteRef.current = true;
         return;
       }
 
       carregandoAlertasUrgentesRef.current = true;
+      const versao = versaoAlertasRef.current;
       try {
         const dados = await listarNotificacoesUrgentes();
+        if (!ativo || versao !== versaoAlertasRef.current) return;
         const semExclusoesPendentes = filtrarExclusoesPendentesNavbar(
           dados.notificacoes || [],
           exclusoesAlertasPendentesRef.current
@@ -459,7 +467,7 @@ function LayoutPrivado({ children }) {
         console.error('Erro ao carregar alertas urgentes:', error);
       } finally {
         carregandoAlertasUrgentesRef.current = false;
-        if (atualizacaoAlertasUrgentesPendenteRef.current) {
+        if (ativo && !marcandoTodasLidasRef.current && atualizacaoAlertasUrgentesPendenteRef.current) {
           atualizacaoAlertasUrgentesPendenteRef.current = false;
           void carregarAlertasUrgentes();
         }
@@ -472,11 +480,34 @@ function LayoutPrivado({ children }) {
     void carregarAlertasUrgentes();
 
     return () => {
+      ativo = false;
       clearInterval(timer);
       window.removeEventListener('pos-venda:notificacoes-atualizar', carregarAlertasUrgentes);
       window.removeEventListener('pos-venda:navbar-notificacoes-atualizar', carregarAlertasUrgentes);
     };
   }, [usuario]);
+
+  /** Confirma a leitura antes de retirar avisos e invalida consultas anteriores ao envio. */
+  async function marcarTodosAlertasLidos() {
+    if (marcandoTodasLidasRef.current || alertasUrgentes.length === 0) return;
+    marcandoTodasLidasRef.current = true;
+    versaoAlertasRef.current += 1;
+    setMarcandoTodasLidas(true);
+    setErroMarcarTodasLidas('');
+    const ids = new Set(alertasUrgentes.map(chaveNotificacaoNavbar));
+    try {
+      await marcarTodasNotificacoesLidas({ escopo: 'navbar' });
+      setAlertasUrgentes(atuais => atuais.filter(item => !ids.has(chaveNotificacaoNavbar(item))));
+      setPopupRetornoFuturo(null);
+    } catch (error) {
+      console.error('Erro ao marcar avisos como lidos:', error);
+      setErroMarcarTodasLidas('Não foi possível marcar os avisos como lidos. Tente novamente.');
+    } finally {
+      marcandoTodasLidasRef.current = false;
+      setMarcandoTodasLidas(false);
+      window.dispatchEvent(new CustomEvent('pos-venda:navbar-notificacoes-atualizar'));
+    }
+  }
 
   /**
    * Executa a acao de ocultar alerta urgente mantendo o estado da tela consistente.
@@ -634,6 +665,9 @@ function LayoutPrivado({ children }) {
           tomAlerta={tomAlerta}
           onAbrirAlerta={abrirVendaAlerta}
           onExcluirAlerta={excluirAlertaUrgente}
+          onMarcarTodasLidas={marcarTodosAlertasLidos}
+          marcandoTodasLidas={marcandoTodasLidas}
+          erroMarcarTodasLidas={erroMarcarTodasLidas}
         />
         <div className="content">
           {sucessoNovaVenda && <div className="alert-success alert-timed alert-timed--success" style={{ marginBottom: 16 }}>{sucessoNovaVenda}</div>}

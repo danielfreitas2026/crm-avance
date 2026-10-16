@@ -10,6 +10,7 @@ import { apiDelete, apiGet, apiRequest } from './api';
 import {
   excluirNotificacao,
   listarNotificacoes,
+  marcarTodasNotificacoesLidas,
   marcarPopupNotificacaoVisto
 } from './notificacao.service';
 
@@ -26,5 +27,12 @@ describe('notificacao.service', () => {
     await excluirNotificacao(12);
     expect(apiRequest).toHaveBeenCalledWith('/notificacoes/12/popup-visto', { method: 'PATCH' });
     expect(apiDelete).toHaveBeenCalledWith('/notificacoes/12');
+  });
+
+  it('envia o escopo navbar e preserva o contrato de leitura sem filtros', async () => {
+    await marcarTodasNotificacoesLidas({ escopo: 'navbar' });
+    await marcarTodasNotificacoesLidas();
+    expect(apiRequest).toHaveBeenNthCalledWith(1, '/notificacoes/lidas?escopo=navbar', { method: 'PATCH' });
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/notificacoes/lidas', { method: 'PATCH' });
   });
 });

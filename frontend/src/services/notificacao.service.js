@@ -54,8 +54,8 @@ export async function marcarPopupNotificacaoVisto(id) {
 /**
  * Marca todas notificacoes lidas conforme a acao solicitada.
  */
-export async function marcarTodasNotificacoesLidas() {
-  return apiRequest('/notificacoes/lidas', {
+export async function marcarTodasNotificacoesLidas(filtros = {}) {
+  return apiRequest(`/notificacoes/lidas${montarQuery(filtros)}`, {
     method: 'PATCH'
   });
 }

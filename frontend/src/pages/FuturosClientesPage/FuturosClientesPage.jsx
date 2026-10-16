@@ -4788,7 +4788,7 @@ export function EstatisticasFuturosClientesView() {
           <div className="future-stats__heading">
             <p className="future-stats__eyebrow">Movimentações de futuros clientes</p>
             <h2>{titulo}</h2>
-            <p className="muted">Ações realizadas no período, em qualquer mailing. Datas no horário de São Paulo.</p>
+            <p className="muted">Ações realizadas no período, em qualquer mailing.</p>
           </div>
           <button type="button" className="btn future-stats__export" disabled={exportando || carregando || Boolean(erro)} onClick={exportar}>
             <I.Download size={16} /> {exportando ? 'Exportando...' : 'Exportar Excel'}

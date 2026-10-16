@@ -58,6 +58,7 @@ describe('estatísticas por movimentação', () => {
     const pessoa = await screen.findByRole('button', { name: 'Analisar desempenho de Qualificadora' });
     const painel = screen.getByRole('region', { name: 'Estatísticas de qualificação' });
     const periodo = screen.getByRole('combobox', { name: 'Período' });
+    expect(screen.getByText('Ações realizadas no período, em qualquer mailing.')).toBeVisible();
     expect(periodo.closest('.future-stats__toolbar')).toContainElement(screen.getByRole('heading', { name: 'Todos os usuários' }));
     expect(painel.querySelectorAll('.future-stats__kpi-icon')).toHaveLength(4);
     expect(within(pessoa).getByText('Ver mailings e leads')).toBeVisible();
