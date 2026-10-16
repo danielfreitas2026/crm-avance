@@ -6,7 +6,6 @@ export const SYSTEM_CLOSED_MESSAGE = 'O sistema está temporariamente fechado. T
 function encerrarSessaoExpirada() {
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
-  window.dispatchEvent(new Event('auth:sessao-encerrada'));
 
   if (!redirecionandoLogin && window.location.pathname !== '/login') {
     redirecionandoLogin = true;
@@ -17,7 +16,6 @@ function encerrarSessaoExpirada() {
 function encerrarSessaoPorFechamento(message) {
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
-  window.dispatchEvent(new Event('auth:sessao-encerrada'));
   sessionStorage.setItem('system_closed_message', message || SYSTEM_CLOSED_MESSAGE);
 
   if (!redirecionandoLogin && window.location.pathname !== '/login') {

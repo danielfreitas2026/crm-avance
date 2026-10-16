@@ -407,7 +407,7 @@ function EditarUsuarioPage() {
                         </button>
                       </div>
                     </div>
-                    <p id="nova-senha-ajuda" className="editar-usuario__password-help">Deixe em branco para manter a senha atual. Administradores poderão consultar a nova senha na edição do usuário.</p>
+                    <p id="nova-senha-ajuda" className="editar-usuario__password-help">Deixe em branco para manter a senha atual.</p>
                     {mudancas.senha && <span className="editar-usuario__field-modified">modificado</span>}
                   </div>
                 </div>

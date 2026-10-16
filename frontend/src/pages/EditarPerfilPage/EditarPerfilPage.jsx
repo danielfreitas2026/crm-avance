@@ -268,7 +268,6 @@ function EditarPerfilPage() {
                   <span className={`meter-bar ${forcaSenha.nivel >= 3 ? 'active' : ''}`} />
                   <small>{forcaSenha.label}</small>
                 </div>
-                <div className="editar-perfil-help">Administradores poderão consultar a nova senha na edição do usuário.</div>
               </div>
             </div>
           </section>
