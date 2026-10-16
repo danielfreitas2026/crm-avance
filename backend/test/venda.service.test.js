@@ -1333,39 +1333,94 @@ test('nao monta sincronizacao sem cliente ou sem operadora vendida', () => {
   assert.equal(montarDadosSincronizacaoClienteVenda({ operadora_id: 5 }), null);
 });
 
-test('oculta venda concluida parada por duas semanas no funil', () => {
+test('oculta venda concluida parada por dois meses de calendario no funil', () => {
   const referencia = new Date('2026-05-18T12:00:00Z');
 
   assert.equal(
     obterDataLimiteConcluidaAntiga(referencia).toISOString(),
-    '2026-05-04T12:00:00.000Z'
+    '2026-03-18T12:00:00.000Z'
   );
   assert.equal(
     obterUltimaAtividadeFunil({
       ultima_atividade_em: null,
-      updated_at: '2026-05-04 12:00:01',
+      updated_at: '2026-03-18 12:00:01',
       created_at: '2026-05-01 12:00:00'
     }).toISOString(),
-    '2026-05-04T12:00:01.000Z'
+    '2026-03-18T12:00:01.000Z'
   );
 
   assert.equal(vendaDeveAparecerNoFunil({
     status_funil: 'concluido',
-    ultima_atividade_em: '2026-05-04 12:00:01'
+    ultima_atividade_em: '2026-03-18 12:00:01'
   }, 'concluido', referencia), true);
 
   assert.equal(vendaDeveAparecerNoFunil({
     status_funil: 'concluido',
-    ultima_atividade_em: '2026-05-04 12:00:00'
+    ultima_atividade_em: '2026-03-18 12:00:00'
   }, 'concluido', referencia), false);
 
   assert.equal(vendaDeveAparecerNoFunil({
     status_funil: 'concluido',
-    ultima_atividade_em: '2026-05-04 11:59:59'
+    ultima_atividade_em: '2026-03-18 11:59:59'
   }, 'concluido', referencia), false);
 
   assert.equal(vendaDeveAparecerNoFunil({
     status_funil: 'ativacao',
     ultima_atividade_em: '2026-04-01 12:00:00'
   }, 'concluido', referencia), true);
+});
+
+test('limite de dois meses ajusta o dia ao fim do mes de destino', () => {
+  const referencia = new Date('2026-04-30T12:00:00Z');
+  assert.equal(
+    obterDataLimiteConcluidaAntiga(referencia).toISOString(),
+    '2026-02-28T12:00:00.000Z'
+  );
+  assert.equal(vendaDeveAparecerNoFunil({
+    status_funil: 'concluido',
+    ultima_atividade_em: '2026-02-28 12:00:00'
+  }, 'concluido', referencia), false);
+  assert.equal(vendaDeveAparecerNoFunil({
+    status_funil: 'concluido',
+    ultima_atividade_em: '2026-02-28 12:00:01'
+  }, 'concluido', referencia), true);
+});
+
+
+test('preserva DDD por bloco em array e JSON e deriva o DDD legado', () => {
+  const itens = [
+    { quantidade: 2, gb: '25', ddd: '11', valor_unitario: 30 },
+    { quantidade: 1, gb: '50', ddd: '21', valor_unitario: 40 }
+  ];
+  for (const entrada of [itens, JSON.stringify(itens)]) {
+    const payload = montarPayload({ valores_unitarios_chips: entrada, ddd: '31' });
+    assert.deepEqual(JSON.parse(payload.valores_unitarios_chips).map(item => item.ddd), ['11', '21']);
+    assert.equal(payload.ddd, '11');
+    assert.equal(payload.valor_total, 100);
+  }
+});
+
+test('DDD antigo preenche apenas blocos legados e DDD vazio permanece opcional', () => {
+  const payload = montarPayload({ ddd: '31', valores_unitarios_chips: [
+    { quantidade: 1, valor_unitario: 30 },
+    { quantidade: 1, valor_unitario: 30, ddd: '' }
+  ] });
+  assert.deepEqual(JSON.parse(payload.valores_unitarios_chips).map(item => item.ddd), ['31', '']);
+  assert.equal(montarPayload({ ddd: '31', valores_unitarios_chips: [
+    { quantidade: 1, valor_unitario: 30, ddd: '' }
+  ] }).ddd, null);
+  assert.equal(montarPayload({ nome: 'Outra edição' }).ddd, undefined);
+  assert.equal(montarPayload({ ddd: '31', valores_unitarios_chips: '2x49,90' }).ddd, '31');
+});
+
+test('rejeita DDD inválido nos blocos sem tratar JSON inválido como texto legado', () => {
+  for (const ddd of ['00', '20', '1', '111', 'ab', '11x']) {
+    const itens = [{ quantidade: 1, valor_unitario: 30, ddd }];
+    for (const entrada of [itens, JSON.stringify(itens)]) {
+      assert.throws(() => montarPayload({ valores_unitarios_chips: entrada }), error => {
+        assert.equal(error.statusCode, 400);
+        return /DDD brasileiro válido/.test(error.message);
+      });
+    }
+  }
 });

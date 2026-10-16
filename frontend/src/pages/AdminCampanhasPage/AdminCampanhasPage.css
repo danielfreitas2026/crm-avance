@@ -198,6 +198,11 @@
 .admin-campanhas-fields--audience { grid-template-columns: 230px minmax(250px, 1fr) minmax(250px, 1fr); }
 .admin-campanhas-fields--participants-only { grid-template-columns: minmax(250px, 1fr); margin-top: 14px; }
 .admin-campanhas-field--wide { grid-column: 1 / -1; }
+.admin-campanhas-period-hint {
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.5;
+}
 
 .admin-campanhas-rules-field {
   display: grid;

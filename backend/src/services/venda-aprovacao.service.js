@@ -520,6 +520,10 @@ async function sincronizarAprovacaoAposAlteracao(vendaId, trx = null) {
 async function listarSolicitacoes(filtros = {}) {
   const statusPermitidos = [STATUS_PENDENTE, STATUS_APROVADA, STATUS_RECUSADA, STATUS_OBSOLETA];
   const query = VendaAprovacaoSolicitacao.query()
+    .whereExists(Venda.query()
+      .select(1)
+      .whereColumn('vendas.id', 'venda_aprovacao_solicitacoes.venda_id')
+      .whereNull('vendas.excluido_em'))
     .withGraphFetched('[venda.[cliente, vendedora, vendedoras], solicitante, decisor]')
     .modifyGraph('venda.vendedora', builder => builder.select('id', 'nome', 'email', 'foto_perfil'))
     .modifyGraph('venda.vendedoras', builder => builder.select('usuarios.id', 'usuarios.nome', 'usuarios.email', 'usuarios.foto_perfil').orderBy('venda_vendedoras.ordem', 'asc'))
@@ -549,8 +553,24 @@ async function decidirSolicitacao(id, dados, usuarioId, decisao, contexto = {}) 
   const observacaoDecisao = String(dados?.observacao || '').trim() || null;
   const decisorTelegram = contexto?.telegram || null;
 
+  // Esta leitura apenas localiza a venda. O estado da solicitacao e relido sob lock.
+  const referencia = await VendaAprovacaoSolicitacao.query().findById(id).select('venda_id');
+  if (!referencia) {
+    const error = new Error('Solicitacao pendente nao encontrada.');
+    error.statusCode = 404;
+    throw error;
+  }
+
   const resultado = await VendaAprovacaoSolicitacao.transaction(async trx => {
-    const solicitacao = await VendaAprovacaoSolicitacao.query(trx).findById(id);
+    // A exclusao usa a mesma ordem: venda, depois solicitacoes.
+    const venda = await Venda.query(trx).findById(referencia.venda_id).forUpdate();
+    const solicitacao = await VendaAprovacaoSolicitacao.query(trx).findById(id).forUpdate();
+
+    if (solicitacao && (!venda || venda.excluido_em)) {
+      await obsoletarSolicitacoes(solicitacao.venda_id, trx);
+      await desativarNotificacaoSolicitacao(solicitacao.id, trx);
+      return { indisponivel: true };
+    }
 
     if (!solicitacao || solicitacao.status !== STATUS_PENDENTE) {
       const error = new Error('Solicitacao pendente nao encontrada.');
@@ -600,8 +620,10 @@ async function decidirSolicitacao(id, dados, usuarioId, decisao, contexto = {}) 
       .withGraphFetched('[venda.[cliente, vendedora, vendedoras], solicitante, decisor]');
   });
 
-  if (resultado?.desatualizada) {
-    const error = new Error('A solicitação ficou desatualizada após alterações na venda.');
+  if (resultado?.indisponivel || resultado?.desatualizada) {
+    const error = new Error(resultado.indisponivel
+      ? 'Solicitação indisponível: a venda foi excluída ou está na lixeira.'
+      : 'A solicitação ficou desatualizada após alterações na venda.');
     error.statusCode = 409;
     throw error;
   }
@@ -620,6 +642,7 @@ module.exports = {
   avaliarRequisitosVenda,
   validarEnvioPosVenda,
   sincronizarAprovacaoAposAlteracao,
+  obsoletarSolicitacoes,
   listarSolicitacoes,
   aprovarSolicitacao: (id, dados, usuarioId, contexto) => decidirSolicitacao(id, dados, usuarioId, 'aprovar', contexto),
   recusarSolicitacao: (id, dados, usuarioId, contexto) => decidirSolicitacao(id, dados, usuarioId, 'recusar', contexto),

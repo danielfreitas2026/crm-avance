@@ -56,13 +56,55 @@ describe('AdminCampanhasPage - regras individuais', () => {
     api.updateCampanhas.mockResolvedValue({});
   });
 
-  it('oferece somente as quatro categorias ativas', async () => {
+  it.each(['registro_cliente', 'registro_futuro_cliente', 'quantidade_chip', 'outros', 'venda', 'chip_novo', 'portabilidade', 'internet'])('rejeita alvo fracionado na categoria %s e permite corrigir para inteiro', async categoria => {
+    const user = userEvent.setup();
+    api.getCampanhas.mockResolvedValue([campanhaBase({ categoria, categoria_personalizada: 'Seguro' })]);
+    render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
+    const alvo = screen.getByLabelText('Alvo');
+    expect(alvo).toHaveAttribute('min', '1');
+    expect(alvo).toHaveAttribute('step', '1');
+    await user.clear(alvo);
+    await user.type(alvo, '1.021');
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+    expect(api.updateCampanhas).not.toHaveBeenCalled();
+    expect(screen.getByText(/Alvo deve ser um número inteiro positivo/)).toBeInTheDocument();
+    await user.clear(alvo);
+    await user.type(alvo, '1021');
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+    await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalledWith([
+      expect.objectContaining({ categoria, target: 1021 })
+    ]));
+  });
+
+  it('permite centavos apenas na categoria monetaria e revalida ao trocar a categoria', async () => {
+    const user = userEvent.setup();
+    api.getCampanhas.mockResolvedValue([campanhaBase({ categoria: 'valor_monetario', target: 0.01 })]);
+    render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
+    expect(screen.getByLabelText('Meta (R$)')).toHaveAttribute('min', '0.01');
+    expect(screen.getByLabelText('Meta (R$)')).toHaveAttribute('step', '0.01');
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+    await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalledWith([
+      expect.objectContaining({ categoria: 'valor_monetario', target: 0.01 })
+    ]));
+    await screen.findByText('Campanhas atualizadas com sucesso.');
+    api.updateCampanhas.mockClear();
+    await user.selectOptions(screen.getByLabelText('Categoria'), 'registro_cliente');
+    await user.click(screen.getByRole('button', { name: /salvar alterações/i }));
+    expect(api.updateCampanhas).not.toHaveBeenCalled();
+    expect(screen.getByText(/Alvo deve ser um número inteiro positivo/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Alvo')).toHaveValue(0.01);
+  });
+
+  it('oferece somente as cinco categorias ativas', async () => {
     api.getCampanhas.mockResolvedValue([campanhaBase({ categoria: 'registro_cliente' })]);
     render(<AdminCampanhasPage />);
 
     const categoria = await screen.findByLabelText('Categoria');
     expect([...categoria.options].map(option => [option.value, option.textContent])).toEqual([
       ['registro_cliente', 'Registro de cliente'],
+      ['registro_futuro_cliente', 'Registro de futuro cliente'],
       ['valor_monetario', 'Valor em vendas'],
       ['quantidade_chip', 'Quantidade de chip'],
       ['outros', 'Outro']
@@ -77,9 +119,64 @@ describe('AdminCampanhasPage - regras individuais', () => {
     const categoria = await screen.findByLabelText('Categoria');
     expect(categoria).toHaveValue('venda');
     expect([...categoria.options].map(option => option.value)).toEqual([
-      'registro_cliente', 'valor_monetario', 'quantidade_chip', 'outros', 'venda'
+      'registro_cliente', 'registro_futuro_cliente', 'valor_monetario', 'quantidade_chip', 'outros', 'venda'
     ]);
     expect(screen.getByRole('option', { name: 'Venda' })).toBeInTheDocument();
+  });
+
+  it('organiza início e fim em sequência e agrupa categoria e alvo', async () => {
+    const user = userEvent.setup();
+    render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
+    const dataInicial = screen.getByLabelText('Data inicial');
+    const horaInicial = screen.getByLabelText('Hora inicial');
+    const dataFinal = screen.getByLabelText('Data final');
+    const horaFinal = screen.getByLabelText('Hora final');
+    expect(dataInicial.compareDocumentPosition(horaInicial) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(horaInicial.compareDocumentPosition(dataFinal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(dataFinal.compareDocumentPosition(horaFinal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const categoria = screen.getByLabelText('Categoria');
+    expect(categoria.parentElement.parentElement).toBe(screen.getByLabelText('Alvo').parentElement.parentElement);
+    expect(screen.queryByText(/\(São Paulo\)/)).not.toBeInTheDocument();
+  });
+
+  it('salva futuros clientes com horários e remove exceções de vendas', async () => {
+    const user = userEvent.setup();
+    api.getCampanhas.mockResolvedValue([campanhaBase({ venda_excecao_ids: [20], vendas_excecao: [{ id: 20 }] })]);
+    render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
+    await user.selectOptions(screen.getByLabelText('Categoria'), 'registro_futuro_cliente');
+    expect(screen.getByLabelText('Público')).toBeDisabled();
+    expect(screen.getByLabelText('Tipo considerado')).toBeDisabled();
+    expect(screen.getByLabelText('Tipo de chip')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Adicionar exceção/ })).not.toBeInTheDocument();
+    const inicio = screen.getByLabelText('Hora inicial');
+    const fim = screen.getByLabelText('Hora final');
+    await user.type(inicio, '14:00');
+    await user.type(fim, '18:00');
+    await user.click(screen.getByRole('button', { name: /Salvar alterações/ }));
+    await waitFor(() => expect(api.updateCampanhas).toHaveBeenCalledWith([
+      expect.objectContaining({ categoria: 'registro_futuro_cliente', hora_inicio: '14:00', hora_fim: '18:00', venda_excecao_ids: [] })
+    ]));
+  });
+
+  it('rejeita um único horário', async () => {
+    const user = userEvent.setup();
+    render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
+    await user.type(screen.getByLabelText('Hora inicial'), '14:00');
+    await user.click(screen.getByRole('button', { name: /Salvar alterações/ }));
+    expect(api.updateCampanhas).not.toHaveBeenCalled();
+    expect(screen.getByText('Informe um período válido em todas as campanhas.')).toBeInTheDocument();
+  });
+
+  it('bloqueia horários após o primeiro resgate', async () => {
+    const user = userEvent.setup();
+    api.getCampanhas.mockResolvedValue([campanhaBase({ periodo_bloqueado: true, hora_inicio: '14:00', hora_fim: '18:00' })]);
+    render(<AdminCampanhasPage />);
+    await expandirPrimeiraCampanha(user);
+    expect(screen.getByLabelText('Hora inicial')).toBeDisabled();
+    expect(screen.getByLabelText('Hora final')).toBeDisabled();
   });
 
   it('cria novas campanhas com a categoria registro de cliente', async () => {

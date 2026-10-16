@@ -1,6 +1,7 @@
 /**
  * Servico principal de vendas, funil, relatorios, importacoes e pos-venda.
  */
+const { normalizarDdd } = require('../utils/ddd');
 const Venda = require('../models/Venda');
 const VendaFunilAutomacao = require('../models/VendaFunilAutomacao');
 const VendaHistorico = require('../models/VendaHistorico');
@@ -145,7 +146,7 @@ const FUNIL_STATUS_LABELS = {
 const PERMISSAO_AUTO_POS_VENDA = 'vendas_auto_pos_venda';
 const PERMISSAO_LIMITAR_VENDAS_ULTIMOS_6_MESES = 'vendas_limitar_ultimos_6_meses';
 const MESES_LIMITE_VENDAS_RECENTES = 6;
-const DIAS_OCULTAR_CONCLUIDAS_FUNIL = 14;
+const MESES_OCULTAR_CONCLUIDAS_FUNIL = 2;
 const FUNIL_PRIORIDADES = ['alta', 'media', 'baixa'];
 const PROMESSA_CUMPRIDA_OPCOES = ['pendente', 'sim', 'nao'];
 const CLIENTE_SOLICITOU_RESOLVIDO_OPCOES = ['sim', 'nao'];
@@ -975,6 +976,7 @@ function normalizarItensChips(valor) {
   if (Array.isArray(valor)) {
     return valor
       .map(item => ({
+        ...(item.ddd !== undefined ? { ddd: normalizarDdd(item.ddd) } : {}),
         quantidade: Number(item.quantidade || 0),
         gb: normalizarGigas(item.gb),
         tipo_linha: normalizarTipoLinhaChip(item.tipo_linha || item.tipo || item.categoria),
@@ -989,9 +991,9 @@ function normalizarItensChips(valor) {
   }
 
   if (typeof valor === 'string') {
+    let parsed;
     try {
-      const parsed = JSON.parse(valor);
-      return normalizarItensChips(parsed);
+      parsed = JSON.parse(valor);
     } catch {
       return valor
         .split(/\r?\n/)
@@ -1011,6 +1013,7 @@ function normalizarItensChips(valor) {
         })
         .filter(Boolean);
     }
+    return normalizarItensChips(parsed);
   }
 
   return [];
@@ -1350,7 +1353,9 @@ function montarPayload(dados) {
       : null;
   }
 
-  const itensChips = normalizarItensChips(dados.valores_unitarios_chips);
+  const itensChips = normalizarItensChips(dados.valores_unitarios_chips).map(item => (
+    item.ddd === undefined && dados.ddd ? { ...item, ddd: normalizarDdd(dados.ddd) } : item
+  ));
 
   if (dados.valores_unitarios_chips !== undefined) {
     const quantidadeItens = somarQuantidadeItensChips(itensChips);
@@ -1360,6 +1365,7 @@ function montarPayload(dados) {
       throw new Error('A quantidade de chips nao pode ser maior que a quantidade de linhas fechadas.');
     }
 
+    payload.ddd = itensChips.find(item => item.ddd)?.ddd || null;
     payload.valores_unitarios_chips = itensChips.length > 0 ? JSON.stringify(itensChips) : null;
     payload.valor_total = calcularTotalChips(itensChips);
     payload.gb = resumirGigasItensChips(itensChips) || payload.gb || null;
@@ -1701,7 +1707,13 @@ function obterDataLimiteVendasRecentes(referencia = new Date()) {
  */
 function obterDataLimiteConcluidaAntiga(referencia = new Date()) {
   const dataReferencia = parseUtcDateTime(referencia) || new Date();
-  return adicionarDias(dataReferencia, -DIAS_OCULTAR_CONCLUIDAS_FUNIL);
+  const limite = new Date(dataReferencia);
+  const dia = limite.getUTCDate();
+  limite.setUTCDate(1);
+  limite.setUTCMonth(limite.getUTCMonth() - MESES_OCULTAR_CONCLUIDAS_FUNIL);
+  const ultimoDia = new Date(Date.UTC(limite.getUTCFullYear(), limite.getUTCMonth() + 1, 0)).getUTCDate();
+  limite.setUTCDate(Math.min(dia, ultimoDia));
+  return limite;
 }
 
 /**
@@ -2451,8 +2463,8 @@ async function listarVendas(filtros = {}, usuarioId, opcoes = {}) {
         .whereNot('status_funil', etapaFinal)
         .orWhereNull('status_funil')
         .orWhereRaw(
-          'COALESCE(ultima_atividade_em, updated_at, created_at) > DATE_SUB(NOW(), INTERVAL ? DAY)',
-          [DIAS_OCULTAR_CONCLUIDAS_FUNIL]
+          'COALESCE(ultima_atividade_em, updated_at, created_at) > DATE_SUB(NOW(), INTERVAL ? MONTH)',
+          [MESES_OCULTAR_CONCLUIDAS_FUNIL]
         );
     });
   }
@@ -3794,7 +3806,9 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
 
   const agora = formatarDateTimeSQL();
   const vendedorasIds = Array.isArray(dados.vendedoras) ? normalizarIdsVendedoras(dados.vendedoras) : null;
-  let payload = montarPayload(dados);
+  let payload = montarPayload(dados.valores_unitarios_chips !== undefined
+    ? { ...dados, ddd: dados.ddd !== undefined ? dados.ddd : vendaAtual.ddd }
+    : dados);
   const etapaFinal = await obterCodigoEtapaFinal();
   const vendaEstaNaEtapaFinal = vendaAtual.status_funil === etapaFinal;
   const alteracaoDataVenda = resolverDataVendaAtualizacao(dados, vendaAtual);
@@ -3878,8 +3892,12 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
   }
 
   const vendaAtualizada = await Venda.transaction(async trx => {
+    const vendaBloqueada = await Venda.query(trx).findById(id).forUpdate();
+    if (!vendaBloqueada || vendaBloqueada.excluido_em) return null;
+    const vendedorasAnteriores = opcoes.registrarAuditoria
+      ? await trx('venda_vendedoras').where('venda_id', id).pluck('usuario_id')
+      : [];
     if (reversao) {
-      const vendaBloqueada = await Venda.query(trx).findById(id).select('id', 'updated_at').forUpdate();
       if (normalizarInstanteVersao(vendaBloqueada?.updated_at) !== normalizarInstanteVersao(opcoes.versao)) {
         const error = new Error('Esta venda foi alterada por outra pessoa. Reabra a venda antes de registrar a reversão.');
         error.statusCode = 409;
@@ -3930,9 +3948,18 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
       });
     }
 
+    if (opcoes.registrarAuditoria) {
+      const vendedorasNovas = await trx('venda_vendedoras').where('venda_id', id).pluck('usuario_id');
+      await opcoes.registrarAuditoria(
+        { ...vendaBloqueada, vendedoras: vendedorasAnteriores.map(Number).sort((a, b) => a - b) },
+        { ...venda, vendedoras: vendedorasNovas.map(Number).sort((a, b) => a - b) },
+        trx
+      );
+    }
     return venda;
   });
 
+  if (!vendaAtualizada) return null;
   vendaAtualizada.integracao_dashboard = await dashboardIntegracaoService.sincronizarVendaAtualizada(vendaAtualizada.id);
   await solicitarPacoteSeVendaFinalizada(vendaAtualizada, usuarioId);
 
@@ -3940,8 +3967,9 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
 }
 
 /** Registra uma edicao auditada sem alterar o comportamento da edicao comum. */
-async function registrarReversaoVenda(id, dados, usuarioId) {
+async function registrarReversaoVenda(id, dados, usuarioId, opcoes = {}) {
   return atualizarVenda(id, dados?.venda || {}, usuarioId, {
+    registrarAuditoria: opcoes.registrarAuditoria,
     reversao: true,
     observacao: dados?.observacao,
     versao: dados?.versao
@@ -4155,7 +4183,7 @@ async function validarAceiteBiometria(venda, statusDestino, etapasInformadas = n
  * Atualiza um dos marcadores operacionais da venda. O acesso segue o mesmo
  * escopo de visualizacao usado pelo funil.
  */
-async function atualizarAceiteBiometriaVenda(id, dados, usuarioId) {
+async function atualizarAceiteBiometriaVenda(id, dados, usuarioId, { registrarAuditoria } = {}) {
   if (!await usuarioPodeAcessarVenda(id, usuarioId)) {
     return { status: 'not_found' };
   }
@@ -4188,23 +4216,28 @@ async function atualizarAceiteBiometriaVenda(id, dados, usuarioId) {
     [coluna]: dados.concluido,
     updated_at: formatarDateTimeSQL()
   };
-  const atualizadas = await Venda.query()
-    .where({ id: Number(id), status_funil: venda.status_funil })
-    .whereNull('excluido_em')
-    .whereNull('cancelada_em')
-    .patch(patch);
+  const executar = async trx => {
+    const anterior = registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
+    const atualizadas = await Venda.query(trx)
+      .where({ id: Number(id), status_funil: venda.status_funil })
+      .whereNull('excluido_em')
+      .whereNull('cancelada_em')
+      .patch(patch);
 
-  if (!atualizadas) {
-    return { status: 'conflict', message: 'A venda mudou de etapa ou estado. Atualize o funil e tente novamente.' };
-  }
+    if (!atualizadas) {
+      return { status: 'conflict', message: 'A venda mudou de etapa ou estado. Atualize o funil e tente novamente.' };
+    }
 
-  const vendaAtualizada = await Venda.query().findById(id);
+    const vendaAtualizada = await Venda.query(trx).findById(id);
+    if (registrarAuditoria) await registrarAuditoria({ ...anterior }, { ...vendaAtualizada }, trx);
 
-  return { status: 'ok', venda: vendaAtualizada };
+    return { status: 'ok', venda: vendaAtualizada };
+  };
+  return registrarAuditoria ? Venda.transaction(executar) : executar();
 }
 
 /** Edita a data efetiva de conclusao e preserva a alteracao no historico. */
-async function editarConclusaoVenda(id, dados, usuarioId) {
+async function editarConclusaoVenda(id, dados, usuarioId, { registrarAuditoria } = {}) {
   const permitido = await usuarioPodeAcessarVenda(id, usuarioId);
   if (!permitido) return { status: 'not_found' };
 
@@ -4231,6 +4264,10 @@ async function editarConclusaoVenda(id, dados, usuarioId) {
 
     const vendaAtualizada = await Venda.query(trx).patchAndFetchById(id, edicao.patch);
     await registrarHistoricoVenda({ ...edicao.historico, trx });
+    if (registrarAuditoria) await registrarAuditoria(
+      { concluida_em: edicao.historico.dados.concluida_em_anterior },
+      { concluida_em: edicao.historico.dados.concluida_em }, trx, vendaAtualizada
+    );
     return { status: 'ok', venda: vendaAtualizada };
   });
 }
@@ -4317,6 +4354,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
 
     if (venda.status_funil === 'retorno') {
       const vendaAtualizada = await Venda.transaction(async trx => {
+        const anteriorAuditoria = opcoes.registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
         const atualizada = await Venda.query(trx).patchAndFetchById(id, {
           motivo_retorno: motivo,
           prioridade_funil: prioridade,
@@ -4339,6 +4377,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
           trx
         });
 
+        if (opcoes.registrarAuditoria) await opcoes.registrarAuditoria({ ...anteriorAuditoria }, { ...atualizada }, trx);
         return atualizada;
       });
 
@@ -4350,6 +4389,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
       : (venda.status_anterior_retorno || 'aprovacao');
 
     const vendaAtualizada = await Venda.transaction(async trx => {
+      const anteriorAuditoria = opcoes.registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
       const atualizada = await Venda.query(trx).patchAndFetchById(id, {
         status_funil: 'retorno',
         prioridade_funil: prioridade,
@@ -4387,6 +4427,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
         trx
       });
 
+      if (opcoes.registrarAuditoria) await opcoes.registrarAuditoria({ ...anteriorAuditoria }, { ...atualizada }, trx);
       return atualizada;
     });
 
@@ -4405,6 +4446,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
 
     let clienteSincronizadoId = null;
     const vendaAtualizada = await Venda.transaction(async trx => {
+      const anteriorAuditoria = opcoes.registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
       const dadosAtualizacao = {
         status_funil: destino,
         prioridade_funil: prioridade,
@@ -4440,6 +4482,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
         clienteSincronizadoId = await sincronizarClienteComVendaConcluida(atualizada, agora, trx);
       }
 
+      if (opcoes.registrarAuditoria) await opcoes.registrarAuditoria({ ...anteriorAuditoria }, { ...atualizada }, trx);
       return atualizada;
     });
 
@@ -4449,6 +4492,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
 
   let clienteSincronizadoId = null;
   const vendaAtualizada = await Venda.transaction(async trx => {
+    const anteriorAuditoria = opcoes.registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
     const dadosAtualizacao = {
       ...requisitosAutomaticos.patch,
       status_funil: status,
@@ -4529,6 +4573,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
       clienteSincronizadoId = await sincronizarClienteComVendaConcluida(atualizada, agora, trx);
     }
 
+    if (opcoes.registrarAuditoria) await opcoes.registrarAuditoria({ ...anteriorAuditoria }, { ...atualizada }, trx);
     return atualizada;
   });
 
@@ -4541,7 +4586,7 @@ async function atualizarStatusVenda(id, dados, usuarioId, opcoes = {}) {
  * Envia venda para pos venda para processamento.
  */
 async function enviarVendaParaPosVenda(id, usuarioId, dados = {}) {
-  const permitido = await usuarioPodeEditarVenda(id, usuarioId);
+  const permitido = await usuarioPodeAcessarVenda(id, usuarioId);
 
   if (!permitido) {
     return { status: 'not_found' };
@@ -4688,6 +4733,10 @@ async function excluirVenda(id, usuarioId) {
   const agora = new Date();
 
   return Venda.transaction(async trx => {
+    // Serializa a exclusao com as decisoes de aprovacao da mesma venda.
+    const venda = await trx('vendas').where('id', id).forUpdate().first();
+    if (!venda || venda.excluido_em) return 0;
+
     const atualizados = await trx('vendas')
       .where('id', id)
       .whereNull('excluido_em')
@@ -4699,6 +4748,7 @@ async function excluirVenda(id, usuarioId) {
       });
 
     if (atualizados) {
+      await vendaAprovacaoService.obsoletarSolicitacoes(id, trx);
       await excluirNotificacoesVendas(id, trx);
     }
 
@@ -4891,7 +4941,8 @@ async function cancelarVenda(id, {
   origemMovimentacao = null,
   automacaoEmailId = null,
   automacaoRecebidaEm = null,
-  statusFunilEsperado = undefined
+  statusFunilEsperado = undefined,
+  registrarAuditoria
 }) {
   const motivoLimpo = String(motivo || '').trim();
 
@@ -4955,6 +5006,7 @@ async function cancelarVenda(id, {
       trx
     });
 
+    if (registrarAuditoria) await registrarAuditoria({ ...venda }, { ...atualizada }, trx);
     return { status: 'ok', venda: atualizada, alterada: true };
   });
 }
@@ -4987,6 +5039,7 @@ async function reverterCancelamentoVenda(id, usuarioId, dados = {}) {
   const agora = formatarDateTimeSQL();
 
   const vendaAtualizada = await Venda.transaction(async trx => {
+    const anteriorAuditoria = dados.registrarAuditoria ? await Venda.query(trx).findById(id).forUpdate() : null;
     const atualizada = await Venda.query(trx).patchAndFetchById(id, {
       cancelada_em: null,
       cancelada_por_id: null,
@@ -5012,6 +5065,7 @@ async function reverterCancelamentoVenda(id, usuarioId, dados = {}) {
 
     await vendaNotificacaoCancelamentoService.desativarNotificacaoCancelamento(id, trx);
 
+    if (dados.registrarAuditoria) await dados.registrarAuditoria({ ...anteriorAuditoria }, { ...atualizada }, trx);
     return atualizada;
   });
 

@@ -73,6 +73,7 @@ input, select, textarea { font-family: inherit; }
   height: 64px;
   padding: 8px 20px;
   border-bottom: 1px solid var(--border);
+  background: #f7fbff;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -704,7 +705,6 @@ button.urgent-alert-panel__header {
   height: auto;
   padding: 14px 16px;
   border: 1px solid var(--border);
-  border-top: 3px solid var(--tone-color);
   border-radius: 9px;
   background: var(--surface, #fff);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
@@ -730,7 +730,6 @@ button.urgent-alert-panel__header {
 
 .urgent-alert-card:hover {
   transform: translateY(-2px);
-  border-color: var(--tone-color);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
 }
 
@@ -1575,6 +1574,12 @@ button.urgent-alert-panel__header {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 12px;
+  background: #f7fbff;
+  border-radius: 10px;
+  margin-inline: auto;
   margin-bottom: 20px;
 }
 .login-card h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
@@ -2986,8 +2991,6 @@ button.urgent-alert-panel__header {
     gap: 8px;
     min-height: 92px;
     padding: 10px 10px 10px 12px;
-    border-top-width: 1px;
-    border-left: 3px solid var(--tone-color);
     border-radius: 12px;
     box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
   }

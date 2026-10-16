@@ -76,28 +76,22 @@ async function me(req, res) {
  */
 async function updateMe(req, res) {
   try {
-    const usuario = await authService.atualizarPerfil(req.usuario.id, req.body);
-    const alteracoes = { ...req.body };
-
-    if (Object.prototype.hasOwnProperty.call(alteracoes, 'foto_perfil')) {
-      alteracoes.foto_perfil = alteracoes.foto_perfil ? '[foto atualizada]' : '[foto removida]';
-    }
-
-    await auditLogService.registrarSemBloquear(req, {
-      acao: 'auth.perfil_atualizado',
-      entidade: 'usuarios',
-      entidade_id: usuario.id,
-      dados: {
-        alteracoes
-      }
+    const usuario = await authService.atualizarPerfil(req.usuario.id, req.body, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
     });
 
     return res.json(usuario);
   } catch (error) {
-    console.error(error);
+    console.error('Erro ao atualizar perfil.');
+
+    const mensagensSeguras = [
+      'Usuário não encontrado.', 'Foto de perfil invalida.',
+      'A foto deve ser PNG, JPG ou WEBP.', 'A foto deve ter ate 4 MB.',
+      'Chave de criptografia de senhas ausente ou inválida.', 'Senha inválida.'
+    ];
 
     return res.status(500).json({
-      message: error.message || 'Erro ao atualizar perfil.'
+      message: mensagensSeguras.includes(error.message) ? error.message : 'Erro ao atualizar perfil.'
     });
   }
 }

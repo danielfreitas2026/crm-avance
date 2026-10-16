@@ -2,6 +2,22 @@ const axios = require('axios');
 
 const TELEGRAM_API_URL = 'https://api.telegram.org';
 
+function configuracaoAtiva(nomeVariavel) {
+  return String(process.env[nomeVariavel] || '').trim().toLowerCase() === 'true';
+}
+
+function acompanhamentoAtivo() {
+  return configuracaoAtiva('TELEGRAM_ACOMPANHAMENTO_ATIVO');
+}
+
+function vendasAtivo() {
+  return configuracaoAtiva('TELEGRAM_VENDAS_ATIVO');
+}
+
+function resumoVendasAtivo() {
+  return configuracaoAtiva('TELEGRAM_RESUMO_VENDAS_ATIVO');
+}
+
 function tokenConfigurado() {
   return String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
 }
@@ -317,6 +333,7 @@ async function atualizarMensagemFuturoClienteRevertido(publicacao, linha, opcoes
 }
 
 async function enviarResumoVendas(texto) {
+  if (!resumoVendasAtivo()) return { enviado: false, motivo: 'telegram_resumo_vendas_desativado' };
   const chatId = obterChatId('TELEGRAM_RESUMO_VENDAS_CHAT_ID');
   if (!tokenConfigurado() || !chatId) return { enviado: false, motivo: 'telegram_nao_configurado' };
   const resultado = await chamarApi('sendMessage', { chat_id: chatId, text: String(texto || ''), disable_web_page_preview: true });
@@ -324,6 +341,7 @@ async function enviarResumoVendas(texto) {
 }
 
 async function enviarVenda(venda) {
+  if (!vendasAtivo()) return { enviado: false, motivo: 'telegram_vendas_desativado' };
   const chatId = obterChatId('TELEGRAM_VENDAS_CHAT_ID');
   if (!tokenConfigurado() || !chatId) return { enviado: false, motivo: 'telegram_nao_configurado' };
   const resultados = [];
@@ -342,6 +360,9 @@ async function enviarVenda(venda) {
 }
 
 module.exports = {
+  acompanhamentoAtivo,
+  vendasAtivo,
+  resumoVendasAtivo,
   enviarFuturoCliente,
   atualizarMensagemFuturoClienteRevertido,
   enviarResumoVendas,

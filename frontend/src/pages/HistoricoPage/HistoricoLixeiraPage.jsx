@@ -5,6 +5,8 @@ import * as I from '../../components/Icons';
 import Paginacao from '../../components/Paginacao/Paginacao';
 import { listarHistoricoVendasAgrupado } from '../../services/audit-log.service';
 import { formatUtcDateTime, getUtcDateTimeTimestamp } from '../../utils/datetime';
+import AlteracoesHistorico from './AlteracoesHistorico';
+import HistoricoDetalheModal from './HistoricoDetalheModal';
 
 const ACAO_LABELS = {
   'venda.criada': 'Venda criada',
@@ -375,61 +377,56 @@ function DetalheCard({ log, onClose }) {
     : null;
 
   return (
-    <div className="history-detail-card">
-      <div className="history-detail-header">
-        <h3>Detalhes do Registro</h3>
-        <button className="history-detail-close" onClick={onClose} aria-label="Fechar">
-          ×
-        </button>
+    <HistoricoDetalheModal onClose={onClose}>
+      <div className="history-detail-row">
+        <span className="history-detail-label">Ação:</span>
+        <span className="history-detail-value">{formatarAcao(log.acao)}</span>
       </div>
 
-      <div className="history-detail-body">
+      {stageDe && (
         <div className="history-detail-row">
-          <span className="history-detail-label">Ação:</span>
-          <span className="history-detail-value">{formatarAcao(log.acao)}</span>
+          <span className="history-detail-label">Etapa do funil:</span>
+          <span className="history-detail-value">{stageDe}</span>
         </div>
+      )}
 
-        {stageDe && (
-          <div className="history-detail-row">
-            <span className="history-detail-label">Etapa do funil:</span>
-            <span className="history-detail-value">{stageDe}</span>
-          </div>
-        )}
-
-        {dados.alteracoes?.observacao && (
-          <div className="history-detail-row">
-            <span className="history-detail-label">Observação:</span>
-            <span className="history-detail-value">{dados.alteracoes.observacao}</span>
-          </div>
-        )}
-
+      {dados.alteracoes?.observacao && (
         <div className="history-detail-row">
-          <span className="history-detail-label">Usuário:</span>
-          <span className="history-detail-value">
-            {log.usuario?.nome || (log.usuario_id ? `Usuário #${log.usuario_id}` : 'Sistema')}
-          </span>
+          <span className="history-detail-label">Observação:</span>
+          <span className="history-detail-value">{dados.alteracoes.observacao}</span>
         </div>
+      )}
 
-        <div className="history-detail-row">
-          <span className="history-detail-label">Data/Hora:</span>
-          <span className="history-detail-value">{formatarData(log.created_at)}</span>
-        </div>
+      <div className="history-detail-row">
+        <span className="history-detail-label">Usuário:</span>
+        <span className="history-detail-value">
+          {log.usuario?.nome || (log.usuario_id ? `Usuário #${log.usuario_id}` : 'Sistema')}
+        </span>
+      </div>
 
-        <div className="history-detail-row">
-          <span className="history-detail-label">Entidade:</span>
-          <span className="history-detail-value">{log.entidade || 'vendas'} #{log.entidade_id}</span>
-        </div>
+      <div className="history-detail-row">
+        <span className="history-detail-label">Data/Hora:</span>
+        <span className="history-detail-value">{formatarData(log.created_at)}</span>
+      </div>
 
-        {dados && Object.keys(dados).length > 0 && (
-          <div className="history-detail-section">
-            <h4>Dados da Operação</h4>
+      <div className="history-detail-row">
+        <span className="history-detail-label">Entidade:</span>
+        <span className="history-detail-value">{log.entidade || 'vendas'} #{log.entidade_id}</span>
+      </div>
+
+      {dados && Object.keys(dados).length > 0 && (
+        <div className="history-detail-section">
+          <h4>Dados da Operação</h4>
+          <AlteracoesHistorico dados={dados} stageNamesMap={STAGE_NAMES_MAP} />
+          <details className="history-raw-data">
+            <summary>Ver dados técnicos em JSON</summary>
             <pre className="history-detail-data">
               {JSON.stringify(dados, null, 2)}
             </pre>
-          </div>
-        )}
-      </div>
-    </div>
+          </details>
+        </div>
+      )}
+    </HistoricoDetalheModal>
   );
 }
 

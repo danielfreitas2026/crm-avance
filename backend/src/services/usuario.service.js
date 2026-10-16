@@ -2,7 +2,7 @@ const Usuario = require('../models/Usuario');
 /**
  * Servico de usuarios, roles e permissoes efetivas.
  */
-const bcrypt = require('bcrypt');
+const { prepararSenha } = require('../utils/senha-usuario');
 
 
 /**
@@ -27,12 +27,12 @@ async function buscarUsuarioPorId(id) {
  * Cria usuario com os dados informados.
  */
 async function criarUsuario(dados) {
-  const senhaHash = await bcrypt.hash(dados.senha, 10);
+  const senhaPreparada = await prepararSenha(dados.senha);
 
   return Usuario.query().insert({
     nome: dados.nome,
     email: dados.email,
-    senha: senhaHash,
+    ...senhaPreparada,
     role_id: dados.role_id,
     permissoes: JSON.stringify(dados.permissoes || []),
     ativo: dados.ativo ?? true
@@ -42,7 +42,7 @@ async function criarUsuario(dados) {
 /**
  * Atualiza usuario com os dados informados.
  */
-async function atualizarUsuario(id, dados) {
+async function atualizarUsuario(id, dados, { registrarAuditoria } = {}) {
   const dadosAtualizacao = {};
 
   if (dados.permissoes !== undefined) {
@@ -66,10 +66,16 @@ async function atualizarUsuario(id, dados) {
   }
 
   if (dados.senha !== undefined && dados.senha !== '') {
-    dadosAtualizacao.senha = await bcrypt.hash(dados.senha, 10);
+    Object.assign(dadosAtualizacao, await prepararSenha(dados.senha));
   }
 
-  return Usuario.query().patchAndFetchById(id, dadosAtualizacao);
+  return Usuario.transaction(async trx => {
+    const anterior = await Usuario.query(trx).findById(id).forUpdate();
+    if (!anterior) return null;
+    const atualizado = await Usuario.query(trx).patchAndFetchById(id, dadosAtualizacao);
+    if (registrarAuditoria) await registrarAuditoria({ ...anterior }, { ...atualizado }, trx);
+    return atualizado;
+  });
 }
 
 /**

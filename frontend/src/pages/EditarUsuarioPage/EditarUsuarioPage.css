@@ -169,6 +169,107 @@
   grid-column: 1 / -1;
 }
 
+.editar-usuario__passwords {
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+}
+
+.editar-usuario__passwords-heading h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.editar-usuario__passwords-heading p {
+  margin: 4px 0 14px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.editar-usuario__password-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+.editar-usuario__password-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.editar-usuario__password-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+}
+
+.editar-usuario-page .editar-usuario__password-control input {
+  min-width: 0;
+  padding-right: 48px;
+}
+
+.editar-usuario__password-mask {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 48px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-3);
+  letter-spacing: 3px;
+}
+
+.editar-usuario__password-toggle {
+  position: absolute;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.editar-usuario__password-toggle:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.editar-usuario__password-toggle:focus-visible {
+  outline: 2px solid var(--text-2);
+  outline-offset: 1px;
+}
+
+.editar-usuario__password-toggle:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.editar-usuario__password-help {
+  margin: 8px 0 0;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.editar-usuario__password-error {
+  margin: 8px 0 0;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .editar-usuario-page .form-field {
   margin-bottom: 0;
 }

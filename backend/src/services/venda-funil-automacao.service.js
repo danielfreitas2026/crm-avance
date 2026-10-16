@@ -4,6 +4,7 @@ const VendaFunilAutomacaoHistorico = require('../models/VendaFunilAutomacaoHisto
 const FunilEtapa = require('../models/FunilEtapa');
 const vendaService = require('./venda.service');
 const auditLogService = require('./audit-log.service');
+const { montarAlteracoesAuditoria } = require('../utils/alteracoes-auditoria');
 
 const PRIORIDADES = ['alta', 'media', 'baixa'];
 const DIAS_OCULTAR_CONCLUIDAS = 14;
@@ -134,7 +135,8 @@ async function movimentar(vendaId, dados, opcoes = {}) {
         acao: 'venda.funil_automacao_atualizado',
         entidade: 'vendas',
         entidade_id: vendaId,
-        dados: { status_anterior: estado.status_funil, status_novo: status, prioridade_anterior: estado.prioridade_funil, prioridade_nova: prioridade }
+        dados: { status_anterior: estado.status_funil, status_novo: status, prioridade_anterior: estado.prioridade_funil, prioridade_nova: prioridade,
+          alteracoes_detalhadas: montarAlteracoesAuditoria({ ...estado }, { ...atualizada }) }
       }, trx);
     }
     return { status: 'ok', estado: atualizada, alterada: true };

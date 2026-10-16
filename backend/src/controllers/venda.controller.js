@@ -216,7 +216,9 @@ async function importarEmpresas(req, res) {
  */
 async function update(req, res) {
   try {
-    const venda = await vendaService.atualizarVenda(req.params.id, req.body, req.usuario.id);
+    const venda = await vendaService.atualizarVenda(req.params.id, req.body, req.usuario.id, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    });
 
     if (!venda) {
       return res.status(404).json({
@@ -239,7 +241,9 @@ async function update(req, res) {
 /** Registra uma reversao auditada da venda. */
 async function registrarReversao(req, res) {
   try {
-    const venda = await vendaService.registrarReversaoVenda(req.params.id, req.body, req.usuario.id);
+    const venda = await vendaService.registrarReversaoVenda(req.params.id, req.body, req.usuario.id, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    });
 
     if (!venda) {
       return res.status(404).json({ message: 'Venda não encontrada.' });
@@ -285,7 +289,9 @@ async function excluirReversao(req, res) {
  */
 async function updateStatus(req, res) {
   try {
-    const resultado = await vendaService.atualizarStatusVenda(req.params.id, req.body, req.usuario.id);
+    const resultado = await vendaService.atualizarStatusVenda(req.params.id, req.body, req.usuario.id, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    });
 
     if (resultado.status === 'not_found') {
       return res.status(404).json({
@@ -500,7 +506,9 @@ async function xlsxClaro(req, res) {
 /** Edita a data de conclusao de uma venda finalizada. */
 async function updateConclusao(req, res) {
   try {
-    const resultado = await vendaService.editarConclusaoVenda(req.params.id, req.body, req.usuario.id);
+    const resultado = await vendaService.editarConclusaoVenda(req.params.id, req.body, req.usuario.id, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    });
 
     if (resultado.status === 'not_found') {
       return res.status(404).json({ message: 'Venda não encontrada.' });
@@ -525,7 +533,9 @@ async function updateConclusao(req, res) {
  */
 async function updateAceiteBiometria(req, res) {
   try {
-    const resultado = await vendaService.atualizarAceiteBiometriaVenda(req.params.id, req.body, req.usuario.id);
+    const resultado = await vendaService.atualizarAceiteBiometriaVenda(req.params.id, req.body, req.usuario.id, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    });
 
     if (resultado.status === 'not_found') {
       return res.status(404).json({ message: 'Venda não encontrada.' });
@@ -557,7 +567,8 @@ async function cancelar(req, res) {
   try {
     const resultado = await vendaService.cancelarVenda(req.params.id, {
       motivo: req.body?.motivo,
-      usuarioId: req.usuario.id
+      usuarioId: req.usuario.id,
+      registrarAuditoria: req.registrarAlteracaoAuditoria
     });
 
     if (resultado.status === 'not_found') {
@@ -586,7 +597,8 @@ async function cancelar(req, res) {
 async function reverterCancelamento(req, res) {
   try {
     const resultado = await vendaService.reverterCancelamentoVenda(req.params.id, req.usuario.id, {
-      observacao: req.body?.observacao
+      observacao: req.body?.observacao,
+      registrarAuditoria: req.registrarAlteracaoAuditoria
     });
 
     if (resultado.status === 'not_found') {

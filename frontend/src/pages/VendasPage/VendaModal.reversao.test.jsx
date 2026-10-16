@@ -59,6 +59,7 @@ describe('VendaModal - reversões', () => {
   it('mostra a trilha existente e libera o modo de reversão pelo botão amarelo', async () => {
     renderModal();
 
+    expect(screen.getByText('ID da venda: 7')).toBeVisible();
     expect(screen.getByText('Reversão 1')).toBeInTheDocument();
     expect(screen.getByText('Correção solicitada pelo cliente.')).toBeInTheDocument();
     expect(screen.getByText(/13\/08\/2026.*09:00/)).toBeInTheDocument();

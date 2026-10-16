@@ -45,13 +45,12 @@ router.post(
   '/',
   exigirUmaPermissao(['clientes_criar']),
   auditar({
-    acao: 'cliente.criado',
+    acao: req => ({ criado: 'cliente.criado', vinculado: 'cliente.consultora_vinculada', restaurado: 'cliente.restaurado' })[req.clienteCadastroAcao],
     entidade: 'clientes',
     entidade_id: (req, cliente) => cliente?.id,
-    dados: (req, cliente) => ({
-      cliente,
-      payload: req.body
-    })
+    dados: (req, cliente) => req.clienteCadastroAcao === 'criado'
+      ? { cliente, payload: req.body }
+      : { cliente_id: cliente?.id, usuario_id: req.usuario.id, restaurado: req.clienteCadastroAcao === 'restaurado' }
   }),
   clienteController.store
 );

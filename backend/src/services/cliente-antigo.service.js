@@ -688,7 +688,7 @@ function montarDocumentoAtualizado(valor) {
   };
 }
 
-async function atualizar(id, dados = {}) {
+async function atualizar(id, dados = {}, { registrarAuditoria } = {}) {
   const venda = await VendaAntiga.query().findById(id);
   if (!venda) {
     throw criarHttpError(404, 'Venda antiga nao encontrada.');
@@ -710,8 +710,13 @@ async function atualizar(id, dados = {}) {
     throw criarHttpError(400, 'Informe ao menos um documento valido ou a razao social.');
   }
 
-  const atualizado = await VendaAntiga.query().patchAndFetchById(id, patch);
-  return projetarVenda(atualizado);
+  return VendaAntiga.transaction(async trx => {
+    const anterior = await VendaAntiga.query(trx).findById(id).forUpdate();
+    if (!anterior) throw criarHttpError(404, 'Venda antiga nao encontrada.');
+    const atualizado = await VendaAntiga.query(trx).patchAndFetchById(id, patch);
+    if (registrarAuditoria) await registrarAuditoria({ ...anterior }, { ...atualizado }, trx);
+    return projetarVenda(atualizado);
+  });
 }
 
 async function excluir(id) {

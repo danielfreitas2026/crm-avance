@@ -387,7 +387,7 @@ async function criarClienteSecreto(dados, usuarioId) {
   });
 }
 
-async function atualizarClienteSecreto(id, dados, usuarioId) {
+async function atualizarClienteSecreto(id, dados, usuarioId, { registrarAuditoria } = {}) {
   const atual = await ClienteSecreto.query()
     .findById(id)
     .select('id')
@@ -399,6 +399,9 @@ async function atualizarClienteSecreto(id, dados, usuarioId) {
   if (duplicado) throw criarHttpError(400, 'Ja existe um cliente próprio seu com este CPF/CNPJ.');
 
   return ClienteSecreto.transaction(async trx => {
+    const anterior = await ClienteSecreto.query(trx).findById(id).where('criado_por_id', Number(usuarioId)).forUpdate();
+    if (!anterior) return null;
+    const estadoAnterior = registrarAuditoria ? await obterEstadoAuditoriaClienteSecreto(anterior, trx) : null;
     await ClienteSecreto.query(trx).patchAndFetchById(id, {
       ...payload,
       updated_at: new Date()
@@ -408,8 +411,18 @@ async function atualizarClienteSecreto(id, dados, usuarioId) {
       .findById(id)
       .where('criado_por_id', Number(usuarioId))
       .withGraphFetched('[operadoraAtual, operadorasAtuais.operadora, criador]');
+    if (registrarAuditoria) {
+      const salvo = await ClienteSecreto.query(trx).findById(id);
+      await registrarAuditoria(estadoAnterior, await obterEstadoAuditoriaClienteSecreto(salvo, trx), trx);
+    }
     return formatarCliente(cliente);
   });
+}
+
+async function obterEstadoAuditoriaClienteSecreto(cliente, trx) {
+  const operadoras = await ClienteSecretoOperadora.query(trx).where('cliente_secreto_id', cliente.id)
+    .select('operadora_id', 'quantidade_chips', 'valor_pago', 'fidelidade_fim').orderBy('operadora_id');
+  return { ...cliente, operadoras_atuais: operadoras.map(item => ({ ...item })) };
 }
 
 async function excluirClienteSecreto(id, usuarioId) {

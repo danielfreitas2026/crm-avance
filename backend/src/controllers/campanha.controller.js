@@ -8,14 +8,7 @@ const Campanha = require('../models/Campanha');
 const Usuario = require('../models/Usuario');
 const knex = require('../database/connection');
 const { listarPermissoesEfetivas } = require('../utils/permissoes');
-const TIME_ZONE = 'America/Sao_Paulo';
-
-function dataHojeSaoPaulo(base = new Date()) {
-  const partes = new Intl.DateTimeFormat('en-CA', {
-    timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(base).reduce((acc, parte) => ({ ...acc, [parte.type]: parte.value }), {});
-  return `${partes.year}-${partes.month}-${partes.day}`;
-}
+const { adicionarDiasISO, dataHojeSaoPaulo, instanteSaoPaulo, sqlUTC, intervaloCampanha } = require('../utils/campanha-periodo');
 
 function dataValidaISO(valor) {
   const texto = String(valor || '').slice(0, 10);
@@ -25,27 +18,7 @@ function dataValidaISO(valor) {
   return data.getUTCFullYear() === ano && data.getUTCMonth() === mes - 1 && data.getUTCDate() === dia;
 }
 
-function adicionarDiasISO(dataISO, dias) {
-  const data = new Date(`${dataISO}T12:00:00Z`);
-  data.setUTCDate(data.getUTCDate() + dias);
-  return data.toISOString().slice(0, 10);
-}
-
-function intervaloCampanha(campanha, hoje = dataHojeSaoPaulo()) {
-  const inicio = String(campanha.data_inicio || '').slice(0, 10);
-  const fimInclusivo = String(campanha.data_fim || '').slice(0, 10);
-  const estado = hoje < inicio ? 'futura' : hoje > fimInclusivo ? 'encerrada' : 'ativa';
-  const fimConsulta = estado === 'ativa' ? (hoje < fimInclusivo ? hoje : fimInclusivo) : fimInclusivo;
-  return {
-    periodo: 'personalizado',
-    inicioStr: inicio,
-    fimInclusivoStr: fimInclusivo,
-    fimStr: adicionarDiasISO(fimConsulta, 1),
-    estado
-  };
-}
-
-function decorarCampanha(campanha, hoje = dataHojeSaoPaulo()) {
+function decorarCampanha(campanha, hoje = new Date()) {
   return { ...campanha, estado_periodo: intervaloCampanha(campanha, hoje).estado };
 }
 
@@ -56,7 +29,7 @@ function ocultarDetalhesExcecoes(campanha) {
   return publica;
 }
 
-function campanhaVisivelParaUsuario(campanha, current, claimed, hoje = dataHojeSaoPaulo()) {
+function campanhaVisivelParaUsuario(campanha, current, claimed, hoje = new Date()) {
   void campanha;
   void current;
   void claimed;
@@ -64,7 +37,7 @@ function campanhaVisivelParaUsuario(campanha, current, claimed, hoje = dataHojeS
   return true;
 }
 
-function campanhaPodeSerResgatada(campanha, current, claimed, hoje = dataHojeSaoPaulo()) {
+function campanhaPodeSerResgatada(campanha, current, claimed, hoje = new Date()) {
   return intervaloCampanha(campanha, hoje).estado !== 'futura'
     && Number(current || 0) >= Number(campanha.target || 0)
     && !claimed;
@@ -78,8 +51,12 @@ function validarCampanha(campanha) {
     return 'Alvo e descricao sao obrigatorios.';
   }
 
-  if (Number(campanha.target) < 1) {
+  if (!Number.isFinite(Number(campanha.target)) || Number(campanha.target) <= 0) {
     return 'Alvo deve ser maior que zero.';
+  }
+
+  if (campanha.categoria !== 'valor_monetario' && !Number.isInteger(Number(campanha.target))) {
+    return 'Alvo deve ser um número inteiro positivo para metas não monetárias.';
   }
 
   if (!Campanha.periodosValidos.includes(campanha.periodo)) {
@@ -96,6 +73,20 @@ function validarCampanha(campanha) {
 
   if (String(campanha.data_inicio).slice(0, 10) > String(campanha.data_fim).slice(0, 10)) {
     return 'A data inicial deve ser anterior ou igual à data final.';
+  }
+
+  const temInicio = campanha.hora_inicio !== undefined && campanha.hora_inicio !== null && campanha.hora_inicio !== '';
+  const temFim = campanha.hora_fim !== undefined && campanha.hora_fim !== null && campanha.hora_fim !== '';
+  if (temInicio !== temFim || (temInicio && (![campanha.hora_inicio, campanha.hora_fim]
+    .every(hora => typeof hora === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(hora))))) {
+    return 'Informe os dois horários no formato HH:mm ou deixe ambos vazios.';
+  }
+  if (temInicio && instanteSaoPaulo(campanha.data_fim, campanha.hora_fim)
+    <= instanteSaoPaulo(campanha.data_inicio, campanha.hora_inicio)) {
+    return 'O instante final deve ser posterior ao inicial.';
+  }
+  if (campanha.categoria === 'registro_futuro_cliente' && campanha.venda_excecao_ids?.length) {
+    return 'Campanhas de futuros clientes não permitem exceções de vendas.';
   }
 
   if (campanha.categoria === 'outros' && !String(campanha.categoria_personalizada || '').trim()) {
@@ -370,7 +361,7 @@ function operadoraIdsCampanha(campanha) {
 /** Lista de uma vez as vendas dos participantes dentro do intervalo da campanha. */
 async function listarVendasDaCampanha(participanteIds, ciclo) {
   if (!participanteIds.length) return [];
-  const dataReferencia = "COALESCE(NULLIF(NULLIF(v.data_venda, '0000-00-00'), '1899-11-30'), NULLIF(DATE(v.criado_em), '0000-00-00'), DATE(v.created_at))";
+  const dataReferencia = ciclo.inicioUTC ? 'v.created_at' : "COALESCE(NULLIF(NULLIF(v.data_venda, '0000-00-00'), '1899-11-30'), NULLIF(DATE(v.criado_em), '0000-00-00'), DATE(v.created_at))";
 
   return knex('vendas as v')
     .leftJoin('tipos_venda as tv', 'v.tipo_venda_id', 'tv.id')
@@ -387,8 +378,8 @@ async function listarVendasDaCampanha(participanteIds, ciclo) {
       knex.raw("COALESCE(NULLIF(v.razao_social, ''), NULLIF(cli.razao_social, ''), NULLIF(v.nome, ''), NULLIF(cli.nome, ''), CONCAT('Venda #', v.id)) as cliente_nome")
     )
     .whereNot('v.status_funil', 'retorno')
-    .whereRaw(`${dataReferencia} >= ?`, [ciclo.inicioStr])
-    .whereRaw(`${dataReferencia} < ?`, [ciclo.fimStr])
+    .whereRaw(`${dataReferencia} >= ?`, [ciclo.inicioUTC || ciclo.inicioStr])
+    .whereRaw(`${dataReferencia} < ?`, [ciclo.fimUTC || ciclo.fimStr])
     .where(builder => {
       builder.whereIn('v.vendedora_id', participanteIds).orWhereExists(function vendaCompartilhada() {
         this.select(knex.raw('1'))
@@ -429,8 +420,22 @@ async function listarClientesDaCampanha(participanteIds, ciclo) {
   return knex('clientes')
     .select('id', 'operadora_atual_id', 'criado_por_id')
     .whereIn('criado_por_id', participanteIds)
-    .whereRaw('DATE(created_at) >= ?', [ciclo.inicioStr])
-    .whereRaw('DATE(created_at) < ?', [ciclo.fimStr]);
+    .whereRaw(`${ciclo.inicioUTC ? 'created_at' : 'DATE(created_at)'} >= ?`, [ciclo.inicioUTC || ciclo.inicioStr])
+    .whereRaw(`${ciclo.inicioUTC ? 'created_at' : 'DATE(created_at)'} < ?`, [ciclo.fimUTC || ciclo.fimStr]);
+}
+
+/** Conta uma linha por primeiro registro, sem depender de atribuições posteriores. */
+async function listarFuturosClientesDaCampanha(participanteIds, ciclo) {
+  if (!participanteIds.length) return [];
+  const inicio = ciclo.inicioUTC || sqlUTC(instanteSaoPaulo(ciclo.inicioStr, '00:00'));
+  const fim = ciclo.fimUTC || sqlUTC(instanteSaoPaulo(ciclo.fimStr, '00:00'));
+  return knex('lead_linhas as ll')
+    .leftJoin('lead_sondagens as ls', 'ls.lead_linha_id', 'll.id')
+    .select('ll.id', 'ls.operadora_atual_id', 'll.futuro_cliente_primeiro_registro_por_id as criado_por_id')
+    .where('ll.futuro_cliente', true).whereNull('ll.futuro_cliente_excluido_em')
+    .whereIn('ll.futuro_cliente_primeiro_registro_por_id', participanteIds)
+    .where('ll.futuro_cliente_primeiro_registro_em', '>=', inicio)
+    .where('ll.futuro_cliente_primeiro_registro_em', '<', fim);
 }
 
 function vendaPertencePublicoBase(venda, campanha) {
@@ -446,7 +451,7 @@ function regrasCampanha(campanha) {
   const ids = operadoraIdsCampanha(campanha);
   return (ids.length ? ids : [null]).map(operadora_id => ({
     operadora_id,
-    publico_base: campanha.categoria === 'registro_cliente' ? 'ambos' : (campanha.publico_base || 'ambos'),
+    publico_base: ['registro_cliente', 'registro_futuro_cliente'].includes(campanha.categoria) ? 'ambos' : (campanha.publico_base || 'ambos'),
     tipo: 'categoria',
     tipo_chip: 'ambos'
   }));
@@ -515,11 +520,11 @@ function classificarVendas(rows, clientes = []) {
  */
 function calcularValorCampanha(campanha, vendas, clientes) {
   const categoria = campanha.categoria || 'registro_cliente';
-  if (categoria === 'registro_cliente') {
+  if (['registro_cliente', 'registro_futuro_cliente'].includes(categoria)) {
     const regras = regrasCampanha(campanha);
     return clientes.filter(cliente => regras.some(regra => (
       !regra.operadora_id || Number(regra.operadora_id) === Number(cliente.operadora_atual_id)
-    ))).length + vendas.filter(venda => venda.__excecao).length;
+    ))).length + (categoria === 'registro_cliente' ? vendas.filter(venda => venda.__excecao).length : 0);
   }
 
   return vendas.reduce((acc, venda) => {
@@ -580,13 +585,13 @@ function calcularContribuicoesCampanha(campanha, vendas = [], clientes = [], par
   const contribuicoes = new Map([...participanteIds].map(id => [id, 0]));
   const categoria = campanha.categoria || 'registro_cliente';
 
-  if (categoria === 'registro_cliente') {
+  if (['registro_cliente', 'registro_futuro_cliente'].includes(categoria)) {
     const regras = regrasCampanha(campanha);
     for (const cliente of clientes) {
       if (!regras.some(regra => !regra.operadora_id || Number(regra.operadora_id) === Number(cliente.operadora_atual_id))) continue;
       adicionarContribuicao(contribuicoes, participanteIds, cliente.criado_por_id, 1);
     }
-    vendas.filter(venda => venda.__excecao).forEach(venda => {
+    vendas.filter(venda => categoria === 'registro_cliente' && venda.__excecao).forEach(venda => {
       adicionarContribuicao(contribuicoes, participanteIds, venda.vendedora_id, 1, true);
     });
   } else {
@@ -700,7 +705,7 @@ function montarVendasContabilizadas(campanha, vendas = []) {
 }
 
 /** Calcula uma campanha coletiva uma única vez e retorna seu ranking. */
-async function calcularCampanhaColetiva(campanha, hoje = dataHojeSaoPaulo()) {
+async function calcularCampanhaColetiva(campanha, hoje = new Date()) {
   const participantes = Array.isArray(campanha.participantes) ? campanha.participantes : [];
   const participanteIds = participantes.map(item => Number(item.id)).filter(Boolean);
   const ciclo = intervaloCampanha(campanha, hoje);
@@ -710,11 +715,11 @@ async function calcularCampanhaColetiva(campanha, hoje = dataHojeSaoPaulo()) {
   if (ciclo.estado !== 'futura') {
     [vendasRegulares, clientes] = await Promise.all([
       listarVendasDaCampanha(participanteIds, ciclo),
-      listarClientesDaCampanha(participanteIds, ciclo)
+      (campanha.categoria === 'registro_futuro_cliente' ? listarFuturosClientesDaCampanha : listarClientesDaCampanha)(participanteIds, ciclo)
     ]);
   }
 
-  const vendasExcecao = await listarVendasExcecaoCampanha(campanha.venda_excecao_ids || []);
+  const vendasExcecao = await listarVendasExcecaoCampanha(campanha.categoria === 'registro_futuro_cliente' ? [] : (campanha.venda_excecao_ids || []));
   const vendas = unirVendasCampanha(vendasRegulares, vendasExcecao);
 
   const contribuicoes = calcularContribuicoesCampanha(campanha, vendas, clientes, participantes);
@@ -758,7 +763,7 @@ async function calcularProgresso(usuarioId, ciclo, campanhas = []) {
 }
 
 /** Calcula o progresso coletivo das campanhas visíveis para um participante. */
-async function calcularCampanhasParaUsuario(usuarioId, campanhas, hoje = dataHojeSaoPaulo()) {
+async function calcularCampanhasParaUsuario(usuarioId, campanhas, hoje = new Date()) {
   const resultado = {};
   const visiveis = [];
 
@@ -797,7 +802,7 @@ function normalizarIdsEntrada(valor) {
 /** Monta uma campanha calculável a partir do estado ainda não salvo da tela administrativa. */
 async function montarPreviaCampanha(campanhaPersistida, rascunho = {}) {
   const camposEditaveis = [
-    'data_inicio', 'data_fim', 'categoria', 'categoria_personalizada', 'target', 'desc',
+    'data_inicio', 'data_fim', 'hora_inicio', 'hora_fim', 'categoria', 'categoria_personalizada', 'target', 'desc',
     'reward', 'publico_base', 'operadora_id', 'operadora_ids', 'participante_ids', 'regras'
   ];
   const previa = { ...campanhaPersistida };
@@ -993,6 +998,8 @@ class CampanhaController {
         periodo: 'personalizado',
         data_inicio: req.body.data_inicio,
         data_fim: req.body.data_fim,
+        hora_inicio: req.body.hora_inicio,
+        hora_fim: req.body.hora_fim,
         categoria: req.body.categoria,
         target: Number(req.body.target),
         desc: req.body.desc,
@@ -1126,6 +1133,8 @@ class CampanhaController {
             periodo: campanha.periodo,
             data_inicio: campanha.data_inicio,
             data_fim: campanha.data_fim,
+            hora_inicio: campanha.hora_inicio,
+            hora_fim: campanha.hora_fim,
             estado_periodo: estadoPeriodo,
             categoria: campanha.categoria,
             desc: campanha.desc,
@@ -1338,7 +1347,7 @@ class CampanhaController {
 
   async destroy(req, res) {
     try {
-      const deleted = await Campanha.deleteById(req.params.id, dataHojeSaoPaulo());
+      const deleted = await Campanha.deleteById(req.params.id, new Date());
 
       if (!deleted) {
         return res.status(404).json({ error: 'Campanha não encontrada.' });
@@ -1371,5 +1380,9 @@ module.exports.__testables = {
   montarPreviaCampanha,
   parseItensVenda,
   unirVendasCampanha,
-  validarCampanha
+  validarCampanha,
+  listarFuturosClientesDaCampanha,
+  listarVendasDaCampanha,
+  listarClientesDaCampanha,
+  calcularCampanhaColetiva
 };

@@ -6,7 +6,7 @@ import Paginacao from '../../components/Paginacao/Paginacao';
 import * as I from '../../components/Icons';
 import './AdminCampanhasPage.css';
 
-const CATEGORIAS = [['registro_cliente', 'Registro de cliente'], ['valor_monetario', 'Valor em vendas'], ['quantidade_chip', 'Quantidade de chip'], ['outros', 'Outro']];
+const CATEGORIAS = [['registro_cliente', 'Registro de cliente'], ['registro_futuro_cliente', 'Registro de futuro cliente'], ['valor_monetario', 'Valor em vendas'], ['quantidade_chip', 'Quantidade de chip'], ['outros', 'Outro']];
 const CATEGORIAS_LEGADAS = { venda: 'Venda', chip_novo: 'Chip novo', portabilidade: 'Portabilidade', internet: 'Internet' };
 const PUBLICOS = [['ambos', 'Clientes base e não base'], ['base', 'Somente clientes base'], ['nao_base', 'Somente clientes não base']];
 const TIPOS_REGRA = [['categoria', 'Categoria da campanha'], ['chip_novo', 'Chip novo'], ['portabilidade', 'Portabilidade'], ['novo_portabilidade', 'Novo e portabilidade'], ['internet', 'Internet']];
@@ -26,7 +26,7 @@ const hojeISO = () => {
 const normalizarRegrasTela = campanha => {
   if (Array.isArray(campanha.regras) && campanha.regras.length) return campanha.regras.map(regra => ({
     ...regra,
-    tipo_chip: campanha.categoria === 'registro_cliente'
+    tipo_chip: ['registro_cliente', 'registro_futuro_cliente'].includes(campanha.categoria)
       ? 'ambos'
       : regra.tipo === 'chip_novo'
         ? 'novo'
@@ -39,7 +39,7 @@ const normalizarRegrasTela = campanha => {
   const ids = campanha.operadora_ids || [];
   return (ids.length ? ids : [null]).map(operadora_id => ({
     operadora_id,
-    publico_base: campanha.categoria === 'registro_cliente' ? 'ambos' : (campanha.publico_base || 'ambos'),
+    publico_base: ['registro_cliente', 'registro_futuro_cliente'].includes(campanha.categoria) ? 'ambos' : (campanha.publico_base || 'ambos'),
     tipo: 'categoria',
     tipo_chip: 'ambos'
   }));
@@ -50,6 +50,8 @@ const formatarMoeda = valor => Number(valor || 0).toLocaleString('pt-BR', { styl
 const montarRascunhoCampanha = campanha => ({
   data_inicio: campanha.data_inicio,
   data_fim: campanha.data_fim,
+  hora_inicio: campanha.hora_inicio || null,
+  hora_fim: campanha.hora_fim || null,
   categoria: campanha.categoria,
   categoria_personalizada: campanha.categoria_personalizada,
   target: campanha.target,
@@ -191,7 +193,8 @@ function AdminCampanhasPage() {
   const change = (id, field, value) => setCampanhas(items => items.map(c => {
     if (c.id !== id) return c;
     const next = { ...c, [field]: value };
-    if (field === 'categoria' && value === 'registro_cliente') {
+    if (field === 'categoria' && ['registro_cliente', 'registro_futuro_cliente'].includes(value)) {
+      if (value === 'registro_futuro_cliente') { next.venda_excecao_ids = []; next.vendas_excecao = []; }
       next.publico_base = 'ambos';
       next.regras = (next.regras || [regraPadrao()]).map(regra => ({ ...regra, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'ambos' }));
     }
@@ -252,8 +255,22 @@ function AdminCampanhasPage() {
     finally { setSaving(false); setAdding(false); }
   };
   const save = async () => {
+    const alvoInvalido = campanhas.find(campanha => campanha.is_gift && (
+      !Number.isFinite(Number(campanha.target)) || Number(campanha.target) <= 0
+      || (campanha.categoria !== 'valor_monetario' && !Number.isInteger(Number(campanha.target)))
+    ));
+    if (alvoInvalido) {
+      setMessage({ type: 'error', text: alvoInvalido.categoria === 'valor_monetario'
+        ? 'Meta financeira deve ser maior que zero.'
+        : 'Alvo deve ser um número inteiro positivo para metas não monetárias.' });
+      return;
+    }
     const periodoInvalido = campanhas.find(campanha => campanha.is_gift && (
       !campanha.data_inicio || !campanha.data_fim || campanha.data_inicio > campanha.data_fim
+      || Boolean(campanha.hora_inicio) !== Boolean(campanha.hora_fim)
+      || (campanha.hora_inicio && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(campanha.hora_inicio)
+        || !/^([01]\d|2[0-3]):[0-5]\d$/.test(campanha.hora_fim)
+        || `${campanha.data_inicio}T${campanha.hora_inicio}` >= `${campanha.data_fim}T${campanha.hora_fim}`))
     ));
     if (periodoInvalido) {
       setMessage({ type: 'error', text: 'Informe um período válido em todas as campanhas.' });
@@ -311,22 +328,27 @@ function AdminCampanhasPage() {
             <div className="admin-campanhas-fields admin-campanhas-fields--four">
               <label className="admin-campanhas-field--wide">Nome da campanha<input value={campanha.desc || ''} onChange={e => change(campanha.id, 'desc', e.target.value)} placeholder="Ex.: Registre 10 clientes" /></label>
               <label>Data inicial{campanha.periodo_bloqueado && <small>Bloqueada após o primeiro resgate.</small>}<input type="date" value={campanha.data_inicio || ''} disabled={campanha.periodo_bloqueado} onChange={e => change(campanha.id, 'data_inicio', e.target.value)} required /></label>
+              <label>Hora inicial<input type="time" value={campanha.hora_inicio || ''} disabled={campanha.periodo_bloqueado} onChange={e => change(campanha.id, 'hora_inicio', e.target.value || null)} /></label>
               <label>Data final{campanha.periodo_bloqueado && <small>Bloqueada após o primeiro resgate.</small>}<input type="date" value={campanha.data_fim || ''} disabled={campanha.periodo_bloqueado} min={campanha.data_inicio || undefined} onChange={e => change(campanha.id, 'data_fim', e.target.value)} required /></label>
-              <label>Categoria<select value={campanha.categoria} onChange={e => change(campanha.id, 'categoria', e.target.value)}>{categoriasDisponiveis(campanha.categoria).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-              <label>{campanha.categoria === 'valor_monetario' ? 'Meta (R$)' : 'Alvo'}<input type="number" min="0.01" step={campanha.categoria === 'valor_monetario' ? '0.01' : '1'} value={campanha.target} onChange={e => change(campanha.id, 'target', Number(e.target.value) || 0)} /></label>
+              <label>Hora final<input type="time" value={campanha.hora_fim || ''} disabled={campanha.periodo_bloqueado} onChange={e => change(campanha.id, 'hora_fim', e.target.value || null)} /></label>
+              <small className="admin-campanhas-field--wide admin-campanhas-period-hint">Horários opcionais. Preencha ambos para um intervalo contínuo, com término exclusivo. Nas vendas com horário, vale o cadastro no CRM.</small>
+              <div className="admin-campanhas-fields admin-campanhas-fields--two admin-campanhas-field--wide">
+                <label>Categoria<select value={campanha.categoria} onChange={e => change(campanha.id, 'categoria', e.target.value)}>{categoriasDisponiveis(campanha.categoria).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+                <label>{campanha.categoria === 'valor_monetario' ? 'Meta (R$)' : 'Alvo'}<input type="number" min={campanha.categoria === 'valor_monetario' ? '0.01' : '1'} step={campanha.categoria === 'valor_monetario' ? '0.01' : '1'} value={campanha.target} onChange={e => change(campanha.id, 'target', Number(e.target.value) || 0)} /></label>
+              </div>
               {campanha.categoria === 'outros' && <label className="admin-campanhas-field--wide">Nome da categoria<input value={campanha.categoria_personalizada || ''} onChange={e => change(campanha.id, 'categoria_personalizada', e.target.value)} placeholder="Ex.: Seguro" /></label>}
             </div>
           </div>
           <div className="admin-campanhas-section">
             <h5>Quem participa</h5>
             <div className="admin-campanhas-rules-field">
-              <span>Regras de elegibilidade <small>Uma venda precisa atender pelo menos uma regra.</small></span>
+              <span>Regras de elegibilidade <small>Um registro precisa atender pelo menos uma regra.</small></span>
               <div className="admin-campanhas-rules">
                 {campanha.regras.map((regra, regraIndex) => <div className="admin-campanhas-rule" key={`${campanha.id}-regra-${regraIndex}`}>
                   <label>Operadora<select value={regra.operadora_id || ''} onChange={e => changeRegra(campanha.id, regraIndex, 'operadora_id', e.target.value)}><option value="">Todas</option>{operadoras.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}</select></label>
-                  <label>Público<select disabled={campanha.categoria === 'registro_cliente'} value={campanha.categoria === 'registro_cliente' ? 'ambos' : (regra.publico_base || 'ambos')} onChange={e => changeRegra(campanha.id, regraIndex, 'publico_base', e.target.value)}>{PUBLICOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-                  <label>Tipo considerado<select disabled={campanha.categoria === 'registro_cliente'} value={campanha.categoria === 'registro_cliente' ? 'categoria' : (regra.tipo || 'categoria')} onChange={e => changeRegra(campanha.id, regraIndex, 'tipo', e.target.value)}>{TIPOS_REGRA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-                  <label>Tipo de chip<select disabled={campanha.categoria === 'registro_cliente' || regra.tipo === 'chip_novo' || regra.tipo === 'portabilidade' || regra.tipo === 'novo_portabilidade'} value={campanha.categoria === 'registro_cliente' ? 'ambos' : (regra.tipo_chip || 'ambos')} onChange={e => changeRegra(campanha.id, regraIndex, 'tipo_chip', e.target.value)}>{TIPOS_CHIP.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+                  <label>Público<select disabled={['registro_cliente', 'registro_futuro_cliente'].includes(campanha.categoria)} value={['registro_cliente', 'registro_futuro_cliente'].includes(campanha.categoria) ? 'ambos' : (regra.publico_base || 'ambos')} onChange={e => changeRegra(campanha.id, regraIndex, 'publico_base', e.target.value)}>{PUBLICOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+                  <label>Tipo considerado<select disabled={['registro_cliente', 'registro_futuro_cliente'].includes(campanha.categoria)} value={['registro_cliente', 'registro_futuro_cliente'].includes(campanha.categoria) ? 'categoria' : (regra.tipo || 'categoria')} onChange={e => changeRegra(campanha.id, regraIndex, 'tipo', e.target.value)}>{TIPOS_REGRA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+                  <label>Tipo de chip<select disabled={['registro_cliente', 'registro_futuro_cliente'].includes(campanha.categoria) || regra.tipo === 'chip_novo' || regra.tipo === 'portabilidade' || regra.tipo === 'novo_portabilidade'} value={['registro_cliente', 'registro_futuro_cliente'].includes(campanha.categoria) ? 'ambos' : (regra.tipo_chip || 'ambos')} onChange={e => changeRegra(campanha.id, regraIndex, 'tipo_chip', e.target.value)}>{TIPOS_CHIP.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
                   <button type="button" className="btn btn-icon btn-ghost btn-danger-icon admin-campanhas-rule-remove" onClick={() => removeRegra(campanha.id, regraIndex)} disabled={campanha.regras.length === 1} title="Remover regra" aria-label={`Remover regra ${regraIndex + 1}`}><I.Trash size={15} /></button>
                 </div>)}
               </div>
@@ -335,10 +357,10 @@ function AdminCampanhasPage() {
             <div className="admin-campanhas-fields admin-campanhas-fields--participants-only">
               <div className="admin-campanhas-choice-field"><span>Participantes <small>(deixe vazio para todos)</small></span><div className="admin-campanhas-checkboxes admin-campanhas-checkboxes--participants">{usuarios.map(u => <label key={u.id} className="admin-campanhas-checkbox"><input type="checkbox" checked={campanha.participante_ids.map(Number).includes(Number(u.id))} onChange={() => change(campanha.id, 'participante_ids', alternarId(campanha.participante_ids, u.id))} /><span>{u.nome}</span></label>)}</div><button type="button" className="btn btn-sm admin-campanhas-select-all" onClick={() => change(campanha.id, 'participante_ids', usuarios.map(u => Number(u.id)))}>Selecionar todos os ativos</button></div>
             </div>
-            <div className="admin-campanhas-exceptions">
+            {campanha.categoria !== 'registro_futuro_cliente' && <div className="admin-campanhas-exceptions">
               <div className="admin-campanhas-exceptions__header"><span>Exceções de vendas <small>Contam mesmo sem atender ao período, participante ou regras.</small></span><button type="button" className="btn btn-sm" onClick={() => setCampanhaExcecoesAberta(campanha.id)}><I.Plus size={14} /> Adicionar exceção</button></div>
               {(campanha.vendas_excecao || []).length > 0 ? <div className="admin-campanhas-exceptions__list">{campanha.vendas_excecao.map(venda => <VendaExcecaoResumo key={venda.id} venda={venda} onRemove={() => atualizarExcecoes(campanha.id, campanha.vendas_excecao.filter(item => Number(item.id) !== Number(venda.id)))} />)}</div> : <span className="admin-campanhas-exceptions__empty">Nenhuma venda adicionada como exceção.</span>}
-            </div>
+            </div>}
           </div>
           <div className="admin-campanhas-section admin-campanhas-section--last">
             <h5>Comunicação</h5>

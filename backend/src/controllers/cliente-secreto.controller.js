@@ -49,7 +49,9 @@ async function store(req, res) {
 
 async function update(req, res) {
   try {
-    const cliente = await clienteSecretoService.atualizarClienteSecreto(req.params.id, req.body, req.usuario.id);
+    const cliente = await clienteSecretoService.atualizarClienteSecreto(req.params.id, req.body, req.usuario.id, {
+      registrarAuditoria: req.registrarAlteracaoAuditoria
+    });
     if (!cliente) return res.status(404).json({ message: 'Cliente próprio nao encontrado.' });
     return res.json(cliente);
   } catch (error) {

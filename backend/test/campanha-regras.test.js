@@ -24,6 +24,47 @@ const item = (quantidade, tipo_linha, operadora_id, valor_unitario = 50) => ({
   quantidade, tipo_linha, operadora_id, valor_unitario
 });
 
+test('aceita alvos inteiros em todas as categorias e decimais somente em dinheiro', () => {
+  const base = {
+    periodo: 'personalizado', desc: 'Campanha', categoria_personalizada: 'Seguro',
+    data_inicio: '2026-10-01', data_fim: '2026-10-31'
+  };
+  for (const categoria of Campanha.categoriasValidas) {
+    for (const target of [1, 1021, '2']) {
+      assert.equal(validarCampanha({ ...base, categoria, target }), null);
+    }
+    for (const target of [1.021, '2.5', 0.01]) {
+      const erro = validarCampanha({ ...base, categoria, target });
+      if (categoria === 'valor_monetario') assert.equal(erro, null);
+      else assert.match(erro, /inteiro/i);
+    }
+    for (const target of [0, -1, NaN, Infinity, 'Infinity']) {
+      assert.ok(validarCampanha({ ...base, categoria, target }));
+    }
+  }
+});
+
+test('criacao e atualizacao rejeitam alvo fracionado antes de persistir', async t => {
+  const criar = t.mock.method(Campanha, 'create', async () => {});
+  const atualizar = t.mock.method(Campanha, 'updateAll', async () => {});
+  const campanha = {
+    is_gift: true, periodo: 'personalizado', categoria: 'registro_futuro_cliente',
+    target: 1.021, desc: 'Registrar futuros clientes',
+    data_inicio: '2026-10-01', data_fim: '2026-10-31'
+  };
+  for (const [metodo, body] of [['store', campanha], ['updateBulk', { campanhas: [campanha] }]]) {
+    const res = {
+      status(code) { this.statusCode = code; return this; },
+      json(payload) { this.payload = payload; return this; }
+    };
+    await campanhaController[metodo]({ body }, res);
+    assert.equal(res.statusCode, 400);
+    assert.match(res.payload.error, /inteiro/i);
+  }
+  assert.equal(criar.mock.callCount(), 0);
+  assert.equal(atualizar.mock.callCount(), 0);
+});
+
 test('combina regras de operadora, base e portabilidade com semantica OU', () => {
   const campanha = {
     categoria: 'venda',
@@ -260,7 +301,7 @@ test('rejeita exclusao de campanha encerrada com conflito', async () => {
     Campanha.deleteById = deleteOriginal;
   }
 
-  assert.match(hojeRecebido, /^\d{4}-\d{2}-\d{2}$/);
+  assert.ok(hojeRecebido instanceof Date);
   assert.equal(statusCode, 409);
   assert.match(resposta.error, /histórico/i);
 });
@@ -432,4 +473,140 @@ test('detecta somente alteracoes nas datas bloqueadas por resgate', () => {
   const atual = { data_inicio: '2026-08-01', data_fim: '2026-08-31' };
   assert.equal(periodoFoiAlterado(atual, { ...atual, target: 20 }), false);
   assert.equal(periodoFoiAlterado(atual, { ...atual, data_fim: '2026-09-01' }), true);
+});
+
+
+test('futuros clientes contam por operadora e autor, sem vendas de exceção', () => {
+  const campanha = { categoria: 'registro_futuro_cliente', regras: [{ operadora_id: 2 }] };
+  const clientes = [
+    { id: 1, operadora_atual_id: 2, criado_por_id: 10 },
+    { id: 2, operadora_atual_id: 2, criado_por_id: 20 },
+    { id: 3, operadora_atual_id: 1, criado_por_id: 10 }
+  ];
+  const vendas = [{ id: 9, __excecao: true, vendedora_id: 10 }];
+  assert.equal(calcularValorCampanha(campanha, vendas, clientes), 2);
+  assert.deepEqual(calcularContribuicoesCampanha(campanha, vendas, clientes, [10, 20]), { 10: 1, 20: 1 });
+  assert.deepEqual(montarVendasContabilizadas(campanha, vendas), []);
+  assert.deepEqual(normalizarRegras({ regras: [{ operadora_id: 2, publico_base: 'base', tipo: 'chip_novo' }] },
+    'registro_futuro_cliente', [], 'base'), [{ operadora_id: 2, publico_base: 'ambos', tipo: 'categoria', tipo_chip: 'ambos' }]);
+});
+
+test('valida horários completos, intervalo crescente e proíbe exceções em futuros clientes', () => {
+  const campanha = { desc: 'Registrar', target: 2, periodo: 'personalizado', categoria: 'registro_futuro_cliente',
+    data_inicio: '2026-10-06', data_fim: '2026-10-06' };
+  assert.equal(validarCampanha(campanha), null);
+  assert.equal(validarCampanha({ ...campanha, hora_inicio: '14:00', hora_fim: '18:00' }), null);
+  for (const horas of [{ hora_inicio: '14:00' }, { hora_fim: '18:00' },
+    { hora_inicio: '24:00', hora_fim: '18:00' }, { hora_inicio: '14:60', hora_fim: '18:00' },
+    { hora_inicio: '14:00', hora_fim: '14:00' }, { hora_inicio: '18:00', hora_fim: '14:00' }]) {
+    assert.ok(validarCampanha({ ...campanha, ...horas }));
+  }
+  assert.ok(validarCampanha({ ...campanha, venda_excecao_ids: [1] }));
+  assert.equal(validarCampanha({ ...campanha, data_fim: '2026-10-07', hora_inicio: '22:00', hora_fim: '02:00' }), null);
+});
+
+test('horários usam São Paulo, início inclusivo e fim exclusivo', () => {
+  const campanha = { data_inicio: '2026-10-06', data_fim: '2026-10-06', hora_inicio: '14:00', hora_fim: '18:00' };
+  assert.equal(intervaloCampanha(campanha, new Date('2026-10-06T16:59:59Z')).estado, 'futura');
+  assert.equal(intervaloCampanha(campanha, new Date('2026-10-06T17:00:00Z')).estado, 'ativa');
+  assert.equal(intervaloCampanha(campanha, new Date('2026-10-06T20:59:59Z')).estado, 'ativa');
+  const encerrada = intervaloCampanha(campanha, new Date('2026-10-06T21:00:00Z'));
+  assert.equal(encerrada.estado, 'encerrada');
+  assert.equal(encerrada.inicioUTC, '2026-10-06 17:00:00');
+  assert.equal(encerrada.fimUTC, '2026-10-06 21:00:00');
+  assert.equal(campanhaPodeSerResgatada(campanha, 5, false, new Date('2026-10-06T16:59:59Z')), false);
+  const noturna = { ...campanha, data_fim: '2026-10-07', hora_inicio: '22:00', hora_fim: '02:00' };
+  assert.equal(intervaloCampanha(noturna, new Date('2026-10-07T03:00:00Z')).estado, 'ativa');
+  assert.equal(intervaloCampanha(noturna, new Date('2026-10-07T05:00:00Z')).estado, 'encerrada');
+  assert.equal(periodoFoiAlterado(campanha, { ...campanha, hora_fim: '19:00' }), true);
+  assert.equal(periodoFoiAlterado(campanha, { ...campanha, target: 5 }), false);
+});
+
+test('consultas usam primeiro registro e timestamps UTC; campanhas legadas mantêm datas de venda', async () => {
+  const db = require('../src/database/connection');
+  const { listarFuturosClientesDaCampanha, listarVendasDaCampanha, listarClientesDaCampanha } = campanhaController.__testables;
+  const original = db.client.runner;
+  const consultas = [];
+  db.client.runner = builder => ({ run: async () => { consultas.push(builder.toSQL()); return []; } });
+  try {
+    const campanha = { data_inicio: '2026-10-06', data_fim: '2026-10-06', hora_inicio: '14:00', hora_fim: '18:00' };
+    const ciclo = intervaloCampanha(campanha, new Date('2026-10-06T22:00:00Z'));
+    await listarFuturosClientesDaCampanha([10], ciclo);
+    assert.match(consultas[0].sql, /`ll`\.`futuro_cliente` = .*`ll`\.`futuro_cliente_excluido_em` is null/);
+    assert.match(consultas[0].sql, /`ll`\.`futuro_cliente_primeiro_registro_por_id` in/);
+    assert.match(consultas[0].sql, /`futuro_cliente_primeiro_registro_em` >= .*`futuro_cliente_primeiro_registro_em` </);
+    assert.ok(consultas[0].bindings.includes('2026-10-06 17:00:00'));
+    assert.ok(consultas[0].bindings.includes('2026-10-06 21:00:00'));
+    await listarVendasDaCampanha([10], ciclo);
+    assert.match(consultas[1].sql, /v.created_at >= .*v.created_at </);
+    assert.doesNotMatch(consultas[1].sql, /COALESCE.*data_venda/);
+    await listarClientesDaCampanha([10], ciclo);
+    assert.match(consultas[2].sql, /created_at >= .*created_at </);
+    await listarVendasDaCampanha([10], intervaloCampanha({ ...campanha, hora_inicio: null, hora_fim: null }, '2026-10-06'));
+    assert.match(consultas[3].sql, /COALESCE.*data_venda/);
+    assert.ok(consultas[3].bindings.includes('2026-10-07'));
+  } finally { db.client.runner = original; }
+});
+
+
+test('persiste horários na criação e atualização e bloqueia alteração após resgate', async () => {
+  const db = require('../src/database/connection');
+  const originais = { runner: db.client.runner, transaction: Object.getOwnPropertyDescriptor(db, 'transaction'), findAll: Campanha.findAll,
+    syncFiltros: Campanha.syncFiltros, syncParticipantes: Campanha.syncParticipantes, syncVendasExcecao: Campanha.syncVendasExcecao };
+  let gravada;
+  let temResgate = false;
+  Object.defineProperty(db, 'transaction', { configurable: true, value: async executar => executar(db) });
+  db.client.runner = builder => ({ run: async () => {
+    const tabela = builder._single.table;
+    if (builder._method === 'insert') { gravada = { ...builder._single.insert, id: 99 }; return [99]; }
+    if (builder._method === 'update') { gravada = { ...gravada, ...builder._single.update }; return 1; }
+    if (tabela === 'campanhas') return gravada;
+    if (tabela === 'campanha_resgates') return temResgate ? { id: 1 } : undefined;
+    return [];
+  } });
+  Campanha.findAll = async () => [gravada];
+  Campanha.syncFiltros = Campanha.syncParticipantes = Campanha.syncVendasExcecao = async () => {};
+  try {
+    const campanha = { desc: 'Registrar', target: 2, categoria: 'registro_futuro_cliente',
+      data_inicio: '2026-10-06', data_fim: '2026-10-06', hora_inicio: '14:00', hora_fim: '18:00' };
+    const criada = await Campanha.create(campanha);
+    assert.equal(criada.categoria, 'registro_futuro_cliente');
+    assert.equal(criada.hora_inicio, '14:00');
+    assert.equal(criada.hora_fim, '18:00');
+    await Campanha.updateAll([{ ...campanha, id: 99, hora_fim: '19:00' }]);
+    assert.equal(gravada.hora_fim, '19:00');
+    temResgate = true;
+    await assert.rejects(Campanha.updateAll([{ ...campanha, id: 99 }]), { code: 'CAMPANHA_PERIODO_BLOQUEADO' });
+    assert.equal(gravada.hora_fim, '19:00');
+    await assert.rejects(Campanha.deleteById(99, new Date('2026-10-06T22:00:00Z')), { code: 'CAMPANHA_ENCERRADA' });
+  } finally {
+    db.client.runner = originais.runner;
+    Object.defineProperty(db, 'transaction', originais.transaction);
+    for (const chave of ['findAll', 'syncFiltros', 'syncParticipantes', 'syncVendasExcecao']) Campanha[chave] = originais[chave];
+  }
+});
+
+test('prévia conserva os horários editados e calcula o ranking de futuros clientes', async () => {
+  const db = require('../src/database/connection');
+  const original = db.client.runner;
+  db.client.runner = builder => ({ run: async () => {
+    if (builder._single.table === 'usuarios') return [{ id: 10, nome: 'Ana' }, { id: 20, nome: 'Bia' }];
+    if (builder._single.table === 'lead_linhas as ll') return [
+      { id: 1, operadora_atual_id: 2, criado_por_id: 10 }, { id: 2, operadora_atual_id: 2, criado_por_id: 10 },
+      { id: 3, operadora_atual_id: 2, criado_por_id: 20 }
+    ];
+    return [];
+  } });
+  try {
+    const previa = await campanhaController.__testables.montarPreviaCampanha({
+      desc: 'Futuros', target: 3, periodo: 'personalizado', categoria: 'registro_futuro_cliente',
+      data_inicio: '2026-10-06', data_fim: '2026-10-06', participante_ids: [10, 20], regras: [{ operadora_id: null, publico_base: 'ambos', tipo: 'categoria' }]
+    }, { hora_inicio: '14:00', hora_fim: '18:00' });
+    assert.equal(previa.hora_inicio, '14:00');
+    const calculo = await campanhaController.__testables.calcularCampanhaColetiva(previa, new Date('2026-10-06T22:00:00Z'));
+    assert.equal(calculo.current, 3);
+    assert.equal(calculo.achieved, true);
+    assert.deepEqual(calculo.contribuicoes, { 10: 2, 20: 1 });
+    assert.equal(calculo.ranking[0].id, 10);
+  } finally { db.client.runner = original; }
 });

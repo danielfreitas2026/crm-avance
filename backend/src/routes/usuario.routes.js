@@ -13,6 +13,13 @@ const {
 
 router.use(authMiddleware);
 
+router.post(
+  '/:id/visualizar-senha',
+  exigirUmaPermissao(['usuarios_editar']),
+  exigirAdminParaAlterarAdmin,
+  usuarioController.visualizarSenha
+);
+
 router.get(
   '/',
   exigirUmaPermissao(['crud_usuarios', 'usuarios_listar', 'usuarios_criar', 'usuarios_editar', 'usuarios_excluir', 'gerenciar_permissoes']),

@@ -297,8 +297,16 @@ function criarHttpError(statusCode, message) {
 }
 
 /**
- * Formata date time sql para exibicao ou envio.
+ * Preserva a autoria e a data do primeiro registro mesmo em atualizações concorrentes.
  */
+function montarPrimeiroRegistroFuturoCliente(trx, ocorridoEm, usuarioId) {
+  return {
+    futuro_cliente_primeiro_registro_em: trx.raw('COALESCE(??, ?)', ['futuro_cliente_primeiro_registro_em', ocorridoEm]),
+    futuro_cliente_primeiro_registro_por_id: trx.raw('COALESCE(??, ?)', ['futuro_cliente_primeiro_registro_por_id', usuarioId])
+  };
+}
+
+/** Formata data/hora em UTC para persistência SQL. */
 function formatarDateTimeSQL(data = new Date()) {
   /**
    * Preenche valores numericos com zero a esquerda.
@@ -1498,41 +1506,48 @@ async function listarLinhas(filtros = {}, opcoes = {}) {
  * Atualiza campo linha recebida com os dados informados.
  */
 async function atualizarCampoLinhaRecebida(linhaId, usuarioId, dados = {}, opcoes = {}) {
-  const linha = await LeadLinha.query().findById(linhaId);
-  if (!linha) throw criarHttpError(404, 'Lead nÃ£o encontrado.');
+  return LeadLinha.transaction(async trx => {
+    const linha = await LeadLinha.query(trx).findById(linhaId).forUpdate();
+    if (!linha) throw criarHttpError(404, 'Lead nÃ£o encontrado.');
 
-  if (!opcoes.comoAdmin && Number(linha.atribuido_para_id) !== Number(usuarioId)) {
-    throw criarHttpError(403, 'VocÃª nÃ£o pode atualizar este lead.');
-  }
+    if (!opcoes.comoAdmin && Number(linha.atribuido_para_id) !== Number(usuarioId)) {
+      throw criarHttpError(403, 'VocÃª nÃ£o pode atualizar este lead.');
+    }
 
-  const coluna = String(dados.coluna || '').trim();
-  const valor = String(dados.valor || '').trim();
-  if (!coluna) throw criarHttpError(400, 'Informe a coluna que sera atualizada.');
-  if (coluna.endsWith(UPDATED_COLUMN_SUFFIX)) throw criarHttpError(400, 'Atualize a coluna original, nÃ£o a coluna atualizada.');
-  if (!valor) throw criarHttpError(400, 'Informe a informacao atualizada.');
+    const coluna = String(dados.coluna || '').trim();
+    const valor = String(dados.valor || '').trim();
+    if (!coluna) throw criarHttpError(400, 'Informe a coluna que sera atualizada.');
+    if (coluna.endsWith(UPDATED_COLUMN_SUFFIX)) throw criarHttpError(400, 'Atualize a coluna original, nÃ£o a coluna atualizada.');
+    if (!valor) throw criarHttpError(400, 'Informe a informacao atualizada.');
 
-  const dadosJson = parseJson(linha.dados_json, {});
-  if (!Object.prototype.hasOwnProperty.call(dadosJson, coluna)) {
-    throw criarHttpError(400, 'Coluna nÃ£o encontrada neste lead.');
-  }
+    const dadosJson = parseJson(linha.dados_json, {});
+    if (!Object.prototype.hasOwnProperty.call(dadosJson, coluna)) {
+      throw criarHttpError(400, 'Coluna nÃ£o encontrada neste lead.');
+    }
 
-  const colunaAtualizada = `${coluna}${UPDATED_COLUMN_SUFFIX}`;
-  dadosJson[colunaAtualizada] = valor;
+    const colunaAtualizada = `${coluna}${UPDATED_COLUMN_SUFFIX}`;
+    const valorAnterior = dadosJson[colunaAtualizada] ?? dadosJson[coluna];
+    dadosJson[colunaAtualizada] = valor;
 
-  await LeadLinha.query().patchAndFetchById(linha.id, {
-    dados_json: JSON.stringify(dadosJson)
+    await LeadLinha.query(trx).patchAndFetchById(linha.id, {
+      dados_json: JSON.stringify(dadosJson)
+    });
+    const atualizada = await LeadLinha.query(trx)
+      .findById(linha.id)
+      .withGraphFetched('[planilha, envio, atribuidoPara]')
+      .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'));
+
+    const resultado = {
+      linha: formatarLinha(atualizada),
+      coluna,
+      coluna_atualizada: colunaAtualizada,
+      valor
+    };
+    if (opcoes.registrarAuditoria) await opcoes.registrarAuditoria(
+      { [coluna]: valorAnterior }, { [coluna]: valor }, trx, resultado
+    );
+    return resultado;
   });
-  const atualizada = await LeadLinha.query()
-    .findById(linha.id)
-    .withGraphFetched('[planilha, envio, atribuidoPara]')
-    .modifyGraph('atribuidoPara', builder => builder.select('id', 'nome', 'email'));
-
-  return {
-    linha: formatarLinha(atualizada),
-    coluna,
-    coluna_atualizada: colunaAtualizada,
-    valor
-  };
 }
 
 /**
@@ -1702,7 +1717,7 @@ async function listarTodosEnvios() {
 /**
  * Atualiza somente o nome de um envio, preservando suas distribuicoes e linhas.
  */
-async function atualizarNomeEnvio(envioId, nome) {
+async function atualizarNomeEnvio(envioId, nome, { registrarAuditoria } = {}) {
   const nomeNormalizado = String(nome || '').trim();
   if (!nomeNormalizado) throw new Error('Informe um nome para o envio.');
   if (nomeNormalizado.length > 240) throw new Error('O nome do envio deve ter no mÃ¡ximo 240 caracteres.');
@@ -1714,10 +1729,13 @@ async function atualizarNomeEnvio(envioId, nome) {
     throw error;
   }
 
-  const atualizado = await LeadEnvio.query()
-    .patchAndFetchById(envio.id, { nome: nomeNormalizado, updated_at: new Date() });
-
-  return formatarEnvio(atualizado);
+  return LeadEnvio.transaction(async trx => {
+    const anterior = await LeadEnvio.query(trx).findById(envioId).forUpdate();
+    if (!anterior) throw criarHttpError(404, 'Envio não encontrado.');
+    const atualizado = await LeadEnvio.query(trx).patchAndFetchById(envio.id, { nome: nomeNormalizado, updated_at: new Date() });
+    if (registrarAuditoria) await registrarAuditoria({ ...anterior }, { ...atualizado }, trx);
+    return formatarEnvio(atualizado);
+  });
 }
 
 /**
@@ -3162,6 +3180,7 @@ async function marcarComoFuturoCliente(linhaId, usuarioId, dados = {}, opcoes = 
         futuro_cliente_retorno_realizado_por_id: null
       } : {}),
       futuro_cliente_marcado_em: marcadoEm, futuro_cliente_marcado_por_id: donoSondagemId,
+      ...montarPrimeiroRegistroFuturoCliente(trx, marcadoEm, donoSondagemId),
       ...(novoFuturoCliente ? { futuro_cliente_destino: destinoFuturoCliente } : {}),
       retorno_agendado_em: null, retorno_agendado_observacao: null, retorno_agendado_por_id: null,
       retorno_agendado_realizado_em: null, retorno_agendado_realizado_por_id: null,
@@ -5080,6 +5099,7 @@ module.exports = {
     montarPatchReversaoFuturoCliente,
     montarPatchReversaoVendaRecusada,
     montarPatchExclusaoFuturoCliente,
+    montarPrimeiroRegistroFuturoCliente,
     obterResponsavelEscopoLixeira,
     calcularVencimentoLixeiraFuturoCliente,
     deveNotificarNovoFuturoCliente,

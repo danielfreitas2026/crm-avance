@@ -196,7 +196,8 @@ function expandirLinhasChips(valoresUnitariosChips, gbPadrao, produto, valorTota
         linhas.push({
           plano: planoClaro(item.gb || gbPadrao, produto),
           preco: item.valorUnitario || null,
-          tipoLinha: item.tipoLinha || 'novo'
+          tipoLinha: item.tipoLinha || 'novo',
+          ddd: item.ddd
         });
       }
     }
@@ -249,7 +250,9 @@ async function gerarXlsxClaro(venda) {
   const chipRows     = expandirLinhasChips(venda.valores_unitarios_chips, venda.gb, produto, venda.valor_total, qtdLinhas);
   const qtdPortados  = Math.max(portados.length, chipRows.filter(item => item.tipoLinha === 'portabilidade').length);
   const operadoraOrigem = operadoraPortabilidade(venda);
-  const ddd          = txt(venda.ddd);
+  const dddsNovos = [...new Set(chipRows
+    .filter(chip => chip.tipoLinha !== 'portabilidade')
+    .map(chip => chip.ddd ?? txt(venda.ddd)).filter(Boolean))];
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet(`CHEKLIST PADRÃO - ${razaoSocial}`.slice(0, 31));
@@ -369,14 +372,8 @@ async function gerarXlsxClaro(venda) {
     { wrap: true });
 
   const dddsFixos = new Set(['21', '22', '24']);
-  let dddTxt;
-  if (dddsFixos.has(ddd)) {
-    dddTxt = `DDD das linhas novas  (${ddd === '21' ? 'X' : ' '})21  (${ddd === '22' ? 'X' : ' '})22  (${ddd === '24' ? 'X' : ' '})24  /  ( ) Outros Estado (informar DDD):`;
-  } else if (ddd) {
-    dddTxt = `DDD das linhas novas  ( )21  ( )22  ( )24  /  ( X ) Outros Estado (informar DDD): ${ddd}`;
-  } else {
-    dddTxt = 'DDD das linhas novas  ( )21  ( )22  ( )24  /  ( ) Outros Estado (informar DDD):';
-  }
+  const outrosDdds = dddsNovos.filter(ddd => !dddsFixos.has(ddd));
+  const dddTxt = `DDD das linhas novas  (${dddsNovos.includes('21') ? 'X' : ' '})21  (${dddsNovos.includes('22') ? 'X' : ' '})22  (${dddsNovos.includes('24') ? 'X' : ' '})24  /  ${outrosDdds.length ? '( X )' : '( )'} Outros Estado (informar DDD):${outrosDdds.length ? ` ${outrosDdds.join(', ')}` : ''}`;
   merge(ws, 17, 4, 17, 6);
   w(ws, 17, 4, dddTxt, { wrap: true });
 
@@ -401,11 +398,16 @@ async function gerarXlsxClaro(venda) {
   // Linhas 20+ — dados dos chips
   const dataRows = [];
   let portadoIndex = 0;
+  const temTiposPortabilidade = chipRows.some(item => item.tipoLinha === 'portabilidade');
   chipRows.forEach((chip, index) => {
-    const portabilidade = chip.tipoLinha === 'portabilidade' || index >= chipRows.length - qtdPortados;
+    const portabilidade = temTiposPortabilidade
+      ? chip.tipoLinha === 'portabilidade'
+      : index >= chipRows.length - qtdPortados;
     const numeroPortado = portabilidade ? (portados[portadoIndex++] || '') : '';
     const preco = numeroPlanilha(chip.preco);
-    dataRows.push([chip.plano, preco, 'Avulso', preco, portabilidade ? operadoraOrigem : '', numeroPortado]);
+    const dddLinha = chip.ddd ?? txt(venda.ddd);
+    const plano = dddLinha ? `${chip.plano} - DDD ${dddLinha}` : chip.plano;
+    dataRows.push([plano, preco, 'Avulso', preco, portabilidade ? operadoraOrigem : '', numeroPortado]);
   });
   while (dataRows.length < 10) {
     dataRows.push(['', null, '', null, '', '']);

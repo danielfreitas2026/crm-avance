@@ -33,6 +33,7 @@ describe('VendaModal - consulta automática de CNPJ', () => {
       />
     );
 
+    expect(screen.queryByText(/ID da venda:/)).not.toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('00.000.000/0000-00'), {
       target: { value: '12.345.678/0001-95' }
     });

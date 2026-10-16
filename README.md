@@ -57,6 +57,20 @@ Na tela de Automações, abra **Prévia das revisões Claro** para conferir as c
 
 Mantenha `CLARO_IMAP_AUTO_ACTIONS_ENABLED=false` até conferir os registros reais e validar o fluxo no ambiente. Após essa conferência, o responsável pelo deploy pode definir `CLARO_IMAP_AUTO_ACTIONS_ENABLED=true` no ambiente e reiniciar o worker. As ações atualizam apenas o Funil de Automações, com proteção contra repetição e regressão; nomes ambíguos ou origem não comprovada continuam em revisão.
 
+## Avisos opcionais do Telegram
+
+Os avisos abaixo ficam desligados por padrão, inclusive em produção. Configure cada chave individualmente no ambiente do servidor e reinicie o backend após qualquer alteração:
+
+| Variável | Função habilitada com `true` |
+| --- | --- |
+| `TELEGRAM_ACOMPANHAMENTO_ATIVO` | Textos de aceite e avisos de retorno agendado e venda fechada dos futuros clientes. |
+| `TELEGRAM_VENDAS_ATIVO` | Notificação detalhada de novas vendas cadastradas. |
+| `TELEGRAM_RESUMO_VENDAS_ATIVO` | Envio de resumos diários e semanais, inclusive chamadas diretas. |
+
+A ausência da chave, `false` ou qualquer valor diferente de `true` mantém a função desligada. Espaços e maiúsculas são ignorados. Para o envio agendado dos resumos, `TELEGRAM_RESUMO_VENDAS_ATIVO=true` também precisa da permissão de `TELEGRAM_RESUMO_VENDAS_AGENDAMENTO_ATIVO`: `true` habilita, `false` desabilita; quando ausente, o agendamento é permitido somente em produção. O horário continua às 18h de São Paulo, em dias úteis, com fechamento semanal às sextas-feiras.
+
+A distribuição dos futuros clientes mantém encaminhamento, cancelamento, atualização dos botões, prazos, encerramento das publicações antigas e republicação dos contatos devolvidos. Aprovações de vendas e alertas de problemas pós-venda continuam usando suas configurações existentes. A desativação não altera históricos nem provoca envio retroativo ao reativar os avisos.
+
 ## Correção retroativa de botões do Telegram
 
 Para visualizar os encaminhamentos ativos que terão o botão corrigido, execute:
