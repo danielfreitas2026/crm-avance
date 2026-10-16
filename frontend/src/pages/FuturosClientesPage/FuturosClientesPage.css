@@ -3389,21 +3389,13 @@
 }
 
 .future-stats__mailing-list th:nth-child(1),
-.future-stats__mailing-list td:nth-child(1) { width: 23%; text-align: left; }
-.future-stats__mailing-list th:nth-child(2),
-.future-stats__mailing-list td:nth-child(2) { width: 9%; }
-.future-stats__mailing-list th:nth-child(3),
-.future-stats__mailing-list td:nth-child(3) { width: 10%; }
-.future-stats__mailing-list th:nth-child(4),
-.future-stats__mailing-list td:nth-child(4) { width: 11%; }
-.future-stats__mailing-list th:nth-child(5),
-.future-stats__mailing-list td:nth-child(5) { width: 8%; }
+.future-stats__mailing-list td:nth-child(1) { width: 28%; text-align: left; }
+.future-stats__mailing-list th:nth-child(n + 2):nth-child(-n + 5),
+.future-stats__mailing-list td:nth-child(n + 2):nth-child(-n + 5) { width: 14%; }
 .future-stats__mailing-list th:nth-child(6),
-.future-stats__mailing-list td:nth-child(6),
+.future-stats__mailing-list td:nth-child(6) { width: 10%; }
 .future-stats__mailing-list th:nth-child(7),
-.future-stats__mailing-list td:nth-child(7) { width: 17%; }
-.future-stats__mailing-list th:nth-child(8),
-.future-stats__mailing-list td:nth-child(8) { width: 5%; }
+.future-stats__mailing-list td:nth-child(7) { width: 6%; }
 
 .future-stats__mailing-list th:not(:first-child),
 .future-stats__mailing-list td:not(:first-child) {
@@ -3648,4 +3640,44 @@
 @media (max-width: 520px) {
   .future-scope-switch { display: flex; }
   .future-scope-switch button { flex: 1; }
+}
+
+.future-stats__user-numbers--movements {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.future-stats__user-numbers--movements > span:nth-child(2n) {
+  border-right: 0;
+}
+
+.future-stats__user-numbers--movements > span:nth-child(-n + 2) {
+  border-bottom: 1px solid var(--border);
+}
+
+.future-stats__activity-total {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.future-stats__events {
+  min-width: 240px;
+  max-width: 480px;
+}
+
+.future-stats__events summary {
+  cursor: pointer;
+}
+
+.future-stats__events ol {
+  display: grid;
+  gap: 12px;
+  padding-left: 20px;
+  margin: 12px 0;
+}
+
+.future-stats__events li > span {
+  display: block;
+  color: var(--text-2);
+  margin-top: 4px;
+  font-size: 0.85rem;
 }

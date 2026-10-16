@@ -1385,3 +1385,42 @@ test('limite de dois meses ajusta o dia ao fim do mes de destino', () => {
     ultima_atividade_em: '2026-02-28 12:00:01'
   }, 'concluido', referencia), true);
 });
+
+
+test('preserva DDD por bloco em array e JSON e deriva o DDD legado', () => {
+  const itens = [
+    { quantidade: 2, gb: '25', ddd: '11', valor_unitario: 30 },
+    { quantidade: 1, gb: '50', ddd: '21', valor_unitario: 40 }
+  ];
+  for (const entrada of [itens, JSON.stringify(itens)]) {
+    const payload = montarPayload({ valores_unitarios_chips: entrada, ddd: '31' });
+    assert.deepEqual(JSON.parse(payload.valores_unitarios_chips).map(item => item.ddd), ['11', '21']);
+    assert.equal(payload.ddd, '11');
+    assert.equal(payload.valor_total, 100);
+  }
+});
+
+test('DDD antigo preenche apenas blocos legados e DDD vazio permanece opcional', () => {
+  const payload = montarPayload({ ddd: '31', valores_unitarios_chips: [
+    { quantidade: 1, valor_unitario: 30 },
+    { quantidade: 1, valor_unitario: 30, ddd: '' }
+  ] });
+  assert.deepEqual(JSON.parse(payload.valores_unitarios_chips).map(item => item.ddd), ['31', '']);
+  assert.equal(montarPayload({ ddd: '31', valores_unitarios_chips: [
+    { quantidade: 1, valor_unitario: 30, ddd: '' }
+  ] }).ddd, null);
+  assert.equal(montarPayload({ nome: 'Outra edição' }).ddd, undefined);
+  assert.equal(montarPayload({ ddd: '31', valores_unitarios_chips: '2x49,90' }).ddd, '31');
+});
+
+test('rejeita DDD inválido nos blocos sem tratar JSON inválido como texto legado', () => {
+  for (const ddd of ['00', '20', '1', '111', 'ab', '11x']) {
+    const itens = [{ quantidade: 1, valor_unitario: 30, ddd }];
+    for (const entrada of [itens, JSON.stringify(itens)]) {
+      assert.throws(() => montarPayload({ valores_unitarios_chips: entrada }), error => {
+        assert.equal(error.statusCode, 400);
+        return /DDD brasileiro válido/.test(error.message);
+      });
+    }
+  }
+});

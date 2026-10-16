@@ -7,6 +7,7 @@ const usuarioService = require('../src/services/usuario.service');
 const authService = require('../src/services/auth.service');
 const audit = require('../src/services/audit-log.service');
 const horarios = require('../src/services/horario-acesso.service');
+const { recuperarSenha } = require('../src/utils/senha-usuario');
 
 const modelo = dados => Object.assign(new Usuario(), dados);
 const conta = extras => ({ id: 1, nome: 'Ana', email: 'ana@teste.local', senha: 'hash-antigo', role_id: 1, role: { nome: 'admin' }, ativo: true, ...extras });
@@ -58,12 +59,13 @@ test.beforeEach(t => {
   });
 });
 
-test('cadastro funciona sem cofre e armazena somente hash bcrypt', async t => {
+test('cadastro preserva bcrypt e ignora copia recuperavel injetada no payload', async t => {
   const banco = bancoUsuarios(t);
   const criado = await usuarioService.criarUsuario({ nome: 'João', email: 'joao@teste.local', senha: 'nova-senha', role_id: 2, senha_criptografada: 'cópia injetada' });
   assert.equal(await bcrypt.compare('nova-senha', criado.senha), true);
   assert.equal(banco.registros.size, 1);
-  assert.equal('senha_criptografada' in criado, false);
+  assert.equal(recuperarSenha(criado.senha_criptografada), 'nova-senha');
+  assert.equal('senha_criptografada' in criado.toJSON(), false);
   assert.equal('senha' in criado.toJSON(), false);
   const registro = audit.sanitizar({ usuario: { ...criado }, payload: { senha: 'nova-senha' } });
   assert.equal(registro.usuario.senha, '[removido]');
@@ -71,14 +73,15 @@ test('cadastro funciona sem cofre e armazena somente hash bcrypt', async t => {
 });
 
 for (const [nome, atualizar] of [['edição administrativa', usuarioService.atualizarUsuario], ['perfil', authService.atualizarPerfil]]) {
-  test(`${nome} troca senha sem cofre e ignora cópias reversíveis no payload`, async t => {
+  test(`${nome} troca senha e ignora cópias reversíveis no payload`, async t => {
     const banco = bancoUsuarios(t, [conta()]);
     await atualizar(1, { senha: 'nova-senha', senha_criptografada: 'cópia injetada' });
     const atualizado = banco.registros.get(1);
     assert.equal(await bcrypt.compare('nova-senha', atualizado.senha), true);
-    assert.equal('senha_criptografada' in atualizado, false);
+    assert.equal(recuperarSenha(atualizado.senha_criptografada), 'nova-senha');
     await atualizar(1, { nome: 'Novo nome', senha: '', senha_criptografada: 'cópia injetada' });
     assert.equal(banco.registros.get(1).senha, atualizado.senha);
+    assert.equal(banco.registros.get(1).senha_criptografada, atualizado.senha_criptografada);
     assert.equal('senha' in banco.patches[1], false);
     assert.equal('senha_criptografada' in banco.patches[1], false);
   });

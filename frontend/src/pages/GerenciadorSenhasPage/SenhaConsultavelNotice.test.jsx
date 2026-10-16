@@ -33,6 +33,6 @@ describe('aviso sobre consulta administrativa das senhas', () => {
     render(<MemoryRouter initialEntries={['/usuarios/2/editar']}><Routes>
       <Route path="/usuarios/:id/editar" element={<Componente />} />
     </Routes></MemoryRouter>);
-    expect(await screen.findByText(/Administradores poderão consultar.*senha no gerenciador/)).toBeInTheDocument();
+    expect(await screen.findByText(/Administradores poderão consultar.*senha na edição do usuário/)).toBeInTheDocument();
   });
 });

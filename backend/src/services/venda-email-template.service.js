@@ -135,6 +135,7 @@ function parseItensChips(valor, gbPadrao = '') {
   if (Array.isArray(valor)) {
     return valor
       .map(item => ({
+        ...(item.ddd !== undefined ? { ddd: texto(item.ddd) } : {}),
         quantidade: Number(item.quantidade || 0),
         gb: texto(item.gb || gbPadrao),
         tipoLinha: normalizarTipoLinhaChip(item.tipo_linha || item.tipo || item.categoria),
@@ -267,7 +268,11 @@ function enderecoReceita(venda, campo) {
  * Monta contexto a partir dos dados informados.
  */
 function montarContexto(venda) {
-  const itens = parseItensChips(venda.valores_unitarios_chips, venda.gb);
+  const itens = parseItensChips(venda.valores_unitarios_chips, venda.gb).map(item => ({
+    ...item, ddd: item.ddd ?? texto(venda.ddd)
+  }));
+  const ddds = [...new Set(itens.map(item => item.ddd).filter(Boolean))];
+  if (itens.length === 0 && venda.ddd) ddds.push(texto(venda.ddd));
   const portados = parsePortados(venda.numeros_portados);
   const qtd = quantidadeLinhas(venda, itens);
   const qtdPortabilidadeItens = itens.reduce((total, item) => (
@@ -277,6 +282,8 @@ function montarContexto(venda) {
 
   return {
     itens,
+    ddds,
+    dddsPorBloco: new Set(itens.map(item => item.ddd)).size > 1,
     portados,
     qtd,
     qtdPortados,
@@ -367,9 +374,10 @@ function formatarPlanoClaro(venda, ctx) {
           ? gbComSufixo(item.gb || venda.gb)
           : texto(venda.produto_fechado);
         const preco = item.valorUnitario ? formatarDecimal(item.valorUnitario) : ctx.precoUnitario;
-        return preco
+        const plano = preco
           ? `CLARO PÓS ${gbTexto} (${item.quantidade}X${preco})`
           : `CLARO PÓS ${gbTexto}`;
+        return `${plano}${ctx.dddsPorBloco && item.ddd ? ` - DDD ${item.ddd}` : ''}`;
       })
       .join(' + ');
   }
@@ -385,7 +393,7 @@ function formatarPlanoClaro(venda, ctx) {
  */
 function renderClaro(venda) {
   const ctx = montarContexto(venda);
-  const plano = `${formatarPlanoClaro(venda, ctx)}${venda.ddd ? `  - DDD ${venda.ddd}` : ''}`;
+  const plano = `${formatarPlanoClaro(venda, ctx)}${!ctx.dddsPorBloco && ctx.ddds.length === 1 ? `  - DDD ${ctx.ddds[0]}` : ''}`;
 
   return [
     `VENDA ${ctx.vendedora} - ${ctx.cliente}`,
@@ -420,6 +428,12 @@ function renderClaro(venda) {
  * Retorna plano vivo no formato esperado pelo fluxo.
  */
 function planoVivo(venda, ctx) {
+  if (ctx.dddsPorBloco) {
+    return ctx.itens.map(item => {
+      const preco = item.valorUnitario ? formatarDecimal(item.valorUnitario) : ctx.precoUnitario;
+      return `VIVO ${gbComSufixo(item.gb || venda.gb)}${preco ? ` - ${item.quantidade}X${preco}` : ''}${item.ddd ? ` - DDD ${item.ddd}` : ''}`;
+    }).join(' + ');
+  }
   if (ctx.itens.length > 0) {
     const gbParts = ctx.itens.map(item => {
       const gb = gbComSufixo(item.gb || venda.gb);
@@ -430,7 +444,7 @@ function planoVivo(venda, ctx) {
       return preco ? `${item.quantidade}X${preco}` : '';
     }).filter(Boolean);
 
-    return `${gbParts.join(' + ')}${priceParts.length ? ` - ${priceParts.join(' + ')}` : ''}${venda.ddd ? ` - DDD ${venda.ddd}` : ''}`;
+    return `${gbParts.join(' + ')}${priceParts.length ? ` - ${priceParts.join(' + ')}` : ''}${ctx.ddds.length ? ` - DDD ${ctx.ddds[0]}` : ''}`;
   }
 
   const partes = [`VIVO ${gbComSufixo(venda.gb)}`.trim()];

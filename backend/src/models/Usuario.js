@@ -22,6 +22,7 @@ class Usuario extends Model {
         nome: { type: 'string', minLength: 1, maxLength: 120 },
         email: { type: 'string', minLength: 1, maxLength: 160 },
         senha: { type: 'string', minLength: 1, maxLength: 255 },
+        senha_criptografada: { type: ['string', 'null'] },
         foto_perfil: { type: ['string', 'null'] },
         role_id: { type: 'integer' },
         permissoes: { type: ['array', 'string', 'null'] },
@@ -55,7 +56,6 @@ class Usuario extends Model {
     json = super.$formatJson(json);
 
     delete json.senha;
-    // Oculta cópias legadas enquanto a migration de remoção não foi aplicada.
     delete json.senha_criptografada;
 
     return json;

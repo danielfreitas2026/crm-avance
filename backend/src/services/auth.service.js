@@ -2,6 +2,7 @@
  * Servico de autenticacao, emissao de token e manutencao do perfil logado.
  */
 const bcrypt = require('bcrypt');
+const { prepararSenha } = require('../utils/senha-usuario');
 const jwt = require('jsonwebtoken');
 
 const Usuario = require('../models/Usuario');
@@ -62,7 +63,7 @@ async function atualizarPerfil(usuarioId, dados, { registrarAuditoria } = {}) {
   }
 
   if (dados.senha !== undefined && dados.senha !== '') {
-    dadosAtualizacao.senha = await bcrypt.hash(dados.senha, 10);
+    Object.assign(dadosAtualizacao, await prepararSenha(dados.senha));
   }
 
   if (dados.foto_perfil !== undefined) {
