@@ -4814,107 +4814,89 @@ function EstatisticasFuturosClientesView() {
     ? Math.round((Number(indicadores.pendentes || 0) / Number(indicadores.recebidos)) * 100)
     : 0;
   return (
-    <section className="future-stats" aria-busy={carregando}>
-      <header className="future-stats__header">
-        <div className="future-stats__heading">
-          <p className="future-stats__eyebrow">Estatísticas de qualificação</p>
-          <h2>{titulo}</h2>
-          <p className="muted">Os indicadores consideram os leads recebidos no período e as ações realizadas até o encerramento dele.</p>
-        </div>
-        <button type="button" className="btn future-stats__export" onClick={exportar}><I.Download size={16} /> Exportar Excel</button>
-      </header>
+    <section className="future-stats" aria-label="Estatísticas de qualificação" aria-busy={carregando}>
+      <div className="future-stats__toolbar">
+        <header className="future-stats__header">
+          <div className="future-stats__heading">
+            <p className="future-stats__eyebrow">Estatísticas de qualificação</p>
+            <h2>{titulo}</h2>
+            <p className="muted">Os indicadores consideram os leads recebidos no período e as ações realizadas até o encerramento dele.</p>
+          </div>
+          <button type="button" className="btn future-stats__export" onClick={exportar}><I.Download size={16} /> Exportar Excel</button>
+        </header>
 
-      <div className="future-stats__filters">
-        <div className="future-stats__filter-title"><I.Calendar size={17} /><span>Período da análise</span></div>
-        <label><span className="sr-only">Período</span>
-          <select value={preset} onChange={event => { prepararNovaConsulta(); setPreset(event.target.value); }}>
-            <option value="hoje">Hoje</option>
-            <option value="mes">Este mês</option>
-            <option value="personalizado">Período específico</option>
-            <option value="todos">Todo o período</option>
-          </select>
-        </label>
-        {preset === 'personalizado' && <>
-          <label><span>De</span><input type="date" value={dataInicio} onChange={event => { prepararNovaConsulta(); setDataInicio(event.target.value); }} /></label>
-          <label><span>Até</span><input type="date" value={dataFim} onChange={event => { prepararNovaConsulta(); setDataFim(event.target.value); }} /></label>
-        </>}
-        <span className="future-stats__period-hint">Os indicadores são atualizados conforme o período selecionado.</span>
+        <div className="future-stats__filters">
+          <div className="future-stats__filter-title"><I.Calendar size={17} /><span>Período da análise</span></div>
+          <label><span className="sr-only">Período</span>
+            <select value={preset} onChange={event => { prepararNovaConsulta(); setPreset(event.target.value); }}>
+              <option value="hoje">Hoje</option>
+              <option value="mes">Este mês</option>
+              <option value="personalizado">Período específico</option>
+              <option value="todos">Todo o período</option>
+            </select>
+          </label>
+          {preset === 'personalizado' && <>
+            <label><span>De</span><input type="date" value={dataInicio} onChange={event => { prepararNovaConsulta(); setDataInicio(event.target.value); }} /></label>
+            <label><span>Até</span><input type="date" value={dataFim} onChange={event => { prepararNovaConsulta(); setDataFim(event.target.value); }} /></label>
+          </>}
+          <span className="future-stats__period-hint">Os indicadores são atualizados conforme o período selecionado.</span>
+        </div>
       </div>
 
       {(usuario || mailing) && (
         <nav className="future-stats__breadcrumb" aria-label="Navegação das estatísticas">
           <button type="button" className="future-stats__back" onClick={voltarNivelEstatisticas}><I.Return size={16} /> Voltar</button>
           <span className="future-stats__breadcrumb-path">
-            <button type="button" onClick={abrirTodosUsuarios}><I.Users size={14} /> Todos os usuários</button>
-            <span className="future-stats__breadcrumb-separator" aria-hidden="true">›</span>
-            {mailing ? (
-              <>
-                <button type="button" onClick={voltarAoUsuario}>{usuario.usuario_nome}</button>
+            <span className="future-stats__breadcrumb-item">
+              <button type="button" onClick={abrirTodosUsuarios}><I.Users size={14} /> Todos os usuários</button>
+            </span>
+            <span className="future-stats__breadcrumb-item">
+              <span className="future-stats__breadcrumb-separator" aria-hidden="true">›</span>
+              {mailing
+                ? <button type="button" onClick={voltarAoUsuario}>{usuario.usuario_nome}</button>
+                : <span className="future-stats__breadcrumb-current" aria-current="page">{usuario.usuario_nome}</span>}
+            </span>
+            {mailing && (
+              <span className="future-stats__breadcrumb-item">
                 <span className="future-stats__breadcrumb-separator" aria-hidden="true">›</span>
                 <span className="future-stats__breadcrumb-current" aria-current="page">{mailing.envio_nome}</span>
-              </>
-            ) : <span className="future-stats__breadcrumb-current" aria-current="page">{usuario.usuario_nome}</span>}
+              </span>
+            )}
           </span>
         </nav>
       )}
 
-      {erro && <div className="alert alert-danger">{erro}</div>}
-      {carregando && <div className="future-stats__loading">Carregando indicadores...</div>}
+      {erro && <div className="alert alert-danger" role="alert">{erro}</div>}
+      {carregando && <div className="future-stats__loading" role="status">Carregando indicadores...</div>}
 
       {!carregando && !erro && !mailing && (
-        <>
-          <div className="future-stats__overview">
-            <article className="future-stats__kpi future-stats__kpi--received">
-              <div className="future-stats__kpi-icon"><I.Bell size={19} /></div>
-              <div><span>Recebidos</span><strong>{Number(indicadores.recebidos || 0).toLocaleString('pt-BR')}</strong><small>no período selecionado</small></div>
-            </article>
-            <article className="future-stats__kpi future-stats__kpi--worked">
-              <div className="future-stats__kpi-icon"><I.Check size={19} /></div>
-              <div><span>Trabalhados</span><strong>{Number(indicadores.trabalhados || 0).toLocaleString('pt-BR')}</strong><small>{Number(indicadores.produtividade_pct || 0).toLocaleString('pt-BR')}% de produtividade</small></div>
-              <i className="future-stats__kpi-progress"><b style={{ width: `${indicadores.produtividade_pct || 0}%` }} /></i>
-            </article>
-            <article className="future-stats__kpi future-stats__kpi--pending">
-              <div className="future-stats__kpi-icon"><I.History size={19} /></div>
-              <div><span>Pendentes</span><strong>{Number(indicadores.pendentes || 0).toLocaleString('pt-BR')}</strong><small>{percentualPendente}% ainda aguardam ação</small></div>
-            </article>
-            <article className="future-stats__kpi future-stats__kpi--qualified">
-              <div className="future-stats__kpi-icon"><I.Chart size={19} /></div>
-              <div><span>Qualificados</span><strong>{Number(indicadores.qualificados || 0).toLocaleString('pt-BR')}</strong><small>{Number(indicadores.qualificacao_pct || 0).toLocaleString('pt-BR')}% dos trabalhados</small></div>
-            </article>
-          </div>
-
-          <div className="future-stats__panels">
-            <section className="future-stats__panel">
-              <header><div><span className="future-stats__section-kicker">Operação</span><h3>Atividade registrada</h3></div><I.Bell size={18} /></header>
-              <div className="future-stats__metric-list">
-                {ATIVIDADE_ESTATISTICAS.map(([chave, rotulo]) => <div key={chave}><span>{rotulo}</span><strong>{Number(indicadores[chave] || 0).toLocaleString('pt-BR')}</strong></div>)}
-              </div>
-            </section>
-            <section className="future-stats__panel">
-              <header><div><span className="future-stats__section-kicker">Conversão</span><h3>Telegram e vendas</h3></div><I.Chart size={18} /></header>
-              <div className="future-stats__metric-list future-stats__metric-list--funnel">
-                {FUNIL_ESTATISTICAS.map(([chave, rotulo]) => <div key={chave}><span>{rotulo}</span><strong>{Number(indicadores[chave] || 0).toLocaleString('pt-BR')}</strong></div>)}
-              </div>
-            </section>
-          </div>
-
-          <div className="future-stats__business">
-            <article><span>Produtividade</span><strong>{Number(indicadores.produtividade_pct || 0).toLocaleString('pt-BR')}%</strong><small>trabalhados ÷ recebidos</small></article>
-            <article><span>Conversão</span><strong>{Number(indicadores.conversao_pct || 0).toLocaleString('pt-BR')}%</strong><small>vendas ÷ qualificados</small></article>
-            <article><span>Tempo médio da primeira ação</span><strong>{formatarDuracaoMinutos(indicadores.tempo_medio_primeira_acao_min)}</strong><small>desde o recebimento</small></article>
-            <article><span>Potencial mensal</span><strong>{formatarMoedaSondagem(indicadores.potencial_mensal)}</strong><small>estimado nos qualificados</small></article>
-            <article className="future-stats__business-sold"><span>Valor vendido</span><strong>{formatarMoedaSondagem(indicadores.valor_vendido)}</strong><small>vendas por futuro cliente</small></article>
-          </div>
-          <p className="muted future-stats__note">Históricos antigos de tentativas podem estar incompletos. Quando há primeira ação sem auditoria, é contabilizada ao menos uma tentativa.</p>
-        </>
+        <section className="future-stats__overview" aria-label="Indicadores principais">
+          <article className="future-stats__kpi future-stats__kpi--received">
+            <div className="future-stats__kpi-icon"><I.Bell size={19} /></div>
+            <div><span>Recebidos</span><strong>{Number(indicadores.recebidos || 0).toLocaleString('pt-BR')}</strong><small>no período selecionado</small></div>
+          </article>
+          <article className="future-stats__kpi future-stats__kpi--worked">
+            <div className="future-stats__kpi-icon"><I.Check size={19} /></div>
+            <div><span>Trabalhados</span><strong>{Number(indicadores.trabalhados || 0).toLocaleString('pt-BR')}</strong><small>{Number(indicadores.produtividade_pct || 0).toLocaleString('pt-BR')}% de produtividade</small></div>
+            <i className="future-stats__kpi-progress" aria-hidden="true"><b style={{ width: `${indicadores.produtividade_pct || 0}%` }} /></i>
+          </article>
+          <article className="future-stats__kpi future-stats__kpi--pending">
+            <div className="future-stats__kpi-icon"><I.History size={19} /></div>
+            <div><span>Pendentes</span><strong>{Number(indicadores.pendentes || 0).toLocaleString('pt-BR')}</strong><small>{percentualPendente}% ainda aguardam ação</small></div>
+          </article>
+          <article className="future-stats__kpi future-stats__kpi--qualified">
+            <div className="future-stats__kpi-icon"><I.Chart size={19} /></div>
+            <div><span>Qualificados</span><strong>{Number(indicadores.qualificados || 0).toLocaleString('pt-BR')}</strong><small>{Number(indicadores.qualificacao_pct || 0).toLocaleString('pt-BR')}% dos trabalhados</small></div>
+          </article>
+        </section>
       )}
 
       {!carregando && !erro && !usuario && (
-        <section className="future-stats__table-panel future-stats__team-panel">
+        <section className="future-stats__table-panel future-stats__team-panel" aria-labelledby="future-stats-team-title">
           <header>
             <div>
               <span className="future-stats__section-kicker">Equipe</span>
-              <h3>Desempenho por usuário</h3>
+              <h3 id="future-stats-team-title">Desempenho por usuário</h3>
               <p>Compare a operação e abra uma pessoa para analisar seus mailings e leads.</p>
             </div>
             <span className="future-stats__team-count"><I.Users size={14} /> {resumo?.usuarios?.length || 0} usuário(s)</span>
@@ -4962,17 +4944,17 @@ function EstatisticasFuturosClientesView() {
       )}
 
       {!carregando && !erro && usuario && !mailing && (
-        <section className="future-stats__table-panel future-stats__mailings-panel">
+        <section className="future-stats__table-panel future-stats__mailings-panel" aria-labelledby="future-stats-mailings-title">
           <header>
             <div>
               <span className="future-stats__section-kicker">Origem dos dados</span>
-              <h3>Mailings recebidos</h3>
+              <h3 id="future-stats-mailings-title">Mailings recebidos</h3>
               <p>Compare os resultados e abra um mailing para analisar cada lead.</p>
             </div>
             <span className="future-stats__team-count"><I.TableSheet size={14} /> {mailings.length} mailing(s)</span>
           </header>
           {mailings.length > 0 ? (
-            <div className="table-wrap future-stats__mailing-list">
+            <div className="table-wrap future-stats__mailing-list" role="region" aria-label="Tabela de mailings" tabIndex={0}>
               <table>
                 <thead>
                   <tr>
@@ -5029,14 +5011,78 @@ function EstatisticasFuturosClientesView() {
         </section>
       )}
 
-      {!carregando && !erro && mailing && (
+      {!carregando && !erro && !mailing && (
         <>
-          <div className="future-stats__search"><I.Search size={16} /><input value={busca} onChange={event => { setBusca(event.target.value); setPagina(1); }} placeholder="Buscar lead neste mailing" /></div>
-          <div className="table-wrap"><table><thead><tr><th>Lead</th><th>Recebido</th><th>Primeira ação</th><th>Tentativas</th><th>Resultado</th></tr></thead>
-            <tbody>{linhas.map(linha => <tr key={linha.id}><td>{encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.razao_social) || encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.cnpj) || `Lead #${linha.id}`}</td><td>{formatarDataHora(linha.recebido_em)}</td><td>{formatarDataHora(primeiraAcaoVisual(linha))}</td><td>{linha.tentativas_conhecidas || 0}</td><td>{renderFuturoClienteSituacao(linha)}</td></tr>)}</tbody>
-          </table>{!linhas.length && <div className="empty-state">Nenhum lead encontrado.</div>}</div>
-          <div className="lead-pagination"><button className="btn" type="button" disabled={pagina <= 1} onClick={() => setPagina(value => value - 1)}>Anterior</button><span>Página {pagina} de {Math.max(1, Math.ceil(total / 50))}</span><button className="btn" type="button" disabled={pagina * 50 >= total} onClick={() => setPagina(value => value + 1)}>Próxima</button></div>
+          <div className="future-stats__panels">
+            <section className="future-stats__panel" aria-labelledby="future-stats-activity-title">
+              <header><div><span className="future-stats__section-kicker">Operação</span><h3 id="future-stats-activity-title">Atividade registrada</h3></div><I.Bell size={18} /></header>
+              <div className="future-stats__metric-list">
+                {ATIVIDADE_ESTATISTICAS.map(([chave, rotulo]) => <div key={chave}><span>{rotulo}</span><strong>{Number(indicadores[chave] || 0).toLocaleString('pt-BR')}</strong></div>)}
+              </div>
+            </section>
+            <section className="future-stats__panel" aria-labelledby="future-stats-telegram-title">
+              <header><div><span className="future-stats__section-kicker">Distribuição e fechamento</span><h3 id="future-stats-telegram-title">Telegram e vendas</h3></div><I.Chart size={18} /></header>
+              <div className="future-stats__metric-list">
+                {FUNIL_ESTATISTICAS.map(([chave, rotulo]) => <div key={chave}><span>{rotulo}</span><strong>{Number(indicadores[chave] || 0).toLocaleString('pt-BR')}</strong></div>)}
+              </div>
+            </section>
+          </div>
+
+          <section className="future-stats__panel" aria-labelledby="future-stats-business-title">
+            <header><h3 id="future-stats-business-title">Resultados comerciais</h3></header>
+            <div className="future-stats__business">
+              <article><span>Conversão</span><strong>{Number(indicadores.conversao_pct || 0).toLocaleString('pt-BR')}%</strong><small>vendas ÷ qualificados</small></article>
+              <article><span>Tempo médio da primeira ação</span><strong>{formatarDuracaoMinutos(indicadores.tempo_medio_primeira_acao_min)}</strong><small>desde o recebimento</small></article>
+              <article><span>Potencial mensal</span><strong>{formatarMoedaSondagem(indicadores.potencial_mensal)}</strong><small>estimado nos qualificados</small></article>
+              <article className="future-stats__business-sold"><span>Valor vendido</span><strong>{formatarMoedaSondagem(indicadores.valor_vendido)}</strong><small>vendas por futuro cliente</small></article>
+            </div>
+          </section>
+          <p className="muted future-stats__note">Históricos antigos de tentativas podem estar incompletos. Quando há primeira ação sem auditoria, é contabilizada ao menos uma tentativa.</p>
         </>
+      )}
+
+      {!carregando && !erro && mailing && (
+        <section className="future-stats__table-panel future-stats__leads-panel" aria-labelledby="future-stats-leads-title">
+          <header>
+            <div>
+              <span className="future-stats__section-kicker">Detalhamento</span>
+              <h3 id="future-stats-leads-title">Leads do mailing</h3>
+              <p>Consulte as ações e o resultado de cada lead recebido.</p>
+            </div>
+            <span className="future-stats__team-count">{total.toLocaleString('pt-BR')} lead(s)</span>
+          </header>
+          <div className="future-stats__search">
+            <I.Search size={16} />
+            <input
+              aria-label="Buscar lead neste mailing"
+              value={busca}
+              onChange={event => { setBusca(event.target.value); setPagina(1); }}
+              placeholder="Buscar lead neste mailing"
+            />
+          </div>
+          <div className="table-wrap future-stats__lead-list" role="region" aria-label="Tabela de leads" tabIndex={0}>
+            <table>
+              <thead><tr><th>Lead</th><th>Recebido</th><th>Primeira ação</th><th>Tentativas</th><th>Resultado</th></tr></thead>
+              <tbody>
+                {linhas.map(linha => (
+                  <tr key={linha.id}>
+                    <td>{encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.razao_social) || encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.cnpj) || `Lead #${linha.id}`}</td>
+                    <td>{formatarDataHora(linha.recebido_em)}</td>
+                    <td>{formatarDataHora(primeiraAcaoVisual(linha))}</td>
+                    <td>{linha.tentativas_conhecidas || 0}</td>
+                    <td>{renderFuturoClienteSituacao(linha)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!linhas.length && <div className="empty-state">Nenhum lead encontrado.</div>}
+          </div>
+          <div className="lead-pagination future-stats__pagination">
+            <button className="btn" type="button" disabled={pagina <= 1} onClick={() => setPagina(value => value - 1)}>Anterior</button>
+            <span>Página {pagina} de {Math.max(1, Math.ceil(total / 50))}</span>
+            <button className="btn" type="button" disabled={pagina * 50 >= total} onClick={() => setPagina(value => value + 1)}>Próxima</button>
+          </div>
+        </section>
       )}
     </section>
   );

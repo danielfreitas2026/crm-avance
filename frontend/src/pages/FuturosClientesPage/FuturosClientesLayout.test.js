@@ -11,6 +11,11 @@ describe('layout responsivo dos futuros clientes', () => {
     expect(estilos).toMatch(/\.clientes-tabs\s*\{[^}]*flex:\s*0 0 auto/);
   });
 
+  it('mantém os nomes das abas em uma linha no dashboard sem alterar as demais visões', () => {
+    expect(estilos).toMatch(/\.futuros-clientes-page:has\(> \.future-stats\) > \.clientes-tabs \.clientes-tab\s*\{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap/);
+    expect(estilos).toMatch(/\.clientes-tabs\s*\{[^}]*overflow-x:\s*auto/);
+  });
+
   it('usa uma cor definida pelo tema no progresso de produtividade', () => {
     expect(estilos).toMatch(/\.future-stats__user-progress b\s*\{[^}]*background:\s*var\(--accent,\s*#171717\)/);
   });
