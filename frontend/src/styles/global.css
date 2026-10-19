@@ -327,34 +327,59 @@ input, select, textarea { font-family: inherit; }
 .notification-popover--urgent {
   width: min(520px, calc(100vw - 32px));
   max-height: min(620px, calc(100vh - 104px));
-  border-color: #f59e0b;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.2);
+  border-radius: 16px;
+  border-top: 3px solid var(--border);
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.14), 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 .notification-popover--attention {
-  animation: urgentAlertPending 1.8s ease-in-out infinite;
+  border-top-color: #f59e0b;
 }
 .notification-popover__count {
-  color: var(--text-3);
+  flex-shrink: 0;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
   font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.notification-popover--attention .notification-popover__count {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+.notification-popover__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  height: 40px;
+  border: 1px solid #ffedd5;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #b45309;
+}
+.notification-popover__heading {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
 }
 .notification-popover__urgent-title {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #92400e !important;
+  letter-spacing: -0.02em;
 }
-.notification-popover__urgent-title .urgent-alert-panel__pulse {
-  display: block;
-}
-.header-urgent-alert-stack {
-  max-height: min(540px, calc(100vh - 174px));
+.notification-popover__subtitle {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
 }
 .notification-popover__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 20px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
@@ -384,7 +409,7 @@ input, select, textarea { font-family: inherit; }
 }
 .notification-popover__header strong {
   color: var(--text);
-  font-size: 13.5px;
+  font-size: 15px;
 }
 .notification-popover__actions {
   display: flex;
@@ -404,10 +429,33 @@ input, select, textarea { font-family: inherit; }
   cursor: pointer;
 }
 .notification-empty {
-  padding: 18px 14px;
-  color: var(--text-3);
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 24px 44px;
+  color: var(--text-2);
   font-size: 12.5px;
   text-align: center;
+}
+.notification-empty__icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 16px;
+  border: 1px solid #dcfce7;
+  border-radius: 50%;
+  background: var(--success-bg);
+  color: var(--success);
+}
+.notification-empty strong {
+  margin-bottom: 6px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 .notification-item {
   --tone-color: var(--info);
@@ -820,6 +868,65 @@ button.urgent-alert-panel__header {
 .urgent-alert-card__actions .btn-icon:hover {
   color: var(--tone-color);
   background: var(--tone-soft);
+}
+
+.header-urgent-alert-stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(540px, calc(100vh - 174px));
+  overflow-y: auto;
+  padding: 14px;
+  gap: 10px;
+  background: var(--surface-2);
+}
+.header-urgent-alert-stack .urgent-alert-card {
+  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-areas: "icon body" ". actions";
+  align-items: start;
+  gap: 10px 12px;
+  padding: 16px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  animation: none;
+}
+.header-urgent-alert-stack .urgent-alert-card::before {
+  display: none;
+}
+.header-urgent-alert-stack .urgent-alert-card:hover {
+  transform: none;
+  box-shadow: var(--shadow-md);
+}
+.header-urgent-alert-stack .urgent-alert-card__body strong {
+  line-height: 1.5;
+}
+.header-urgent-alert-stack .urgent-alert-card__body span {
+  white-space: normal;
+  line-height: 1.6;
+}
+.header-urgent-alert-stack .urgent-alert-card__actions {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.header-urgent-alert-stack .urgent-alert-card__actions .btn {
+  min-height: 32px;
+}
+.header-urgent-alert-stack .urgent-alert-card__actions .urgent-alert-card__close {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
+}
+.header-urgent-alert-stack .urgent-alert-card__actions .urgent-alert-card__close:hover {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.notification-popover button:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
 }
 
 @keyframes urgentAlertIn {

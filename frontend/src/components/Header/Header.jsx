@@ -129,7 +129,6 @@ function Header({ title, subtitle, onNew, onMenuClick, mobileMenuOpen = false, a
             title="Exibir avisos pendentes"
             onClick={() => setNotificationsOpen(open => !open)}
             aria-expanded={notificationsOpen}
-            aria-haspopup="menu"
           >
             <span className={`notification-bell${alertasUrgentes.length > 0 ? ' notification-bell--urgent' : ''}`}>
               {alertasUrgentes.length > 0 && <span className="urgent-alert-panel__pulse" aria-hidden="true" />}
@@ -141,17 +140,23 @@ function Header({ title, subtitle, onNew, onMenuClick, mobileMenuOpen = false, a
           </button>
 
           {notificationsOpen && (
-            <div className={`notification-popover notification-popover--urgent${alertasUrgentes.length > 0 ? ' notification-popover--attention' : ''}`} role="menu">
+            <section className={`notification-popover notification-popover--urgent${alertasUrgentes.length > 0 ? ' notification-popover--attention' : ''}`} aria-label="Avisos pendentes">
               <div className="notification-popover__header">
-                <strong className="notification-popover__urgent-title">
-                  {alertasUrgentes.length > 0 && <span className="urgent-alert-panel__pulse" aria-hidden="true" />}
-                  Avisos pendentes
-                </strong>
+                <span className="notification-popover__icon" aria-hidden="true"><I.Bell size={20} /></span>
+                <div className="notification-popover__heading">
+                  <strong className="notification-popover__urgent-title">Avisos pendentes</strong>
+                  <span className="notification-popover__subtitle">Acompanhe o que precisa da sua atenção.</span>
+                </div>
                 <span className="notification-popover__count">{alertasUrgentes.length} {alertasUrgentes.length === 1 ? 'aviso' : 'avisos'}</span>
               </div>
 
               {alertasUrgentes.length === 0 ? (
-                <div className="notification-empty">Nenhuma notificação ativa.</div>
+                <div className="notification-empty" role="status">
+                  <span className="notification-empty__icon" aria-hidden="true"><I.Check size={26} /></span>
+                  <strong>Tudo em dia!</strong>
+                  <span>Nenhuma notificação ativa.</span>
+                  <span>Novos avisos aparecerão aqui.</span>
+                </div>
               ) : (
                 <div className="urgent-alert-stack header-urgent-alert-stack" aria-live="polite">
                   {alertasUrgentes.map(alerta => (
@@ -166,14 +171,14 @@ function Header({ title, subtitle, onNew, onMenuClick, mobileMenuOpen = false, a
                           {['lead_retorno_pre', 'lead_retorno_due', 'futuro_cliente_retorno_pre', 'futuro_cliente_retorno_due', 'futuro_cliente_distribuido'].includes(alerta.tipo) ? 'Atender agora' : (alerta.entidade === 'clientes' ? 'Abrir cliente' : 'Abrir')}
                         </button>
                         <button type="button" className="btn btn-icon btn-ghost urgent-alert-card__close" onClick={() => onExcluirAlerta?.(alerta)} title="Excluir notificação" aria-label="Excluir notificação">
-                          <span className="urgent-alert-card__close-mark" aria-hidden="true">X</span>
+                          <I.Close size={16} aria-hidden="true" />
                         </button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-            </div>
+            </section>
           )}
         </div>
 
