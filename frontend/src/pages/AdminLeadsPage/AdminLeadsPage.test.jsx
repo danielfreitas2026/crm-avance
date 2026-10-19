@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -238,6 +238,103 @@ describe('AdminLeadsPage - filtros na seleção de planilhas', () => {
   function filtro(coluna, valor, planilha_id = 1, op = 'contains', tipo = 'string', valor2 = '') {
     return { coluna, planilha_id, tipo, op, valor, valor2 };
   }
+
+  it('preserva seleção múltipla, mesclagem, filtros e página ao clicar em áreas vazias', async () => {
+    await abrir();
+    await adicionar('1::RAZAO SOCIAL', 'Loja');
+    await user.click(screen.getByTitle(segunda.nome));
+    await user.click(screen.getByRole('button', { name: 'Aplicar selecao' }));
+    await preencher('merge::razao social', 'rascunho');
+    await user.click(screen.getByRole('button', { name: 'Próxima' }));
+    await esperarConsulta([1, 2], [filtro('RAZAO SOCIAL', 'Loja', null)], 2);
+    const chamadas = listarLeadLinhas.mock.calls.length;
+
+    await user.click(screen.getByTitle(primeira.nome).closest('.lead-doc-card').parentElement);
+    await user.click(document.querySelector('main'));
+
+    expect(screen.getByTitle(primeira.nome).closest('.lead-doc-card')).toHaveClass('active');
+    expect(screen.getByTitle(segunda.nome).closest('.lead-doc-card')).toHaveClass('active');
+    expect(screen.getByRole('button', { name: 'RAZAO SOCIAL: Loja x' })).toBeVisible();
+    expect(controles().coluna).toHaveValue('merge::razao social');
+    expect(controles().valor).toHaveValue('rascunho');
+    expect(screen.getByText('Página 2 de 3')).toBeVisible();
+    expect(listarLeadLinhas).toHaveBeenCalledTimes(chamadas);
+  });
+
+  it('Escape cancela somente a mesclagem e preserva seleção, filtros, rascunho e página', async () => {
+    await abrir();
+    await adicionar('1::RAZAO SOCIAL', 'Loja');
+    await user.click(screen.getByTitle(segunda.nome));
+    await user.click(screen.getByRole('button', { name: 'Aplicar selecao' }));
+    await preencher('merge::razao social', 'rascunho');
+    await user.click(screen.getByRole('button', { name: 'Próxima' }));
+    await esperarConsulta([1, 2], [filtro('RAZAO SOCIAL', 'Loja', null)], 2);
+    const chamadas = listarLeadLinhas.mock.calls.length;
+    await user.click(screen.getByTitle(quarta.nome));
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByText('Mesclar colunas iguais?')).not.toBeInTheDocument();
+    expect(screen.getByTitle(primeira.nome).closest('.lead-doc-card')).toHaveClass('active');
+    expect(screen.getByTitle(segunda.nome).closest('.lead-doc-card')).toHaveClass('active');
+    expect(screen.getByTitle(quarta.nome).closest('.lead-doc-card')).not.toHaveClass('active');
+    expect(screen.getByRole('button', { name: 'RAZAO SOCIAL: Loja x' })).toBeVisible();
+    expect(controles().coluna).toHaveValue('merge::razao social');
+    expect(controles().valor).toHaveValue('rascunho');
+    expect(screen.getByText('Página 2 de 3')).toBeVisible();
+    expect(listarLeadLinhas).toHaveBeenCalledTimes(chamadas);
+  });
+
+  it.each(['Escape', 'último card'])('limpa linhas, totais e resumo ao desmarcar por %s', async modo => {
+    listarLeadLinhas.mockResolvedValue(respostaComLinha(LINHA_BASE));
+    await abrir();
+    await adicionar('1::RAZAO SOCIAL', 'Loja');
+    await preencher('1::EXCLUSIVA', 'rascunho');
+    expect(await screen.findByText(LINHA_BASE.dados_json['RAZAO SOCIAL'])).toBeVisible();
+    expect(screen.getByText('Total filtrado')).toBeVisible();
+    const chamadas = listarLeadLinhas.mock.calls.length;
+
+    if (modo === 'Escape') await user.keyboard('{Escape}');
+    else await user.click(screen.getByTitle(primeira.nome));
+
+    expect(screen.getByTitle(primeira.nome).closest('.lead-doc-card')).not.toHaveClass('active');
+    expect(screen.queryByText(LINHA_BASE.dados_json['RAZAO SOCIAL'])).not.toBeInTheDocument();
+    expect(screen.getByText('0 registros encontrados')).toBeVisible();
+    expect(screen.queryByText('Total filtrado')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Loja x/ })).not.toBeInTheDocument();
+    expect(controles().coluna).toHaveValue('');
+    expect(controles().valor).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Exportar CSV' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Dividir clientes' })).toBeDisabled();
+    expect(listarLeadLinhas).toHaveBeenCalledTimes(chamadas);
+  });
+
+  it.each(['sucesso', 'erro'])('ignora consulta pendente encerrada com %s após limpar seleção', async resultado => {
+    listarLeadLinhas.mockResolvedValue({ ...respostaComLinha(LINHA_BASE), total: 401 });
+    await abrir();
+    expect(await screen.findByText(LINHA_BASE.dados_json['RAZAO SOCIAL'])).toBeVisible();
+    let resolver;
+    let rejeitar;
+    listarLeadLinhas.mockReturnValueOnce(new Promise((resolve, reject) => {
+      resolver = resolve;
+      rejeitar = reject;
+    }));
+    await user.click(screen.getByRole('button', { name: 'Próxima' }));
+    await esperarConsulta([1], [], 2);
+    await user.keyboard('{Escape}');
+
+    await act(async () => {
+      if (resultado === 'sucesso') resolver(respostaComLinha(LINHA_BASE));
+      else rejeitar(new Error('Falha da consulta antiga'));
+    });
+
+    expect(screen.getByText('0 registros encontrados')).toBeVisible();
+    expect(screen.queryByText('Total filtrado')).not.toBeInTheDocument();
+    expect(screen.queryByText(LINHA_BASE.dados_json['RAZAO SOCIAL'])).not.toBeInTheDocument();
+    expect(screen.queryByText('Falha da consulta antiga')).not.toBeInTheDocument();
+    expect(screen.getByText('Página 1 de 1')).toBeVisible();
+    expect(screen.getByTitle(primeira.nome).closest('.lead-doc-card')).not.toHaveClass('active');
+  });
 
   it('preserva filtro e rascunho ao adicionar planilha sem colunas comuns e volta à primeira página', async () => {
     await abrir();

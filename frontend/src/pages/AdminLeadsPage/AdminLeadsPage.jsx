@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as I from '../../components/Icons';
 import DocProgresso from '../../components/DocProgresso';
@@ -1538,39 +1538,35 @@ function AdminLeadsPage() {
     return () => { cancelado = true; };
   }, [linhaNotificacaoId, notificacaoId]);
 
+  const limparSelecao = useCallback(() => {
+    setSelecionadas([]);
+    setFiltros([]);
+    setAvisoFiltros(false);
+    setNovoFiltro({ coluna: '', op: 'contains', valor: '', valor2: '' });
+    setColunasMescladas([]);
+    setPagina(1);
+    setLinhas([]);
+    setTotalLinhas(0);
+    setResumoLeads({ total: 0, enviados: 0, qualificados: 0, nao_enviados: 0 });
+  }, []);
 
   useEffect(() => {
-    function limparSelecao() {
-      setSelecionadas([]);
-      setFiltros([]);
-      setAvisoFiltros(false);
-      setNovoFiltro({ coluna: '', op: 'contains', valor: '', valor2: '' });
-      setColunasMescladas([]);
-      setPagina(1);
-    }
-
-    function handlePointerDown(event) {
-      if (selecionadas.length === 0) return;
-      const elemento = event.target instanceof Element ? event.target : null;
-      if (elemento?.closest(
-        '.lead-doc-card, .modal-overlay, .admin-leads-toolbar, ' +
-        '.lead-filter-chips, .lead-schema-panel, .lead-results-meta, ' +
-        '.lead-summary-panel, .lead-table, button, input, select, textarea, a, label'
-      )) return;
-      limparSelecao();
-    }
-
     function handleKeyDown(event) {
-      if (event.key === 'Escape' && selecionadas.length > 0) limparSelecao();
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (modalMesclar) {
+        event.preventDefault();
+        setModalMesclar(null);
+        return;
+      }
+      if (document.querySelector('.modal-overlay')) return;
+      if (selecionadas.length > 0) limparSelecao();
     }
 
-    document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selecionadas.length]);
+  }, [selecionadas.length, modalMesclar, limparSelecao]);
   const planilhasSelecionadas = useMemo(() => (
     planilhas.filter(planilha => selecionadas.includes(planilha.id))
   ), [planilhas, selecionadas]);
@@ -1638,7 +1634,9 @@ function AdminLeadsPage() {
           });
         }
       })
-      .catch(error => setErro(error.message || 'Erro ao carregar linhas.'))
+      .catch(error => {
+        if (!cancelado) setErro(error.message || 'Erro ao carregar linhas.');
+      })
       .finally(() => !cancelado && setCarregando(false));
 
     return () => {
@@ -1934,21 +1932,21 @@ function AdminLeadsPage() {
 
   /** Atualiza seleção, colunas e filtros juntos, sem consultar com vínculos antigos. */
   function aplicarSelecaoPlanilhas(proximas, mescladas) {
+    if (proximas.length === 0) {
+      limparSelecao();
+      return;
+    }
+
     const proximasColunas = montarColunas(planilhas.filter(planilha => proximas.includes(planilha.id)), mescladas);
     const proximosFiltros = filtros.map(filtro => reconciliarFiltro(filtro, colunas, proximasColunas)).filter(Boolean);
     const proximoFiltro = reconciliarFiltro(novoFiltro, colunas, proximasColunas);
 
-    setAvisoFiltros(proximas.length > 0 && (proximosFiltros.length < filtros.length || !proximoFiltro));
+    setAvisoFiltros(proximosFiltros.length < filtros.length || !proximoFiltro);
     setFiltros(proximosFiltros);
-    setNovoFiltro(proximas.length > 0 && proximoFiltro ? proximoFiltro : { coluna: '', op: 'contains', valor: '', valor2: '' });
+    setNovoFiltro(proximoFiltro || { coluna: '', op: 'contains', valor: '', valor2: '' });
     setColunasMescladas(mescladas);
     setSelecionadas(proximas);
     setPagina(1);
-    if (proximas.length === 0) {
-      setLinhas([]);
-      setTotalLinhas(0);
-      setResumoLeads({ total: 0, enviados: 0, qualificados: 0, nao_enviados: 0 });
-    }
   }
 
   /**
