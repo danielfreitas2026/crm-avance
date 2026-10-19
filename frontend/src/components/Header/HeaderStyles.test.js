@@ -39,8 +39,11 @@ describe('apresentação do painel de avisos', () => {
     expect(regra('.header-urgent-alert-stack .urgent-alert-card__body span')).toMatch(/white-space:\s*normal/);
   });
 
-  it('destaca pendências sem animar continuamente todo o painel', () => {
+  it('mantém a borda neutra uniforme, inclusive com avisos pendentes', () => {
+    expect(regra('.notification-popover')).toMatch(/border:\s*1px solid var\(--border\)/);
+    for (const seletor of ['.notification-popover--urgent', '.notification-popover--attention']) {
+      expect(regra(seletor)).not.toMatch(/\bborder(?:-(?!radius\b)[\w-]+)?\s*:/);
+    }
     expect(regra('.notification-popover--attention')).not.toMatch(/animation:/);
-    expect(regra('.notification-popover--attention')).toMatch(/border-top-color:/);
   });
 });

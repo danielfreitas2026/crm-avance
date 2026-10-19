@@ -328,11 +328,7 @@ input, select, textarea { font-family: inherit; }
   width: min(520px, calc(100vw - 32px));
   max-height: min(620px, calc(100vh - 104px));
   border-radius: 16px;
-  border-top: 3px solid var(--border);
   box-shadow: 0 16px 48px rgba(15, 23, 42, 0.14), 0 2px 8px rgba(15, 23, 42, 0.04);
-}
-.notification-popover--attention {
-  border-top-color: #f59e0b;
 }
 .notification-popover__count {
   flex-shrink: 0;
