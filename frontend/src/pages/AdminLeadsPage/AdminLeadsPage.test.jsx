@@ -239,6 +239,38 @@ describe('AdminLeadsPage - filtros na seleção de planilhas', () => {
     return { coluna, planilha_id, tipo, op, valor, valor2 };
   }
 
+  it('não recalcula as células da página ao abrir, ajustar e cancelar a mesclagem', async () => {
+    const colunas = Array.from({ length: 30 }, (_, indice) => `COLUNA ${indice}`);
+    const lerCelula = vi.fn(() => 'Valor do mailing');
+    const linhas = Array.from({ length: 200 }, (_, indice) => ({
+      id: indice + 1,
+      planilha_id: 1,
+      planilha: { id: 1, nome: primeira.nome },
+      dados_json: Object.defineProperties({}, Object.fromEntries(colunas.map(coluna => [coluna, {
+        enumerable: true, get: lerCelula
+      }])))
+    }));
+    listarLeadPlanilhas.mockResolvedValue([
+      { ...primeira, colunas }, { ...segunda, colunas }
+    ]);
+    listarLeadLinhas.mockResolvedValue({ data: linhas, total: 200 });
+    renderPagina();
+    fireEvent.click(await screen.findByTitle(primeira.nome));
+    await waitFor(() => expect(document.querySelectorAll('.lead-admin-row-clicavel')).toHaveLength(200));
+    expect(lerCelula).toHaveBeenCalledTimes(6000);
+    lerCelula.mockClear();
+
+    fireEvent.click(screen.getByTitle(segunda.nome));
+    expect(screen.getByText('Mesclar colunas iguais?')).toBeVisible();
+    const modal = within(document.querySelector('.leads-merge-modal'));
+    fireEvent.click(modal.getByRole('button', { name: 'Separar todas' }));
+    fireEvent.click(modal.getByRole('button', { name: 'Cancelar' }));
+
+    expect(lerCelula.mock.calls.length).toBe(0);
+    expect(listarLeadLinhas).toHaveBeenCalledTimes(1);
+    expect(document.querySelectorAll('.lead-admin-row-clicavel')).toHaveLength(200);
+  });
+
   it('preserva seleção múltipla, mesclagem, filtros e página ao clicar em áreas vazias', async () => {
     await abrir();
     await adicionar('1::RAZAO SOCIAL', 'Loja');
@@ -259,6 +291,58 @@ describe('AdminLeadsPage - filtros na seleção de planilhas', () => {
     expect(controles().valor).toHaveValue('rascunho');
     expect(screen.getByText('Página 2 de 3')).toBeVisible();
     expect(listarLeadLinhas).toHaveBeenCalledTimes(chamadas);
+  });
+
+  it.each(['mescladas', 'separadas'])('atualiza a tabela com os clientes das duas planilhas e colunas %s', async modo => {
+    listarLeadLinhas.mockResolvedValue(respostaComLinha(LINHA_BASE));
+    await abrir();
+    expect(await screen.findByText(LINHA_BASE.dados_json['RAZAO SOCIAL'])).toBeVisible();
+    listarLeadLinhas.mockResolvedValue({
+      data: [LINHA_BASE, {
+        id: 11, planilha_id: 2, planilha: { id: 2, nome: segunda.nome },
+        dados_json: { 'RAZAO SOCIAL': 'EMPRESA DA SEGUNDA PLANILHA' }
+      }],
+      total: 2
+    });
+
+    await user.click(screen.getByTitle(segunda.nome));
+    if (modo === 'separadas') await user.click(screen.getByRole('button', { name: 'Separar todas' }));
+    await user.click(screen.getByRole('button', { name: 'Aplicar selecao' }));
+
+    expect(await screen.findByText('EMPRESA DA SEGUNDA PLANILHA')).toBeVisible();
+    expect(screen.getByText(LINHA_BASE.dados_json['RAZAO SOCIAL'])).toBeVisible();
+    expect(screen.getByText('2 registros encontrados')).toBeVisible();
+    const cabecalho = modo === 'mescladas' ? 'RAZAO SOCIAL' : `RAZAO SOCIAL - ${segunda.nome}`;
+    expect(screen.getByRole('columnheader', { name: cabecalho, exact: true })).toBeVisible();
+    expect(document.querySelectorAll('.lead-admin-row-clicavel')).toHaveLength(2);
+  });
+
+  it('aguarda a nova consulta sem renderizar os clientes antigos com as colunas da nova seleção', async () => {
+    const lerCelulaAntiga = vi.fn(() => 'RESULTADO ANTIGO');
+    listarLeadLinhas.mockResolvedValue(respostaComLinha({
+      ...LINHA_BASE,
+      dados_json: Object.defineProperty({}, 'RAZAO SOCIAL', { get: lerCelulaAntiga })
+    }));
+    await abrir();
+    expect(await screen.findByText('RESULTADO ANTIGO')).toBeVisible();
+    lerCelulaAntiga.mockClear();
+    let resolver;
+    listarLeadLinhas.mockReturnValueOnce(new Promise(resolve => { resolver = resolve; }));
+    await user.click(screen.getByTitle(segunda.nome));
+
+    await user.click(screen.getByRole('button', { name: 'Aplicar selecao' }));
+    await esperarConsulta([1, 2], []);
+
+    expect(lerCelulaAntiga.mock.calls.length).toBe(0);
+    expect(screen.queryByText('RESULTADO ANTIGO')).not.toBeInTheDocument();
+    expect(screen.getByText('Carregando...')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Exportar CSV' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Dividir clientes' })).toBeDisabled();
+    await act(async () => { resolver(respostaComLinha(LINHA_BASE)); });
+
+    expect(screen.getByText(LINHA_BASE.dados_json['RAZAO SOCIAL'])).toBeVisible();
+    expect(screen.queryByText('Carregando...')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dividir clientes' })).toBeEnabled();
   });
 
   it('Escape cancela somente a mesclagem e preserva seleção, filtros, rascunho e página', async () => {

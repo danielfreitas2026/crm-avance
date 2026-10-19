@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as I from '../../components/Icons';
 import DocProgresso from '../../components/DocProgresso';
@@ -268,6 +268,72 @@ export function LeadStatusChips({ linha }) {
     </div>
   );
 }
+
+/** Mantém a tabela estável enquanto o usuário interage com filtros e modais. */
+const TabelaMailing = memo(function TabelaMailing({ linhas, colunas, carregando, onAbrirDetalhe, onEditarEnvio }) {
+  return (
+    <div className="list-table lead-table list-table--scroll-mobile">
+      <div className="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Planilha</th>
+              <th>Status</th>
+              <th>Enviado para</th>
+              <th>Envio</th>
+              {colunas.map(coluna => <th key={coluna.id}>{coluna.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {carregando ? (
+              <tr><td colSpan={colunas.length + 4} className="muted">Carregando...</td></tr>
+            ) : linhas.length === 0 ? (
+              <tr><td colSpan={colunas.length + 4} className="muted">Selecione uma planilha para visualizar o mailing.</td></tr>
+            ) : (
+              linhas.map(linha => (
+                <tr
+                  key={linha.id}
+                  role="button"
+                  tabIndex={0}
+                  title="Ver detalhes e alterar estados"
+                  onClick={() => onAbrirDetalhe(linha)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onAbrirDetalhe(linha);
+                    }
+                  }}
+                  className={`lead-admin-row-clicavel ${
+                    isLeadVendaRecusada(linha)
+                      ? 'lead-admin-row-refused'
+                      : (linha.venda_id || linha.status_operacional === 'vendido' || linha.possui_venda_cliente ? 'lead-admin-row-sold' : '')
+                  }`}
+                >
+                  <td><span className="tag">{linha.planilha?.nome || '-'}</span></td>
+                  <td>
+                    <LeadStatusChips linha={linha} />
+                  </td>
+                  <td>{linha.atribuidoPara?.nome || '-'}</td>
+                  <td>
+                    {linha.envio?.nome ? (
+                      <div className="lead-envio-name">
+                        <span>{linha.envio.nome}</span>
+                        <button type="button" className="btn btn-icon btn-ghost" title="Editar nome do envio" aria-label={'Editar nome do envio ' + linha.envio.nome} onClick={event => { event.stopPropagation(); onEditarEnvio(linha.envio); }}>
+                          <I.Edit size={13} />
+                        </button>
+                      </div>
+                    ) : '-'}
+                  </td>
+                  {colunas.map(coluna => <td key={coluna.id}>{getValorColuna(linha, coluna) || '-'}</td>)}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+});
 
 /**
  * Formata numero para exibicao ou envio.
@@ -1407,6 +1473,7 @@ function AdminLeadsPage() {
   const [novoFiltro, setNovoFiltro] = useState({ coluna: '', op: 'contains', valor: '', valor2: '' });
   const [pagina, setPagina] = useState(1);
   const [carregando, setCarregando] = useState(true);
+  const [carregandoLinhas, setCarregandoLinhas] = useState(false);
   const [processando, setProcessando] = useState('');
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
@@ -1545,6 +1612,7 @@ function AdminLeadsPage() {
     setNovoFiltro({ coluna: '', op: 'contains', valor: '', valor2: '' });
     setColunasMescladas([]);
     setPagina(1);
+    setCarregandoLinhas(false);
     setLinhas([]);
     setTotalLinhas(0);
     setResumoLeads({ total: 0, enviados: 0, qualificados: 0, nao_enviados: 0 });
@@ -1637,7 +1705,12 @@ function AdminLeadsPage() {
       .catch(error => {
         if (!cancelado) setErro(error.message || 'Erro ao carregar linhas.');
       })
-      .finally(() => !cancelado && setCarregando(false));
+      .finally(() => {
+        if (!cancelado) {
+          setCarregando(false);
+          setCarregandoLinhas(false);
+        }
+      });
 
     return () => {
       cancelado = true;
@@ -1947,6 +2020,10 @@ function AdminLeadsPage() {
     setColunasMescladas(mescladas);
     setSelecionadas(proximas);
     setPagina(1);
+    setCarregandoLinhas(true);
+    setLinhas([]);
+    setTotalLinhas(0);
+    setResumoLeads({ total: 0, enviados: 0, qualificados: 0, nao_enviados: 0 });
   }
 
   /**
@@ -2664,66 +2741,13 @@ function AdminLeadsPage() {
           </div>
         )}
 
-        <div className="list-table lead-table list-table--scroll-mobile">
-          <div className="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Planilha</th>
-                  <th>Status</th>
-                  <th>Enviado para</th>
-                  <th>Envio</th>
-                  {colunas.map(coluna => <th key={coluna.id}>{coluna.label}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {carregando ? (
-                  <tr><td colSpan={colunas.length + 4} className="muted">Carregando...</td></tr>
-                ) : linhasPagina.length === 0 ? (
-                  <tr><td colSpan={colunas.length + 4} className="muted">Selecione uma planilha para visualizar o mailing.</td></tr>
-                ) : (
-                  linhasPagina.map(linha => (
-                    <tr
-                      key={linha.id}
-                      role="button"
-                      tabIndex={0}
-                      title="Ver detalhes e alterar estados"
-                      onClick={() => setLinhaDetalhe(linha)}
-                      onKeyDown={event => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          setLinhaDetalhe(linha);
-                        }
-                      }}
-                      className={`lead-admin-row-clicavel ${
-                        isLeadVendaRecusada(linha)
-                          ? 'lead-admin-row-refused'
-                          : (linha.venda_id || linha.status_operacional === 'vendido' || linha.possui_venda_cliente ? 'lead-admin-row-sold' : '')
-                      }`}
-                    >
-                      <td><span className="tag">{linha.planilha?.nome || '-'}</span></td>
-                      <td>
-                        <LeadStatusChips linha={linha} />
-                      </td>
-                      <td>{linha.atribuidoPara?.nome || '-'}</td>
-                      <td>
-                        {linha.envio?.nome ? (
-                          <div className="lead-envio-name">
-                            <span>{linha.envio.nome}</span>
-                            <button type="button" className="btn btn-icon btn-ghost" title="Editar nome do envio" aria-label={'Editar nome do envio ' + linha.envio.nome} onClick={event => { event.stopPropagation(); setEnvioEditando(linha.envio); }}>
-                              <I.Edit size={13} />
-                            </button>
-                          </div>
-                        ) : '-'}
-                      </td>
-                      {colunas.map(coluna => <td key={coluna.id}>{getValorColuna(linha, coluna) || '-'}</td>)}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <TabelaMailing
+          linhas={linhasPagina}
+          colunas={colunas}
+          carregando={carregando || carregandoLinhas}
+          onAbrirDetalhe={setLinhaDetalhe}
+          onEditarEnvio={setEnvioEditando}
+        />
 
         <div className="lead-pagination">
           <button className="btn" type="button" disabled={pagina <= 1} onClick={() => setPagina(prev => Math.max(1, prev - 1))}>Anterior</button>
