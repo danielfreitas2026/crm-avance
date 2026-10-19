@@ -7,9 +7,22 @@ vi.mock('./api', () => ({
 }));
 
 import { apiGet, apiPost, apiPut } from './api';
-import { atualizarPerfil, buscarPerfil, getUsuarioLocal, login, logout, temPermissao } from './auth.service';
+import { atualizarPerfil, buscarPerfil, getUsuarioLocal, login, logout, temPermissao,
+  solicitarRecuperacao, confirmarEmailRecuperacao, redefinirSenha, reenviarConfirmacaoEmailRecuperacao } from './auth.service';
 
 describe('auth.service', () => {
+  it('envia recuperação e confirmação no corpo dos POSTs sem criar sessão', async () => {
+    apiPost.mockResolvedValue({ message: 'OK' });
+    await solicitarRecuperacao('ana@crm.local');
+    await confirmarEmailRecuperacao('token-teste');
+    await redefinirSenha('token-teste', 'Nova1234');
+    await reenviarConfirmacaoEmailRecuperacao('Atual123');
+    expect(apiPost).toHaveBeenCalledWith('/auth/forgot-password', { email: 'ana@crm.local' });
+    expect(apiPost).toHaveBeenCalledWith('/auth/confirmar-email-recuperacao', { token: 'token-teste' });
+    expect(apiPost).toHaveBeenCalledWith('/auth/reset-password', { token: 'token-teste', senha: 'Nova1234' });
+    expect(apiPost).toHaveBeenCalledWith('/auth/reenviar-confirmacao-email-recuperacao', { senha_atual: 'Atual123' });
+    expect(localStorage.getItem('token')).toBeNull();
+  });
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();

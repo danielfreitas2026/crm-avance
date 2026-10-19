@@ -938,6 +938,13 @@ function aplicarFiltroNavbar(query) {
   return query.whereNull('nd.ocultada_em');
 }
 
+/** Mantem a leitura em lote e a listagem da navbar no mesmo conjunto de avisos. */
+function aplicarFiltroPendenciasNavbar(query) {
+  query.whereNull('nd.popup_visto_em');
+  aplicarFiltroNavbar(query);
+  return aplicarFiltroRetornosLeadPendentes(query);
+}
+
 function aplicarLimiteListagem(query, filtros = {}) {
   if (filtros.escopo === 'dashboard') return query;
   const limit = Math.min(Math.max(Number(filtros.limit || 20), 1), 50);
@@ -1145,7 +1152,6 @@ async function listarUrgentes(usuarioId) {
 
   const query = aplicarJoinDestinatarioUsuario(Notificacao.query().alias('n'), usuarioId)
     .where('n.ativa', true)
-    .whereNull('nd.popup_visto_em')
     // A sincronizacao atualiza updated_at a cada consulta. A fila usa a criacao
     // para manter os alertas estaveis ate que uma acao os resolva.
     .orderBy('n.created_at', 'asc')
@@ -1167,8 +1173,7 @@ async function listarUrgentes(usuarioId) {
     );
 
   aplicarFiltroTiposVisiveis(query, { podeReceberTodas, podeVerTudo, podeVerAprovacoes, podeVerVendasParadas });
-  aplicarFiltroNavbar(query);
-  aplicarFiltroRetornosLeadPendentes(query);
+  aplicarFiltroPendenciasNavbar(query);
 
   const notificacoes = await query;
 
@@ -1227,7 +1232,7 @@ async function marcarComoLida(notificacaoId, usuarioId) {
 /**
  * Marca todas como lidas conforme a acao solicitada.
  */
-async function marcarTodasComoLidas(usuarioId) {
+async function marcarTodasComoLidas(usuarioId, { escopo } = {}) {
   const usuario = await Usuario.query()
     .findById(usuarioId)
     .withGraphFetched('role');
@@ -1236,6 +1241,12 @@ async function marcarTodasComoLidas(usuarioId) {
   const podeVerAprovacoes = usuarioTemPermissaoLocal(usuario, 'vendas_aprovacoes_visualizar')
     || usuarioTemPermissaoLocal(usuario, 'vendas_aprovacoes_decidir');
   const podeVerVendasParadas = usuarioTemPermissaoLocal(usuario, PERMISSAO_VENDAS_PARADAS);
+
+  if (escopo === 'navbar') {
+    return marcarPendenciasNavbarLidas(usuarioId, {
+      podeReceberTodas, podeVerTudo, podeVerAprovacoes, podeVerVendasParadas
+    });
+  }
 
   const query = aplicarJoinDestinatarioUsuario(Notificacao.query().alias('n'), usuarioId)
     .where('n.ativa', true)
@@ -1273,6 +1284,36 @@ async function marcarTodasComoLidas(usuarioId) {
   }
 
   return notificacoes.length;
+}
+
+/** Persiste a leitura de uma fila completa sem alterar outros destinatarios ou tarefas. */
+async function marcarPendenciasNavbarLidas(usuarioId, permissoes, knex = db) {
+  return knex.transaction(async trx => {
+    const query = aplicarJoinDestinatarioUsuario(trx('notificacoes as n'), usuarioId)
+      .where('n.ativa', true)
+      .select('n.id');
+    aplicarFiltroTiposVisiveis(query, permissoes);
+    aplicarFiltroPendenciasNavbar(query);
+    const notificacoes = await query;
+    const agora = new Date();
+
+    for (let inicio = 0; inicio < notificacoes.length; inicio += 250) {
+      await trx('notificacao_destinatarios')
+        .insert(notificacoes.slice(inicio, inicio + 250).map(item => ({
+          notificacao_id: item.id,
+          usuario_id: usuarioId,
+          lida_em: agora,
+          popup_visto_em: agora
+        })))
+        .onConflict(['notificacao_id', 'usuario_id'])
+        .merge({
+          lida_em: trx.raw('COALESCE(??, ?)', ['lida_em', agora]),
+          popup_visto_em: trx.raw('COALESCE(??, ?)', ['popup_visto_em', agora])
+        });
+    }
+
+    return notificacoes.length;
+  });
 }
 
 /**
@@ -1412,6 +1453,8 @@ module.exports = {
     aplicarCondicaoLinhaLeadNaoFinalizada,
     aplicarFiltroRetornosLeadPendentes,
     aplicarFiltroNavbar,
+    aplicarFiltroPendenciasNavbar,
+    marcarPendenciasNavbarLidas,
     aplicarLimiteListagem,
     aplicarFiltroTiposVisiveis,
     isRetornoLeadAgendadoElegivel,

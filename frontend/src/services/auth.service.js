@@ -29,6 +29,12 @@ export async function buscarPerfil() {
   return apiGet('/auth/me');
 }
 
+export const solicitarRecuperacao = email => apiPost('/auth/forgot-password', { email });
+export const confirmarEmailRecuperacao = token => apiPost('/auth/confirmar-email-recuperacao', { token });
+export const redefinirSenha = (token, senha) => apiPost('/auth/reset-password', { token, senha });
+export const reenviarConfirmacaoEmailRecuperacao = senha_atual =>
+  apiPost('/auth/reenviar-confirmacao-email-recuperacao', { senha_atual });
+
 /**
  * Retorna usuario local a partir dos dados informados.
  */

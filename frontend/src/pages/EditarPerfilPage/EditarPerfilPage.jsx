@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as I from '../../components/Icons';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
-import { atualizarPerfil, buscarPerfil } from '../../services/auth.service';
+import { atualizarPerfil, buscarPerfil, reenviarConfirmacaoEmailRecuperacao } from '../../services/auth.service';
 import './EditarPerfilPage.css';
 
 /**
@@ -38,6 +38,8 @@ function EditarPerfilPage() {
   const [usuario, setUsuario] = useState(null);
   const [nome, setNome] = useState('');
   const [senha, setSenha] = useState('');
+  const [emailRecuperacao, setEmailRecuperacao] = useState('');
+  const [senhaAtual, setSenhaAtual] = useState('');
   const [fotoPerfil, setFotoPerfil] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState('');
@@ -65,6 +67,7 @@ function EditarPerfilPage() {
       try {
         const perfil = await buscarPerfil();
         setUsuario(perfil);
+        setEmailRecuperacao(perfil.email_recuperacao_pendente || perfil.email_recuperacao || '');
         setNome(perfil.nome || '');
         setFotoPerfil(perfil.foto_perfil || '');
       } catch (error) {
@@ -81,7 +84,23 @@ function EditarPerfilPage() {
   const forcaSenha = useMemo(() => medirSenha(senha), [senha]);
   const nomeAlterado = nome.trim() !== '' && nome.trim() !== (usuario?.nome || '');
   const fotoAlterada = fotoPerfil !== (usuario?.foto_perfil || '');
-  const temAlteracoes = (isAdmin && nomeAlterado) || senha.trim() !== '' || fotoAlterada;
+  const emailRecuperacaoAlterado = emailRecuperacao.trim().toLowerCase() !==
+    (usuario?.email_recuperacao_pendente || usuario?.email_recuperacao || '');
+  const temAlteracoes = (isAdmin && nomeAlterado) || senha.trim() !== '' || fotoAlterada || emailRecuperacaoAlterado;
+
+  async function handleReenviar() {
+    setErro('');
+    setSucesso('');
+    if (!senhaAtual) { setErro('Informe sua senha atual para reenviar.'); return; }
+    setSalvando(true);
+    try {
+      const resultado = await reenviarConfirmacaoEmailRecuperacao(senhaAtual);
+      setSenhaAtual('');
+      setSucesso(resultado.message);
+    } catch (error) {
+      setErro(error.message || 'Não foi possível reenviar o e-mail.');
+    } finally { setSalvando(false); }
+  }
 
   /**
    * Trata o evento de foto change.
@@ -122,6 +141,11 @@ function EditarPerfilPage() {
       return;
     }
 
+    if (emailRecuperacaoAlterado && !senhaAtual) {
+      setErro('Informe sua senha atual para alterar o e-mail de recuperação.');
+      return;
+    }
+
     setSalvando(true);
 
     try {
@@ -129,13 +153,21 @@ function EditarPerfilPage() {
       if (isAdmin && nomeAlterado) dados.nome = nome.trim();
       if (senha.trim() !== '') dados.senha = senha;
       if (fotoAlterada) dados.foto_perfil = fotoPerfil || null;
+      if (emailRecuperacaoAlterado) {
+        dados.email_recuperacao = emailRecuperacao.trim().toLowerCase() || null;
+        dados.senha_atual = senhaAtual;
+      }
 
       const perfilAtualizado = await atualizarPerfil(dados);
       setUsuario(perfilAtualizado);
+      setEmailRecuperacao(perfilAtualizado.email_recuperacao_pendente || perfilAtualizado.email_recuperacao || '');
+      setSenhaAtual('');
       setNome(perfilAtualizado.nome || '');
       setFotoPerfil(perfilAtualizado.foto_perfil || '');
       setSenha('');
-      setSucesso('Alteracoes salvas com sucesso.');
+      setSucesso(emailRecuperacaoAlterado && perfilAtualizado.email_recuperacao_pendente
+        ? 'Alterações salvas. Enviamos um link para confirmar seu e-mail de recuperação.'
+        : 'Alteracoes salvas com sucesso.');
     } catch (error) {
       setErro(error.message || 'Erro ao salvar alterações.');
     } finally {
@@ -243,6 +275,34 @@ function EditarPerfilPage() {
               </div>
             </div>
             <div className="panel-body">
+              <div className="form-field">
+                <label htmlFor="email-recuperacao">E-mail de recuperação</label>
+                <input id="email-recuperacao" type="email" maxLength={254} autoComplete="email"
+                  value={emailRecuperacao} onChange={e => setEmailRecuperacao(e.target.value)} />
+                <div className="editar-perfil-help">
+                  Use um e-mail real ao qual você tenha acesso. Seu e-mail de acesso ao CRM continua o mesmo.
+                </div>
+                <p role="status">{usuario?.email_recuperacao_pendente ? 'Aguardando confirmação'
+                  : usuario?.email_recuperacao_confirmado_em ? 'Confirmado' : 'Não configurado'}</p>
+                {usuario?.email_recuperacao && <p>Endereço confirmado: {usuario.email_recuperacao}</p>}
+                {usuario?.email_recuperacao_pendente && (
+                  <>
+                    <p>Confirmação pendente: {usuario.email_recuperacao_pendente}</p>
+                    <button type="button" className="btn btn-sm" disabled={salvando || emailRecuperacaoAlterado}
+                      onClick={handleReenviar}>Reenviar confirmação</button>
+                  </>
+                )}
+                {(usuario?.email_recuperacao || usuario?.email_recuperacao_pendente) && (
+                  <button type="button" className="btn btn-sm btn-ghost" disabled={salvando}
+                    onClick={() => setEmailRecuperacao('')}>Remover e-mail de recuperação</button>
+                )}
+              </div>
+              <div className="form-field">
+                <label htmlFor="senha-atual-recuperacao">Senha atual</label>
+                <input id="senha-atual-recuperacao" type="password" autoComplete="current-password"
+                  value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} />
+                <div className="editar-perfil-help">Obrigatória para cadastrar, trocar, remover ou reenviar a confirmação do e-mail de recuperação.</div>
+              </div>
               <div className="form-field">
                 <label>Nova senha</label>
                 <div className="editar-perfil-password">

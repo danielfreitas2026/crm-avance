@@ -7,8 +7,19 @@ const estilos = readFileSync(new URL('./FuturosClientesPage.css', import.meta.ur
 const componente = readFileSync(new URL('./FuturosClientesPage.jsx', import.meta.url), 'utf8');
 
 describe('layout responsivo dos futuros clientes', () => {
+  it('acomoda os quatro indicadores por movimentação e as sete colunas dos mailings', () => {
+    expect(estilos).toMatch(/\.future-stats__user-numbers--movements\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/);
+    expect(estilos).toMatch(/\.future-stats__mailing-list td:nth-child\(7\)\s*\{[^}]*width:\s*6%/);
+    expect(estilos).not.toMatch(/\.future-stats__mailing-list [^\n]*nth-child\(8\)/);
+  });
+
   it('impede que as abas sejam comprimidas pela altura do conteúdo de estatísticas', () => {
     expect(estilos).toMatch(/\.clientes-tabs\s*\{[^}]*flex:\s*0 0 auto/);
+  });
+
+  it('mantém os nomes das abas em uma linha no dashboard sem alterar as demais visões', () => {
+    expect(estilos).toMatch(/\.futuros-clientes-page:has\(> \.future-stats\) > \.clientes-tabs \.clientes-tab\s*\{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap/);
+    expect(estilos).toMatch(/\.clientes-tabs\s*\{[^}]*overflow-x:\s*auto/);
   });
 
   it('usa uma cor definida pelo tema no progresso de produtividade', () => {

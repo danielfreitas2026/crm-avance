@@ -90,8 +90,8 @@ async function updateMe(req, res) {
       'Chave de criptografia de senhas ausente ou inválida.', 'Senha inválida.'
     ];
 
-    return res.status(500).json({
-      message: mensagensSeguras.includes(error.message) ? error.message : 'Erro ao atualizar perfil.'
+    return res.status(error.recuperacaoSegura ? error.status : 500).json({
+      message: error.recuperacaoSegura || mensagensSeguras.includes(error.message) ? error.message : 'Erro ao atualizar perfil.'
     });
   }
 }

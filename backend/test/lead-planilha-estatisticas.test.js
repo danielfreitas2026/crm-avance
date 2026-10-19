@@ -1,163 +1,184 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-
-const { _internals } = require('../src/services/lead-planilha.service');
-
-const {
-  dataIsoEstatisticas,
-  dataNaJanelaAtribuicao,
-  primeiraAcaoDaAtribuicao,
-  avaliarLinhaEstatistica,
-  linhasDaCoorte,
-  agregarEstatisticas,
-  somarResumosEstatistica
-} = _internals;
-
-const PERIODO_FEVEREIRO = { data_inicio: '2025-02-01', data_fim: '2025-02-28' };
-const REFERENCIA = new Date('2025-04-01T00:00:00Z');
-
-function linha(overrides = {}) {
-  return {
-    id: overrides.id || 1,
-    estatistica_usuario_id: overrides.estatistica_usuario_id || 10,
-    estatistica_usuario_nome: overrides.estatistica_usuario_nome || 'Consultora',
-    recebido_em: '2025-02-10T12:00:00Z',
-    estatistica_primeira_acao_em: null,
-    tentativas_conhecidas: 0,
-    estatistica_distribuicao: {},
-    ...overrides
-  };
+const { _internals: stats } = require('../src/services/lead-estatisticas.service');
+const { montarMovimentacoes, filtrarMovimentacoes, resumirMovimentacoes, agruparMovimentacoes,
+  paginarLinhas, montarWorkbook, dataIsoEstatisticas, validarPeriodo } = stats;
+const FEVEREIRO = { data_inicio: '2025-02-01', data_fim: '2025-02-28' };
+function fontes(extra = {}) {
+  return { linhas: [{ id: 1, dados_json: { Empresa: 'Loja antiga' }, updated_at: '2025-05-20T12:00:00Z' }],
+    atribuicoes: [{ id: 10, lead_linha_id: 1, usuario_id: 7, usuario_nome: 'Qualificadora',
+      envio_id: 100, envio_nome: 'Mailing de janeiro', atribuido_em: '2025-01-10T12:00:00Z' }], ...extra };
 }
-
-function agruparPorUsuario(linhas, filtros = PERIODO_FEVEREIRO) {
-  return agregarEstatisticas(linhas, filtros, item => ({
-    id: item.estatistica_usuario_id,
-    usuario_id: item.estatistica_usuario_id,
-    usuario_nome: item.estatistica_usuario_nome
-  }));
+function audit(id, acao, data, extra = {}) {
+  return { id, entidade_id: '1', usuario_id: 9, usuario_nome: 'Administradora',
+    acao: 'lead_linha.' + acao, created_at: data, ...extra };
 }
+function periodo(dados, filtros = FEVEREIRO) { return filtrarMovimentacoes(montarMovimentacoes(dados), filtros); }
 
-test('datas das estatisticas respeitam a virada do dia em Sao Paulo', () => {
-  assert.equal(dataIsoEstatisticas('2025-02-10T02:59:59Z'), '2025-02-09');
-  assert.equal(dataIsoEstatisticas('2025-02-10T03:00:00Z'), '2025-02-10');
+test('ações de mailing antigo aparecem nos respectivos dias e preservam autor e qualificadora', () => {
+  const dados = fontes({ auditorias: [
+    audit(1, 'chamada_nao_atendida', '2025-02-10T12:00:00Z'),
+    audit(2, 'retorno_marcado', '2025-02-11T12:00:00Z')
+  ] });
+  const dia = valor => periodo(dados, { data_inicio: valor, data_fim: valor });
+  assert.deepEqual(dia('2025-02-10').map(item => item.tipo), ['chamada_nao_atendida']);
+  assert.deepEqual(dia('2025-02-11').map(item => item.tipo), ['retorno_agendado']);
+  const eventos = periodo(dados), resumo = resumirMovimentacoes(eventos);
+  assert.equal(resumo.clientes_movimentados, 1);
+  assert.equal(resumo.total_acoes, 2);
+  assert.equal(eventos[0].responsavel_id, 7);
+  assert.equal(eventos[0].envio_id, 100);
+  assert.equal(eventos[0].autor.nome, 'Administradora');
 });
 
-test('primeira acao usa o instante da auditoria e ignora a data futura do retorno', () => {
-  const atribuicao = linha({
-    recebido_em: '2025-02-10T12:00:00Z',
-    retorno_agendado_em: '2025-03-20T15:00:00Z',
-    estatistica_atribuicao_status: 'atribuido'
-  });
-  const auditorias = [{
-    acao: 'lead_linha.retorno_marcado_admin',
-    created_at: '2025-02-10T13:00:00Z'
-  }];
-
-  assert.equal(
-    primeiraAcaoDaAtribuicao(atribuicao, auditorias),
-    '2025-02-10T13:00:00Z'
-  );
-  assert.equal(primeiraAcaoDaAtribuicao(atribuicao, []), null);
+test('cadastro único não é repetido por edições explícitas ou auditorias legadas', () => {
+  const dados = fontes({ linhas: [{ id: 1, futuro_cliente_marcado_em: '2025-02-10T12:00:00Z' }],
+    auditorias: [audit(1, 'futuro_cliente_marcado', '2025-02-10T12:00:01Z'),
+      audit(2, 'futuro_cliente_atualizado_admin', '2025-02-11T12:00:00Z'),
+      audit(3, 'futuro_cliente_marcado', '2025-02-12T12:00:00Z')] });
+  const resumo = resumirMovimentacoes(periodo(dados));
+  assert.equal(resumo.futuros_clientes_adicionados, 1);
+  assert.equal(resumo.acoes_por_tipo.atualizacao, 2);
+  assert.equal(resumo.total_acoes, 3);
+  assert.equal(resumirMovimentacoes(periodo(dados, { data_inicio: '2025-02-11' })).futuros_clientes_adicionados, 0);
 });
 
-test('auditorias de um lead reenviado ficam somente na janela da atribuicao correta', () => {
-  const primeira = linha({ recebido_em: '2025-02-01T12:00:00Z' });
-  const segunda = linha({ recebido_em: '2025-02-10T12:00:00Z' });
-  const auditorias = [
-    { created_at: '2025-02-02T12:00:00Z' },
-    { created_at: '2025-02-11T12:00:00Z' },
-    { created_at: '2025-02-12T12:00:00Z' }
-  ];
-  const primeiraJanela = auditorias.filter(item => dataNaJanelaAtribuicao(
-    item.created_at,
-    primeira.recebido_em,
-    segunda.recebido_em
-  ));
-  const segundaJanela = auditorias.filter(item => dataNaJanelaAtribuicao(
-    item.created_at,
-    segunda.recebido_em,
-    null
-  ));
-
-  assert.equal(primeiraJanela.length, 1);
-  assert.equal(segundaJanela.length, 2);
-  assert.equal(primeiraAcaoDaAtribuicao(primeira, primeiraJanela, segunda.recebido_em), '2025-02-02T12:00:00Z');
-  assert.equal(primeiraAcaoDaAtribuicao(segunda, segundaJanela), '2025-02-11T12:00:00Z');
+test('agendamento usa ocorrido_em da auditoria sem usar a data futura ou updated_at', () => {
+  const dados = fontes({ linhas: [{ id: 1, retorno_agendado_em: '2025-04-10T12:00:00Z', updated_at: '2025-02-20T12:00:00Z' }],
+    auditorias: [audit(1, 'retorno_marcado', '2025-02-11T13:00:00Z',
+      { dados: JSON.stringify({ ocorrido_em: '2025-02-10 12:00:00' }) })] });
+  assert.equal(periodo(dados)[0].ocorrido_em, '2025-02-10T12:00:00.000Z');
+  assert.equal(periodo(dados, { data_inicio: '2025-04-01' }).length, 0);
+  assert.equal(periodo(fontes({ linhas: dados.linhas })).length, 0);
 });
 
-test('coorte exclui backlog e fecha leads trabalhados ou pendentes na data final', () => {
-  const linhas = [
-    linha({ id: 1, recebido_em: '2025-01-20T12:00:00Z', estatistica_primeira_acao_em: '2025-02-02T12:00:00Z' }),
-    linha({ id: 2, estatistica_primeira_acao_em: '2025-02-11T12:00:00Z' }),
-    linha({ id: 3, estatistica_primeira_acao_em: '2025-03-01T12:00:00Z' }),
-    linha({ id: 4 })
-  ];
-
-  const [resumo] = agruparPorUsuario(linhas);
-
-  assert.equal(resumo.recebidos, 3);
-  assert.equal(resumo.trabalhados, 1);
-  assert.equal(resumo.pendentes, 2);
-  assert.equal(resumo.produtividade_pct, 33.3);
-  assert.equal(resumo.trabalhados + resumo.pendentes, resumo.recebidos);
-  assert.ok(resumo.produtividade_pct >= 0 && resumo.produtividade_pct <= 100);
+test('auditoria inicial atrasada continua sendo um único cadastro, sem atualização fictícia', () => {
+  const dados = fontes({ linhas: [{ id: 1, futuro_cliente_marcado_em: '2025-02-10T12:00:00Z' }],
+    auditorias: [audit(1, 'futuro_cliente_marcado', '2025-02-11T12:00:00Z')] });
+  const eventos = periodo(dados);
+  assert.equal(eventos.length, 1);
+  assert.equal(eventos[0].tipo, 'futuro_cliente_adicionado');
+  assert.equal(eventos[0].ocorrido_em, '2025-02-10T12:00:00.000Z');
 });
 
-test('acao posterior ao fechamento permanece pendente no relatorio historico', () => {
-  const avaliacao = avaliarLinhaEstatistica(
-    linha({ estatistica_primeira_acao_em: '2025-03-01T02:59:59Z' }),
-    PERIODO_FEVEREIRO,
-    REFERENCIA
-  );
+test('reenvio usa a janela correta e total geral conta clientes distintos entre responsáveis', () => {
+  const dados = fontes();
+  dados.atribuicoes.push({ ...dados.atribuicoes[0], id: 11, usuario_id: 8, envio_id: 101, atribuido_em: '2025-02-11T12:00:00Z' });
+  dados.auditorias = [audit(1, 'chamada_nao_atendida', '2025-02-10T12:00:00Z'),
+    audit(2, 'retorno_marcado', '2025-02-11T12:00:00Z')];
+  const eventos = periodo(dados);
+  assert.deepEqual(eventos.map(item => item.responsavel_id), [7, 8]);
+  assert.equal(filtrarMovimentacoes(eventos, { usuario_id: 7 }).length, 1);
+  assert.deepEqual(agruparMovimentacoes(eventos, item => ({ id: item.responsavel_id })).map(item => item.clientes_movimentados), [1, 1]);
+  assert.equal(resumirMovimentacoes(eventos).clientes_movimentados, 1);
+});
 
+test('retornos automático e manual ao Telegram não repetem primeiro envio', () => {
+  const eventos = periodo(fontes({ publicacoes: [
+    { id: 1, lead_linha_id: 1, tipo: 'primeiro_envio', publicado_em: '2025-02-10T12:00:00Z' },
+    { id: 2, lead_linha_id: 1, tipo: 'republicacao', publicado_em: '2025-02-12T12:00:00Z' },
+    { id: 3, lead_linha_id: 1, tipo: 'republicacao', publicado_em: '2025-02-14T12:00:00Z' }
+  ], distribuicoes: [{ id: 20, lead_linha_id: 1, usuario_id: 9, usuario_nome: 'Consultora',
+    aceite_em: '2025-02-10T13:00:00Z', finalizado_em: '2025-02-11T12:00:00Z', aceite_status: 'expirado_sem_acao' }] }));
+  assert.equal(resumirMovimentacoes(eventos).novos_envios_telegram, 1);
+  assert.equal(resumirMovimentacoes(filtrarMovimentacoes(eventos, { data_inicio: '2025-02-12' })).novos_envios_telegram, 0);
+  assert.equal(resumirMovimentacoes(eventos).acoes_por_tipo.retorno_telegram, 2);
+  assert.equal(eventos.find(item => item.tipo === 'aceite_telegram').responsavel_id, 7);
+});
+
+test('legado com data desconhecida não inventa ação nem novo envio', () => {
+  const eventos = periodo(fontes({ publicacoes: [
+    { id: 1, lead_linha_id: 1, tipo: 'legado', publicado_em: null },
+    { id: 2, lead_linha_id: 1, tipo: 'legado', publicado_em: '2025-02-10T12:00:00Z' }
+  ] }));
+  assert.equal(eventos.length, 1);
+  assert.equal(resumirMovimentacoes(eventos).novos_envios_telegram, 0);
+  assert.equal(resumirMovimentacoes(eventos).historico_incompleto, true);
+});
+
+test('fonte repetida e fallback de campo não duplicam a mesma ação', () => {
+  const dados = fontes({ linhas: [{ id: 1, chamada_nao_atendida_em: '2025-02-10T12:00:00Z' }],
+    auditorias: [audit(1, 'chamada_nao_atendida', '2025-02-10T12:00:01Z')] });
+  dados.linhas.push(dados.linhas[0]);
+  assert.equal(periodo(dados).length, 1);
+});
+
+test('auditoria conserva retornos realizados depois de um novo agendamento', () => {
+  const dados = fontes({ linhas: [{ id: 1, futuro_cliente_retorno: '2025-04-20T12:00:00Z', futuro_cliente_retorno_realizado_em: null }],
+    auditorias: [audit(1, 'retorno_realizado', '2025-02-10T12:00:00Z'),
+      audit(2, 'retorno_realizado', '2025-02-15T12:00:00Z')] });
+  assert.equal(resumirMovimentacoes(periodo(dados)).acoes_por_tipo.retorno_realizado, 2);
+});
+
+test('auditoria atrasada depois da meia-noite usa o instante específico da ação sem duplicar', () => {
+  const dados = fontes({ linhas: [{ id: 1, chamada_nao_atendida_em: '2025-03-01T02:59:59Z', chamada_nao_atendida_por_id: 9 }],
+    auditorias: [audit(1, 'chamada_nao_atendida', '2025-03-01T03:00:10Z')] });
+  dados.atribuicoes.push({ ...dados.atribuicoes[0], id: 11, usuario_id: 8, envio_id: 101, atribuido_em: '2025-03-01T03:00:00Z' });
+  const fevereiro = periodo(dados);
+  assert.equal(fevereiro.length, 1);
+  assert.equal(fevereiro[0].ocorrido_em, '2025-03-01T02:59:59.000Z');
+  assert.equal(fevereiro[0].responsavel_id, 7);
+  assert.equal(fevereiro[0].envio_id, 100);
+  assert.equal(periodo(dados, { data_inicio: '2025-03-01', data_fim: '2025-03-01' }).length, 0);
+});
+
+test('vínculos manuais e campos legados preservam o nome do autor conhecido', () => {
+  const eventos = periodo(fontes({ linhas: [{ id: 1, chamada_nao_atendida_em: '2025-02-10T12:00:00Z', chamada_nao_atendida_por_id: 7 }],
+    vinculos: [{ id: 1, lead_linha_id: 1, venda_id: 30, vinculado_por_id: 9, vinculado_em: '2025-02-11T12:00:00Z' }],
+    usuarios: [{ id: 9, nome: 'Administradora' }] }));
+  assert.equal(eventos[0].autor.nome, 'Qualificadora');
+  assert.equal(eventos[1].autor.nome, 'Administradora');
+});
+
+test('venda usa criação, deduplica venda e separa vinculação manual de venda antiga', () => {
+  const dados = fontes({ vendas: [
+    { id: 30, origem_lead_linha_id: 1, created_at: '2025-02-10T12:00:00Z', data_venda: '2024-01-01', valor_total: 100 },
+    { id: 31, origem_lead_linha_id: 1, created_at: '2025-01-15T12:00:00Z', valor_total: 200 }
+  ], vinculos: [{ id: 1, lead_linha_id: 1, venda_id: 31, vinculado_em: '2025-02-12T12:00:00Z', vinculado_por_id: 9 }] });
+  dados.vendas.push(dados.vendas[0]);
+  const resumo = resumirMovimentacoes(periodo(dados));
+  assert.equal(resumo.vendas_registradas, 1);
+  assert.equal(resumo.valor_vendido, 100);
+  assert.equal(resumo.acoes_por_tipo.venda_vinculada, 1);
+});
+
+test('fuso de São Paulo respeita limites inclusivos e exclui ações futuras', () => {
   assert.equal(dataIsoEstatisticas('2025-03-01T02:59:59Z'), '2025-02-28');
-  assert.equal(avaliacao.trabalhada, true);
-
-  const posterior = avaliarLinhaEstatistica(
-    linha({ estatistica_primeira_acao_em: '2025-03-01T03:00:00Z' }),
-    PERIODO_FEVEREIRO,
-    REFERENCIA
-  );
-  assert.equal(posterior.trabalhada, false);
+  assert.equal(dataIsoEstatisticas('2025-03-01T03:00:00Z'), '2025-03-01');
+  const dados = fontes({ auditorias: [
+    audit(1, 'chamada_nao_atendida', '2025-02-01T02:59:59Z'),
+    audit(2, 'chamada_nao_atendida', '2025-02-01T03:00:00Z'),
+    audit(3, 'chamada_nao_atendida', '2025-03-01T02:59:59Z'),
+    audit(4, 'chamada_nao_atendida', '2025-03-01T03:00:00Z'),
+    audit(5, 'chamada_nao_atendida', '2099-01-01T12:00:00Z')
+  ] });
+  assert.deepEqual(periodo(dados).map(item => item.id), ['auditoria:2', 'auditoria:3']);
+  assert.equal(periodo(dados, {}).length, 4);
 });
 
-test('atribuicao sem acao propria nao reutiliza o resultado atual de outro reenvio', () => {
-  const avaliacao = avaliarLinhaEstatistica(
-    linha({
-      estatistica_primeira_acao_em: null,
-      futuro_cliente_marcado_em: '2025-02-15T12:00:00Z'
-    }),
-    PERIODO_FEVEREIRO,
-    REFERENCIA
-  );
-
-  assert.equal(avaliacao.trabalhada, false);
+test('período vazio retorna zeros; datas inválidas e invertidas retornam erro 400', () => {
+  assert.equal(resumirMovimentacoes(periodo(fontes())).clientes_movimentados, 0);
+  for (const filtros of [{ data_inicio: '2025-03-01', data_fim: '2025-02-28' }, { data_inicio: '2025-02-30' }, { data_fim: 'ontem' }]) {
+    assert.throws(() => validarPeriodo(filtros), error => error.statusCode === 400);
+  }
 });
 
-test('detalhamento e exportacao recebem somente linhas da coorte e ocultam acao posterior', () => {
-  const coorte = linhasDaCoorte([
-    linha({ id: 1, recebido_em: '2025-01-31T12:00:00Z', estatistica_primeira_acao_em: '2025-02-01T12:00:00Z' }),
-    linha({ id: 2, estatistica_primeira_acao_em: '2025-02-11T12:00:00Z' }),
-    linha({ id: 3, estatistica_primeira_acao_em: '2025-03-02T12:00:00Z' })
-  ], PERIODO_FEVEREIRO, REFERENCIA);
-
-  assert.deepEqual(coorte.map(item => item.id), [2, 3]);
-  assert.equal(coorte[0].estatistica_primeira_acao_considerada_em, '2025-02-11T12:00:00Z');
-  assert.equal(coorte[1].estatistica_primeira_acao_considerada_em, null);
-});
-
-test('total geral usa volumes somados em vez da media dos percentuais', () => {
-  const usuarios = agruparPorUsuario([
-    linha({ id: 1, estatistica_usuario_id: 1, estatistica_primeira_acao_em: '2025-02-11T12:00:00Z' }),
-    linha({ id: 2, estatistica_usuario_id: 2, estatistica_primeira_acao_em: '2025-02-11T12:00:00Z' }),
-    linha({ id: 3, estatistica_usuario_id: 2 }),
-    linha({ id: 4, estatistica_usuario_id: 2 })
-  ]);
-  const total = somarResumosEstatistica(usuarios);
-
-  assert.deepEqual(usuarios.map(item => item.produtividade_pct), [100, 33.3]);
-  assert.equal(total.recebidos, 4);
-  assert.equal(total.trabalhados, 2);
-  assert.equal(total.pendentes, 2);
-  assert.equal(total.produtividade_pct, 50);
+test('detalhamento, busca, paginação e Excel compartilham eventos e totais', async () => {
+  const dados = fontes({ auditorias: [audit(1, 'chamada_nao_atendida', '2025-02-10T12:00:00Z'),
+    audit(2, 'retorno_marcado', '2025-03-10T12:00:00Z')] });
+  const eventos = periodo(dados);
+  const detalhes = paginarLinhas(dados.linhas, eventos, { busca: 'loja', page: 1, page_size: 1 });
+  assert.equal(detalhes.total, 1);
+  assert.equal(detalhes.resumo.total_acoes, 1);
+  assert.equal(detalhes.data[0].ultima_movimentacao_em, '2025-02-10T12:00:00.000Z');
+  assert.equal(detalhes.data[0].movimentacoes_periodo.length, 1);
+  assert.equal(paginarLinhas(dados.linhas, eventos, { page: 2, page_size: 1 }).data.length, 0);
+  assert.equal(paginarLinhas(dados.linhas, eventos, { busca: 'inexistente' }).total, 0);
+  const workbook = montarWorkbook(dados.linhas, eventos, true);
+  assert.equal(workbook.getWorksheet('Resumo').getCell('A2').value, 1);
+  assert.equal(workbook.getWorksheet('Resumo').getCell('E2').value, 1);
+  assert.equal(workbook.getWorksheet('Movimentações').rowCount, 2);
+  assert.equal(workbook.getWorksheet('Movimentações').getCell('F2').value, 'Administradora');
+  assert.match(workbook.getWorksheet('Clientes').getCell('B2').value, /09:00:00/);
+  assert.ok((await workbook.xlsx.writeBuffer()).length > 0);
 });

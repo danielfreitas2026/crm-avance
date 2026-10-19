@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const Usuario = require('../models/Usuario');
 const { montarMapaPermissoesEfetivas } = require('../utils/permissoes');
 const horarioAcessoService = require('./horario-acesso.service');
+const recuperacao = require('./recuperacao-conta.service');
 
 /**
  * Valida foto perfil e retorna o resultado esperado.
@@ -39,11 +40,12 @@ function validarFotoPerfil(fotoPerfil) {
 /**
  * Monta usuario com permissoes a partir dos dados informados.
  */
-async function montarUsuarioComPermissoes(usuario) {
+async function montarUsuarioComPermissoes(usuario, perfil = false) {
   const usuarioJson = usuario.toJSON();
 
   return {
     ...usuarioJson,
+    ...(perfil ? recuperacao.dadosPerfil(usuario) : {}),
     permissoes: await montarMapaPermissoesEfetivas(usuario)
   };
 }
@@ -73,6 +75,12 @@ async function atualizarPerfil(usuarioId, dados, { registrarAuditoria } = {}) {
   const usuario = await Usuario.transaction(async trx => {
     const usuarioAtual = await Usuario.query(trx).findById(usuarioId).forUpdate().withGraphFetched('role');
     if (!usuarioAtual) throw new Error('Usuário não encontrado.');
+    if (dados.email_recuperacao !== undefined) {
+      Object.assign(dadosAtualizacao, await recuperacao.configurarEmail(
+        trx, usuarioAtual, dados.email_recuperacao, dados.senha_atual
+      ));
+    }
+    if (dadosAtualizacao.senha) await recuperacao.invalidarTokens(trx, usuarioId, 'redefinicao');
     if (dados.permissoes !== undefined && usuarioAtual.role?.nome === 'admin') {
       dadosAtualizacao.permissoes = JSON.stringify(dados.permissoes || []);
     }
@@ -86,7 +94,7 @@ async function atualizarPerfil(usuarioId, dados, { registrarAuditoria } = {}) {
     }
     return atualizado;
   });
-  return montarUsuarioComPermissoes(usuario);
+  return montarUsuarioComPermissoes(usuario, true);
 }
 
 /**
@@ -127,7 +135,8 @@ async function login(email, senha) {
     {
       id: usuario.id,
       email: usuario.email,
-      role_id: usuario.role_id
+      role_id: usuario.role_id,
+      versao_sessao: usuario.versao_sessao || 0
     },
     process.env.JWT_SECRET,
     {
@@ -157,7 +166,7 @@ async function buscarUsuarioLogado(usuarioId) {
     throw new Error('Usuário inativo.');
   }
 
-  return await montarUsuarioComPermissoes(usuario);
+  return await montarUsuarioComPermissoes(usuario, true);
 }
 
 module.exports = {

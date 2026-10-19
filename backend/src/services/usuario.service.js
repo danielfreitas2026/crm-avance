@@ -3,6 +3,7 @@ const Usuario = require('../models/Usuario');
  * Servico de usuarios, roles e permissoes efetivas.
  */
 const { prepararSenha } = require('../utils/senha-usuario');
+const recuperacao = require('./recuperacao-conta.service');
 
 
 /**
@@ -72,6 +73,7 @@ async function atualizarUsuario(id, dados, { registrarAuditoria } = {}) {
   return Usuario.transaction(async trx => {
     const anterior = await Usuario.query(trx).findById(id).forUpdate();
     if (!anterior) return null;
+    if (dadosAtualizacao.senha) await recuperacao.invalidarTokens(trx, id, 'redefinicao');
     const atualizado = await Usuario.query(trx).patchAndFetchById(id, dadosAtualizacao);
     if (registrarAuditoria) await registrarAuditoria({ ...anterior }, { ...atualizado }, trx);
     return atualizado;

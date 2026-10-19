@@ -134,16 +134,16 @@ function estadoAuditoriaConfiguracao(configuracao) {
 }
 
 async function avaliarAcesso(usuarioId, agora = new Date()) {
-  const usuario = await db('usuarios').where({ id: usuarioId, ativo: true }).first('id');
+  const usuario = await db('usuarios').where({ id: usuarioId, ativo: true }).first('id', 'versao_sessao');
   if (!usuario) return { permitido: false, motivo: 'USUARIO_INATIVO' };
   const configuracao = await db('configuracoes_horario_acesso').where({ id: CONFIGURACAO_ID }).first('ativo');
-  if (!configuracao?.ativo) return { permitido: true };
+  if (!configuracao?.ativo) return { permitido: true, versao_sessao: usuario.versao_sessao };
   const atual = partesSaoPaulo(agora);
   const dia = await db('horario_acesso_dias').where({ configuracao_id: CONFIGURACAO_ID, dia_semana: atual.dia_semana }).first();
-  if (estaDentroDoHorario(dia, atual.horario)) return { permitido: true };
+  if (estaDentroDoHorario(dia, atual.horario)) return { permitido: true, versao_sessao: usuario.versao_sessao };
   const excecao = await db('horario_acesso_usuarios').where({ configuracao_id: CONFIGURACAO_ID, usuario_id: usuarioId }).first('usuario_id');
-  if (excecao) return { permitido: true, excecao: true };
-  return { permitido: false, motivo: 'SYSTEM_CLOSED' };
+  if (excecao) return { permitido: true, excecao: true, versao_sessao: usuario.versao_sessao };
+  return { permitido: false, motivo: 'SYSTEM_CLOSED', versao_sessao: usuario.versao_sessao };
 }
 
 module.exports = {

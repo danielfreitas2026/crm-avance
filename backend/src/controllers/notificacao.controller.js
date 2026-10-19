@@ -79,7 +79,7 @@ async function marcarPopupVisto(req, res) {
  */
 async function marcarTodasLidas(req, res) {
   try {
-    await notificacaoService.marcarTodasComoLidas(req.usuario.id);
+    await notificacaoService.marcarTodasComoLidas(req.usuario.id, { escopo: req.query?.escopo });
     return res.status(204).send();
   } catch (error) {
     console.error(error);

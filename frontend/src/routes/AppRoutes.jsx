@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import LoginPage from '../pages/LoginPage/LoginPage';
+import RecuperacaoContaPage from '../pages/RecuperacaoContaPage/RecuperacaoContaPage';
 import PerfilPage from '../pages/PerfilPage/PerfilPage';
 import Usuarios from '../pages/Usuarios/Usuarios';
 import CadastroUsuario from '../pages/CadastroUsuario/CadastroUsuario';
@@ -71,6 +72,9 @@ function AppRoutes() {
       <Route path="/vendas/lixeira" element={<PrivateRoute permission={['vendas_ver_proprias', 'vendas_ver_todas']}><VendasLixeiraPage /></PrivateRoute>} />
 
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/esqueci-minha-senha" element={<RecuperacaoContaPage key="solicitar" tipo="solicitar" />} />
+      <Route path="/confirmar-email-recuperacao" element={<RecuperacaoContaPage key="confirmar" tipo="confirmar" />} />
+      <Route path="/redefinir-senha" element={<RecuperacaoContaPage key="redefinir" tipo="redefinir" />} />
       <Route path="/integracao-gmail" element={<PublicInfoPage page="integracao" />} />
       <Route path="/privacidade" element={<PublicInfoPage page="privacidade" />} />
       <Route path="/termos" element={<PublicInfoPage page="termos" />} />

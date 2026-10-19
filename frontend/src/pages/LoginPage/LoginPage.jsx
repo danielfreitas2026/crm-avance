@@ -93,7 +93,7 @@ function LoginPage() {
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-2)' }}>
               <input type="checkbox" defaultChecked /> Manter conectado
             </label>
-            {/* <a href="#" style={{ fontSize: '12px', color: 'var(--text-3)', textDecoration: 'none' }}>Esqueci minha senha</a> */}
+            <Link to="/esqueci-minha-senha">Esqueci minha senha</Link>
           </div>
 
           <button

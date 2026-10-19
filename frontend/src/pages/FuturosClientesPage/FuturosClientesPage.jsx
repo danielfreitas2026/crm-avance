@@ -4,6 +4,7 @@ import * as I from '../../components/Icons';
 import DocProgresso from '../../components/DocProgresso';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
+import { obterPeriodoEstatisticas, formatarDataHoraEstatisticas } from './estatisticas-periodo';
 import {
   confirmarAberturaNotificacao,
   falharAberturaNotificacao,
@@ -63,7 +64,6 @@ import {
   isVendaAntigaRegistrada,
   isVendaRecusada,
   resolverAbaFuturosClientes,
-  formatarDuracaoMinutos,
   formatarTempoRetornoConsultora
 } from './lead-status';
 import { montarFiltrosLinhasMailingRecebido } from './mailing-recebido-search';
@@ -4678,372 +4678,219 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
   );
 }
 
-function inicioDoMesAtual() {
-  const data = new Date();
-  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-01`;
-}
-
-function hojeLocal() {
-  const data = new Date();
-  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-${String(data.getDate()).padStart(2, '0')}`;
-}
-
-function obterPeriodoEstatisticas(preset, inicio, fim) {
-  if (preset === 'hoje') return { data_inicio: hojeLocal(), data_fim: hojeLocal() };
-  if (preset === 'mes') return { data_inicio: inicioDoMesAtual(), data_fim: hojeLocal() };
-  if (preset === 'personalizado') return { data_inicio: inicio || undefined, data_fim: fim || undefined };
-  return {};
-}
-
-const ATIVIDADE_ESTATISTICAS = [
-  ['tentativas_registradas', 'Tentativas registradas'],
-  ['retornos_agendados', 'Retornos'],
-  ['clientes_recusaram', 'Clientes que recusaram'],
-  ['chamadas_nao_atendidas', 'Não atendidas']
+const ATIVIDADES_CRM = [
+  ['atualizacao', 'Dados atualizados'],
+  ['chamada_nao_atendida', 'Chamadas não atendidas'],
+  ['cliente_recusou', 'Recusas do cliente'],
+  ['venda_recusada', 'Vendas recusadas'],
+  ['retorno_agendado', 'Retornos agendados'],
+  ['retorno_realizado', 'Retornos realizados'],
+  ['venda_vinculada', 'Vendas vinculadas manualmente'],
+  ['reversao', 'Marcações revertidas']
+];
+const ATIVIDADES_TELEGRAM = [
+  ['aceite_telegram', 'Atendimentos aceitos'],
+  ['recusa_telegram', 'Atendimentos recusados'],
+  ['expiracao_telegram', 'Prazos encerrados'],
+  ['cancelamento_telegram', 'Encaminhamentos cancelados'],
+  ['retorno_telegram', 'Retornos ao Telegram'],
+  ['publicacao_legada', 'Publicações antigas sem classificação']
+];
+const INDICADORES_MOVIMENTACAO = [
+  ['clientes_movimentados', 'Clientes movimentados', 'clientes distintos com ações', 'received'],
+  ['futuros_clientes_adicionados', 'Futuros clientes adicionados', 'primeiro registro como futuro cliente', 'qualified'],
+  ['novos_envios_telegram', 'Novos envios ao Telegram', 'primeiro envio confirmado por cliente', 'worked'],
+  ['vendas_registradas', 'Vendas registradas', 'vendas novas originadas dos clientes', 'qualified']
 ];
 
-const FUNIL_ESTATISTICAS = [
-  ['enviados_telegram', 'Encaminhados pelo Telegram'],
-  ['aceitos_telegram', 'Aceites no Telegram'],
-  ['recusados_expirados_telegram', 'Recusas/expirações'],
-  ['vendas_futuro_cliente', 'Vendas por futuro cliente'],
-  ['vendas_antigas', 'Vendas antigas']
-];
-
-/** Painel administrativo progressivo: usuarios, mailings e linhas. */
-function EstatisticasFuturosClientesView() {
+export function EstatisticasFuturosClientesView() {
   const [preset, setPreset] = useState('mes');
-  const [dataInicio, setDataInicio] = useState(inicioDoMesAtual);
-  const [dataFim, setDataFim] = useState(hojeLocal);
-  const [resumo, setResumo] = useState(null);
+  const [dataInicio, setDataInicio] = useState(() => obterPeriodoEstatisticas('mes').data_inicio);
+  const [dataFim, setDataFim] = useState(() => obterPeriodoEstatisticas('hoje').data_fim);
   const [usuario, setUsuario] = useState(null);
   const [mailing, setMailing] = useState(null);
-  const [mailings, setMailings] = useState([]);
-  const [linhas, setLinhas] = useState([]);
   const [busca, setBusca] = useState('');
   const buscaDeferred = useDeferredValue(busca);
   const [pagina, setPagina] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState('');
-  const periodo = useMemo(
-    () => obterPeriodoEstatisticas(preset, dataInicio, dataFim),
-    [preset, dataInicio, dataFim]
-  );
+  const [resultado, setResultado] = useState(null);
+  const [exportando, setExportando] = useState(false);
+  const [erroExportacao, setErroExportacao] = useState('');
+  const periodo = useMemo(() => obterPeriodoEstatisticas(preset, dataInicio, dataFim), [preset, dataInicio, dataFim]);
+  const usuarioId = usuario?.usuario_id;
+  const envioId = mailing?.envio_id;
+  const chaveConsulta = JSON.stringify([periodo, usuarioId, envioId, buscaDeferred, pagina]);
 
   useEffect(() => {
     let ativo = true;
-    const requisicao = mailing
-      ? listarEstatisticasLinhasMailing(usuario.usuario_id, mailing.envio_id, { ...periodo, busca: buscaDeferred, page: pagina, page_size: 50 })
-      : usuario
-        ? listarEstatisticasMailingsUsuario(usuario.usuario_id, periodo)
-        : listarEstatisticasFuturosClientes(periodo);
-    requisicao
-      .then(resultado => {
-        if (!ativo) return;
-        if (mailing) {
-          setLinhas(resultado.data || []);
-          setTotal(Number(resultado.total || 0));
-        } else if (usuario) {
-          const mailingsRecebidos = Array.isArray(resultado) ? resultado : (resultado.data || []);
-          setMailings(ordenarMailingsMaisRecentes(mailingsRecebidos));
-        } else {
-          setResumo(resultado);
-        }
-      })
-      .catch(error => ativo && setErro(error.message || 'Não foi possível carregar as estatísticas.'))
-      .finally(() => ativo && setCarregando(false));
+    const requisicao = envioId
+      ? listarEstatisticasLinhasMailing(usuarioId, envioId, { ...periodo, busca: buscaDeferred, page: pagina, page_size: 50 })
+      : usuarioId ? listarEstatisticasMailingsUsuario(usuarioId, periodo) : listarEstatisticasFuturosClientes(periodo);
+    requisicao.then(dados => {
+      if (ativo) setResultado({ chave: chaveConsulta, dados });
+    }).catch(error => {
+      if (ativo) setResultado({ chave: chaveConsulta, erro: error.message || 'Não foi possível carregar as estatísticas.' });
+    });
     return () => { ativo = false; };
-  }, [periodo, usuario, mailing, buscaDeferred, pagina]);
+  }, [periodo, usuarioId, envioId, buscaDeferred, pagina, chaveConsulta]);
 
+  const carregando = resultado?.chave !== chaveConsulta;
+  const dados = carregando ? null : resultado?.dados;
+  const erro = carregando ? '' : resultado?.erro;
+  const indicadores = (usuarioId ? dados?.resumo : dados?.total) || {};
+  const usuarios = dados?.usuarios || [];
+  const mailings = !envioId && usuarioId ? ordenarMailingsMaisRecentes(dados?.data || []) : [];
+  mailings.sort((a, b) => String(b.ultima_movimentacao_em || '').localeCompare(String(a.ultima_movimentacao_em || '')));
+  const linhas = envioId ? dados?.data || [] : [];
+  const total = envioId ? Number(dados?.total || 0) : 0;
+  const titulo = mailing?.envio_nome || usuario?.usuario_nome || 'Todos os usuários';
+
+  function limparDetalhamento() {
+    setPagina(1);
+    setBusca('');
+    setErroExportacao('');
+  }
   function abrirUsuario(item) {
-    setCarregando(true);
-    setErro('');
+    limparDetalhamento();
     setUsuario(item);
     setMailing(null);
-    setPagina(1);
-    setBusca('');
   }
-
   function abrirMailing(item) {
-    setCarregando(true);
-    setErro('');
+    limparDetalhamento();
     setMailing(item);
-    setPagina(1);
-    setBusca('');
   }
-
+  function voltar() {
+    limparDetalhamento();
+    if (mailing) setMailing(null);
+    else setUsuario(null);
+  }
+  function selecionarPeriodo(valor) {
+    limparDetalhamento();
+    setPreset(valor);
+  }
   async function exportar() {
-    await exportarMetricasFuturosClientesExcel(periodo);
-  }
-
-  function prepararNovaConsulta() {
-    setCarregando(true);
-    setErro('');
-  }
-
-  function voltarNivelEstatisticas() {
-    prepararNovaConsulta();
-    setPagina(1);
-    setBusca('');
-    if (mailing) {
-      setMailing(null);
-      return;
+    setExportando(true);
+    setErroExportacao('');
+    try {
+      await exportarMetricasFuturosClientesExcel({
+        ...periodo, ...(usuarioId ? { usuario_id: usuarioId } : {}), ...(envioId ? { envio_id: envioId } : {})
+      });
+    } catch (error) {
+      setErroExportacao(error.message || 'Não foi possível exportar as movimentações.');
+    } finally {
+      setExportando(false);
     }
-    setUsuario(null);
   }
 
-  function abrirTodosUsuarios() {
-    prepararNovaConsulta();
-    setUsuario(null);
-    setMailing(null);
-    setPagina(1);
-    setBusca('');
-  }
-
-  function voltarAoUsuario() {
-    prepararNovaConsulta();
-    setMailing(null);
-    setPagina(1);
-    setBusca('');
-  }
-
-  const titulo = mailing ? mailing.envio_nome : usuario ? usuario.usuario_nome : 'Todos os usuários';
-  const indicadores = usuario || resumo?.total || {};
-  const percentualPendente = Number(indicadores.recebidos || 0)
-    ? Math.round((Number(indicadores.pendentes || 0) / Number(indicadores.recebidos)) * 100)
-    : 0;
   return (
-    <section className="future-stats" aria-busy={carregando}>
-      <header className="future-stats__header">
-        <div className="future-stats__heading">
-          <p className="future-stats__eyebrow">Estatísticas de qualificação</p>
-          <h2>{titulo}</h2>
-          <p className="muted">Os indicadores consideram os leads recebidos no período e as ações realizadas até o encerramento dele.</p>
+    <section className="future-stats" aria-label="Estatísticas de qualificação" aria-busy={carregando}>
+      <div className="future-stats__toolbar">
+        <header className="future-stats__header">
+          <div className="future-stats__heading">
+            <p className="future-stats__eyebrow">Movimentações de futuros clientes</p>
+            <h2>{titulo}</h2>
+            <p className="muted">Ações realizadas no período, em qualquer mailing.</p>
+          </div>
+          <button type="button" className="btn future-stats__export" disabled={exportando || carregando || Boolean(erro)} onClick={exportar}>
+            <I.Download size={16} /> {exportando ? 'Exportando...' : 'Exportar Excel'}
+          </button>
+        </header>
+        <div className="future-stats__filters">
+          <div className="future-stats__filter-title"><I.Calendar size={17} /><span>Data das movimentações</span></div>
+          <label><span className="sr-only">Período</span>
+            <select value={preset} onChange={event => selecionarPeriodo(event.target.value)}>
+              <option value="hoje">Hoje</option><option value="ontem">Ontem</option><option value="mes">Este mês</option>
+              <option value="personalizado">Período específico</option><option value="todos">Todo o período</option>
+            </select>
+          </label>
+          {preset === 'personalizado' && <>
+            <label><span>De</span><input type="date" value={dataInicio} onChange={event => { limparDetalhamento(); setDataInicio(event.target.value); }} /></label>
+            <label><span>Até</span><input type="date" value={dataFim} onChange={event => { limparDetalhamento(); setDataFim(event.target.value); }} /></label>
+          </>}
         </div>
-        <button type="button" className="btn future-stats__export" onClick={exportar}><I.Download size={16} /> Exportar Excel</button>
-      </header>
-
-      <div className="future-stats__filters">
-        <div className="future-stats__filter-title"><I.Calendar size={17} /><span>Período da análise</span></div>
-        <label><span className="sr-only">Período</span>
-          <select value={preset} onChange={event => { prepararNovaConsulta(); setPreset(event.target.value); }}>
-            <option value="hoje">Hoje</option>
-            <option value="mes">Este mês</option>
-            <option value="personalizado">Período específico</option>
-            <option value="todos">Todo o período</option>
-          </select>
-        </label>
-        {preset === 'personalizado' && <>
-          <label><span>De</span><input type="date" value={dataInicio} onChange={event => { prepararNovaConsulta(); setDataInicio(event.target.value); }} /></label>
-          <label><span>Até</span><input type="date" value={dataFim} onChange={event => { prepararNovaConsulta(); setDataFim(event.target.value); }} /></label>
-        </>}
-        <span className="future-stats__period-hint">Os indicadores são atualizados conforme o período selecionado.</span>
       </div>
-
-      {(usuario || mailing) && (
-        <nav className="future-stats__breadcrumb" aria-label="Navegação das estatísticas">
-          <button type="button" className="future-stats__back" onClick={voltarNivelEstatisticas}><I.Return size={16} /> Voltar</button>
-          <span className="future-stats__breadcrumb-path">
-            <button type="button" onClick={abrirTodosUsuarios}><I.Users size={14} /> Todos os usuários</button>
-            <span className="future-stats__breadcrumb-separator" aria-hidden="true">›</span>
-            {mailing ? (
-              <>
-                <button type="button" onClick={voltarAoUsuario}>{usuario.usuario_nome}</button>
-                <span className="future-stats__breadcrumb-separator" aria-hidden="true">›</span>
-                <span className="future-stats__breadcrumb-current" aria-current="page">{mailing.envio_nome}</span>
-              </>
-            ) : <span className="future-stats__breadcrumb-current" aria-current="page">{usuario.usuario_nome}</span>}
-          </span>
-        </nav>
-      )}
-
-      {erro && <div className="alert alert-danger">{erro}</div>}
-      {carregando && <div className="future-stats__loading">Carregando indicadores...</div>}
-
-      {!carregando && !erro && !mailing && (
-        <>
-          <div className="future-stats__overview">
-            <article className="future-stats__kpi future-stats__kpi--received">
-              <div className="future-stats__kpi-icon"><I.Bell size={19} /></div>
-              <div><span>Recebidos</span><strong>{Number(indicadores.recebidos || 0).toLocaleString('pt-BR')}</strong><small>no período selecionado</small></div>
-            </article>
-            <article className="future-stats__kpi future-stats__kpi--worked">
-              <div className="future-stats__kpi-icon"><I.Check size={19} /></div>
-              <div><span>Trabalhados</span><strong>{Number(indicadores.trabalhados || 0).toLocaleString('pt-BR')}</strong><small>{Number(indicadores.produtividade_pct || 0).toLocaleString('pt-BR')}% de produtividade</small></div>
-              <i className="future-stats__kpi-progress"><b style={{ width: `${indicadores.produtividade_pct || 0}%` }} /></i>
-            </article>
-            <article className="future-stats__kpi future-stats__kpi--pending">
-              <div className="future-stats__kpi-icon"><I.History size={19} /></div>
-              <div><span>Pendentes</span><strong>{Number(indicadores.pendentes || 0).toLocaleString('pt-BR')}</strong><small>{percentualPendente}% ainda aguardam ação</small></div>
-            </article>
-            <article className="future-stats__kpi future-stats__kpi--qualified">
+      {usuario && <nav className="future-stats__breadcrumb" aria-label="Navegação das estatísticas">
+        <button type="button" className="future-stats__back" onClick={voltar}><I.Return size={16} /> Voltar</button>
+        <span className="future-stats__breadcrumb-path">
+          <button type="button" onClick={() => { limparDetalhamento(); setUsuario(null); setMailing(null); }}>Todos os usuários</button>
+          <span aria-hidden="true"> › </span>
+          {mailing ? <><button type="button" onClick={() => { limparDetalhamento(); setMailing(null); }}>{usuario.usuario_nome}</button><span aria-hidden="true"> › </span><span aria-current="page">{mailing.envio_nome}</span></>
+            : <span aria-current="page">{usuario.usuario_nome}</span>}
+        </span>
+      </nav>}
+      {(erro || erroExportacao) && <div className="alert alert-danger" role="alert">{erro || erroExportacao}</div>}
+      {carregando && <div className="future-stats__loading">Carregando movimentações...</div>}
+      {!carregando && !erro && <>
+        {indicadores.historico_incompleto && <p className="future-stats__note" role="status">O histórico antigo pode estar incompleto. Publicações sem comprovação do primeiro envio não contam como novos envios.</p>}
+        <section className="future-stats__overview" aria-label="Indicadores principais">
+          {INDICADORES_MOVIMENTACAO.map(([chave, rotulo, ajuda, estilo]) => (
+            <article className={`future-stats__kpi future-stats__kpi--${estilo}`} key={chave}>
               <div className="future-stats__kpi-icon"><I.Chart size={19} /></div>
-              <div><span>Qualificados</span><strong>{Number(indicadores.qualificados || 0).toLocaleString('pt-BR')}</strong><small>{Number(indicadores.qualificacao_pct || 0).toLocaleString('pt-BR')}% dos trabalhados</small></div>
+              <div><span>{rotulo}</span><strong>{Number(indicadores[chave] || 0).toLocaleString('pt-BR')}</strong><small>{ajuda}</small></div>
             </article>
-          </div>
-
-          <div className="future-stats__panels">
-            <section className="future-stats__panel">
-              <header><div><span className="future-stats__section-kicker">Operação</span><h3>Atividade registrada</h3></div><I.Bell size={18} /></header>
-              <div className="future-stats__metric-list">
-                {ATIVIDADE_ESTATISTICAS.map(([chave, rotulo]) => <div key={chave}><span>{rotulo}</span><strong>{Number(indicadores[chave] || 0).toLocaleString('pt-BR')}</strong></div>)}
-              </div>
-            </section>
-            <section className="future-stats__panel">
-              <header><div><span className="future-stats__section-kicker">Conversão</span><h3>Telegram e vendas</h3></div><I.Chart size={18} /></header>
-              <div className="future-stats__metric-list future-stats__metric-list--funnel">
-                {FUNIL_ESTATISTICAS.map(([chave, rotulo]) => <div key={chave}><span>{rotulo}</span><strong>{Number(indicadores[chave] || 0).toLocaleString('pt-BR')}</strong></div>)}
-              </div>
-            </section>
-          </div>
-
-          <div className="future-stats__business">
-            <article><span>Produtividade</span><strong>{Number(indicadores.produtividade_pct || 0).toLocaleString('pt-BR')}%</strong><small>trabalhados ÷ recebidos</small></article>
-            <article><span>Conversão</span><strong>{Number(indicadores.conversao_pct || 0).toLocaleString('pt-BR')}%</strong><small>vendas ÷ qualificados</small></article>
-            <article><span>Tempo médio da primeira ação</span><strong>{formatarDuracaoMinutos(indicadores.tempo_medio_primeira_acao_min)}</strong><small>desde o recebimento</small></article>
-            <article><span>Potencial mensal</span><strong>{formatarMoedaSondagem(indicadores.potencial_mensal)}</strong><small>estimado nos qualificados</small></article>
-            <article className="future-stats__business-sold"><span>Valor vendido</span><strong>{formatarMoedaSondagem(indicadores.valor_vendido)}</strong><small>vendas por futuro cliente</small></article>
-          </div>
-          <p className="muted future-stats__note">Históricos antigos de tentativas podem estar incompletos. Quando há primeira ação sem auditoria, é contabilizada ao menos uma tentativa.</p>
-        </>
-      )}
-
-      {!carregando && !erro && !usuario && (
-        <section className="future-stats__table-panel future-stats__team-panel">
-          <header>
-            <div>
-              <span className="future-stats__section-kicker">Equipe</span>
-              <h3>Desempenho por usuário</h3>
-              <p>Compare a operação e abra uma pessoa para analisar seus mailings e leads.</p>
-            </div>
-            <span className="future-stats__team-count"><I.Users size={14} /> {resumo?.usuarios?.length || 0} usuário(s)</span>
-          </header>
-          {(resumo?.usuarios || []).length > 0 ? (
-            <div className="future-stats__user-grid">
-              {resumo.usuarios.map(item => (
-                <button
-                  type="button"
-                  className="future-stats__user-card"
-                  key={item.usuario_id}
-                  onClick={() => abrirUsuario(item)}
-                  aria-label={`Analisar desempenho de ${item.usuario_nome}`}
-                >
-                  <span className="future-stats__user-card-head">
-                    <span className="future-stats__user-avatar">{String(item.usuario_nome || '?').trim().charAt(0).toUpperCase()}</span>
-                    <span className="future-stats__user-identity">
-                      <strong>{item.usuario_nome}</strong>
-                      <small>Ver mailings e leads</small>
-                    </span>
-                    <span className="future-stats__user-arrow"><I.ArrowRight size={17} /></span>
-                  </span>
-
-                  <span className="future-stats__user-numbers">
-                    <span><small>Recebidos</small><strong>{Number(item.recebidos || 0).toLocaleString('pt-BR')}</strong></span>
-                    <span><small>Trabalhados</small><strong>{Number(item.trabalhados || 0).toLocaleString('pt-BR')}</strong></span>
-                    <span className={item.pendentes ? 'is-pending' : ''}><small>Pendentes</small><strong>{Number(item.pendentes || 0).toLocaleString('pt-BR')}</strong></span>
-                  </span>
-
-                  <span className="future-stats__user-performance">
-                    <span>
-                      <span><small>Produtividade</small><strong>{Number(item.produtividade_pct || 0).toLocaleString('pt-BR')}%</strong></span>
-                      <i className="future-stats__user-progress"><b style={{ width: `${item.produtividade_pct || 0}%` }} /></i>
-                    </span>
-                    <span>
-                      <span><small>Conversão</small><strong>{Number(item.conversao_pct || 0).toLocaleString('pt-BR')}%</strong></span>
-                      <i className="future-stats__user-progress future-stats__user-progress--success"><b style={{ width: `${Math.min(100, item.conversao_pct || 0)}%` }} /></i>
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : <div className="empty-state">Nenhum usuário encontrado no período.</div>}
+          ))}
         </section>
-      )}
-
-      {!carregando && !erro && usuario && !mailing && (
-        <section className="future-stats__table-panel future-stats__mailings-panel">
+        <p className="future-stats__activity-total"><strong>{Number(indicadores.total_acoes || 0).toLocaleString('pt-BR')} ações no período</strong> · Valor das vendas registradas: {formatarMoedaSondagem(indicadores.valor_vendido)}</p>
+        {!usuario && <section className="future-stats__table-panel future-stats__team-panel" aria-labelledby="future-stats-team-title">
           <header>
-            <div>
-              <span className="future-stats__section-kicker">Origem dos dados</span>
-              <h3>Mailings recebidos</h3>
-              <p>Compare os resultados e abra um mailing para analisar cada lead.</p>
-            </div>
+            <div><span className="future-stats__section-kicker">Equipe</span><h3 id="future-stats-team-title">Resultados por responsável pela qualificação</h3><p>Abra uma pessoa para ver os mailings movimentados.</p></div>
+            <span className="future-stats__team-count"><I.Users size={14} /> {usuarios.length} usuário(s)</span>
+          </header>
+          {usuarios.length ? <div className="future-stats__user-grid">{usuarios.map(item => (
+            <button type="button" className="future-stats__user-card" key={item.usuario_id ?? 'removido'} onClick={() => abrirUsuario(item)} aria-label={`Analisar desempenho de ${item.usuario_nome}`}>
+              <span className="future-stats__user-card-head">
+                <span className="future-stats__user-avatar">{String(item.usuario_nome || '?').trim().charAt(0).toUpperCase()}</span>
+                <span className="future-stats__user-identity"><strong>{item.usuario_nome}</strong><small>Ver mailings e leads</small></span>
+                <span className="future-stats__user-arrow"><I.ArrowRight size={17} /></span>
+              </span>
+              <span className="future-stats__user-numbers future-stats__user-numbers--movements">{INDICADORES_MOVIMENTACAO.map(([chave, rotulo]) => <span key={chave}><small>{rotulo}</small><strong>{Number(item[chave] || 0).toLocaleString('pt-BR')}</strong></span>)}</span>
+            </button>
+          ))}</div> : <div className="empty-state">Nenhuma movimentação encontrada no período.</div>}
+        </section>}
+        {usuario && !mailing && <section className="future-stats__table-panel future-stats__mailings-panel" aria-labelledby="future-stats-mailings-title">
+          <header>
+            <div><span className="future-stats__section-kicker">Origem dos dados</span><h3 id="future-stats-mailings-title">Mailings movimentados</h3><p>Inclui mailings recebidos antes do período selecionado.</p></div>
             <span className="future-stats__team-count"><I.TableSheet size={14} /> {mailings.length} mailing(s)</span>
           </header>
-          {mailings.length > 0 ? (
-            <div className="table-wrap future-stats__mailing-list">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Mailing</th>
-                    <th>Recebidos</th>
-                    <th>Trabalhados</th>
-                    <th>Qualificados</th>
-                    <th>Vendas</th>
-                    <th>Produtividade</th>
-                    <th>Conversão</th>
-                    <th><span className="sr-only">Ação</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mailings.map(item => (
-                    <tr key={item.envio_id}>
-                      <td>
-                        <button
-                          type="button"
-                          className="future-stats__mailing-list-link"
-                          onClick={() => abrirMailing(item)}
-                          aria-label={`Analisar leads do mailing ${item.envio_nome}`}
-                        >
-                          <span className="future-stats__mailing-icon"><I.TableSheet size={17} /></span>
-                          <span className="future-stats__mailing-identity">
-                            <strong>{item.envio_nome}</strong>
-                            <small>Mailing #{item.envio_id}</small>
-                          </span>
-                        </button>
-                      </td>
-                      <td><strong className="future-stats__mailing-value">{Number(item.recebidos || 0).toLocaleString('pt-BR')}</strong></td>
-                      <td><strong className="future-stats__mailing-value">{Number(item.trabalhados || 0).toLocaleString('pt-BR')}</strong></td>
-                      <td><strong className="future-stats__mailing-value">{Number(item.qualificados || 0).toLocaleString('pt-BR')}</strong></td>
-                      <td><strong className={`future-stats__mailing-value ${item.vendas_futuro_cliente ? 'has-sales' : ''}`}>{Number(item.vendas_futuro_cliente || 0).toLocaleString('pt-BR')}</strong></td>
-                      <td>
-                        <span className="future-stats__mailing-rate">
-                          <i className="future-stats__user-progress"><b style={{ width: `${item.produtividade_pct || 0}%` }} /></i>
-                          <strong>{Number(item.produtividade_pct || 0).toLocaleString('pt-BR')}%</strong>
-                        </span>
-                      </td>
-                      <td>
-                        <span className="future-stats__mailing-rate">
-                          <i className="future-stats__user-progress future-stats__user-progress--success"><b style={{ width: `${Math.min(100, item.conversao_pct || 0)}%` }} /></i>
-                          <strong>{Number(item.conversao_pct || 0).toLocaleString('pt-BR')}%</strong>
-                        </span>
-                      </td>
-                      <td><button type="button" className="future-stats__mailing-open" onClick={() => abrirMailing(item)} aria-label={`Abrir mailing ${item.envio_nome}`}><I.ArrowRight size={17} /></button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : <div className="empty-state">Nenhum mailing encontrado no período.</div>}
-        </section>
-      )}
-
-      {!carregando && !erro && mailing && (
-        <>
-          <div className="future-stats__search"><I.Search size={16} /><input value={busca} onChange={event => { setBusca(event.target.value); setPagina(1); }} placeholder="Buscar lead neste mailing" /></div>
-          <div className="table-wrap"><table><thead><tr><th>Lead</th><th>Recebido</th><th>Primeira ação</th><th>Tentativas</th><th>Resultado</th></tr></thead>
-            <tbody>{linhas.map(linha => <tr key={linha.id}><td>{encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.razao_social) || encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.cnpj) || `Lead #${linha.id}`}</td><td>{formatarDataHora(linha.recebido_em)}</td><td>{formatarDataHora(primeiraAcaoVisual(linha))}</td><td>{linha.tentativas_conhecidas || 0}</td><td>{renderFuturoClienteSituacao(linha)}</td></tr>)}</tbody>
-          </table>{!linhas.length && <div className="empty-state">Nenhum lead encontrado.</div>}</div>
-          <div className="lead-pagination"><button className="btn" type="button" disabled={pagina <= 1} onClick={() => setPagina(value => value - 1)}>Anterior</button><span>Página {pagina} de {Math.max(1, Math.ceil(total / 50))}</span><button className="btn" type="button" disabled={pagina * 50 >= total} onClick={() => setPagina(value => value + 1)}>Próxima</button></div>
-        </>
-      )}
+          {mailings.length ? <div className="table-wrap future-stats__mailing-list" role="region" aria-label="Tabela de mailings" tabIndex={0}><table>
+            <thead><tr><th>Mailing</th>{INDICADORES_MOVIMENTACAO.map(([chave, rotulo]) => <th key={chave}>{rotulo}</th>)}<th>Ações</th><th><span className="sr-only">Abrir</span></th></tr></thead>
+            <tbody>{mailings.map(item => <tr key={item.envio_id}>
+              <td><button type="button" className="future-stats__mailing-list-link" onClick={() => abrirMailing(item)} aria-label={`Analisar leads do mailing ${item.envio_nome}`}>
+                <span className="future-stats__mailing-icon"><I.TableSheet size={17} /></span>
+                <span className="future-stats__mailing-identity"><strong>{item.envio_nome}</strong><small>Mailing #{item.envio_id}</small></span>
+              </button></td>
+              {INDICADORES_MOVIMENTACAO.map(([chave]) => <td key={chave}><strong className="future-stats__mailing-value">{Number(item[chave] || 0).toLocaleString('pt-BR')}</strong></td>)}
+              <td><strong className="future-stats__mailing-value">{Number(item.total_acoes || 0).toLocaleString('pt-BR')}</strong></td>
+              <td><button type="button" className="future-stats__mailing-open" onClick={() => abrirMailing(item)} aria-label={`Abrir mailing ${item.envio_nome}`}><I.ArrowRight size={17} /></button></td>
+            </tr>)}</tbody>
+          </table></div> : <div className="empty-state">Nenhum mailing movimentado no período.</div>}
+        </section>}
+        {!mailing && <div className="future-stats__panels">
+          {[[ATIVIDADES_CRM, 'Atividades no CRM'], [ATIVIDADES_TELEGRAM, 'Atividades no Telegram']].map(([itens, rotulo]) => (
+            <section className="future-stats__panel" key={rotulo} aria-label={rotulo}>
+              <header><h3>{rotulo}</h3></header>
+              <div className="future-stats__metric-list">{itens.map(([chave, nome]) => <div key={chave}><span>{nome}</span><strong>{Number(indicadores.acoes_por_tipo?.[chave] || 0).toLocaleString('pt-BR')}</strong></div>)}</div>
+            </section>
+          ))}
+        </div>}
+        {mailing && <section className="future-stats__table-panel future-stats__leads-panel" aria-labelledby="future-stats-leads-title">
+          <header>
+            <div><span className="future-stats__section-kicker">Detalhamento</span><h3 id="future-stats-leads-title">Clientes do mailing</h3><p>Consulte as ações realizadas no período por cliente.</p></div>
+            <span className="future-stats__team-count">{total.toLocaleString('pt-BR')} cliente(s)</span>
+          </header>
+          <div className="future-stats__search"><I.Search size={16} /><input aria-label="Buscar cliente neste mailing" value={busca} onChange={event => { setBusca(event.target.value); setPagina(1); }} placeholder="Buscar cliente neste mailing" /></div>
+          <div className="table-wrap future-stats__lead-list" role="region" aria-label="Tabela de clientes" tabIndex={0}><table>
+            <thead><tr><th>Cliente</th><th>Última movimentação no período</th><th>Ações</th><th>Movimentações do período</th></tr></thead>
+            <tbody>{linhas.map(linha => <tr key={linha.id}>
+              <td>{encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.razao_social) || encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.cnpj) || `Lead #${linha.id}`}</td>
+              <td>{formatarDataHoraEstatisticas(linha.ultima_movimentacao_em)}</td><td>{linha.movimentacoes_periodo.length}</td>
+              <td><details className="future-stats__events"><summary>Ver movimentações</summary><ol>{[...linha.movimentacoes_periodo].reverse().map(item => <li key={item.id}><strong>{item.titulo}</strong><span>{formatarDataHoraEstatisticas(item.ocorrido_em)} · {item.autor.nome}</span></li>)}</ol></details></td>
+            </tr>)}</tbody>
+          </table>{!linhas.length && <div className="empty-state">Nenhum cliente movimentado encontrado.</div>}</div>
+          <div className="lead-pagination future-stats__pagination"><button className="btn" type="button" disabled={pagina <= 1} onClick={() => setPagina(value => value - 1)}>Anterior</button><span>Página {pagina} de {Math.max(1, Math.ceil(total / 50))}</span><button className="btn" type="button" disabled={pagina * 50 >= total} onClick={() => setPagina(value => value + 1)}>Próxima</button></div>
+        </section>}
+      </>}
     </section>
   );
-}
-
-function primeiraAcaoVisual(linha) {
-  return linha.estatistica_primeira_acao_considerada_em || null;
 }
 
 // ─── Página principal ─────────────────────────────────────────────────────────

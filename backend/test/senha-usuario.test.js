@@ -65,6 +65,7 @@ test('chaves ausentes, inválidas ou diferentes não permitem recuperação', as
 });
 
 function bancoEmMemoria(t) {
+  t.mock.method(require('../src/services/recuperacao-conta.service'), 'invalidarTokens', async () => {});
   let usuario;
   const gravacoes = [];
   t.mock.method(Usuario, 'transaction', async callback => callback({}));

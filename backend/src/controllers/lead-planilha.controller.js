@@ -497,7 +497,7 @@ async function estatisticasResumo(req, res) {
     return res.json(await leadPlanilhaService.obterEstatisticasResumo(req.query));
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: 'Erro ao carregar o resumo estatistico.' });
+    return res.status(error.statusCode || 500).json({ message: error.statusCode ? error.message : 'Erro ao carregar o resumo estatistico.' });
   }
 }
 
@@ -506,7 +506,7 @@ async function estatisticasMailings(req, res) {
     return res.json(await leadPlanilhaService.obterEstatisticasMailings({ ...req.query, usuario_id: req.params.usuarioId }));
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: 'Erro ao carregar os mailings do usuario.' });
+    return res.status(error.statusCode || 500).json({ message: error.statusCode ? error.message : 'Erro ao carregar os mailings do usuario.' });
   }
 }
 
@@ -519,7 +519,7 @@ async function estatisticasLinhas(req, res) {
     }));
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: 'Erro ao carregar os leads do mailing.' });
+    return res.status(error.statusCode || 500).json({ message: error.statusCode ? error.message : 'Erro ao carregar os leads do mailing.' });
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * Servico de envio de notificacoes por e-mail e verificacao de configuracao SMTP.
  */
-const nodemailer = require('nodemailer');
+const { emailUser, emailHost, emailPort, emailSecure, emailConfigurado, getTransporter } = require('./email-transporte.service');
 const Notificacao = require('../models/Notificacao');
 const NotificacaoDestinatario = require('../models/NotificacaoDestinatario');
 const Usuario = require('../models/Usuario');
@@ -9,44 +9,6 @@ const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PERMISSAO_RECEBER_EMAIL = 'notificacoes_receber_email';
-
-let transporter = null;
-
-/**
- * Retorna email user no formato esperado pelo fluxo.
- */
-function emailUser() {
-  return process.env.EMAIL || process.env.SMTP_USER || '';
-}
-
-/**
- * Retorna email password no formato esperado pelo fluxo.
- */
-function emailPassword() {
-  return process.env.EMAIL_PASSWORD || process.env.SMTP_PASS || '';
-}
-
-/**
- * Retorna email host no formato esperado pelo fluxo.
- */
-function emailHost() {
-  return process.env.EMAIL_HOST || process.env.SMTP_HOST || 'smtp.hostinger.com';
-}
-
-/**
- * Retorna email port no formato esperado pelo fluxo.
- */
-function emailPort() {
-  return Number(process.env.EMAIL_PORT || process.env.SMTP_PORT || 465);
-}
-
-/**
- * Retorna email secure no formato esperado pelo fluxo.
- */
-function emailSecure() {
-  const valor = process.env.EMAIL_SECURE || process.env.SMTP_SECURE || 'true';
-  return String(valor) !== 'false';
-}
 
 /**
  * Retorna status configuracao no formato esperado pelo fluxo.
@@ -84,34 +46,6 @@ function parseDados(dados) {
 function usuarioPodeReceberEmail(usuario) {
   if (!usuario?.ativo) return false;
   return usuarioTemPermissaoLocal(usuario, PERMISSAO_RECEBER_EMAIL);
-}
-
-/**
- * Retorna email configurado no formato esperado pelo fluxo.
- */
-function emailConfigurado() {
-  return Boolean(emailUser() && emailPassword());
-}
-
-/**
- * Retorna transporter a partir dos dados informados.
- */
-function getTransporter() {
-  if (!emailConfigurado()) return null;
-
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: emailHost(),
-      port: emailPort(),
-      secure: emailSecure(),
-      auth: {
-        user: emailUser(),
-        pass: emailPassword()
-      }
-    });
-  }
-
-  return transporter;
 }
 
 /**

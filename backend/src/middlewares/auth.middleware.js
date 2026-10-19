@@ -36,6 +36,10 @@ async function authMiddleware(req, res, next) {
   try {
     const acesso = await horarioAcessoService.avaliarAcesso(decoded.id);
 
+    if ((decoded.versao_sessao ?? 0) !== (acesso.versao_sessao ?? 0)) {
+      return res.status(401).json({ message: 'Sessão encerrada. Faça login novamente.' });
+    }
+
     if (!acesso.permitido && acesso.motivo === 'SYSTEM_CLOSED') {
       return res.status(423).json({
         code: 'SYSTEM_CLOSED',

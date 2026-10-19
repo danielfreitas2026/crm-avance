@@ -1,7 +1,7 @@
 const { isDeepStrictEqual } = require('node:util');
 
 const CAMPOS_AUTOMATICOS = new Set(['id', 'created_at', 'updated_at', 'ultima_atividade_em']);
-const CAMPO_SENSIVEL = /senha|password|token|authorization|jwt|(?:^|[._])secret(?:$|[._])|api_key/i;
+const CAMPO_SENSIVEL = /senha|password|token|authorization|jwt|email_recuperacao|(?:^|[._])secret(?:$|[._])|api_key/i;
 
 function normalizar(valor) {
   if (valor instanceof Date) return valor.toISOString();

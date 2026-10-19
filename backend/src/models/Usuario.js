@@ -23,6 +23,10 @@ class Usuario extends Model {
         email: { type: 'string', minLength: 1, maxLength: 160 },
         senha: { type: 'string', minLength: 1, maxLength: 255 },
         senha_criptografada: { type: ['string', 'null'] },
+        email_recuperacao: { type: ['string', 'null'], maxLength: 254 },
+        email_recuperacao_pendente: { type: ['string', 'null'], maxLength: 254 },
+        email_recuperacao_confirmado_em: { type: ['string', 'null'] },
+        versao_sessao: { type: 'integer', minimum: 0 },
         foto_perfil: { type: ['string', 'null'] },
         role_id: { type: 'integer' },
         permissoes: { type: ['array', 'string', 'null'] },
@@ -57,6 +61,10 @@ class Usuario extends Model {
 
     delete json.senha;
     delete json.senha_criptografada;
+    delete json.email_recuperacao;
+    delete json.email_recuperacao_pendente;
+    delete json.email_recuperacao_confirmado_em;
+    delete json.versao_sessao;
 
     return json;
   }
