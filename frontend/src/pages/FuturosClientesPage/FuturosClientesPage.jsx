@@ -4864,7 +4864,7 @@ export function EstatisticasFuturosClientesView() {
             </tr>)}</tbody>
           </table></div> : <div className="empty-state">Nenhum mailing movimentado no período.</div>}
         </section>}
-        {!mailing && <div className="future-stats__panels">
+        {!usuario && <div className="future-stats__panels">
           {[[ATIVIDADES_CRM, 'Atividades no CRM'], [ATIVIDADES_TELEGRAM, 'Atividades no Telegram']].map(([itens, rotulo]) => (
             <section className="future-stats__panel" key={rotulo} aria-label={rotulo}>
               <header><h3>{rotulo}</h3></header>

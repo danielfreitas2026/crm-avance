@@ -67,6 +67,34 @@ describe('estatísticas por movimentação', () => {
     expect(equipe.compareDocumentPosition(atividades) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('exibe os quadros de atividades apenas na visão geral, inclusive ao voltar do detalhe', async () => {
+    render(<EstatisticasFuturosClientesView />);
+    await screen.findByRole('button', { name: 'Analisar desempenho de Qualificadora' });
+    function verificarAtividades(visiveis) {
+      for (const nome of ['Atividades no CRM', 'Atividades no Telegram']) {
+        const painel = screen.queryByRole('region', { name: nome });
+        if (visiveis) expect(painel).toBeVisible();
+        else expect(painel).not.toBeInTheDocument();
+      }
+    }
+    verificarAtividades(true);
+    await abrirUsuario();
+    verificarAtividades(false);
+    expect(valor('Clientes movimentados')).toBe('10');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Período' }), { target: { value: 'ontem' } });
+    await screen.findByRole('button', { name: 'Abrir mailing Mailing antigo' });
+    verificarAtividades(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir mailing Mailing antigo' }));
+    await screen.findByText('Loja antiga');
+    verificarAtividades(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    await screen.findByRole('button', { name: 'Abrir mailing Mailing antigo' });
+    verificarAtividades(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Todos os usuários' }));
+    await screen.findByRole('button', { name: 'Analisar desempenho de Qualificadora' });
+    verificarAtividades(true);
+  });
+
   it('mantém o detalhamento em tabelas identificadas e com rolagem própria', async () => {
     render(<EstatisticasFuturosClientesView />);
     await abrirUsuario();
