@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import RecuperacaoContaPage from './RecuperacaoContaPage';
@@ -64,9 +65,47 @@ describe('recuperação pública de conta', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('72 bytes');
     }
     expect(redefinirSenha).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Visualizar senhas' }));
+  });
+
+  it('mostra um olho junto a cada campo e alterna as senhas independentemente por clique e teclado', async () => {
+    const user = userEvent.setup();
+    abrir('redefinir');
+    const senha = screen.getByLabelText('Nova senha');
+    const confirmar = screen.getByLabelText('Confirme a nova senha');
+    fireEvent.change(senha, { target: { value: 'Nova1234' } });
+    fireEvent.change(confirmar, { target: { value: 'Nova1234' } });
+
+    const olhoSenha = screen.getByRole('button', { name: 'Visualizar nova senha' });
+    const olhoConfirmacao = screen.getByRole('button', { name: 'Visualizar confirmação da nova senha' });
+    expect(olhoSenha.parentElement).toBe(senha.parentElement);
+    expect(olhoConfirmacao.parentElement).toBe(confirmar.parentElement);
+    expect(senha).toHaveAttribute('type', 'password');
+    expect(confirmar).toHaveAttribute('type', 'password');
+
+    await user.click(olhoSenha);
     expect(senha).toHaveAttribute('type', 'text');
+    expect(confirmar).toHaveAttribute('type', 'password');
+    expect(olhoSenha).toHaveAccessibleName('Ocultar nova senha');
+    expect(olhoSenha).toHaveAttribute('aria-pressed', 'true');
+    await user.keyboard(' ');
+    expect(senha).toHaveAttribute('type', 'password');
+    expect(olhoSenha).toHaveAttribute('aria-pressed', 'false');
+
+    await user.tab();
+    expect(confirmar).toHaveFocus();
+    await user.tab();
+    expect(olhoConfirmacao).toHaveFocus();
+    await user.keyboard('{Enter}');
     expect(confirmar).toHaveAttribute('type', 'text');
+    expect(senha).toHaveAttribute('type', 'password');
+    expect(olhoConfirmacao).toHaveAccessibleName('Ocultar confirmação da nova senha');
+    expect(olhoConfirmacao).toHaveAttribute('aria-pressed', 'true');
+    await user.click(olhoConfirmacao);
+    expect(confirmar).toHaveAttribute('type', 'password');
+    expect(olhoConfirmacao).toHaveAttribute('aria-pressed', 'false');
+    expect(senha).toHaveValue('Nova1234');
+    expect(confirmar).toHaveValue('Nova1234');
+    expect(redefinirSenha).not.toHaveBeenCalled();
   });
 
   it('redefine, limpa sessão local e encaminha ao login sem autenticação automática', async () => {

@@ -304,6 +304,65 @@ function getConflitosColunas(planilhasSelecionadas) {
     .filter(grupo => new Set(grupo.ocorrencias.map(item => item.planilhaId)).size > 1);
 }
 
+/** Monta as mesmas colunas para a tabela e para reconciliar a seleção. */
+function montarColunas(planilhasSelecionadas, colunasMescladas) {
+  const grupos = new Map();
+
+  planilhasSelecionadas.forEach(planilha => {
+    (planilha.colunas || []).forEach(coluna => {
+      const chave = normalizarTexto(coluna);
+      if (!grupos.has(chave)) {
+        grupos.set(chave, {
+          chave,
+          label: coluna,
+          sources: []
+        });
+      }
+      grupos.get(chave).sources.push({
+        planilhaId: planilha.id,
+        planilhaNome: planilha.nome,
+        nome: coluna
+      });
+    });
+  });
+
+  return Array.from(grupos.values()).flatMap(grupo => {
+    const planilhasDoGrupo = new Set(grupo.sources.map(source => source.planilhaId));
+    const deveMesclar = planilhasDoGrupo.size > 1 && colunasMescladas.includes(grupo.chave);
+
+    if (deveMesclar || planilhasDoGrupo.size === 1) {
+      return [{
+        id: deveMesclar ? `merge::${grupo.chave}` : `${grupo.sources[0].planilhaId}::${grupo.sources[0].nome}`,
+        nome: grupo.sources[0].nome,
+        label: grupo.label,
+        planilhaId: deveMesclar ? null : grupo.sources[0].planilhaId,
+        sources: grupo.sources
+      }];
+    }
+
+    return grupo.sources.map(source => ({
+      id: `${source.planilhaId}::${source.nome}`,
+      nome: source.nome,
+      label: `${source.nome} - ${source.planilhaNome}`,
+      planilhaId: source.planilhaId,
+      sources: [source]
+    }));
+  });
+}
+
+/** Mantém o filtro somente quando sua origem tem um único destino. */
+function reconciliarFiltro(filtro, colunasAtuais, proximasColunas) {
+  if (!filtro.coluna || proximasColunas.some(coluna => coluna.id === filtro.coluna)) return filtro;
+
+  const origem = colunasAtuais.find(coluna => coluna.id === filtro.coluna);
+  if (!origem) return null;
+
+  const destinos = proximasColunas.filter(coluna => coluna.sources.some(source => (
+    origem.sources.some(anterior => anterior.planilhaId === source.planilhaId && anterior.nome === source.nome)
+  )));
+  return destinos.length === 1 ? { ...filtro, coluna: destinos[0].id } : null;
+}
+
 /**
  * Monta filtros backend a partir dos dados informados.
  */
@@ -1344,6 +1403,7 @@ function AdminLeadsPage() {
   const [busca, setBusca] = useState('');
   const buscaDeferred = useDeferredValue(busca);
   const [filtros, setFiltros] = useState([]);
+  const [avisoFiltros, setAvisoFiltros] = useState(false);
   const [novoFiltro, setNovoFiltro] = useState({ coluna: '', op: 'contains', valor: '', valor2: '' });
   const [pagina, setPagina] = useState(1);
   const [carregando, setCarregando] = useState(true);
@@ -1483,6 +1543,7 @@ function AdminLeadsPage() {
     function limparSelecao() {
       setSelecionadas([]);
       setFiltros([]);
+      setAvisoFiltros(false);
       setNovoFiltro({ coluna: '', op: 'contains', valor: '', valor2: '' });
       setColunasMescladas([]);
       setPagina(1);
@@ -1536,50 +1597,9 @@ function AdminLeadsPage() {
     });
   }, [planilhas, filtroPlanilhas]);
 
-  const colunas = useMemo(() => {
-    const grupos = new Map();
-
-    planilhasSelecionadas.forEach(planilha => {
-      (planilha.colunas || []).forEach(coluna => {
-        const chave = normalizarTexto(coluna);
-        if (!grupos.has(chave)) {
-          grupos.set(chave, {
-            chave,
-            label: coluna,
-            sources: []
-          });
-        }
-        grupos.get(chave).sources.push({
-          planilhaId: planilha.id,
-          planilhaNome: planilha.nome,
-          nome: coluna
-        });
-      });
-    });
-
-    return Array.from(grupos.values()).flatMap(grupo => {
-      const planilhasDoGrupo = new Set(grupo.sources.map(source => source.planilhaId));
-      const deveMesclar = planilhasDoGrupo.size > 1 && colunasMescladas.includes(grupo.chave);
-
-      if (deveMesclar || planilhasDoGrupo.size === 1) {
-        return [{
-          id: deveMesclar ? `merge::${grupo.chave}` : `${grupo.sources[0].planilhaId}::${grupo.sources[0].nome}`,
-          nome: grupo.sources[0].nome,
-          label: grupo.label,
-          planilhaId: deveMesclar ? null : grupo.sources[0].planilhaId,
-          sources: grupo.sources
-        }];
-      }
-
-      return grupo.sources.map(source => ({
-        id: `${source.planilhaId}::${source.nome}`,
-        nome: source.nome,
-        label: `${source.nome} - ${source.planilhaNome}`,
-        planilhaId: source.planilhaId,
-        sources: [source]
-      }));
-    });
-  }, [planilhasSelecionadas, colunasMescladas]);
+  const colunas = useMemo(() => (
+    montarColunas(planilhasSelecionadas, colunasMescladas)
+  ), [planilhasSelecionadas, colunasMescladas]);
 
   const schema = useMemo(() => {
     const resultado = {};
@@ -1912,6 +1932,25 @@ function AdminLeadsPage() {
     }
   }
 
+  /** Atualiza seleção, colunas e filtros juntos, sem consultar com vínculos antigos. */
+  function aplicarSelecaoPlanilhas(proximas, mescladas) {
+    const proximasColunas = montarColunas(planilhas.filter(planilha => proximas.includes(planilha.id)), mescladas);
+    const proximosFiltros = filtros.map(filtro => reconciliarFiltro(filtro, colunas, proximasColunas)).filter(Boolean);
+    const proximoFiltro = reconciliarFiltro(novoFiltro, colunas, proximasColunas);
+
+    setAvisoFiltros(proximas.length > 0 && (proximosFiltros.length < filtros.length || !proximoFiltro));
+    setFiltros(proximosFiltros);
+    setNovoFiltro(proximas.length > 0 && proximoFiltro ? proximoFiltro : { coluna: '', op: 'contains', valor: '', valor2: '' });
+    setColunasMescladas(mescladas);
+    setSelecionadas(proximas);
+    setPagina(1);
+    if (proximas.length === 0) {
+      setLinhas([]);
+      setTotalLinhas(0);
+      setResumoLeads({ total: 0, enviados: 0, qualificados: 0, nao_enviados: 0 });
+    }
+  }
+
   /**
    * Alterna planilha no estado atual.
    */
@@ -1929,15 +1968,7 @@ function AdminLeadsPage() {
       return;
     }
 
-    setFiltros([]);
-    setNovoFiltro({ coluna: '', op: 'contains', valor: '', valor2: '' });
-    setColunasMescladas(prev => prev.filter(chave => conflitos.some(grupo => grupo.chave === chave)));
-    setSelecionadas(proximas);
-    if (proximas.length === 0) {
-      setLinhas([]);
-      setTotalLinhas(0);
-      setResumoLeads({ total: 0, enviados: 0, qualificados: 0, nao_enviados: 0 });
-    }
+    aplicarSelecaoPlanilhas(proximas, colunasMescladas.filter(chave => conflitos.some(grupo => grupo.chave === chave)));
   }
 
   /**
@@ -1947,13 +1978,10 @@ function AdminLeadsPage() {
     const conflitos = modalMesclar?.grupos || [];
     const chavesConflito = new Set(conflitos.map(grupo => grupo.chave));
 
-    setColunasMescladas(prev => [
-      ...prev.filter(chave => !chavesConflito.has(chave)),
+    aplicarSelecaoPlanilhas(modalMesclar?.selecionadas || selecionadas, [
+      ...colunasMescladas.filter(chave => !chavesConflito.has(chave)),
       ...chaves
     ]);
-    setFiltros([]);
-    setNovoFiltro({ coluna: '', op: 'contains', valor: '', valor2: '' });
-    setSelecionadas(modalMesclar?.selecionadas || selecionadas);
     setModalMesclar(null);
   }
 
@@ -2076,6 +2104,7 @@ function AdminLeadsPage() {
       await excluirLeadPlanilha(modalExcluir.id);
       setSelecionadas(prev => prev.filter(id => id !== modalExcluir.id));
       setFiltros([]);
+      setAvisoFiltros(false);
       setNovoFiltro({ coluna: '', op: 'contains', valor: '', valor2: '' });
       setColunasMescladas([]);
       setPagina(1);
@@ -2594,8 +2623,9 @@ function AdminLeadsPage() {
           </div>
         )}
 
-        {(sucesso || erro || processando) && (
+        {(sucesso || erro || processando || avisoFiltros) && (
           <div className="lead-message-stack">
+            {avisoFiltros && <div className="leads-warning" role="status">Filtros sem coluna de destino única foram removidos. Revise os filtros antes de continuar.</div>}
             {sucesso && <div className="alert-success alert-timed alert-timed--success">{sucesso}</div>}
             {erro && <div className="alert-error alert-timed alert-timed--error">{erro}</div>}
             {processando && <div className="lead-processing">{processando}</div>}

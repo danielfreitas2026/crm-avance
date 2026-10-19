@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Eye, EyeOff } from '../../components/Icons';
 import { confirmarEmailRecuperacao, solicitarRecuperacao, redefinirSenha, logout } from '../../services/auth.service';
 import logo from '../../assets/LogoClaraSemFundo.png';
 import './RecuperacaoContaPage.css';
@@ -16,6 +17,7 @@ export default function RecuperacaoContaPage({ tipo }) {
   const [senha, setSenha] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [mostrarConfirmacao, setMostrarConfirmacao] = useState(false);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -83,16 +85,30 @@ export default function RecuperacaoContaPage({ tipo }) {
                 <p id="regras-senha">Use pelo menos 8 caracteres, um número e no máximo 72 bytes.</p>
                 <div className="form-field">
                   <label htmlFor="recuperacao-senha">Nova senha</label>
-                  <input id="recuperacao-senha" type={mostrarSenha ? 'text' : 'password'} autoComplete="new-password"
-                    aria-describedby="regras-senha" value={senha} onChange={e => setSenha(e.target.value)} required />
+                  <div className="login-password-field">
+                    <input id="recuperacao-senha" type={mostrarSenha ? 'text' : 'password'} autoComplete="new-password"
+                      aria-describedby="regras-senha" value={senha} onChange={e => setSenha(e.target.value)} required />
+                    <button type="button" className="login-password-toggle" aria-pressed={mostrarSenha}
+                      aria-label={mostrarSenha ? 'Ocultar nova senha' : 'Visualizar nova senha'}
+                      title={mostrarSenha ? 'Ocultar nova senha' : 'Visualizar nova senha'}
+                      onClick={() => setMostrarSenha(atual => !atual)}>
+                      {mostrarSenha ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+                    </button>
+                  </div>
                 </div>
                 <div className="form-field">
                   <label htmlFor="recuperacao-confirmacao">Confirme a nova senha</label>
-                  <input id="recuperacao-confirmacao" type={mostrarSenha ? 'text' : 'password'} autoComplete="new-password"
-                    value={confirmacao} onChange={e => setConfirmacao(e.target.value)} required />
+                  <div className="login-password-field">
+                    <input id="recuperacao-confirmacao" type={mostrarConfirmacao ? 'text' : 'password'} autoComplete="new-password"
+                      value={confirmacao} onChange={e => setConfirmacao(e.target.value)} required />
+                    <button type="button" className="login-password-toggle" aria-pressed={mostrarConfirmacao}
+                      aria-label={mostrarConfirmacao ? 'Ocultar confirmação da nova senha' : 'Visualizar confirmação da nova senha'}
+                      title={mostrarConfirmacao ? 'Ocultar confirmação da nova senha' : 'Visualizar confirmação da nova senha'}
+                      onClick={() => setMostrarConfirmacao(atual => !atual)}>
+                      {mostrarConfirmacao ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+                    </button>
+                  </div>
                 </div>
-                <button type="button" className="btn btn-ghost" aria-pressed={mostrarSenha}
-                  onClick={() => setMostrarSenha(atual => !atual)}>{mostrarSenha ? 'Ocultar senhas' : 'Visualizar senhas'}</button>
               </>
             )}
             <button type="submit" className="btn btn-primary" disabled={enviando}>
