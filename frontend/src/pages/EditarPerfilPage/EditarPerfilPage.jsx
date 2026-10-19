@@ -212,11 +212,12 @@ function EditarPerfilPage() {
         </section>
 
         <div className="editar-perfil-grid">
-          <section className="panel">
+          <section className="panel" aria-labelledby="dados-conta-titulo">
             <div className="panel-header">
+              <I.User size={18} aria-hidden="true" />
               <div>
-                <h3>Dados da conta</h3>
-                <span className="editar-perfil-panel-sub">Identificacao usada no sistema</span>
+                <h3 id="dados-conta-titulo">Dados da conta</h3>
+                <span className="editar-perfil-panel-sub">Sua identificação no CRM</span>
               </div>
             </div>
             <div className="panel-body">
@@ -229,113 +230,147 @@ function EditarPerfilPage() {
                   )}
                 </div>
                 <div className="editar-perfil-foto__actions">
-                  <label className="btn btn-sm">
+                  <label className="btn btn-sm editar-perfil-foto__upload">
                     Escolher foto
                     <input
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
+                      aria-describedby="foto-ajuda"
                       onChange={handleFotoChange}
                     />
                   </label>
                   {fotoPerfil && (
                     <button type="button" className="btn btn-sm btn-ghost" onClick={() => setFotoPerfil('')}>
-                      Remover
+                      Remover foto
                     </button>
                   )}
-                  <div className="editar-perfil-help">PNG, JPG ou WEBP até 4 MB.</div>
+                  <div id="foto-ajuda" className="editar-perfil-help">PNG, JPG ou WEBP até 4 MB.</div>
                 </div>
               </div>
 
               <div className="form-field">
-                <label>Nome de exibicao</label>
+                <label htmlFor="perfil-nome">Nome de exibição</label>
                 <input
+                  id="perfil-nome"
+                  autoComplete="name"
+                  aria-describedby={!isAdmin ? 'nome-ajuda' : undefined}
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
                   disabled={!isAdmin}
                   required={isAdmin}
                 />
                 {!isAdmin && (
-                  <div className="editar-perfil-help">Somente administradores podem alterar o nome.</div>
+                  <div id="nome-ajuda" className="editar-perfil-help">Somente administradores podem alterar o nome.</div>
                 )}
               </div>
 
               <div className="form-field">
-                <label>E-mail de acesso</label>
-                <input value={usuario?.email || ''} disabled />
-                <div className="editar-perfil-help">O e-mail não pode ser alterado por aqui.</div>
+                <label htmlFor="perfil-email">E-mail de acesso</label>
+                <input id="perfil-email" aria-describedby="email-acesso-ajuda" value={usuario?.email || ''} disabled />
+                <div id="email-acesso-ajuda" className="editar-perfil-help">O e-mail não pode ser alterado por aqui.</div>
               </div>
             </div>
           </section>
 
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h3>Seguranca</h3>
-                <span className="editar-perfil-panel-sub">Atualize sua senha de acesso</span>
-              </div>
-            </div>
-            <div className="panel-body">
-              <div className="form-field">
-                <label htmlFor="email-recuperacao">E-mail de recuperação</label>
-                <input id="email-recuperacao" type="email" maxLength={254} autoComplete="email"
-                  value={emailRecuperacao} onChange={e => setEmailRecuperacao(e.target.value)} />
-                <div className="editar-perfil-help">
-                  Use um e-mail real ao qual você tenha acesso. Seu e-mail de acesso ao CRM continua o mesmo.
+          <div className="editar-perfil-security">
+            <section className="panel" aria-labelledby="recuperacao-titulo">
+              <div className="panel-header">
+                <I.Mail size={18} aria-hidden="true" />
+                <div>
+                  <h3 id="recuperacao-titulo">Recuperação de conta</h3>
+                  <span className="editar-perfil-panel-sub">Recupere seu acesso quando precisar</span>
                 </div>
-                <p role="status">{usuario?.email_recuperacao_pendente ? 'Aguardando confirmação'
-                  : usuario?.email_recuperacao_confirmado_em ? 'Confirmado' : 'Não configurado'}</p>
-                {usuario?.email_recuperacao && <p>Endereço confirmado: {usuario.email_recuperacao}</p>}
-                {usuario?.email_recuperacao_pendente && (
-                  <>
+              </div>
+              <div className="panel-body">
+                <div className="form-field">
+                  <label htmlFor="email-recuperacao">E-mail de recuperação</label>
+                  <input id="email-recuperacao" type="email" maxLength={254} autoComplete="email"
+                    aria-describedby="email-recuperacao-ajuda"
+                    value={emailRecuperacao} onChange={e => setEmailRecuperacao(e.target.value)} />
+                  <div id="email-recuperacao-ajuda" className="editar-perfil-help">
+                    Use um e-mail real ao qual você tenha acesso. Seu e-mail de acesso ao CRM continua o mesmo.
+                  </div>
+                </div>
+                <div className="editar-perfil-recuperacao-status">
+                  <p role="status" className={`pill ${usuario?.email_recuperacao_pendente ? 'warn'
+                    : usuario?.email_recuperacao_confirmado_em ? 'success' : ''}`}>
+                    <span className="pill-dot" aria-hidden="true" />
+                    {usuario?.email_recuperacao_pendente ? 'Aguardando confirmação'
+                    : usuario?.email_recuperacao_confirmado_em ? 'Confirmado' : 'Não configurado'}</p>
+                  {usuario?.email_recuperacao && <p>Endereço confirmado: {usuario.email_recuperacao}</p>}
+                  {usuario?.email_recuperacao_pendente && (
                     <p>Confirmação pendente: {usuario.email_recuperacao_pendente}</p>
-                    <button type="button" className="btn btn-sm" disabled={salvando || emailRecuperacaoAlterado}
-                      onClick={handleReenviar}>Reenviar confirmação</button>
-                  </>
-                )}
-                {(usuario?.email_recuperacao || usuario?.email_recuperacao_pendente) && (
-                  <button type="button" className="btn btn-sm btn-ghost" disabled={salvando}
-                    onClick={() => setEmailRecuperacao('')}>Remover e-mail de recuperação</button>
-                )}
-              </div>
-              <div className="form-field">
-                <label htmlFor="senha-atual-recuperacao">Senha atual</label>
-                <input id="senha-atual-recuperacao" type="password" autoComplete="current-password"
-                  value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} />
-                <div className="editar-perfil-help">Obrigatória para cadastrar, trocar, remover ou reenviar a confirmação do e-mail de recuperação.</div>
-              </div>
-              <div className="form-field">
-                <label>Nova senha</label>
-                <div className="editar-perfil-password">
-                  <input
-                    type={mostrarSenha ? 'text' : 'password'}
-                    value={senha}
-                    onChange={(e) => setSenha(e.target.value)}
-                    placeholder="Deixe em branco para manter"
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-icon btn-ghost"
-                    onClick={() => setMostrarSenha(prev => !prev)}
-                    title={mostrarSenha ? 'Ocultar senha' : 'Visualizar senha'}
-                  >
-                    {mostrarSenha ? <I.EyeOff size={15} /> : <I.Eye size={15} />}
-                  </button>
+                  )}
+                  <div className="editar-perfil-recuperacao-actions">
+                    {usuario?.email_recuperacao_pendente && (
+                      <button type="button" className="btn btn-sm" disabled={salvando || emailRecuperacaoAlterado}
+                        onClick={handleReenviar}>Reenviar confirmação</button>
+                    )}
+                    {(usuario?.email_recuperacao || usuario?.email_recuperacao_pendente) && (
+                      <button type="button" className="btn btn-sm btn-ghost editar-perfil-remove" disabled={salvando}
+                        onClick={() => setEmailRecuperacao('')}>Remover e-mail de recuperação</button>
+                    )}
+                  </div>
                 </div>
+                <div className="form-field">
+                  <label htmlFor="senha-atual-recuperacao">Senha atual</label>
+                  <input id="senha-atual-recuperacao" type="password" autoComplete="current-password"
+                    aria-describedby="senha-atual-ajuda"
+                    value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} />
+                  <div id="senha-atual-ajuda" className="editar-perfil-help">Obrigatória para cadastrar, trocar, remover ou reenviar a confirmação do e-mail de recuperação.</div>
+                </div>
+              </div>
+            </section>
+            <section className="panel" aria-labelledby="alterar-senha-titulo">
+              <div className="panel-header">
+                <I.Shield size={18} aria-hidden="true" />
+                <div>
+                  <h3 id="alterar-senha-titulo">Alterar senha</h3>
+                  <span className="editar-perfil-panel-sub">Atualize sua senha de acesso</span>
+                </div>
+              </div>
+              <div className="panel-body">
+                <div className="form-field">
+                  <label htmlFor="perfil-nova-senha">Nova senha</label>
+                  <div className="editar-perfil-password">
+                    <input
+                      id="perfil-nova-senha"
+                      autoComplete="new-password"
+                      aria-describedby="nova-senha-ajuda nova-senha-forca"
+                      type={mostrarSenha ? 'text' : 'password'}
+                      value={senha}
+                      onChange={(e) => setSenha(e.target.value)}
+                      placeholder="Deixe em branco para manter"
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-icon btn-ghost"
+                      onClick={() => setMostrarSenha(prev => !prev)}
+                      title={mostrarSenha ? 'Ocultar senha' : 'Visualizar senha'}
+                      aria-label={mostrarSenha ? 'Ocultar senha' : 'Visualizar senha'}
+                      aria-pressed={mostrarSenha}
+                      aria-controls="perfil-nova-senha"
+                    >
+                      {mostrarSenha ? <I.EyeOff size={15} /> : <I.Eye size={15} />}
+                    </button>
+                  </div>
 
-                <div className="editar-perfil-password-meter">
-                  <span className={`meter-bar ${forcaSenha.nivel >= 1 ? 'active' : ''}`} />
-                  <span className={`meter-bar ${forcaSenha.nivel >= 2 ? 'active' : ''}`} />
-                  <span className={`meter-bar ${forcaSenha.nivel >= 3 ? 'active' : ''}`} />
-                  <small>{forcaSenha.label}</small>
+                  <div id="nova-senha-ajuda" className="editar-perfil-help">Deixe em branco para manter sua senha atual.</div>
+                  <div className="editar-perfil-password-meter">
+                    <span aria-hidden="true" className={`meter-bar ${forcaSenha.nivel >= 1 ? 'active' : ''}`} />
+                    <span aria-hidden="true" className={`meter-bar ${forcaSenha.nivel >= 2 ? 'active' : ''}`} />
+                    <span aria-hidden="true" className={`meter-bar ${forcaSenha.nivel >= 3 ? 'active' : ''}`} />
+                    <small id="nova-senha-forca">{forcaSenha.label}</small>
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
         </div>
 
         {(erro || sucesso) && (
-          <div className="editar-perfil-feedback">
-            {erro && <div className="alert-error alert-timed alert-timed--error">{erro}</div>}
+          <div className="editar-perfil-feedback" aria-live="polite">
+            {erro && <div role="alert" className="alert-error alert-timed alert-timed--error">{erro}</div>}
             {sucesso && <div className="editar-perfil-success alert-timed alert-timed--success">{sucesso}</div>}
           </div>
         )}
