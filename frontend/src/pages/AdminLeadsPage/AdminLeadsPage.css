@@ -327,6 +327,7 @@
   align-items: center;
   justify-content: center;
   opacity: 0;
+  visibility: hidden;
   transform: scale(0.92);
   box-shadow: var(--shadow-sm);
   transition:
@@ -337,8 +338,10 @@
 }
 
 .lead-doc-card.active:hover .lead-doc-delete,
-.lead-doc-card.active:focus-within .lead-doc-delete {
+.lead-doc-card.active:focus-visible .lead-doc-delete,
+.lead-doc-card.active:has(:focus-visible) .lead-doc-delete {
   opacity: 1;
+  visibility: visible;
   transform: scale(1);
 }
 
@@ -369,7 +372,8 @@
 }
 
 .lead-doc-card.active:hover .lead-doc-download,
-.lead-doc-card.active:focus-within .lead-doc-download {
+.lead-doc-card.active:focus-visible .lead-doc-download,
+.lead-doc-card.active:has(:focus-visible) .lead-doc-download {
   visibility: visible;
   transform: scale(1);
 }
@@ -1993,10 +1997,17 @@
   display: grid;
   place-items: center;
   opacity: 0;
+  visibility: hidden;
   transform: scale(.92);
   transition: opacity .15s ease, color .15s ease, background .15s ease, transform .15s ease;
 }
-.lead-doc-card.active:hover .lead-doc-cancel, .lead-doc-card.active:focus-within .lead-doc-cancel { opacity: 1; transform: scale(1); }
+.lead-doc-card.active:hover .lead-doc-cancel,
+.lead-doc-card.active:focus-visible .lead-doc-cancel,
+.lead-doc-card.active:has(:focus-visible) .lead-doc-cancel {
+  opacity: 1;
+  visibility: visible;
+  transform: scale(1);
+}
 .lead-doc-cancel:hover { color: var(--danger); background: var(--danger-bg); border-color: #fecaca; }
 .lead-doc-card .lead-doc-download { right: 76px; }
 
@@ -2014,13 +2025,16 @@
   display: grid;
   place-items: center;
   opacity: 0;
+  visibility: hidden;
   transform: scale(.92);
   transition: opacity .15s ease, color .15s ease, background .15s ease, transform .15s ease;
 }
 
 .lead-doc-card:hover .lead-doc-history,
-.lead-doc-card:focus-within .lead-doc-history {
+.lead-doc-card:focus-visible .lead-doc-history,
+.lead-doc-card:has(:focus-visible) .lead-doc-history {
   opacity: 1;
+  visibility: visible;
   transform: scale(1);
 }
 
