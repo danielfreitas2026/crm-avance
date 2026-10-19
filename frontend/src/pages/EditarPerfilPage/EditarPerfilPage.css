@@ -1,5 +1,5 @@
 .editar-perfil-page {
-  width: min(900px, calc(100% - 48px));
+  width: min(800px, calc(100% - 48px));
   margin: 0 auto;
   padding: 24px 0;
 }
@@ -8,7 +8,7 @@
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 24px 28px;
+  padding: 24px;
   margin-bottom: 18px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -55,41 +55,43 @@
   margin-top: 9px;
 }
 
-.editar-perfil-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  align-items: start;
-  gap: 20px;
+.editar-perfil-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
 }
 
-.editar-perfil-security {
-  display: grid;
-  gap: 20px;
+.editar-perfil-section {
+  padding: 24px;
   min-width: 0;
 }
 
-.editar-perfil-page .panel-header {
-  justify-content: flex-start;
-  gap: 12px;
-  padding: 18px 20px;
+.editar-perfil-section + .editar-perfil-section {
+  border-top: 1px solid var(--border);
 }
 
-.editar-perfil-page .panel-header > svg {
+.editar-perfil-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.editar-perfil-section-header > svg {
   flex-shrink: 0;
   color: var(--text-2);
 }
 
-.editar-perfil-page .panel-body {
-  padding: 20px;
+.editar-perfil-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 20px;
 }
 
 .editar-perfil-page .form-field {
   gap: 8px;
   min-width: 0;
-  margin-bottom: 20px;
-}
-
-.editar-perfil-page .form-field:last-child {
   margin-bottom: 0;
 }
 
@@ -101,7 +103,7 @@
   background: var(--surface);
 }
 
-.editar-perfil-page .panel-header h3 {
+.editar-perfil-section-header h3 {
   margin: 0;
   font-size: 14px;
 }
@@ -125,11 +127,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 16px;
   margin-bottom: 24px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
 }
 
 .editar-perfil-page .editar-perfil-foto__preview {
@@ -184,11 +182,7 @@
 }
 
 .editar-perfil-recuperacao-status {
-  padding: 14px;
-  margin-bottom: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
+  margin-top: 20px;
 }
 
 .editar-perfil-recuperacao-status p {
@@ -286,7 +280,13 @@
 }
 
 .editar-perfil-feedback {
-  margin-top: 14px;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+
+.editar-perfil-footer {
+  padding: 20px 24px;
+  border-top: 1px solid var(--border);
 }
 
 .editar-perfil-success {
@@ -302,9 +302,6 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 18px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
 }
 
 @media (max-width: 760px) {
@@ -315,11 +312,16 @@
   .editar-perfil-hero {
     align-items: flex-start;
     flex-wrap: wrap;
-    padding: 20px;
+    padding: 16px;
   }
 
-  .editar-perfil-grid {
+  .editar-perfil-fields {
     grid-template-columns: 1fr;
+  }
+
+  .editar-perfil-section,
+  .editar-perfil-footer {
+    padding: 16px;
   }
 
   .editar-perfil-actions {
@@ -332,13 +334,7 @@
 }
 
 @media (max-width: 400px) {
-  .editar-perfil-page .panel-header,
-  .editar-perfil-page .panel-body {
-    padding: 16px;
-  }
-
   .editar-perfil-foto {
-    padding: 12px;
     gap: 12px;
     flex-wrap: wrap;
   }

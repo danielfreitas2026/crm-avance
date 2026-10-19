@@ -211,16 +211,16 @@ function EditarPerfilPage() {
           </button>
         </section>
 
-        <div className="editar-perfil-grid">
-          <section className="panel" aria-labelledby="dados-conta-titulo">
-            <div className="panel-header">
+        <div className="editar-perfil-panel" role="group" aria-label="Configurações do perfil">
+          <section className="editar-perfil-section" aria-labelledby="dados-conta-titulo">
+            <div className="editar-perfil-section-header">
               <I.User size={18} aria-hidden="true" />
               <div>
                 <h3 id="dados-conta-titulo">Dados da conta</h3>
                 <span className="editar-perfil-panel-sub">Sua identificação no CRM</span>
               </div>
             </div>
-            <div className="panel-body">
+            <div className="editar-perfil-section-body">
               <div className="editar-perfil-foto">
                 <div className="avatar editar-perfil-foto__preview">
                   {fotoPerfil ? (
@@ -248,40 +248,42 @@ function EditarPerfilPage() {
                 </div>
               </div>
 
-              <div className="form-field">
-                <label htmlFor="perfil-nome">Nome de exibição</label>
-                <input
-                  id="perfil-nome"
-                  autoComplete="name"
-                  aria-describedby={!isAdmin ? 'nome-ajuda' : undefined}
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  disabled={!isAdmin}
-                  required={isAdmin}
-                />
-                {!isAdmin && (
-                  <div id="nome-ajuda" className="editar-perfil-help">Somente administradores podem alterar o nome.</div>
-                )}
-              </div>
+              <div className="editar-perfil-fields">
+                <div className="form-field">
+                  <label htmlFor="perfil-nome">Nome de exibição</label>
+                  <input
+                    id="perfil-nome"
+                    autoComplete="name"
+                    aria-describedby={!isAdmin ? 'nome-ajuda' : undefined}
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    disabled={!isAdmin}
+                    required={isAdmin}
+                  />
+                  {!isAdmin && (
+                    <div id="nome-ajuda" className="editar-perfil-help">Somente administradores podem alterar o nome.</div>
+                  )}
+                </div>
 
-              <div className="form-field">
-                <label htmlFor="perfil-email">E-mail de acesso</label>
-                <input id="perfil-email" aria-describedby="email-acesso-ajuda" value={usuario?.email || ''} disabled />
-                <div id="email-acesso-ajuda" className="editar-perfil-help">O e-mail não pode ser alterado por aqui.</div>
+                <div className="form-field">
+                  <label htmlFor="perfil-email">E-mail de acesso</label>
+                  <input id="perfil-email" aria-describedby="email-acesso-ajuda" value={usuario?.email || ''} disabled />
+                  <div id="email-acesso-ajuda" className="editar-perfil-help">O e-mail não pode ser alterado por aqui.</div>
+                </div>
               </div>
             </div>
           </section>
 
-          <div className="editar-perfil-security">
-            <section className="panel" aria-labelledby="recuperacao-titulo">
-              <div className="panel-header">
-                <I.Mail size={18} aria-hidden="true" />
-                <div>
-                  <h3 id="recuperacao-titulo">Recuperação de conta</h3>
-                  <span className="editar-perfil-panel-sub">Recupere seu acesso quando precisar</span>
-                </div>
+          <section className="editar-perfil-section" aria-labelledby="recuperacao-titulo">
+            <div className="editar-perfil-section-header">
+              <I.Mail size={18} aria-hidden="true" />
+              <div>
+                <h3 id="recuperacao-titulo">Recuperação de conta</h3>
+                <span className="editar-perfil-panel-sub">Recupere seu acesso quando precisar</span>
               </div>
-              <div className="panel-body">
+            </div>
+            <div className="editar-perfil-section-body">
+              <div className="editar-perfil-fields">
                 <div className="form-field">
                   <label htmlFor="email-recuperacao">E-mail de recuperação</label>
                   <input id="email-recuperacao" type="email" maxLength={254} autoComplete="email"
@@ -289,27 +291,6 @@ function EditarPerfilPage() {
                     value={emailRecuperacao} onChange={e => setEmailRecuperacao(e.target.value)} />
                   <div id="email-recuperacao-ajuda" className="editar-perfil-help">
                     Use um e-mail real ao qual você tenha acesso. Seu e-mail de acesso ao CRM continua o mesmo.
-                  </div>
-                </div>
-                <div className="editar-perfil-recuperacao-status">
-                  <p role="status" className={`pill ${usuario?.email_recuperacao_pendente ? 'warn'
-                    : usuario?.email_recuperacao_confirmado_em ? 'success' : ''}`}>
-                    <span className="pill-dot" aria-hidden="true" />
-                    {usuario?.email_recuperacao_pendente ? 'Aguardando confirmação'
-                    : usuario?.email_recuperacao_confirmado_em ? 'Confirmado' : 'Não configurado'}</p>
-                  {usuario?.email_recuperacao && <p>Endereço confirmado: {usuario.email_recuperacao}</p>}
-                  {usuario?.email_recuperacao_pendente && (
-                    <p>Confirmação pendente: {usuario.email_recuperacao_pendente}</p>
-                  )}
-                  <div className="editar-perfil-recuperacao-actions">
-                    {usuario?.email_recuperacao_pendente && (
-                      <button type="button" className="btn btn-sm" disabled={salvando || emailRecuperacaoAlterado}
-                        onClick={handleReenviar}>Reenviar confirmação</button>
-                    )}
-                    {(usuario?.email_recuperacao || usuario?.email_recuperacao_pendente) && (
-                      <button type="button" className="btn btn-sm btn-ghost editar-perfil-remove" disabled={salvando}
-                        onClick={() => setEmailRecuperacao('')}>Remover e-mail de recuperação</button>
-                    )}
                   </div>
                 </div>
                 <div className="form-field">
@@ -320,66 +301,88 @@ function EditarPerfilPage() {
                   <div id="senha-atual-ajuda" className="editar-perfil-help">Obrigatória para cadastrar, trocar, remover ou reenviar a confirmação do e-mail de recuperação.</div>
                 </div>
               </div>
-            </section>
-            <section className="panel" aria-labelledby="alterar-senha-titulo">
-              <div className="panel-header">
-                <I.Shield size={18} aria-hidden="true" />
-                <div>
-                  <h3 id="alterar-senha-titulo">Alterar senha</h3>
-                  <span className="editar-perfil-panel-sub">Atualize sua senha de acesso</span>
+              <div className="editar-perfil-recuperacao-status">
+                <p role="status" className={`pill ${usuario?.email_recuperacao_pendente ? 'warn'
+                  : usuario?.email_recuperacao_confirmado_em ? 'success' : ''}`}>
+                  <span className="pill-dot" aria-hidden="true" />
+                  {usuario?.email_recuperacao_pendente ? 'Aguardando confirmação'
+                  : usuario?.email_recuperacao_confirmado_em ? 'Confirmado' : 'Não configurado'}</p>
+                {usuario?.email_recuperacao && <p>Endereço confirmado: {usuario.email_recuperacao}</p>}
+                {usuario?.email_recuperacao_pendente && (
+                  <p>Confirmação pendente: {usuario.email_recuperacao_pendente}</p>
+                )}
+                <div className="editar-perfil-recuperacao-actions">
+                  {usuario?.email_recuperacao_pendente && (
+                    <button type="button" className="btn btn-sm" disabled={salvando || emailRecuperacaoAlterado}
+                      onClick={handleReenviar}>Reenviar confirmação</button>
+                  )}
+                  {(usuario?.email_recuperacao || usuario?.email_recuperacao_pendente) && (
+                    <button type="button" className="btn btn-sm btn-ghost editar-perfil-remove" disabled={salvando}
+                      onClick={() => setEmailRecuperacao('')}>Remover e-mail de recuperação</button>
+                  )}
                 </div>
               </div>
-              <div className="panel-body">
-                <div className="form-field">
-                  <label htmlFor="perfil-nova-senha">Nova senha</label>
-                  <div className="editar-perfil-password">
-                    <input
-                      id="perfil-nova-senha"
-                      autoComplete="new-password"
-                      aria-describedby="nova-senha-ajuda nova-senha-forca"
-                      type={mostrarSenha ? 'text' : 'password'}
-                      value={senha}
-                      onChange={(e) => setSenha(e.target.value)}
-                      placeholder="Deixe em branco para manter"
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-icon btn-ghost"
-                      onClick={() => setMostrarSenha(prev => !prev)}
-                      title={mostrarSenha ? 'Ocultar senha' : 'Visualizar senha'}
-                      aria-label={mostrarSenha ? 'Ocultar senha' : 'Visualizar senha'}
-                      aria-pressed={mostrarSenha}
-                      aria-controls="perfil-nova-senha"
-                    >
-                      {mostrarSenha ? <I.EyeOff size={15} /> : <I.Eye size={15} />}
-                    </button>
-                  </div>
+            </div>
+          </section>
+          <section className="editar-perfil-section" aria-labelledby="alterar-senha-titulo">
+            <div className="editar-perfil-section-header">
+              <I.Shield size={18} aria-hidden="true" />
+              <div>
+                <h3 id="alterar-senha-titulo">Alterar senha</h3>
+                <span className="editar-perfil-panel-sub">Atualize sua senha de acesso</span>
+              </div>
+            </div>
+            <div className="editar-perfil-section-body">
+              <div className="form-field">
+                <label htmlFor="perfil-nova-senha">Nova senha</label>
+                <div className="editar-perfil-password">
+                  <input
+                    id="perfil-nova-senha"
+                    autoComplete="new-password"
+                    aria-describedby="nova-senha-ajuda nova-senha-forca"
+                    type={mostrarSenha ? 'text' : 'password'}
+                    value={senha}
+                    onChange={(e) => setSenha(e.target.value)}
+                    placeholder="Deixe em branco para manter"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-icon btn-ghost"
+                    onClick={() => setMostrarSenha(prev => !prev)}
+                    title={mostrarSenha ? 'Ocultar senha' : 'Visualizar senha'}
+                    aria-label={mostrarSenha ? 'Ocultar senha' : 'Visualizar senha'}
+                    aria-pressed={mostrarSenha}
+                    aria-controls="perfil-nova-senha"
+                  >
+                    {mostrarSenha ? <I.EyeOff size={15} /> : <I.Eye size={15} />}
+                  </button>
+                </div>
 
-                  <div id="nova-senha-ajuda" className="editar-perfil-help">Deixe em branco para manter sua senha atual.</div>
-                  <div className="editar-perfil-password-meter">
-                    <span aria-hidden="true" className={`meter-bar ${forcaSenha.nivel >= 1 ? 'active' : ''}`} />
-                    <span aria-hidden="true" className={`meter-bar ${forcaSenha.nivel >= 2 ? 'active' : ''}`} />
-                    <span aria-hidden="true" className={`meter-bar ${forcaSenha.nivel >= 3 ? 'active' : ''}`} />
-                    <small id="nova-senha-forca">{forcaSenha.label}</small>
-                  </div>
+                <div id="nova-senha-ajuda" className="editar-perfil-help">Deixe em branco para manter sua senha atual.</div>
+                <div className="editar-perfil-password-meter">
+                  <span aria-hidden="true" className={`meter-bar ${forcaSenha.nivel >= 1 ? 'active' : ''}`} />
+                  <span aria-hidden="true" className={`meter-bar ${forcaSenha.nivel >= 2 ? 'active' : ''}`} />
+                  <span aria-hidden="true" className={`meter-bar ${forcaSenha.nivel >= 3 ? 'active' : ''}`} />
+                  <small id="nova-senha-forca">{forcaSenha.label}</small>
                 </div>
               </div>
-            </section>
-          </div>
-        </div>
+            </div>
+          </section>
+          <footer className="editar-perfil-footer" role="group" aria-label="Ações do perfil">
+            {(erro || sucesso) && (
+              <div className="editar-perfil-feedback" aria-live="polite">
+                {erro && <div role="alert" className="alert-error alert-timed alert-timed--error">{erro}</div>}
+                {sucesso && <div className="editar-perfil-success alert-timed alert-timed--success">{sucesso}</div>}
+              </div>
+            )}
 
-        {(erro || sucesso) && (
-          <div className="editar-perfil-feedback" aria-live="polite">
-            {erro && <div role="alert" className="alert-error alert-timed alert-timed--error">{erro}</div>}
-            {sucesso && <div className="editar-perfil-success alert-timed alert-timed--success">{sucesso}</div>}
-          </div>
-        )}
-
-        <div className="editar-perfil-actions">
-          <button type="button" className="btn" onClick={() => navigate('/perfil')}>Cancelar</button>
-          <button type="submit" className="btn btn-primary" disabled={salvando || !temAlteracoes}>
-            {salvando ? 'Salvando...' : 'Salvar alterações'}
-          </button>
+            <div className="editar-perfil-actions">
+              <button type="button" className="btn" onClick={() => navigate('/perfil')}>Cancelar</button>
+              <button type="submit" className="btn btn-primary" disabled={salvando || !temAlteracoes}>
+                {salvando ? 'Salvando...' : 'Salvar alterações'}
+              </button>
+            </div>
+          </footer>
         </div>
       </form>
     </LayoutPrivado>

@@ -34,6 +34,42 @@ describe('edição de perfil: apresentação e acessibilidade', () => {
     expect(screen.getByRole('button', { name: 'Salvar alterações' })).toBeDisabled();
   });
 
+  it('reúne as três seções e o rodapé no mesmo painel, na ordem de leitura', async () => {
+    await abrir();
+    const painel = screen.getByRole('group', { name: 'Configurações do perfil' });
+    const secoes = within(painel).getAllByRole('region');
+    expect(secoes.map(secao => within(secao).getByRole('heading').textContent)).toEqual([
+      'Dados da conta', 'Recuperação de conta', 'Alterar senha'
+    ]);
+    secoes.forEach(secao => expect(secao.parentElement).toBe(painel));
+    const rodape = within(painel).getByRole('group', { name: 'Ações do perfil' });
+    expect(rodape.parentElement).toBe(painel);
+    expect(within(rodape).getByRole('button', { name: 'Cancelar' })).toBeInTheDocument();
+    expect(within(rodape).getByRole('button', { name: 'Salvar alterações' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Escolher foto'), {
+      target: { files: [new File(['arquivo'], 'foto.gif', { type: 'image/gif' })] }
+    });
+    expect(within(rodape).getByRole('alert')).toHaveTextContent('Use uma imagem PNG, JPG ou WEBP.');
+  });
+
+  it('mantém os campos da recuperação juntos antes das ações na navegação por teclado', async () => {
+    const user = userEvent.setup();
+    await abrir({ email_recuperacao: 'antigo@example.com', email_recuperacao_pendente: 'novo@example.com' });
+    for (const campo of [
+      screen.getByRole('button', { name: 'Voltar' }),
+      screen.getByLabelText('Escolher foto'),
+      screen.getByLabelText('E-mail de recuperação'),
+      screen.getByLabelText('Senha atual'),
+      screen.getByRole('button', { name: 'Reenviar confirmação' }),
+      screen.getByRole('button', { name: 'Remover e-mail de recuperação' }),
+      screen.getByLabelText('Nova senha')
+    ]) {
+      await user.tab();
+      expect(campo).toHaveFocus();
+    }
+  });
+
   it.each([
     [{}, 'Não configurado', null],
     [{ email_recuperacao: 'real@example.com', email_recuperacao_confirmado_em: '2026-10-19' }, 'Confirmado', 'success'],
