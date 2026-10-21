@@ -46,7 +46,7 @@
 .local-mailing-modal .local-mailing-campos:disabled label { cursor: not-allowed; opacity: 0.6; }
 .local-mailing-info { padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-2); font-size: 12px; line-height: 1.6; }
 .local-mailing-info p + p { margin-top: 6px; }
-.local-mailing-aviso { padding: 10px 12px; border-left: 3px solid var(--warn); border-radius: var(--radius); background: var(--warn-bg); color: var(--warn); font-size: 12px; }
+.local-mailing-aviso { padding: 10px 12px; border-radius: var(--radius); background: var(--warn-bg); color: var(--warn); font-size: 12px; }
 .local-mailing-modal .alert-error { margin: 0; overflow-wrap: anywhere; }
 
 @media (max-width: 480px) {
