@@ -2,6 +2,7 @@ import { useEffect, useReducer } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import LoginPage from '../pages/LoginPage/LoginPage';
+import VerificarAcessoPage from '../pages/LoginPage/VerificarAcessoPage';
 import RecuperacaoContaPage from '../pages/RecuperacaoContaPage/RecuperacaoContaPage';
 import PerfilPage from '../pages/PerfilPage/PerfilPage';
 import Usuarios from '../pages/Usuarios/Usuarios';
@@ -78,6 +79,7 @@ function AppRoutes() {
       <Route path="/vendas/lixeira" element={<PrivateRoute permission={['vendas_ver_proprias', 'vendas_ver_todas']}><VendasLixeiraPage /></PrivateRoute>} />
 
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/verificar-acesso" element={<VerificarAcessoPage />} />
       <Route path="/esqueci-minha-senha" element={<RecuperacaoContaPage key="solicitar" tipo="solicitar" />} />
       <Route path="/confirmar-email-recuperacao" element={<RecuperacaoContaPage key="confirmar" tipo="confirmar" />} />
       <Route path="/redefinir-senha" element={<RecuperacaoContaPage key="redefinir" tipo="redefinir" />} />
@@ -178,7 +180,7 @@ function AppRoutes() {
       />
       <Route
         path="/configuracoes"
-        element={<PrivateRoute permission={['crud_operadoras', 'crud_links', 'crud_tipos_venda', 'crud_servicos', 'crud_regras_comissao', 'clientes_antigos_gerenciar', 'configurar_notificacoes', 'configurar_horario_acesso']}><ConfiguracoesPage /></PrivateRoute>}
+        element={<PrivateRoute permission={['crud_operadoras', 'crud_links', 'crud_tipos_venda', 'crud_servicos', 'crud_regras_comissao', 'clientes_antigos_gerenciar', 'configurar_notificacoes', 'configurar_horario_acesso', 'configurar_acesso_rede']}><ConfiguracoesPage /></PrivateRoute>}
       />
 
       <Route path="*" element={<Navigate to="/" replace />} />

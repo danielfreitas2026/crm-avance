@@ -46,7 +46,7 @@ function Sidebar({ page, setPage, counts, usuario, onLogout, onPerfilClick, isMo
 
   const admin = [
     { id: 'usuarios', label: 'Usuários', icon: <I.Users />, permission: ['crud_usuarios', 'usuarios_listar', 'usuarios_criar', 'usuarios_editar', 'usuarios_excluir', 'gerenciar_permissoes'] },
-    { id: 'config', label: 'Configurações', icon: <I.Settings />, permission: ['crud_operadoras', 'crud_links', 'crud_tipos_venda', 'crud_servicos', 'clientes_antigos_gerenciar', 'configurar_notificacoes', 'configurar_horario_acesso'] },
+    { id: 'config', label: 'Configurações', icon: <I.Settings />, permission: ['crud_operadoras', 'crud_links', 'crud_tipos_venda', 'crud_servicos', 'clientes_antigos_gerenciar', 'configurar_notificacoes', 'configurar_horario_acesso', 'configurar_acesso_rede'] },
     { id: 'campanhas', label: 'Configurar Campanhas', icon: <I.Settings />, permission: ['gerenciar_campanhas'] },
     { id: 'fechamento-mensal', label: 'Fechamento Mensal', icon: <I.Chart />, permission: 'vendas_fechamento_mensal' },
     { id: 'leads', label: 'Planilha de Mailing', icon: <I.LayoutList />, permission: 'gerenciar_leads' },

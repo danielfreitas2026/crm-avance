@@ -35,6 +35,7 @@ import {
 } from '../../services/cliente-antigo.service';
 import './ConfiguracoesPage.css';
 import HorarioAcessoConfig from './HorarioAcessoConfig';
+import AcessoRedeConfig from './AcessoRedeConfig';
 
 const MAPEAMENTO_CLIENTES_ANTIGOS = {
   cnpj: '',
@@ -267,7 +268,8 @@ function ConfiguracoesPage() {
     links: temPermissao(usuario, 'crud_links'),
     regrasComissao: temPermissao(usuario, 'crud_regras_comissao'),
     notificacoes: temPermissao(usuario, 'configurar_notificacoes'),
-    horarioAcesso: temPermissao(usuario, 'configurar_horario_acesso')
+    horarioAcesso: temPermissao(usuario, 'configurar_horario_acesso'),
+    acessoRede: temPermissao(usuario, 'configurar_acesso_rede')
   };
 
   const abas = useMemo(() => [
@@ -278,6 +280,7 @@ function ConfiguracoesPage() {
     { id: 'regrasComissao', label: 'Comissões', permitido: permissoes.regrasComissao },
     { id: 'notificacoes', label: 'Notificações', permitido: permissoes.notificacoes },
     { id: 'horarioAcesso', label: 'Horário de acesso', permitido: permissoes.horarioAcesso },
+    { id: 'acessoRede', label: 'Acesso por rede', permitido: permissoes.acessoRede },
   ].filter(abaItem => abaItem.permitido), [
     permissoes.operadoras,
     permissoes.tiposVenda,
@@ -285,7 +288,8 @@ function ConfiguracoesPage() {
     permissoes.links,
     permissoes.regrasComissao,
     permissoes.notificacoes,
-    permissoes.horarioAcesso
+    permissoes.horarioAcesso,
+    permissoes.acessoRede
   ]);
 
   const [aba, setAba] = useNavigationState('ConfiguracoesPage:aba', abas[0]?.id || '', { allowed: abas.map(item => item.id) });
@@ -293,6 +297,9 @@ function ConfiguracoesPage() {
     const atualizarUsuario = event => {
       const usuarioAtualizado = event.detail || getUsuarioLocal();
       setUsuario(usuarioAtualizado);
+      if (!temPermissao(usuarioAtualizado, 'configurar_acesso_rede')) {
+        setAba(atual => atual === 'acessoRede' ? '' : atual);
+      }
       if (!temPermissao(usuarioAtualizado, 'configurar_horario_acesso')) {
         setAba(atual => atual === 'horarioAcesso' ? '' : atual);
       }
@@ -1204,7 +1211,7 @@ function ConfiguracoesPage() {
                   </button>
                 ))}
               </div>
-              {!['clientesAntigos', 'horarioAcesso'].includes(aba) && (
+              {!['clientesAntigos', 'horarioAcesso', 'acessoRede'].includes(aba) && (
                 <div className="config-panel-summary">
                   <strong>{abaAtual?.label}</strong>
                   <span>{listaAtual.length} cadastrado(s)</span>
@@ -1215,6 +1222,8 @@ function ConfiguracoesPage() {
             <div className="panel-body">
               {aba === 'clientesAntigos' ? (
                 renderClientesAntigos()
+              ) : aba === 'acessoRede' ? (
+                <AcessoRedeConfig />
               ) : aba === 'horarioAcesso' ? (
                 <HorarioAcessoConfig />
               ) : carregando ? (

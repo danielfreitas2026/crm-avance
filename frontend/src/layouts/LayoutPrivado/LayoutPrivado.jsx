@@ -149,9 +149,11 @@ function LayoutPrivado({ children }) {
   /**
    * Trata o evento de logout.
    */
-  function handleLogout() {
+  async function handleLogout() {
     setMobileMenuOpen(false);
-    logout();
+    try { await logout(); } catch {
+      sessionStorage.setItem('logout_message', 'Não foi possível confirmar o encerramento no servidor. A liberação anterior pode continuar válida até expirar.');
+    }
     navigate('/login');
   }
 

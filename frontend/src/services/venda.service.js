@@ -1,7 +1,7 @@
 /**
  * Cliente de API para vendas, arquivos, importacoes, aprovacoes e pos-venda.
  */
-import { apiBlob, apiDelete, apiGet, apiPost, apiPut, apiRequest } from './api';
+import { apiBlob, apiDelete, apiGet, apiPost, apiPut, apiRequest, tratarErroAutenticacao } from './api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -160,6 +160,7 @@ export function uploadArquivoVenda(id, file, dados = {}, onProgress) {
           return;
         }
 
+        tratarErroAutenticacao({ status: xhr.status }, data, token, xhr.responseURL);
         reject(new Error(data?.message || data?.error || 'Erro no upload.'));
       } catch {
         reject(new Error('Erro no upload.'));

@@ -4,6 +4,7 @@ const PERMISSOES_ADMIN_EXPLICITAS = new Set([
   'clientes_secretos_ver_todos',
   'clientes_antigos_ver_historico',
   'configurar_horario_acesso',
+  'configurar_acesso_rede',
   'problemas_pos_venda_responsavel',
   'funil_automacoes',
   'vendas_alterar_data'
@@ -140,6 +141,7 @@ function usuarioTemPermissaoLocal(usuario, permissao) {
   if (!usuario || !usuario.ativo) return false;
 
   if (usuario.role?.nome === 'admin') {
+    if (permissao === 'acesso_rede_sem_codigo') return true;
     const permissaoObrigatoria = permissaoObrigatoriaAdminVendas(permissao);
     if (permissaoObrigatoria !== null) return permissaoObrigatoria;
 
@@ -176,6 +178,10 @@ async function montarMapaPermissoesEfetivas(usuario) {
 
   return todasPermissoes.reduce((acc, permissao) => {
     if (usuario?.role?.nome === 'admin') {
+      if (permissao.chave === 'acesso_rede_sem_codigo') {
+        acc[permissao.chave] = true;
+        return acc;
+      }
       const permissaoObrigatoria = permissaoObrigatoriaAdminVendas(permissao.chave);
       acc[permissao.chave] = permissaoObrigatoria !== null
         ? permissaoObrigatoria
@@ -205,7 +211,8 @@ async function listarPermissoesEfetivas(usuario) {
     return todasPermissoes
       .map(permissao => permissao.chave)
       .filter(chave => (
-        permissaoObrigatoriaAdminVendas(chave) === true
+        chave === 'acesso_rede_sem_codigo'
+        || permissaoObrigatoriaAdminVendas(chave) === true
         || (
           permissaoObrigatoriaAdminVendas(chave) === null
           && (PERMISSOES_ADMIN_EXPLICITAS.has(chave)

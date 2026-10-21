@@ -6,8 +6,9 @@ import { SYSTEM_CLOSED_MESSAGE } from '../../services/api';
 import logo from '../../assets/LogoClaraSemFundo.png';
 
 function mensagemInicial() {
-  const mensagem = sessionStorage.getItem('system_closed_message');
+  const mensagem = sessionStorage.getItem('system_closed_message') || sessionStorage.getItem('logout_message');
   sessionStorage.removeItem('system_closed_message');
+  sessionStorage.removeItem('logout_message');
   return mensagem || '';
 }
 
@@ -35,6 +36,10 @@ function LoginPage() {
       await login(email, senha);
       navigate('/');
     } catch (error) {
+      if (error.code === 'NETWORK_ACCESS_REQUIRED') {
+        navigate('/verificar-acesso');
+        return;
+      }
       setErro(error.code === 'SYSTEM_CLOSED' ? SYSTEM_CLOSED_MESSAGE : (error.message || 'E-mail ou senha inválidos.'));
     } finally {
       setCarregando(false);

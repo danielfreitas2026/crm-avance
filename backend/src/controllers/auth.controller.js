@@ -18,7 +18,7 @@ async function login(req, res) {
       });
     }
 
-    const resultado = await authService.login(email, senha);
+    const resultado = await authService.login(email, senha, req);
 
     await auditLogService.registrarSemBloquear(req, {
       usuario_id: resultado.usuario.id,
@@ -43,7 +43,8 @@ async function login(req, res) {
 
     return res.status(error.status || 401).json({
       message: error.message || 'Erro ao fazer login.',
-      ...(error.code ? { code: error.code } : {})
+      ...(error.code ? { code: error.code } : {}),
+      ...(error.acessoRedeSeguro && error.detalhes ? error.detalhes : {})
     });
   }
 }

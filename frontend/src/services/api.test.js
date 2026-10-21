@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiBlob, apiDelete, apiGet, apiPost, apiPut, apiRequest } from './api';
+import { apiBlob, apiDelete, apiGet, apiPost, apiPut, apiRequest, apiStreamNdjson, tratarErroAutenticacao } from './api';
 
 function jsonResponse(body, init = {}) {
   return new Response(JSON.stringify(body), {
@@ -10,6 +10,20 @@ function jsonResponse(body, init = {}) {
 }
 
 describe('api service', () => {
+  it.each(['json', 'blob', 'stream', 'upload'])('preserva solicitação e bloqueia a operação %s sem repeti-la', async tipo => {
+    window.history.replaceState({}, '', '/verificar-acesso');
+    localStorage.setItem('token', 'sessao-existente');
+    const data = { code: 'NETWORK_ACCESS_REQUIRED', message: 'Rede externa', solicitacao_id: 'id-teste', expira_em: '2026-10-21T15:00:00Z' };
+    fetch.mockResolvedValueOnce(jsonResponse(data, { status: 403 }));
+    if (tipo === 'upload') tratarErroAutenticacao({ status: 403 }, data, 'sessao-existente', '/upload');
+    else {
+      const executar = tipo === 'blob' ? apiBlob : tipo === 'stream' ? apiStreamNdjson : apiGet;
+      await expect(executar('/protegido')).rejects.toMatchObject({ code: 'NETWORK_ACCESS_REQUIRED' });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    }
+    expect(JSON.parse(sessionStorage.getItem('acesso_rede_pendente'))).toEqual({ solicitacao_id: data.solicitacao_id, expira_em: data.expira_em });
+    expect(localStorage.getItem('token')).toBe('sessao-existente');
+  });
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();

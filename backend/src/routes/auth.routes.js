@@ -6,6 +6,11 @@ const authMiddleware = require('../middlewares/auth.middleware');
 const { auditar } = require('../middlewares/audit.middleware');
 const { rateLimit } = require('express-rate-limit');
 const recuperacao = require('../controllers/recuperacao-conta.controller');
+const acessoRede = require('../controllers/acesso-rede.controller');
+const limitarAcessoRede = rateLimit({
+  windowMs: 60 * 1000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false,
+  message: { message: 'Muitas tentativas de acesso. Tente novamente em um minuto.' }
+});
 
 const limitarRecuperacao = rateLimit({
   windowMs: 60 * 1000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false,
@@ -18,7 +23,9 @@ router.post('/confirmar-email-recuperacao', limitarRecuperacao, recuperacao.conf
 router.post('/reenviar-confirmacao-email-recuperacao', limitarRecuperacao, authMiddleware, recuperacao.reenviar);
 
 
-router.post('/login', authController.login);
+router.post('/login', limitarAcessoRede, authController.login);
+router.post('/acesso-rede/validar', limitarAcessoRede, acessoRede.validar);
+router.post('/logout', acessoRede.logout);
 router.get('/me', authMiddleware, authController.me);
 router.put('/me', (req, res, next) => req.body?.email_recuperacao !== undefined
   ? limitarRecuperacao(req, res, next) : next(), authMiddleware, auditar({

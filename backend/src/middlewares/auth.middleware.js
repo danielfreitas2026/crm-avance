@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const horarioAcessoService = require('../services/horario-acesso.service');
+const acessoRede = require('../services/acesso-rede.service');
 
 /**
  * Middleware Express que valida JWT Bearer e expõe o usuario decodificado em req.usuario.
@@ -51,9 +52,13 @@ async function authMiddleware(req, res, next) {
       return res.status(401).json({ message: 'Usuário inativo.' });
     }
 
+    await acessoRede.avaliarSessao(req, decoded, token);
     req.usuario = decoded;
     return next();
   } catch (error) {
+    if (error.acessoRedeSeguro) {
+      return res.status(error.status).json({ message: error.message, ...(error.code ? { code: error.code } : {}), ...error.detalhes });
+    }
     console.error(error);
     return res.status(500).json({ message: 'Erro ao validar o horário de acesso.' });
   }

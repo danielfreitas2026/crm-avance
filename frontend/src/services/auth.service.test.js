@@ -8,9 +8,27 @@ vi.mock('./api', () => ({
 
 import { apiGet, apiPost, apiPut } from './api';
 import { atualizarPerfil, buscarPerfil, getUsuarioLocal, login, logout, temPermissao,
-  solicitarRecuperacao, confirmarEmailRecuperacao, redefinirSenha, reenviarConfirmacaoEmailRecuperacao } from './auth.service';
+  solicitarRecuperacao, confirmarEmailRecuperacao, redefinirSenha, reenviarConfirmacaoEmailRecuperacao, validarAcessoRede } from './auth.service';
 
 describe('auth.service', () => {
+  it('valida código, substitui a sessão e revoga no servidor ao sair', async () => {
+    sessionStorage.setItem('acesso_rede_pendente', '{}');
+    apiPost.mockResolvedValueOnce({ token: 'liberado', usuario: { id: 7 } });
+    await validarAcessoRede('id-teste', 'ABCDEF');
+    expect(apiPost).toHaveBeenCalledWith('/auth/acesso-rede/validar', { solicitacao_id: 'id-teste', codigo: 'ABCDEF' });
+    expect(localStorage.getItem('token')).toBe('liberado');
+    expect(sessionStorage.getItem('acesso_rede_pendente')).toBeNull();
+    apiPost.mockResolvedValueOnce({});
+    await logout();
+    expect(apiPost).toHaveBeenLastCalledWith('/auth/logout', {});
+    expect(localStorage.getItem('token')).toBeNull();
+  });
+  it('admin é sempre dispensado e usuários comuns dependem da permissão individual ou do perfil', () => {
+    expect(temPermissao({ role: { nome: 'admin' }, permissoes: { acesso_rede_sem_codigo: false } }, 'acesso_rede_sem_codigo')).toBe(true);
+    expect(temPermissao({ permissoes: ['acesso_rede_sem_codigo'] }, 'acesso_rede_sem_codigo')).toBe(true);
+    expect(temPermissao({ role: { permissoes: ['acesso_rede_sem_codigo'] } }, 'acesso_rede_sem_codigo')).toBe(true);
+    expect(temPermissao({ permissoes: [] }, 'acesso_rede_sem_codigo')).toBe(false);
+  });
   it('limpa a navegação ao sair e ao autenticar uma nova sessão', async () => {
     sessionStorage.setItem('crm:navegacao:v1:7:pagina', '4');
     sessionStorage.setItem('outra-preferencia', 'preservada');

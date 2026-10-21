@@ -1,4 +1,9 @@
 const test = require('node:test');
+const acessoRede = require('../src/services/acesso-rede.service');
+test.beforeEach(t => {
+  t.mock.method(acessoRede, 'avaliar', async () => {});
+  t.mock.method(acessoRede, 'avaliarSessao', async () => {});
+});
 const assert = require('node:assert/strict');
 
 const authController = require('../src/controllers/auth.controller');

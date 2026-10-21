@@ -17,11 +17,20 @@ export async function login(email, senha) {
     senha
   });
 
+  return salvarSessao(data);
+}
+
+function salvarSessao(data) {
+  sessionStorage.removeItem('acesso_rede_pendente');
   clearNavigation();
   localStorage.setItem('token', data.token);
   localStorage.setItem('usuario', JSON.stringify(data.usuario));
 
   return data;
+}
+
+export async function validarAcessoRede(solicitacao_id, codigo) {
+  return salvarSessao(await apiPost('/auth/acesso-rede/validar', { solicitacao_id, codigo }));
 }
 
 /**
@@ -89,6 +98,7 @@ export function temPermissao(usuario, permissao) {
   }
 
   if (usuario?.role?.nome === 'admin') {
+    if (permissao === 'acesso_rede_sem_codigo') return true;
     const permissaoObrigatoria = permissaoObrigatoriaAdminVendas(permissao);
     if (permissaoObrigatoria !== null) return permissaoObrigatoria;
 
@@ -121,7 +131,10 @@ export async function atualizarPerfil(dados) {
  * Processa logout conforme as regras do dominio.
  */
 export function logout() {
+  const encerramento = localStorage.getItem('token') ? Promise.resolve(apiPost('/auth/logout', {})) : Promise.resolve();
+  sessionStorage.removeItem('acesso_rede_pendente');
   clearNavigation();
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
+  return encerramento;
 }

@@ -8,6 +8,7 @@ export const PERMISSOES_ADMIN_EXPLICITAS = new Set([
   'clientes_secretos_ver_todos',
   'clientes_antigos_ver_historico',
   'configurar_horario_acesso',
+  'configurar_acesso_rede',
   'problemas_pos_venda_responsavel',
   'funil_automacoes',
   'vendas_alterar_data'
@@ -387,6 +388,13 @@ export const GRUPOS_PERMISSOES = [
     descricao: 'Cadastros que alimentam vendas, comissões e links usados na operação.',
     secoes: [
       {
+        titulo: 'Segurança de acesso',
+        itens: [
+          { chave: 'configurar_acesso_rede', nome: 'Configurar acesso por rede', descricao: 'Configura as redes da empresa e o bloqueio externo.' },
+          { chave: 'acesso_rede_sem_codigo', nome: 'Acessar de qualquer rede sem código', descricao: 'Dispensa o código fora da empresa. Administradores são sempre dispensados.' }
+        ]
+      },
+      {
         titulo: 'Cadastros comerciais',
         itens: [
           {
@@ -726,7 +734,8 @@ export function getPermissoesSelecionadasUsuario(usuario, permissoesDisponiveis 
   const todasChaves = permissoesDisponiveis.map(permissao => permissao.chave);
 
   return todasChaves.filter(chave => (
-    permissaoObrigatoriaAdminVendas(chave) === true
+    chave === 'acesso_rede_sem_codigo'
+    || permissaoObrigatoriaAdminVendas(chave) === true
     || (
       permissaoObrigatoriaAdminVendas(chave) === null
       && (PERMISSOES_ADMIN_EXPLICITAS.has(chave)
@@ -741,6 +750,7 @@ export function getPermissoesSelecionadasUsuario(usuario, permissoesDisponiveis 
  */
 export function montarPermissoesAdminParaSalvar(selecionadas = [], permissoesDisponiveis = []) {
   return permissoesDisponiveis.map(permissao => permissao.chave).reduce((acc, chave) => {
+    if (chave === 'acesso_rede_sem_codigo') return acc;
     const permissaoObrigatoria = permissaoObrigatoriaAdminVendas(chave);
 
     if (permissaoObrigatoria !== null) {
@@ -757,9 +767,10 @@ export function montarPermissoesAdminParaSalvar(selecionadas = [], permissoesDis
   }, {});
 }
 
-/** Retorna as permissoes de vendas que nao podem ser alteradas para ADM. */
+/** Retorna as permissões que não podem ser alteradas para ADM. */
 export function getPermissoesBloqueadasAdmin() {
   return new Set([
+    'acesso_rede_sem_codigo',
     ...PERMISSOES_ADMIN_VENDAS_OBRIGATORIAS,
     PERMISSAO_ADMIN_VENDAS_SEM_LIMITE
   ]);
@@ -770,6 +781,7 @@ export function normalizarPermissoesSelecionadasAdmin(selecionadas = [], permiss
   const disponiveis = new Set(permissoesDisponiveis.map(permissao => permissao.chave));
   return Array.from(new Set([
     ...selecionadas.filter(chave => chave !== PERMISSAO_ADMIN_VENDAS_SEM_LIMITE),
+    ...(disponiveis.has('acesso_rede_sem_codigo') ? ['acesso_rede_sem_codigo'] : []),
     ...Array.from(PERMISSOES_ADMIN_VENDAS_OBRIGATORIAS).filter(chave => disponiveis.has(chave))
   ]));
 }

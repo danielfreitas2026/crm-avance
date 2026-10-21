@@ -34,7 +34,17 @@ function criarErroApi(response, data) {
   return error;
 }
 
-function tratarErroAutenticacao(response, data, token, endpoint) {
+export function tratarErroAutenticacao(response, data, token, endpoint) {
+  if (response.status === 403 && data?.code === 'NETWORK_ACCESS_REQUIRED') {
+    sessionStorage.setItem('acesso_rede_pendente', JSON.stringify({
+      solicitacao_id: data.solicitacao_id, expira_em: data.expira_em
+    }));
+    if (endpoint !== '/auth/login' && window.location.pathname !== '/verificar-acesso' && !redirecionandoLogin) {
+      redirecionandoLogin = true;
+      window.location.replace('/verificar-acesso');
+    }
+    return;
+  }
   if (response.status === 423 && data?.code === 'SYSTEM_CLOSED') {
     if (token && endpoint !== '/auth/login') encerrarSessaoPorFechamento(data.message);
     return;

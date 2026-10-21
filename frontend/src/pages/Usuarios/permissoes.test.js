@@ -8,6 +8,13 @@ import {
 } from './permissoes';
 
 describe('catalogo de permissoes de vendas', () => {
+  it('dispensa administradores do código de rede e impede desmarcar ou persistir uma negação', () => {
+    const disponiveis = [{ chave: 'acesso_rede_sem_codigo' }, { chave: 'configurar_acesso_rede' }];
+    expect(getPermissoesSelecionadasUsuario({ role: { nome: 'admin' }, permissoes: { acesso_rede_sem_codigo: false } }, disponiveis)).toEqual(['acesso_rede_sem_codigo']);
+    expect(getPermissoesBloqueadasAdmin().has('acesso_rede_sem_codigo')).toBe(true);
+    expect(normalizarPermissoesSelecionadasAdmin([], disponiveis)).toEqual(['acesso_rede_sem_codigo']);
+    expect(montarPermissoesAdminParaSalvar([], disponiveis)).toEqual({ configurar_acesso_rede: false });
+  });
   it('declara o acesso completo de vendas enviadas como permissao configuravel', () => {
     expect(getPermissoesDeclaradas()).toContainEqual({
       chave: 'vendas_ver_completa_apos_envio',

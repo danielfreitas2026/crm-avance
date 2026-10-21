@@ -359,7 +359,20 @@ async function enviarVenda(venda) {
   };
 }
 
+async function enviarCodigoAcessoRede({ usuario, ip, codigo, id, agora }) {
+  const resultado = await chamarApi('sendMessage', {
+    chat_id: process.env.TELEGRAM_ACESSO_REDE_CHAT_ID,
+    text: ['🔐 ACESSO EXTERNO AO CRM', `Usuário: ${usuario.nome}`, `E-mail: ${usuario.email}`,
+      `IP: ${ip}`, `Horário: ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'America/Sao_Paulo' }).format(agora)}`,
+      `Solicitação: ${id}`, `Código: ${codigo}`, 'Válido por 10 minutos, para uma única sessão e IP.',
+      'Repasse o código somente após confirmar a identidade do solicitante.'].join('\n'),
+    protect_content: true
+  });
+  if (!resultado) throw new Error('Envio do código indisponível.');
+}
+
 module.exports = {
+  enviarCodigoAcessoRede,
   acompanhamentoAtivo,
   vendasAtivo,
   resumoVendasAtivo,

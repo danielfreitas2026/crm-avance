@@ -1,7 +1,7 @@
 /**
  * Cliente de API para importacao, divisao e acompanhamento de planilhas de leads.
  */
-import { apiBlob, apiDelete, apiGet, apiPost, apiPut } from './api';
+import { apiBlob, apiDelete, apiGet, apiPost, apiPut, tratarErroAutenticacao } from './api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -71,6 +71,7 @@ export function uploadLeadPlanilha(file, onProgress) {
       } else {
         try {
           const data = JSON.parse(xhr.responseText);
+          tratarErroAutenticacao({ status: xhr.status }, data, token, xhr.responseURL);
           reject(new Error(data?.message || data?.error || 'Erro no upload.'));
         } catch { reject(new Error('Erro no upload.')); }
       }
@@ -112,6 +113,7 @@ export function importarLeadPlanilhaExcel(file, onProgress, opcoes = {}) {
       } else {
         try {
           const data = JSON.parse(xhr.responseText);
+          tratarErroAutenticacao({ status: xhr.status }, data, token, xhr.responseURL);
           reject(new Error(data?.message || data?.error || 'Erro ao importar XLSX.'));
         } catch { reject(new Error('Erro ao importar XLSX.')); }
       }
@@ -146,6 +148,7 @@ export function importarBaseAntigaMailing(file, onProgress) {
       } else {
         try {
           const data = JSON.parse(xhr.responseText);
+          tratarErroAutenticacao({ status: xhr.status }, data, token, xhr.responseURL);
           reject(new Error(data?.message || data?.error || 'Erro ao importar base antiga.'));
         } catch { reject(new Error('Erro ao importar base antiga.')); }
       }

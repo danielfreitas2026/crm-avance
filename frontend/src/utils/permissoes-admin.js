@@ -2,6 +2,7 @@ export const PERMISSOES_ADMIN_EXPLICITAS = new Set([
   'clientes_secretos_ver_todos',
   'clientes_antigos_ver_historico',
   'configurar_horario_acesso',
+  'configurar_acesso_rede',
   'problemas_pos_venda_responsavel',
   'funil_automacoes',
   'vendas_alterar_data'

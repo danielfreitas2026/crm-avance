@@ -3,11 +3,14 @@ const router = express.Router();
 
 const configController = require('../controllers/config.controller');
 const horarioAcessoController = require('../controllers/horario-acesso.controller');
+const acessoRede = require('../controllers/acesso-rede.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const { exigirPermissao } = require('../middlewares/permissao.middleware');
 const { auditar } = require('../middlewares/audit.middleware');
 
 router.use(authMiddleware);
+router.get('/admin/acesso-rede', exigirPermissao('configurar_acesso_rede'), acessoRede.show);
+router.put('/admin/acesso-rede', exigirPermissao('configurar_acesso_rede'), acessoRede.update);
 
 router.get('/operadoras', configController.operadoras);
 router.get('/links-externos', configController.linksExternos);

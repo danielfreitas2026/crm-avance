@@ -4,6 +4,8 @@
 const bcrypt = require('bcrypt');
 const { prepararSenha } = require('../utils/senha-usuario');
 const jwt = require('jsonwebtoken');
+const { randomUUID } = require('node:crypto');
+const acessoRede = require('./acesso-rede.service');
 
 const Usuario = require('../models/Usuario');
 const { montarMapaPermissoesEfetivas } = require('../utils/permissoes');
@@ -100,7 +102,7 @@ async function atualizarPerfil(usuarioId, dados, { registrarAuditoria } = {}) {
 /**
  * Processa login conforme as regras do dominio.
  */
-async function login(email, senha) {
+async function login(email, senha, req) {
   
   const usuario = await Usuario.query()
     .where('email', email)
@@ -131,16 +133,23 @@ async function login(email, senha) {
     throw error;
   }
 
+  await acessoRede.avaliar(usuario, req);
+  return criarSessao(usuario);
+}
+
+async function criarSessao(usuario, { sessaoId = randomUUID(), expiraEm } = {}) {
   const token = jwt.sign(
     {
       id: usuario.id,
       email: usuario.email,
       role_id: usuario.role_id,
-      versao_sessao: usuario.versao_sessao || 0
+      versao_sessao: usuario.versao_sessao || 0,
+      jti: sessaoId,
+      ...(expiraEm ? { exp: expiraEm } : {})
     },
     process.env.JWT_SECRET,
     {
-      expiresIn: process.env.JWT_EXPIRES_IN || '1d'
+      ...(expiraEm ? {} : { expiresIn: process.env.JWT_EXPIRES_IN || '1d' })
     }
   );
 
@@ -170,6 +179,7 @@ async function buscarUsuarioLogado(usuarioId) {
 }
 
 module.exports = {
+  criarSessao,
   login,
   buscarUsuarioLogado,
   atualizarPerfil

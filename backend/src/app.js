@@ -28,6 +28,7 @@ const problemaRoutes = require('./routes/problema.routes');
 const { securityHeadersMiddleware } = require('./middlewares/security-headers.middleware');
 
 const app = express();
+require('./utils/rede').configurarProxy(app);
 
 app.disable('x-powered-by');
 app.use(securityHeadersMiddleware);
