@@ -17,6 +17,11 @@ async function preencherLocal(req, res) {
   try {
     return res.status(202).json(await leadLocalService.iniciar(req.params.id, req.body?.campos));
   } catch (error) {
+    if (!error.statusCode) {
+      console.error('Falha ao iniciar o preenchimento de Local.', {
+        planilhaId: req.params.id, codigo: error.code || error.name
+      });
+    }
     return res.status(error.statusCode || 500).json({ message: error.statusCode ? error.message : 'Erro ao iniciar o preenchimento de Local.' });
   }
 }

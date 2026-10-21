@@ -6,8 +6,12 @@ const LOTE = 500;
 const SEM_PROGRESSO_MS = 5 * 60 * 1000;
 
 function json(valor, fallback = null) {
-  if (typeof valor !== 'string') return valor ?? fallback;
-  try { return JSON.parse(valor); } catch { return fallback; }
+  // A importação serializa colunas/schema antes do Objection. Leituras via Knex
+  // podem receber ambas as camadas, conforme o tipo JSON retornado pelo driver.
+  for (let camada = 0; camada < 2 && typeof valor === 'string'; camada++) {
+    try { valor = JSON.parse(valor); } catch { return fallback; }
+  }
+  return valor ?? fallback;
 }
 
 function erroHttp(statusCode, message) {

@@ -42,8 +42,8 @@ test('valida origem, importação e execução concorrente antes de iniciar', ()
 });
 
 // Banco em memória limitado às operações do worker; nenhuma conexão é aberta.
-function bancoWorker(t, linhas, { falhar = false } = {}) {
-  let atual = { ...planilha(), local_config: prepararConfig(planilha(), ['Terminal', 'Fixo'], { total: linhas.length, limite_id: linhas.at(-1)?.id || 0 }) };
+function bancoWorker(t, linhas, { falhar = false, planilhaArmazenada = {} } = {}) {
+  let atual = { ...planilha(), local_config: prepararConfig(planilha(), ['Terminal', 'Fixo'], { total: linhas.length, limite_id: linhas.at(-1)?.id || 0 }), ...planilhaArmazenada };
   let registros = structuredClone(linhas);
   const eventos = [];
   let fila = Promise.resolve();
@@ -152,6 +152,50 @@ test('início persiste configuração e coluna, impede dois pedidos e executa em
   assert.match(banco.linhas[0].dados_json['Local por DDD'], /DDD 19/);
 });
 
+test('preenche planilhas com colunas e schema serializados pelo contrato da importação', async t => {
+  const LeadPlanilha = require('../src/models/LeadPlanilha');
+  // A importação envia strings JSON ao Objection, que as serializa novamente.
+  const armazenada = LeadPlanilha.fromJson({
+    nome: 'Importada',
+    colunas: JSON.stringify(['Terminal', 'Fixo', 'Local', 'Local por DDD']),
+    schema_colunas: JSON.stringify({ Terminal: 'string', Fixo: 'string', Local: 'string', 'Local por DDD': 'string' })
+  }).$toDatabaseJson();
+  for (const driverDecodifica of [false, true]) {
+    await t.test(`driver ${driverDecodifica ? 'decodifica' : 'mantém'} JSON`, async sub => {
+      const colunas = driverDecodifica ? JSON.parse(armazenada.colunas) : armazenada.colunas;
+      const schema = driverDecodifica ? JSON.parse(armazenada.schema_colunas) : armazenada.schema_colunas;
+      const banco = bancoWorker(sub, [{
+        id: 1, planilha_id: 1,
+        dados_json: { Terminal: '1932345678', Fixo: '21999998888', Local: 'Importado', 'Local por DDD': 'Também importado' },
+        atribuido_para_id: 7, status_operacional: 'vendido'
+      }], { planilhaArmazenada: { colunas, schema_colunas: schema, local_config: null } });
+
+      const iniciada = await localService.iniciar(1, ['Terminal', 'Fixo']);
+      assert.deepEqual(iniciada.colunas, ['Terminal', 'Fixo', 'Local', 'Local por DDD', 'Local por DDD (2)']);
+      assert.deepEqual(iniciada.schema_colunas, {
+        Terminal: 'string', Fixo: 'string', Local: 'string', 'Local por DDD': 'string', 'Local por DDD (2)': 'string'
+      });
+      for (let tentativa = 0; tentativa < 10 && banco.atual.local_config.status === 'processando'; tentativa++) {
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      assert.equal(banco.atual.local_config.status, 'concluido');
+      assert.deepEqual(banco.linhas[0].local_ddds, ['19', '21']);
+      assert.equal(banco.linhas[0].dados_json.Local, 'Importado');
+      assert.equal(banco.linhas[0].dados_json['Local por DDD'], 'Também importado');
+      assert.equal(banco.linhas[0].atribuido_para_id, 7);
+      assert.equal(banco.linhas[0].status_operacional, 'vendido');
+
+      const repetida = await localService.iniciar(1, ['Fixo']);
+      assert.deepEqual(repetida.colunas, iniciada.colunas);
+      for (let tentativa = 0; tentativa < 10 && banco.atual.local_config.status === 'processando'; tentativa++) {
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      assert.equal(banco.atual.local_config.status, 'concluido');
+      assert.deepEqual(banco.linhas[0].local_ddds, ['21']);
+    });
+  }
+});
+
 test('erro reverte o lote e sinaliza resultados parciais; execução interrompida permite repetir', async t => {
   const banco = bancoWorker(t, [{ id: 1, planilha_id: 1, dados_json: { Terminal: '1932345678' } }], { falhar: true });
   await processar(1, banco.atual.local_config.execucao_id);
@@ -230,6 +274,21 @@ test('controller retorna 202 ao iniciar e mantém erros de validação como 400/
   assert.equal(res.statusCode, 400);
   controller.locais({}, res);
   assert.equal(res.body.length, 67);
+});
+
+test('controller registra código de falha inesperada sem expor SQL ou dados do mailing', async t => {
+  const controller = require('../src/controllers/lead-planilha.controller');
+  const log = t.mock.method(console, 'error', () => {});
+  t.mock.method(localService, 'iniciar', async () => {
+    throw Object.assign(new Error('SQL e dados privados'), { code: 'ER_BAD_FIELD_ERROR', sql: 'consulta privada' });
+  });
+  const res = { status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+  await controller.preencherLocal({ params: { id: '101' }, body: { campos: ['Fixo'] } }, res);
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { message: 'Erro ao iniciar o preenchimento de Local.' });
+  assert.deepEqual(log.mock.calls[0].arguments, [
+    'Falha ao iniciar o preenchimento de Local.', { planilhaId: '101', codigo: 'ER_BAD_FIELD_ERROR' }
+  ]);
 });
 
 test('Excel individual inclui Local gerado e mantém Local importado', async t => {
