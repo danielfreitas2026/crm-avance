@@ -1,3 +1,5 @@
+import { useNavigationSet, useNavigationState } from '../../utils/useNavigationState';
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
 import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
@@ -383,7 +385,7 @@ function RewardModal({ gift, onClose }) {
 }
 
 function CampaignRankingModal({ dados, loading, error, busca, onBusca, usuarioId, onClose, onClaim, claiming }) {
-  const [aba, setAba] = useState('ranking');
+  const [aba, setAba] = useNavigationState(`CampaignRankingModal:${dados?.campanha?.id || dados?.id}:aba`, 'ranking', { allowed: ['ranking', 'vendas'] });
   if (!dados) return null;
   const campanha = dados.campanha || dados;
   const termo = busca.trim().toLowerCase();
@@ -621,8 +623,8 @@ function ProblemasModal({ open, notificacoes, onClose, onOpenNotification }) {
  * Renderiza a caixa de pendencias unificada (visualizacao "em lista").
  */
 function PendingInbox({ cards }) {
-  const [activeType, setActiveType] = useState('todas');
-  const [query, setQuery] = useState('');
+  const [activeType, setActiveType] = useNavigationState('PendingInbox:activeType', 'todas');
+  const [query, setQuery] = useNavigationState('PendingInbox:query', '');
 
   const allRows = useMemo(() => (
     cards.flatMap(card => (card.items || []).map(item => ({
@@ -1000,21 +1002,25 @@ function DashboardPage() {
   const [openedGifts, setOpenedGifts] = useState(new Set());
   const [claimingId, setClaimingId] = useState(null);
   const [selectedReward, setSelectedReward] = useState(null);
-  const [rankingCampanha, setRankingCampanha] = useState(null);
+  const [rankingCampanha, setRankingCampanha] = useNavigationRecord('DashboardPage:ranking', {
+    load: id => getRankingCampanha(id),
+    idField: 'campanha.id',
+    onError: error => setRankingError(error.message)
+  });
   const [rankingLoading, setRankingLoading] = useState(false);
   const [rankingError, setRankingError] = useState('');
-  const [rankingBusca, setRankingBusca] = useState('');
+  const [rankingBusca, setRankingBusca] = useNavigationState('DashboardPage:rankingBusca', '');
   const [feedback, setFeedback] = useState(null);
-  const [todayViewMode, setTodayViewMode] = useState('overview');
+  const [todayViewMode, setTodayViewMode] = useNavigationState('DashboardPage:todayViewMode', 'overview');
   const [notificacoes, setNotificacoes] = useState([]);
-  const [contatosMarcadosOpen, setContatosMarcadosOpen] = useState(false);
-  const [problemasModalOpen, setProblemasModalOpen] = useState(false);
+  const [contatosMarcadosOpen, setContatosMarcadosOpen] = useNavigationState('DashboardPage:contatosMarcadosOpen', false);
+  const [problemasModalOpen, setProblemasModalOpen] = useNavigationState('DashboardPage:problemasModalOpen', false);
   const [notificacoesView, setNotificacoesView] = useState(() => {
     if (typeof window === 'undefined') return 'card';
     const salvo = window.localStorage.getItem(HOME_NOTIF_VIEW_KEY);
     return HOME_NOTIF_VIEWS.includes(salvo) ? salvo : 'card';
   });
-  const [openNotificationDrawers, setOpenNotificationDrawers] = useState(() => (
+  const [openNotificationDrawers, setOpenNotificationDrawers] = useNavigationSet('DashboardPage:paineis', () => (
     typeof window !== 'undefined' && window.innerWidth > 760
       ? new Set(NOTIFICATION_DRAWER_KEYS)
       : new Set()
@@ -1030,9 +1036,17 @@ function DashboardPage() {
   const [tiposVenda, setTiposVenda] = useState([]);
   const [servicos, setServicos] = useState([]);
   const [, setEtapasFunil] = useState([]);
-  const [clienteModal, setClienteModal] = useState(null);
+  const [clienteModal, setClienteModal] = useNavigationRecord('DashboardPage:cliente', {
+    load: id => buscarClientePorId(id),
+    ready: vendasCarregadas,
+    onError: error => setFeedback({ type: 'error', message: error.message })
+  });
   const [clienteModalAba, setClienteModalAba] = useState('cliente');
-  const [vendaModal, setVendaModal] = useState(null);
+  const [vendaModal, setVendaModal] = useNavigationRecord('DashboardPage:venda', {
+    load: id => buscarVendaPorId(id),
+    ready: vendasCarregadas,
+    onError: error => setFeedback({ type: 'error', message: error.message })
+  });
   const [vendaModalAba, setVendaModalAba] = useState('venda');
   const [vendaModalProblemaId, setVendaModalProblemaId] = useState(null);
   const podeVerResumoVendas = temPermissao(usuario, 'dashboard_resumo_vendas');

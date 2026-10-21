@@ -7,6 +7,19 @@
 const leadPlanilhaService = require('../services/lead-planilha.service');
 const leadDistribuicaoService = require('../services/lead-distribuicao.service');
 const leadVendaVinculoManualService = require('../services/lead-venda-vinculo-manual.service');
+const leadLocalService = require('../services/lead-local.service');
+
+function locais(req, res) {
+  return res.json(leadLocalService.listarLocais());
+}
+
+async function preencherLocal(req, res) {
+  try {
+    return res.status(202).json(await leadLocalService.iniciar(req.params.id, req.body?.campos));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.statusCode ? error.message : 'Erro ao iniciar o preenchimento de Local.' });
+  }
+}
 
 /**
  * Processa index conforme as regras do dominio.
@@ -171,7 +184,7 @@ async function linhas(req, res) {
     return res.json(await leadPlanilhaService.listarLinhas(req.query));
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: 'Erro ao listar linhas de mailing.' });
+    return res.status(error.statusCode || 500).json({ message: error.statusCode ? error.message : 'Erro ao listar linhas de mailing.' });
   }
 }
 
@@ -184,7 +197,7 @@ async function exportar(req, res) {
   } catch (error) {
     console.error(error);
     if (!res.headersSent) {
-      return res.status(500).json({ message: 'Erro ao exportar CSV.' });
+      return res.status(error.statusCode || 500).json({ message: error.statusCode ? error.message : 'Erro ao exportar CSV.' });
     }
     return res.end();
   }
@@ -210,7 +223,7 @@ async function dividir(req, res) {
     return res.json(await leadPlanilhaService.dividirLeads(req.body, req.usuario.id));
   } catch (error) {
     console.error(error);
-    return res.status(400).json({ message: error.message || 'Erro ao dividir mailing.' });
+    return res.status(error.statusCode || 400).json({ message: error.message || 'Erro ao dividir mailing.' });
   }
 }
 
@@ -826,6 +839,8 @@ async function adminMarcarRetorno(req, res) {
 }
 
 module.exports = {
+  locais,
+  preencherLocal,
   index,
   store,
   upload,

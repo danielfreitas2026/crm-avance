@@ -17,6 +17,7 @@ class LeadPlanilha extends Model {
         nome: { type: 'string', minLength: 1, maxLength: 240 },
         colunas: { type: ['array', 'string'] },
         schema_colunas: { type: ['object', 'string'] },
+        local_config: { type: ['object', 'string', 'null'] },
         total_linhas: { type: 'integer' },
         criado_por_id: { type: ['integer', 'null'] },
         created_at: { type: ['string', 'object'] },

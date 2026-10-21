@@ -1,3 +1,4 @@
+import { clearNavigation } from '../utils/navigation-storage';
 /**
  * Cliente de API para autenticacao, perfil local e permissoes do usuario.
  */
@@ -16,6 +17,7 @@ export async function login(email, senha) {
     senha
   });
 
+  clearNavigation();
   localStorage.setItem('token', data.token);
   localStorage.setItem('usuario', JSON.stringify(data.usuario));
 
@@ -119,6 +121,7 @@ export async function atualizarPerfil(dados) {
  * Processa logout conforme as regras do dominio.
  */
 export function logout() {
+  clearNavigation();
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
 }

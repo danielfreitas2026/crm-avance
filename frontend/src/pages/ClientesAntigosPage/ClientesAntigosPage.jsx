@@ -1,3 +1,4 @@
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useEffect, useMemo, useState } from 'react';
 import * as I from '../../components/Icons';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
@@ -83,7 +84,7 @@ function ConfirmarExclusaoClienteAntigoModal({ venda, excluindo, onClose, onConf
             </button>
           </div>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="ClientesAntigosPage-1">
           <div className="cliente-antigo-delete-warning">
             <div className="cliente-antigo-delete-warning__icon">
               <I.AlertTriangle size={22} />
@@ -143,7 +144,7 @@ function ClienteAntigoEditModal({ venda, salvando, excluindo, erro, onClose, onS
             </button>
           </div>
 
-          <div className="modal-body">
+          <div className="modal-body" data-navigation-scroll="ClientesAntigosPage-2">
             {erro && <div className="alert-error">{erro}</div>}
             <div className="cliente-antigo-form-grid">
               <div className="form-field span-2">
@@ -205,14 +206,26 @@ function ClientesAntigosPage() {
     { id: 'historico', label: 'Histórico de buscas', permitido: podeHistorico }
   ].filter(item => item.permitido), [podeBuscar, podeHistorico]);
 
-  const [aba, setAba] = useState(abas[0]?.id || '');
+  const [aba, setAba] = useNavigationState('ClientesAntigosPage:aba', abas[0]?.id || '', { allowed: abas.map(item => item.id) });
 
   // --- Busca ---
-  const [termoInput, setTermoInput] = useState('');
-  const [buscando, setBuscando] = useState(false);
+  const [termoInput, setTermoInput] = useNavigationState('ClientesAntigosPage:termoInput', '');
+  const [consultaAplicada, setConsultaAplicada] = useNavigationState('ClientesAntigosPage:consulta', '');
+  const [buscando, setBuscando] = useState(Boolean(consultaAplicada) && podeBuscar);
   const [resposta, setResposta] = useState(null);
-  const [paginaBusca, setPaginaBusca] = useState(1);
+  const [paginaBusca, setPaginaBusca] = useNavigationState('ClientesAntigosPage:paginaBusca', 1);
+  const [consultaInicial, setConsultaInicial] = useState(() => consultaAplicada ? { termo: consultaAplicada, pagina: paginaBusca } : null);
   const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    if (!consultaInicial || !podeBuscar) return undefined;
+    let ativo = true;
+    buscarClienteAntigo(consultaInicial.termo, { page: consultaInicial.pagina, per_page: 20 })
+      .then(data => { if (ativo) setResposta(data); })
+      .catch(error => { if (ativo) setErro(error.message || 'Erro ao restaurar busca.'); })
+      .finally(() => { if (ativo) setBuscando(false); });
+    return () => { ativo = false; };
+  }, [consultaInicial, podeBuscar]);
 
   const cnpjDigitos = sanitizarCnpj(termoInput);
   const vendasClientes = resposta?.vendas_clientes || [];
@@ -232,12 +245,14 @@ function ClientesAntigosPage() {
   }
 
   async function executarBusca(pagina) {
+    setConsultaInicial(null);
     setBuscando(true);
     setErro('');
 
     try {
       const data = await buscarClienteAntigo(termoInput, { page: pagina, per_page: 20 });
       setResposta(data);
+      setConsultaAplicada(termoInput);
       setPaginaBusca(pagina);
     } catch (error) {
       setResposta(null);
@@ -256,9 +271,9 @@ function ClientesAntigosPage() {
   // --- Historico ---
   const [historico, setHistorico] = useState([]);
   const [totalHistorico, setTotalHistorico] = useState(0);
-  const [pagina, setPagina] = useState(1);
-  const [porPagina, setPorPagina] = useState(20);
-  const [buscaHistorico, setBuscaHistorico] = useState('');
+  const [pagina, setPagina] = useNavigationState('ClientesAntigosPage:pagina', 1);
+  const [porPagina, setPorPagina] = useNavigationState('ClientesAntigosPage:porPagina', 20);
+  const [buscaHistorico, setBuscaHistorico] = useNavigationState('ClientesAntigosPage:buscaHistorico', '');
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
   const [erroHistorico, setErroHistorico] = useState('');
   const [vendaEditando, setVendaEditando] = useState(null);
@@ -460,7 +475,7 @@ function ClientesAntigosPage() {
                         </div>
                       </div>
                       <div className="list-table">
-                        <div className="scroll">
+                        <div className="scroll" data-navigation-scroll="ClientesAntigosPage-3">
                           <table>
                             <thead>
                               <tr>
@@ -499,7 +514,7 @@ function ClientesAntigosPage() {
                     temVendasAntigas ? (
                       <div className="clientes-antigos-resultado">
                         <div className="list-table">
-                          <div className="scroll">
+                          <div className="scroll" data-navigation-scroll="ClientesAntigosPage-4">
                             <table>
                               <thead>
                                 <tr>
@@ -549,7 +564,7 @@ function ClientesAntigosPage() {
                     temVendasAntigas ? (
                       <div className="clientes-antigos-resultado">
                         <div className="list-table">
-                          <div className="scroll">
+                          <div className="scroll" data-navigation-scroll="ClientesAntigosPage-5">
                             <table>
                               <thead>
                                 <tr>
@@ -611,7 +626,7 @@ function ClientesAntigosPage() {
                   {erroHistorico && <div className="alert-error">{erroHistorico}</div>}
 
                   <div className="list-table">
-                    <div className="scroll">
+                    <div className="scroll" data-navigation-scroll="ClientesAntigosPage-6">
                       <table>
                         <thead>
                           <tr>

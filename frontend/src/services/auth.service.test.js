@@ -11,6 +11,17 @@ import { atualizarPerfil, buscarPerfil, getUsuarioLocal, login, logout, temPermi
   solicitarRecuperacao, confirmarEmailRecuperacao, redefinirSenha, reenviarConfirmacaoEmailRecuperacao } from './auth.service';
 
 describe('auth.service', () => {
+  it('limpa a navegação ao sair e ao autenticar uma nova sessão', async () => {
+    sessionStorage.setItem('crm:navegacao:v1:7:pagina', '4');
+    sessionStorage.setItem('outra-preferencia', 'preservada');
+    logout();
+    expect(sessionStorage.getItem('crm:navegacao:v1:7:pagina')).toBeNull();
+    expect(sessionStorage.getItem('outra-preferencia')).toBe('preservada');
+    sessionStorage.setItem('crm:navegacao:v1:7:pagina', '4');
+    apiPost.mockResolvedValueOnce({ token: 'token-teste', usuario: { id: 8 } });
+    await login('teste@localhost', 'senha-de-teste');
+    expect(sessionStorage.getItem('crm:navegacao:v1:7:pagina')).toBeNull();
+  });
   it('envia recuperação e confirmação no corpo dos POSTs sem criar sessão', async () => {
     apiPost.mockResolvedValue({ message: 'OK' });
     await solicitarRecuperacao('ana@crm.local');

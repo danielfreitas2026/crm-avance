@@ -1,3 +1,5 @@
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import AutoResizeTextarea from '../../components/AutoResizeTextarea';
@@ -170,21 +172,34 @@ function Avatar({ contato }) {
  * Renderiza a pagina de conversas internas.
  */
 function MensagensPage() {
-  const usuarioLocal = useMemo(() => getUsuarioLocal(), []);
+  const usuarioLocal = getUsuarioLocal();
   const meuId = Number(usuarioLocal?.id);
   const podeUsarChat = temPermissao(usuarioLocal, 'chat_usar');
   const podeVisualizarTodas = temPermissao(usuarioLocal, 'chat_visualizar_todas');
 
   const [conversas, setConversas] = useState([]);
   const [contatos, setContatos] = useState([]);
-  const [contatoSelecionado, setContatoSelecionado] = useState(null);
-  const [modoVisualizacao, setModoVisualizacao] = useState(() => (podeUsarChat ? 'minhas' : 'todas'));
+
+  const [modoVisualizacao, setModoVisualizacao] = useNavigationState('MensagensPage:modoVisualizacao', () => (podeUsarChat ? 'minhas' : 'todas'), { allowed: [...(podeUsarChat ? ['minhas'] : []), ...(podeVisualizarTodas ? ['todas'] : [])] });
+  const [contatoSelecionado, setContatoSelecionado] = useNavigationRecord(`MensagensPage:${modoVisualizacao}:conversa`, {
+    load: async id => {
+      if (modoVisualizacao === 'todas') {
+        const conversa = (await listarTodasConversas()).find(item => String(item.chave) === String(id));
+        if (!conversa) return null;
+        return { id: conversa.chave, nome: (conversa.participantes || []).map(item => item.nome).join(' x '),
+          participantes: conversa.participantes, modoVisualizacao };
+      }
+      const contato = (await listarContatos()).find(item => String(item.id) === String(id));
+      return contato ? { ...contato, modoVisualizacao } : null;
+    },
+    onError: error => setErro(error.message)
+  });
   const [mensagens, setMensagens] = useState([]);
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState('');
   const [novaConversaAberta, setNovaConversaAberta] = useState(false);
-  const [buscaContato, setBuscaContato] = useState('');
+  const [buscaContato, setBuscaContato] = useNavigationState('MensagensPage:buscaContato', '');
   const [pendentes, setPendentes] = useState([]);
   // { file, nome, tamanho, status: 'enviando'|'pronto'|'erro', arquivo_id?, erro? }
   const [anexoPendente, setAnexoPendente] = useState(null);
@@ -246,7 +261,10 @@ function MensagensPage() {
     }
   }, [carregarConversas, podeUsarChat]);
 
+  const modoAnteriorRef = useRef(modoVisualizacao);
   useEffect(() => {
+    if (modoAnteriorRef.current === modoVisualizacao) return;
+    modoAnteriorRef.current = modoVisualizacao;
     setConversas([]);
     setErro('');
     setMensagens([]);
@@ -254,7 +272,6 @@ function MensagensPage() {
     setAnexoPendente(null);
     setDestinatariosSelecionados([]);
     setSucessoLote('');
-    setContatoSelecionado(null);
     setNovaConversaAberta(false);
     mensagensRef.current = [];
     ultimoIdRef.current = 0;
@@ -574,7 +591,7 @@ function MensagensPage() {
 
   return (
     <LayoutPrivado>
-      <div className="mensagens-page">
+      <div className="mensagens-page" data-navigation-context={modoVisualizacao}>
         <div className={`mensagens-layout ${contatoSelecionado || novaConversaAberta ? 'tem-conversa' : ''}`}>
           <aside className="mensagens-lista">
             <div className="mensagens-lista__topo">
@@ -824,7 +841,7 @@ function MensagensPage() {
                   </div>
                 </header>
 
-                <div className="thread-mensagens" ref={listaRef}>
+                <div className="thread-mensagens" ref={listaRef} data-navigation-scroll={`conversa:${modoVisualizacao}:${contatoSelecionado.id}`}>
                   {itensThread.length === 0 ? (
                     <div className="mensagens-vazio-sm thread-inicio">
                       Nenhuma mensagem ainda. Diga olá!

@@ -1,3 +1,5 @@
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
@@ -89,7 +91,7 @@ function ProblemaVendaModal({ venda, usuario, onClose }) {
             </button>
           </div>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="FunilPage-1">
           <VendaProblemaPanel venda={venda} usuario={usuario} />
         </div>
       </div>
@@ -117,7 +119,7 @@ function EmailTemplateModal({ dados, copiando, onClose, onCopy }) {
             </button>
           </div>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="FunilPage-2">
           <div className="venda-email-container">
             <textarea className="venda-email-preview" value={dados.texto || ''} readOnly />
           </div>
@@ -963,7 +965,7 @@ function mapVendaToSale(venda, stageLabels = STAGE_LABELS) {
  * Renderiza sale modal.
  */
 export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, onUpdateConclusao, onUpdatePossuiDocNaCasa, onOpenFullSale, openingFullSale, podeCancelar, podeReverterCancelamento, onCancelSale, onReverterCancelamento, podeEditarVenda, podeEditarConclusao = false, podeVerDocumentos, podeAdicionarDocumentos, finalizada = false, modoAutomacoes = false, onEtapasAtualizadas = () => {}, onArquivosAlterados = () => {} }) {
-  const [tab, setTab] = useState('info');
+  const [tab, setTab] = useNavigationState(`sale-modal:${modoAutomacoes}:${sale.id}:tab`, 'info', { allowed: ['info', 'historico', 'status', ...(!modoAutomacoes && (podeVerDocumentos || podeAdicionarDocumentos) ? ['documentos'] : [])] });
   const [novaFase, setNovaFase] = useState(sale.stage);
   const [novaPrioridade, setNovaPrioridade] = useState(sale.priority || 'media');
   const [observacao, setObservacao] = useState('');
@@ -1235,7 +1237,7 @@ export function SaleModal({ sale, stages, stageLabels, onClose, onUpdateSale, on
           ))}
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll={`funil:${sale.id}:${tab}`}>
           {tab === 'info' && (
             <div className="detail-grid">
               {modoAutomacoes && (
@@ -1555,7 +1557,7 @@ function ReturnReasonModal({ sale, saving, onClose, onConfirm }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="FunilPage-4">
           <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 8 }}>
             Por que esse chip retornou?
           </div>
@@ -1640,7 +1642,7 @@ function RevertCancelamentoModal({ sale, saving, onClose, onConfirm }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="FunilPage-5">
           <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 8 }}>
             A venda voltará ao estado normal na etapa atual. Você pode registrar uma observação explicando o motivo da reversão (opcional).
           </div>
@@ -1723,7 +1725,7 @@ function CancelReasonModal({ sale, saving, onClose, onConfirm }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="FunilPage-6">
           <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 8 }}>
             A venda permanecerá no funil, marcada como cancelada. Informe o motivo:
           </div>
@@ -1783,7 +1785,7 @@ function DeleteStageModal({ stage, saving, onClose, onConfirm }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="FunilPage-7">
           <p className="delete-stage-text">
             Tem certeza que deseja excluir esta etapa do funil?
           </p>
@@ -2206,29 +2208,29 @@ function FunilPage({ modoAutomacoes = false }) {
   const [sales, setSales] = useState([]);
   const [stages, setStages] = useState(FALLBACK_STAGES);
   const [adminStages, setAdminStages] = useState([]);
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useNavigationState(`FunilPage:${modoAutomacoes}:busca`, '');
   const [vendedoras, setVendedoras] = useState([]);
   const [operadoras, setOperadoras] = useState([]);
   const [tiposVenda, setTiposVenda] = useState([]);
   const [servicos, setServicos] = useState([]);
-  const [vendedoraId, setVendedoraId] = useState('');
-  const [operadoraId, setOperadoraId] = useState('');
-  const [tipoVendaId, setTipoVendaId] = useState('');
-  const [servicoId, setServicoId] = useState('');
-  const [statusFunil, setStatusFunil] = useState('');
-  const [prioridadeFunil, setPrioridadeFunil] = useState('');
-  const [uf, setUf] = useState('');
-  const [municipio, setMunicipio] = useState('');
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
-  const [valorMin, setValorMin] = useState('');
-  const [valorMax, setValorMax] = useState('');
-  const [visibilidadeCanceladas, setVisibilidadeCanceladas] = useState(VISIBILIDADE_TODAS);
-  const [visibilidadeSemDocumento, setVisibilidadeSemDocumento] = useState(VISIBILIDADE_TODAS);
-  const [somenteDivergentes, setSomenteDivergentes] = useState(false);
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const [vendedoraId, setVendedoraId] = useNavigationState(`FunilPage:${modoAutomacoes}:vendedoraId`, '');
+  const [operadoraId, setOperadoraId] = useNavigationState(`FunilPage:${modoAutomacoes}:operadoraId`, '');
+  const [tipoVendaId, setTipoVendaId] = useNavigationState(`FunilPage:${modoAutomacoes}:tipoVendaId`, '');
+  const [servicoId, setServicoId] = useNavigationState(`FunilPage:${modoAutomacoes}:servicoId`, '');
+  const [statusFunil, setStatusFunil] = useNavigationState(`FunilPage:${modoAutomacoes}:statusFunil`, '');
+  const [prioridadeFunil, setPrioridadeFunil] = useNavigationState(`FunilPage:${modoAutomacoes}:prioridadeFunil`, '');
+  const [uf, setUf] = useNavigationState(`FunilPage:${modoAutomacoes}:uf`, '');
+  const [municipio, setMunicipio] = useNavigationState(`FunilPage:${modoAutomacoes}:municipio`, '');
+  const [dataInicio, setDataInicio] = useNavigationState(`FunilPage:${modoAutomacoes}:dataInicio`, '');
+  const [dataFim, setDataFim] = useNavigationState(`FunilPage:${modoAutomacoes}:dataFim`, '');
+  const [valorMin, setValorMin] = useNavigationState(`FunilPage:${modoAutomacoes}:valorMin`, '');
+  const [valorMax, setValorMax] = useNavigationState(`FunilPage:${modoAutomacoes}:valorMax`, '');
+  const [visibilidadeCanceladas, setVisibilidadeCanceladas] = useNavigationState(`FunilPage:${modoAutomacoes}:visibilidadeCanceladas`, VISIBILIDADE_TODAS);
+  const [visibilidadeSemDocumento, setVisibilidadeSemDocumento] = useNavigationState(`FunilPage:${modoAutomacoes}:visibilidadeSemDocumento`, VISIBILIDADE_TODAS);
+  const [somenteDivergentes, setSomenteDivergentes] = useNavigationState(`FunilPage:${modoAutomacoes}:somenteDivergentes`, false);
+  const [filtrosAbertos, setFiltrosAbertos] = useNavigationState(`FunilPage:${modoAutomacoes}:filtrosAbertos`, false);
   const buscaDeferred = useDeferredValue(busca);
-  const [selectedSaleId, setSelectedSaleId] = useState(null);
+  const [selectedSaleId, setSelectedSaleId] = useNavigationState(`FunilPage:${modoAutomacoes}:selecao`, null, { validate: value => value === null || (Number.isSafeInteger(value) && value > 0) });
   const [vendaProblema, setVendaProblema] = useState(null);
   const [loading, setLoading] = useState(true);
   const [stagesLoading, setStagesLoading] = useState(false);
@@ -2250,7 +2252,16 @@ function FunilPage({ modoAutomacoes = false }) {
   const [copiandoWhatsapp, setCopiandoWhatsapp] = useState(false);
   const [, setAgora] = useState(Date.now);
   const [baixandoXlsxId, setBaixandoXlsxId] = useState(null);
-  const [vendaCompleta, setVendaCompleta] = useState(null);
+  const [vendaCompleta, setVendaCompleta] = useNavigationRecord(`FunilPage:${modoAutomacoes}:venda`, {
+    load: async id => {
+      if (!podeAbrirVendaCompleta) throw new Error('Você não tem acesso ao detalhe desta venda.');
+      await carregarDadosModalVenda();
+      return buscarVendaPorId(id);
+    },
+    ready: !searchParams.has('venda_id'),
+    onRestore: () => setModalVendaModoEdicao(false),
+    onError: error => setStageFeedback({ type: 'error', message: error.message })
+  });
   const [dadosModalVenda, setDadosModalVenda] = useState(DADOS_MODAL_VENDA_INICIAIS);
   const [abrindoVendaCompletaId, setAbrindoVendaCompletaId] = useState(null);
   const [modalVendaModoEdicao, setModalVendaModoEdicao] = useState(false);
@@ -2653,7 +2664,7 @@ function FunilPage({ modoAutomacoes = false }) {
         console.error('Erro ao confirmar abertura da notificacao:', error);
       });
     });
-  }, [loading, sales, searchParams]);
+  }, [loading, sales, searchParams, setSelectedSaleId]);
 
   useEffect(() => {
     const id = setInterval(() => setAgora(Date.now()), 30_000);
@@ -3457,7 +3468,7 @@ function FunilPage({ modoAutomacoes = false }) {
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={stagesVisiveis.map(s => s.id)} strategy={horizontalListSortingStrategy}>
-        <div className="kanban">
+        <div className="kanban" data-navigation-scroll="funil">
           {stagesVisiveis.map(st => {
             const editableStage = adminStagesByCode.get(st.id) || st;
             const canEditStage = podeGerenciarEtapas && editableStage.adminId;
@@ -3480,7 +3491,7 @@ function FunilPage({ modoAutomacoes = false }) {
                 {({ setNodeRef, transform, transition, isDragging, dragAttributes, dragListeners }) => (
               <div
                 ref={setNodeRef}
-                className="kanban-column"
+                className="kanban-column" data-navigation-scroll={`etapa:${st.id}`}
                 style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
               >
                 <div className="column-header">

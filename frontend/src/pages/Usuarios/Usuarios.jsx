@@ -1,3 +1,4 @@
+import NavigationDetails from '../../components/NavigationDetails';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as I from '../../components/Icons';
@@ -365,7 +366,7 @@ function Usuarios() {
         {erro && <div className="alert-error alert-timed alert-timed--error" style={{ marginBottom: 16 }}>{erro}</div>}
 
         <div className="list-table" style={{ margin: 0 }}>
-          <div className="scroll">
+          <div className="scroll" data-navigation-scroll="Usuarios-1">
             <table>
               <thead>
                 <tr>
@@ -407,7 +408,7 @@ function Usuarios() {
                           </span>
                           <span style={{ fontWeight: 500 }}>{u.nome}</span>
                         </div>
-                        <details className="mobile-row-drawer">
+                        <NavigationDetails navigationScope={`usuarios:${u.id}`} className="mobile-row-drawer">
                           <summary>Ver dados do usuario</summary>
                           <dl>
                             <dt>E-mail</dt>
@@ -415,7 +416,7 @@ function Usuarios() {
                             <dt>Perfil</dt>
                             <dd>{u.role?.nome || 'Nenhum'}</dd>
                           </dl>
-                        </details>
+                        </NavigationDetails>
                       </td>
                       <td data-label="E-mail" className="muted m-secondary">{u.email}</td>
                       <td data-label="Perfil" data-mobile-hidden="true"><span className="tag">{u.role?.nome || 'Nenhum'}</span></td>

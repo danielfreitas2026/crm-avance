@@ -1,3 +1,4 @@
+import { useNavigationState } from '../../utils/useNavigationState';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
@@ -474,10 +475,10 @@ function EmptyState({ children, style }) {
  * Renderiza relatorios page.
  */
 function RelatoriosPage() {
-  const [periodo, setPeriodo] = useState('mes_atual');
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
-  const [vendedoraId, setVendedoraId] = useState('');
+  const [periodo, setPeriodo] = useNavigationState('RelatoriosPage:periodo', 'mes_atual');
+  const [dataInicio, setDataInicio] = useNavigationState('RelatoriosPage:dataInicio', '');
+  const [dataFim, setDataFim] = useNavigationState('RelatoriosPage:dataFim', '');
+  const [vendedoraId, setVendedoraId] = useNavigationState('RelatoriosPage:vendedoraId', '');
   const [vendedoras, setVendedoras] = useState([]);
   const [relatorio, setRelatorio] = useState(EMPTY_REPORT);
   const [carregando, setCarregando] = useState(true);

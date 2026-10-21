@@ -1,3 +1,4 @@
+import { useNavigationScroll } from '../../utils/useNavigationScroll';
 import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Sidebar from '../../components/Sidebar/Sidebar';
@@ -98,6 +99,8 @@ function montarMapaReferencias(referencias = [], campo = 'total') {
 function LayoutPrivado({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationRoot = useRef(null);
+  useNavigationScroll(navigationRoot, location.pathname + location.search);
   const [usuario, setUsuario] = useState(() => getUsuarioLocal());
   const currentConfig = getRouteConfig(location.pathname);
   const podeCriarVenda = usuario && temPermissao(usuario, 'vendas_criar');
@@ -627,7 +630,7 @@ function LayoutPrivado({ children }) {
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={appClasses}>
+    <div className={appClasses} ref={navigationRoot}>
       <button
         type="button"
         className="sidebar-mobile-backdrop"
@@ -672,7 +675,7 @@ function LayoutPrivado({ children }) {
         <div className="content">
           {sucessoNovaVenda && <div className="alert-success alert-timed alert-timed--success" style={{ marginBottom: 16 }}>{sucessoNovaVenda}</div>}
           {erroNovaVenda && <div className="alert-error alert-timed alert-timed--error" style={{ marginBottom: 16 }}>{erroNovaVenda}</div>}
-          <div className="content__viewport">
+          <div className="content__viewport" data-navigation-scroll="viewport">
             {children}
           </div>
         </div>
@@ -734,7 +737,7 @@ function LayoutPrivado({ children }) {
                 <I.Close size={14} />
               </button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" data-navigation-scroll="LayoutPrivado-1">
               <p>{detalheAlerta.notificacao.mensagem}</p>
               <div className="alert-error">{detalheAlerta.motivo}</div>
             </div>

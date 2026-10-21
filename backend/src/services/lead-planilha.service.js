@@ -24,6 +24,7 @@ const telegramService = require('./telegram.service');
 const leadDistribuicaoService = require('./lead-distribuicao.service');
 const leadEnriquecimentoService = require('./lead-enriquecimento.service');
 const leadTelegramPublicacaoService = require('./lead-telegram-publicacao.service');
+const leadLocalService = require('./lead-local.service');
 
 const IMPORT_DIR = process.env.LEAD_IMPORT_DIR
   ? path.resolve(process.env.LEAD_IMPORT_DIR)
@@ -590,6 +591,7 @@ function formatarPlanilha(planilha) {
     ...json,
     colunas: parseJson(json.colunas, []),
     schema_colunas: parseJson(json.schema_colunas, {}),
+    local_config: parseJson(json.local_config, null),
     total_linhas: Number(json.total_linhas || 0),
     linhas_processadas: Number(json.linhas_processadas || json.total_linhas || 0),
     progresso_percentual: Number(json.progresso_percentual ?? 100),
@@ -755,7 +757,7 @@ async function listarPlanilhas() {
 
   const reconciliadas = [];
   for (const planilha of planilhas) {
-    reconciliadas.push(await reconciliarPlanilhaProcessando(planilha));
+    reconciliadas.push(await leadLocalService.reconciliar(await reconciliarPlanilhaProcessando(planilha)));
   }
 
   return reconciliadas.map(planilha => {
@@ -779,7 +781,7 @@ async function listarPlanilhas() {
  */
 async function buscarStatus(planilhaId) {
   const planilha = await LeadPlanilha.query().findById(planilhaId);
-  return formatarPlanilha(await reconciliarPlanilhaProcessando(planilha));
+  return formatarPlanilha(await leadLocalService.reconciliar(await reconciliarPlanilhaProcessando(planilha)));
 }
 
 /**
@@ -1228,6 +1230,7 @@ async function expandirColunasExportacao(colunas, query) {
  * Aplica filtros query sobre a consulta ou conjunto informado.
  */
 function aplicarFiltrosQuery(query, filtros = {}, opcoes = {}) {
+  leadLocalService.aplicarFiltro(query, filtros);
   const planilhaIds = idsFromQuery(filtros.planilha_ids);
   const envioIds = idsFromQuery(filtros.envio_ids);
 
@@ -1404,7 +1407,18 @@ async function carregarIndicacoesPendentes(query, offset, limit) {
   });
 }
 
+async function validarFiltroLocal(filtros = {}, opcoes = {}, linhaIds) {
+  if (!leadLocalService.normalizarFiltro(filtros).ativo) return;
+  const planilhaIds = idsFromQuery(filtros.planilha_ids);
+  if (planilhaIds.length) return leadLocalService.exigirConcluido(planilhaIds);
+  const escopo = LeadLinha.query().select('planilha_id');
+  aplicarFiltrosQuery(escopo, { ...filtros, local_ddds: [], local_nao_identificado: false }, opcoes);
+  if (linhaIds) escopo.whereIn('id', linhaIds);
+  await leadLocalService.exigirConcluido(escopo.toKnexQuery());
+}
+
 async function listarLinhas(filtros = {}, opcoes = {}) {
+  await validarFiltroLocal(filtros, opcoes);
   const page = Math.max(1, Number(filtros.page || 1));
   const pageSize = Math.min(500, Math.max(1, Number(filtros.page_size || filtros.pageSize || 200)));
   if (String(filtros.status || '') === 'venda_antiga_registrada') {
@@ -1773,8 +1787,17 @@ function montarAlocacoes(usuarioIds, quantidadeTotal, alocacaoManual = {}) {
  * Busca ids por criterios conforme os parametros informados.
  */
 async function buscarIdsPorCriterios(dados, quantidadeTotal) {
+  await validarFiltroLocal(dados.filtros, {}, dados.linha_ids);
   if (Array.isArray(dados.linha_ids) && dados.linha_ids.length > 0) {
     const ids = dados.linha_ids.map(Number).filter(Boolean).slice(0, quantidadeTotal);
+    if (leadLocalService.normalizarFiltro(dados.filtros).ativo) {
+      const queryLocal = LeadLinha.query().whereIn('id', ids).select('id');
+      aplicarFiltrosQuery(queryLocal, dados.filtros);
+      if (dados.etapa === 'venda') queryLocal.where('futuro_cliente', true)
+        .whereNull('futuro_cliente_excluido_em').where('status_operacional', 'qualificado');
+      const permitidos = new Set((await queryLocal).map(linha => Number(linha.id)));
+      return ids.filter(id => permitidos.has(id));
+    }
     if (dados.etapa !== 'venda') return ids;
     const qualificados = await LeadLinha.query()
       .whereIn('id', ids)
@@ -2896,6 +2919,7 @@ function obterStatusExportacao(linha) {
  * Exporta csv no formato esperado.
  */
 async function exportarCsv(filtros, res, opcoes = {}) {
+  await validarFiltroLocal(filtros, opcoes);
   const colunasOriginais = Array.isArray(filtros.colunas) ? filtros.colunas : [];
   const query = LeadLinha.query();
   aplicarFiltrosQuery(query, filtros, opcoes);

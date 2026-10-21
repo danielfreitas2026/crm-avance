@@ -1,3 +1,5 @@
+import NavigationDetails from '../../components/NavigationDetails';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
@@ -436,13 +438,13 @@ function CorrecaoHistoricoModal({ item, onClose, onCorrigido, onErro }) {
 }
 
 export default function AutomacoesPage() {
-  const [status, setStatus] = useState('');
-  const [classificacao, setClassificacao] = useState('');
-  const [operadora, setOperadora] = useState('');
-  const [tituloInput, setTituloInput] = useState('');
-  const [titulo, setTitulo] = useState('');
-  const [pagina, setPagina] = useState(1);
-  const [porPagina, setPorPagina] = useState(20);
+  const [status, setStatus] = useNavigationState('AutomacoesPage:status', '');
+  const [classificacao, setClassificacao] = useNavigationState('AutomacoesPage:classificacao', '');
+  const [operadora, setOperadora] = useNavigationState('AutomacoesPage:operadora', '');
+  const [tituloInput, setTituloInput] = useNavigationState('AutomacoesPage:tituloInput', '');
+  const [titulo, setTitulo] = useNavigationState('AutomacoesPage:titulo', '');
+  const [pagina, setPagina] = useNavigationState('AutomacoesPage:pagina', 1);
+  const [porPagina, setPorPagina] = useNavigationState('AutomacoesPage:porPagina', 20);
   const [totalRegistros, setTotalRegistros] = useState(0);
   const [itens, setItens] = useState([]);
   const [resumo, setResumo] = useState({ contadores: {} });
@@ -488,7 +490,7 @@ export default function AutomacoesPage() {
         setAtualizando(false);
       }
     }
-  }, [classificacao, operadora, pagina, porPagina, status, titulo]);
+  }, [classificacao, operadora, pagina, porPagina, setPagina, status, titulo]);
 
   useEffect(() => {
     const agendamento = window.setTimeout(() => {
@@ -499,7 +501,7 @@ export default function AutomacoesPage() {
       setTitulo(novoTitulo);
     }, 350);
     return () => window.clearTimeout(agendamento);
-  }, [titulo, tituloInput]);
+  }, [setPagina, setTitulo, titulo, tituloInput]);
 
   async function coletarHistorico() {
     setColetandoHistorico(true);
@@ -740,7 +742,7 @@ export default function AutomacoesPage() {
           {carregando && <div className="automation-empty"><span className="automation-spinner" aria-hidden="true" /><strong>Carregando execuções</strong><span>Consultando o histórico da automação.</span></div>}
           {!carregando && itens.length === 0 && <div className="automation-empty"><span className="automation-empty__icon"><I.History size={24} /></span><strong>Nenhuma execução encontrada</strong><span>{titulo ? `Nenhum título de e-mail contém “${titulo}”.` : classificacao === 'cancelamento' ? 'Não há execuções com a classificação “Vendas canceladas”.' : status ? `Não há execuções com o status “${STATUS_LABEL[status]}”.` : 'Os novos e-mails processados aparecerão aqui.'}</span></div>}
           {!carregando && itens.map(item => (
-            <details key={item.id} className={`automation-card status-${item.status}`}>
+            <NavigationDetails navigationScope={`automacoes:${item.id}`} key={item.id} className={`automation-card status-${item.status}`}>
               <summary>
                 <div className="automation-card__identity"><strong>{item.assunto || '(sem assunto)'}</strong><span>{item.operadora || 'Vivo'} · {item.origem || 'gmail_vivo'} · {item.remetente || 'Remetente não informado'}</span></div>
                 <div className="automation-card__meta"><span className="automation-status">{STATUS_LABEL[item.status] || item.status}</span><time>{dataHora(item.recebido_em)}</time><I.ChevronDown className="automation-chevron" size={16} /></div>
@@ -761,7 +763,7 @@ export default function AutomacoesPage() {
                 <div className="automation-email-body"><strong>Conteúdo recebido</strong><pre>{item.corpo_texto || 'Corpo removido ou não armazenado.'}</pre></div>
                 {['revisao', 'regressao_funil', 'erro'].includes(item.status) && <Revisao item={item} onAtualizar={() => carregar(true)} onErro={setErro} />}
               </div>
-            </details>
+            </NavigationDetails>
           ))}
         </section>
 

@@ -1,3 +1,4 @@
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useDeferredValue, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import AutoResizeTextarea from '../../components/AutoResizeTextarea';
 import SelectFiltro from '../../components/SelectFiltro/SelectFiltro';
@@ -563,7 +564,7 @@ function ExcluirReversaoModal({ reversao, onClose, onConfirm }) {
             <button type="button" className="btn btn-icon btn-ghost" title="Fechar" onClick={onClose} disabled={excluindo}><I.Close size={14} /></button>
           </div>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="VendaModal-1">
           {erro && <div className="alert alert-error">{erro}</div>}
           <div className="form-field">
             <label htmlFor="motivo-exclusao-reversao">Motivo da exclusão <span className="field-required-mark">*</span></label>
@@ -2194,7 +2195,7 @@ function ClienteSolicitouQuantidadeModal({ servicos, quantidades, onChange, onCl
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="VendaModal-2">
           <div className="cliente-solicitou-quantidade-fields">
           {bloqueioSelecionado && (
             <label className="form-field">
@@ -2264,7 +2265,7 @@ function ClienteSolicitouNumerosModal({ servicos, quantidades, numeros, onChange
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="VendaModal-3">
           <div className="cliente-solicitou-numeros">
             {selecionados.map(tipo => (
               <section key={tipo} className="cliente-solicitou-numeros__group">
@@ -3820,6 +3821,7 @@ function VendaModal({
   podeVerDocumentosVenda,
   podeAdicionarDocumentosVenda,
   usuarioLogado,
+  onTabChange,
   initialTab = 'venda',
   initialProblemaId = null,
   modoEdicao = true,
@@ -3928,7 +3930,14 @@ function VendaModal({
   const [etapasFunilModal, setEtapasFunilModal] = useState([]);
   const podeAcessarDocumentosVendaInicial = Boolean(podeVerDocumentosVenda || podeAdicionarDocumentosVenda);
   const abaInicial = initialTab === 'arquivos' && !podeAcessarDocumentosVendaInicial ? 'venda' : initialTab;
-  const [abaAtiva, setAbaAtiva] = useState(abaInicial);
+  const [abaAtiva, persistirAba] = useNavigationState(venda?.id ? `venda-modal:${window.location.pathname}:${venda.id}` : null, abaInicial, {
+    allowed: ['venda', 'notas', 'solicitacao', 'cancelamento', 'problema', ...(podeAcessarDocumentosVendaInicial ? ['arquivos'] : [])],
+    preferInitial: initialTab !== 'venda' || new URLSearchParams(window.location.search).has('aba')
+  });
+  function setAbaAtiva(aba) {
+    persistirAba(aba);
+    onTabChange?.(aba);
+  }
   const [pendingNotas, setPendingNotas] = useState([]);
   const [pendingArquivos, setPendingArquivos] = useState([]);
   const [clienteLeadProcessado, setClienteLeadProcessado] = useState('');
@@ -5207,7 +5216,7 @@ function VendaModal({
           </div>
         )}
 
-        <div className="modal-body" ref={modalBodyRef}>
+        <div className="modal-body" data-navigation-scroll={`venda:${venda?.id || 'nova'}:${abaExibida}`} ref={modalBodyRef}>
           <div className="venda-modal-tabpanel" key={abaExibida}>
           {abaExibida === 'notas' ? (
             <NotasEntidadeTab
@@ -5682,7 +5691,7 @@ function VendaModal({
                 </div>
               </div>
 
-              <div className="modal-body">
+              <div className="modal-body" data-navigation-scroll="VendaModal-5">
                 <div className="vendas-form-grid venda-address-modal__grid">
                   {CAMPOS_ENDERECO_REAL_VENDA.map(campo => (
                     <div key={campo.name} className={`form-field ${campo.span ? 'span-2' : ''} ${campoPossuiReversao(campo.name) ? 'has-reversal-history' : ''}`}>
@@ -5794,7 +5803,7 @@ function VendaModal({
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 560 }}>
             <div className="modal-header"><div className="modal-header-row"><div><div className="modal-client">Solicitar liberação</div><div className="modal-sub">Uma liberação ADM será solicitada para esta venda compartilhada.</div></div><button type="button" className="btn btn-icon btn-ghost" title="Fechar" onClick={() => setLiberacaoAberta(false)}><I.Close size={14} /></button></div></div>
-            <div className="modal-body"><div className="form-field"><label>Motivo da liberação</label><textarea value={motivoLiberacao} onChange={event => setMotivoLiberacao(event.target.value)} rows={5} maxLength={5000} placeholder="Descreva o motivo da liberação" /></div></div>
+            <div className="modal-body" data-navigation-scroll="VendaModal-6"><div className="form-field"><label>Motivo da liberação</label><textarea value={motivoLiberacao} onChange={event => setMotivoLiberacao(event.target.value)} rows={5} maxLength={5000} placeholder="Descreva o motivo da liberação" /></div></div>
             <div className="modal-footer"><button type="button" className="btn" onClick={() => setLiberacaoAberta(false)}>Cancelar</button><button type="button" className="btn btn-primary" disabled={!motivoLiberacao.trim()} onClick={confirmarLiberacao}>Solicitar liberação</button></div>
           </div>
         </div>

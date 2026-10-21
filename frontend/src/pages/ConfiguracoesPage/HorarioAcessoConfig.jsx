@@ -1,3 +1,4 @@
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useEffect, useMemo, useState } from 'react';
 import * as I from '../../components/Icons';
 import { atualizarHorarioAcesso, buscarHorarioAcesso } from '../../services/config.service';
@@ -7,7 +8,7 @@ const NOMES_DIAS = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 
 
 function HorarioAcessoConfig() {
   const [configuracao, setConfiguracao] = useState(null);
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useNavigationState('HorarioAcessoConfig:busca', '');
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [alteracoesPendentes, setAlteracoesPendentes] = useState(false);

@@ -1,3 +1,6 @@
+import NavigationDetails from '../../components/NavigationDetails';
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { Fragment, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as I from '../../components/Icons';
@@ -1031,7 +1034,7 @@ function RegistrarVendaLeadModal({ linha, colunas, usuario, onClose, onConfirm }
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="FuturosClientesPage-1">
           <div className="lead-sale-map-head">
             <span>Campo da venda</span>
             <span>Coluna da planilha</span>
@@ -1102,7 +1105,7 @@ function LeadAtualizacaoModal({ dados, salvando, erro, onClose, onSave }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="FuturosClientesPage-2">
           <div className="lead-update-summary">
             <span>Informação original</span>
             <strong>{dados.valorOriginal || '-'}</strong>
@@ -1193,7 +1196,7 @@ function BuscarTelefoneGoogleModal({ linha, onClose }) {
     <div className="modal-overlay" style={{ zIndex: 1100 }}>
       <form ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Buscar telefone no Google" className="modal lead-update-modal" onSubmit={buscar}>
         <div className="modal-header"><div className="modal-header-row"><div><div className="modal-client">Buscar telefone no Google</div><div className="modal-sub">Consulta do cliente selecionado</div></div><button type="button" className="btn btn-icon btn-ghost" title="Fechar" onClick={onClose} disabled={buscando}><I.Close size={14} /></button></div></div>
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="FuturosClientesPage-3">
           <div className="form-field"><label>Buscar por</label><select value={modo} onChange={event => mudarModo(event.target.value)} disabled={buscando}><option value="cnpj" disabled={!dadosEmpresa.cnpj}>CNPJ do cliente</option><option value="texto">Texto / razo social</option></select></div>
           <div className="form-field" style={{ marginTop: 12 }}><label>{modo === 'cnpj' ? 'CNPJ' : 'Texto para busca'}</label><input value={texto} onChange={event => setTexto(event.target.value)} placeholder={modo === 'cnpj' ? 'CNPJ do cliente' : 'Razo social ou termo de busca'} maxLength="240" disabled={buscando} required /></div>
           {resultadoReceita && <div className="adicionar-lead-dados" style={{ marginTop: 12 }}>
@@ -1940,17 +1943,17 @@ function LeadsRecebidosView({ agora }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [envios, setEnvios] = useState([]);
-  const [buscaMailing, setBuscaMailing] = useState('');
-  const [buscaMailingDebounced, setBuscaMailingDebounced] = useState('');
-  const [paginaMailing, setPaginaMailing] = useState(1);
+  const [buscaMailing, setBuscaMailing] = useNavigationState('LeadsRecebidosView:buscaMailing', '');
+  const [buscaMailingDebounced, setBuscaMailingDebounced] = useState(buscaMailing);
+  const [paginaMailing, setPaginaMailing] = useNavigationState('LeadsRecebidosView:paginaMailing', 1);
   const [totalMailings, setTotalMailings] = useState(0);
-  const [selecionados, setSelecionados] = useState([]);
+  const [selecionados, setSelecionados] = useNavigationState('LeadsRecebidosView:selecionados', []);
   const [selecionadosDados, setSelecionadosDados] = useState({});
   const [linhas, setLinhas] = useState([]);
   const [totalLinhas, setTotalLinhas] = useState(0);
-  const [pagina, setPagina] = useState(1);
-  const [busca, setBusca] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState('');
+  const [pagina, setPagina] = useNavigationState('LeadsRecebidosView:pagina', 1);
+  const [busca, setBusca] = useNavigationState('LeadsRecebidosView:busca', '');
+  const [filtroStatus, setFiltroStatus] = useNavigationState('LeadsRecebidosView:filtroStatus', '');
   const buscaDeferred = useDeferredValue(busca);
   const [carregandoEnvios, setCarregandoEnvios] = useState(true);
   const [consultaLinhasConcluida, setConsultaLinhasConcluida] = useState('');
@@ -1959,10 +1962,17 @@ function LeadsRecebidosView({ agora }) {
   const [modalAtualizacao, setModalAtualizacao] = useState(null);
   const [salvandoAtualizacao, setSalvandoAtualizacao] = useState(false);
   const [erroAtualizacao, setErroAtualizacao] = useState('');
-  const [modalAdicionar, setModalAdicionar] = useState(null);
+  const [modalAdicionar, setModalAdicionar] = useNavigationRecord('LeadsRecebidosView:linha', {
+    load: async id => {
+      const resultado = await listarMinhasLeadLinhas({ linha_id: id, page: 1, page_size: 1 });
+      return resultado.data?.find(item => String(item.id) === String(id));
+    },
+    ready: !searchParams.has('linha_id'),
+    onError: error => setErro(error.message)
+  });
   const [modalAceite, setModalAceite] = useState(null);
   const notificacaoAbertaRef = useRef(null);
-  const usuario = useMemo(() => getUsuarioLocal(), []);
+  const usuario = getUsuarioLocal();
   const podeRegistrarVenda = temPermissao(usuario, 'vendas_criar');
   const podeRegistrarFuturo = temPermissao(usuario, 'futuros_clientes_registrar');
   const linhaNotificacaoId = useMemo(() => {
@@ -1999,12 +2009,13 @@ function LeadsRecebidosView({ agora }) {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      if (buscaMailing === buscaMailingDebounced) return;
       setBuscaMailingDebounced(buscaMailing);
       setPaginaMailing(1);
       setPagina(1);
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [buscaMailing]);
+  }, [buscaMailing, buscaMailingDebounced, setPaginaMailing, setPagina]);
 
   useEffect(() => {
     let cancelado = false;
@@ -2015,6 +2026,7 @@ function LeadsRecebidosView({ agora }) {
         if (!cancelado) {
           aplicarEnviosAtualizados(resultado.data || []);
           setTotalMailings(Number(resultado.total || 0));
+          if (paginaMailing > Math.max(1, Math.ceil((resultado.total || 0) / 24))) setPaginaMailing(Math.max(1, Math.ceil((resultado.total || 0) / 24)));
         }
       } catch (error) {
         if (!cancelado) setErro(error.message || 'Erro ao carregar leads recebidos.');
@@ -2030,7 +2042,7 @@ function LeadsRecebidosView({ agora }) {
       cancelado = true;
       window.removeEventListener('pos-venda:mailing-atualizar', atualizarMailing);
     };
-  }, [buscaMailingDebounced, paginaMailing]);
+  }, [buscaMailingDebounced, paginaMailing, setPaginaMailing]);
 
   useEffect(() => {
     if (!consultaLinhasAtiva) return;
@@ -2050,6 +2062,7 @@ function LeadsRecebidosView({ agora }) {
           const totalRecebido = data.total || 0;
           setLinhas(linhasRecebidas);
           setTotalLinhas(totalRecebido);
+          if (pagina > Math.max(1, Math.ceil(totalRecebido / 200))) setPagina(Math.max(1, Math.ceil(totalRecebido / 200)));
           if (linhaNotificacaoId && notificacaoAbertaRef.current !== linhaNotificacaoId) {
             notificacaoAbertaRef.current = linhaNotificacaoId;
             const linha = linhasRecebidas.find(item => Number(item.id) === linhaNotificacaoId);
@@ -2076,7 +2089,7 @@ function LeadsRecebidosView({ agora }) {
         if (!cancelado) setConsultaLinhasConcluida(chaveConsultaLinhas);
       });
     return () => { cancelado = true; };
-  }, [selecionados, pagina, buscaDeferred, buscaMailingDebounced, buscaMailingAtiva, consultaLinhasAtiva, filtroStatus, linhaNotificacaoId, chaveConsultaLinhas, notificacaoId]);
+  }, [selecionados, pagina, buscaDeferred, buscaMailingDebounced, buscaMailingAtiva, consultaLinhasAtiva, filtroStatus, linhaNotificacaoId, chaveConsultaLinhas, notificacaoId, setModalAdicionar, setPagina]);
   useEffect(() => {
     if (!erro) return undefined;
     const timer = setTimeout(() => setErro(''), 6000);
@@ -2408,7 +2421,7 @@ function LeadsRecebidosView({ agora }) {
       {erro && <div className="alert-error alert-timed alert-timed--error">{erro}</div>}
 
       <div className={`list-table clientes-leads-table ${exibirColunaAcoes ? 'clientes-leads-table--acoes' : ''}`} style={{ margin: 0 }}>
-        <div className="scroll">
+        <div className="scroll" data-navigation-scroll="FuturosClientesPage-4">
           <table>
             <thead>
               <tr>
@@ -2428,7 +2441,7 @@ function LeadsRecebidosView({ agora }) {
                   <tr key={linha.id} className={getClasseLinhaLead(linha)}>
                     <td data-label="Envio" className="m-primary">
                       <span className="tag" title={linha.envio?.nome || ''}>{linha.envio?.nome || '-'}</span>
-                      <details className="mobile-row-drawer">
+                      <NavigationDetails navigationScope={`mailings-recebidos:${linha.id}`} className="mobile-row-drawer">
                         <summary>Ver dados do lead</summary>
                         <dl>
                           {colunas.map(coluna => {
@@ -2441,7 +2454,7 @@ function LeadsRecebidosView({ agora }) {
                             );
                           })}
                         </dl>
-                      </details>
+                      </NavigationDetails>
                     </td>
                     <td data-label="Status" className="m-meta"><LeadStatusMailing linha={linha} agora={agora} /></td>
                     {exibirColunaAcoes && (
@@ -2633,7 +2646,7 @@ export function VincularVendaFuturoClienteModal({ linha, onClose, onAtualizado }
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="FuturosClientesPage-5">
           <form className="vincular-venda-resumo" onSubmit={buscarOutroCnpj}>
             <label htmlFor="vincular-venda-cnpj">CNPJ para buscar vendas</label>
             <div className="vincular-venda-resumo__busca">
@@ -2792,8 +2805,9 @@ export function FuturoClienteDetalheModal({
   const [terminal, setTerminal] = useState(() => formatarWhatsappInput(linha.sondagem?.terminal || ''));
   const [dataAtivacao, setDataAtivacao] = useState(() => String(linha.sondagem?.data_ativacao || '').slice(0, 10));
   const [distribuindo, setDistribuindo] = useState(false);
-  const [abaDetalhe, setAbaDetalhe] = useState('dados');
+  const [abaDetalhe, setAbaDetalhe] = useNavigationState(`futuro-cliente-modal:${linha.id}:aba`, 'dados', { allowed: ['dados', ...(exibirHistorico ? ['historico'] : [])] });
   const [historico, setHistorico] = useState(null);
+  const [historicoRevisao, setHistoricoRevisao] = useState(0);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
   const [erroHistorico, setErroHistorico] = useState('');
   const valorMensalEstimado = chipsItens.reduce((total, item) => total
@@ -2803,7 +2817,7 @@ export function FuturoClienteDetalheModal({
     listarOperadoras().then(resultado => setOperadoras(Array.isArray(resultado) ? resultado : resultado?.data || [])).catch(() => setOperadoras([]));
   }, []);
 
-  const usuario = useMemo(() => getUsuarioLocal(), []);
+  const usuario = getUsuarioLocal();
   const comoAdmin = useMemo(() => temPermissao(usuario, 'gerenciar_leads'), [usuario]);
   const podeEditarTodos = useMemo(() => temPermissao(usuario, 'futuros_clientes_ver_todos'), [usuario]);
   const ehResponsavel = Number(linha.atribuido_para_id) === Number(usuario?.id);
@@ -2849,21 +2863,22 @@ export function FuturoClienteDetalheModal({
 
   const estadoAtual = historico?.estado_atual || linha.estado_atual;
 
-  async function carregarHistorico() {
-    setCarregandoHistorico(true);
-    setErroHistorico('');
-    try {
-      setHistorico(await obterHistoricoFuturoCliente(linha.id));
-    } catch (error) {
-      setErroHistorico(error.message || 'Não foi possível carregar o histórico.');
-    } finally {
-      setCarregandoHistorico(false);
-    }
-  }
+  useEffect(() => {
+    if (abaDetalhe !== 'historico') return undefined;
+    let ativo = true;
+    obterHistoricoFuturoCliente(linha.id).then(dados => {
+      if (ativo) { setHistorico(dados); setErroHistorico(''); }
+    }).catch(error => {
+      if (ativo) setErroHistorico(error.message || 'Não foi possível carregar o histórico.');
+    }).finally(() => {
+      if (ativo) setCarregandoHistorico(false);
+    });
+    return () => { ativo = false; };
+  }, [abaDetalhe, linha.id, historicoRevisao]);
 
   function abrirAbaDetalhe(aba) {
+    if (aba === 'historico') setCarregandoHistorico(true);
     setAbaDetalhe(aba);
-    if (aba === 'historico' && !historico && !carregandoHistorico) carregarHistorico();
   }
 
   const camposLead = useMemo(() => {
@@ -3022,7 +3037,7 @@ export function FuturoClienteDetalheModal({
           </div>
         </div>
 
-        <div className="modal-body futuro-cliente-detalhe__body">
+        <div className="modal-body futuro-cliente-detalhe__body" data-navigation-scroll={`futuro:${linha.id}:${abaDetalhe}`}>
           {exibirHistorico && (
             <>
               <section className="futuro-cliente-estado-atual" aria-label="Resumo operacional atual">
@@ -3043,7 +3058,7 @@ export function FuturoClienteDetalheModal({
               {carregandoHistorico ? <div className="futuro-cliente-detalhe__vazio">Carregando histórico...</div> : erroHistorico ? (
                 <div className="futuro-cliente-historico__erro">
                   <span>{erroHistorico}</span>
-                  <button type="button" className="btn btn-sm" onClick={carregarHistorico}>Tentar novamente</button>
+                  <button type="button" className="btn btn-sm" onClick={() => { setCarregandoHistorico(true); setHistoricoRevisao(value => value + 1); }}>Tentar novamente</button>
                 </div>
               ) : historico?.eventos?.length ? (
                 <ol className="futuro-cliente-timeline">
@@ -3346,7 +3361,7 @@ function ConfirmarFuturoClienteLixeiraModal({ linha, tipo, processando, onClose,
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="FuturosClientesPage-6">
           <div className="trash-warning">
             <I.AlertTriangle size={20} />
             <div>
@@ -3580,7 +3595,7 @@ function ConsultorPrimeiraLigacaoModal({ consultor, onClose }) {
           <p className="consultor-produtividade-nota">Uma ligação é contabilizada quando o futuro cliente é qualificado.</p>
 
           <div className="list-table consultor-produtividade-table">
-            <div className="scroll">
+            <div className="scroll" data-navigation-scroll="FuturosClientesPage-7">
               <table>
                 <thead><tr><th>Data</th><th>Ligações totais</th><th>Qualificados para venda</th><th>Retornos</th><th>Clientes recusaram</th><th>Chamadas não atendidas</th><th>Concluidas</th><th>Recusadas</th><th>Potencial mensal</th></tr></thead>
                 <tbody>
@@ -3626,11 +3641,17 @@ function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
   const navigate = useNavigate();
   const [linhas, setLinhas] = useState([]);
   const [total, setTotal] = useState(0);
-  const [pagina, setPagina] = useState(1);
-  const [busca, setBusca] = useState('');
+  const [pagina, setPagina] = useNavigationState('FuturosClientesComConsultorasView:pagina', 1);
+  const [busca, setBusca] = useNavigationState('FuturosClientesComConsultorasView:busca', '');
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
-  const [linhaAtiva, setLinhaAtiva] = useState(null);
+  const [linhaAtiva, setLinhaAtiva] = useNavigationRecord('FuturosClientesComConsultorasView:linha', {
+    load: async id => {
+      const resultado = await (escopoTodos ? obterFuturoClienteEmAcompanhamento : obterMeuFuturoClienteEmAcompanhamento)(id);
+      return resultado.linha;
+    },
+    onError: error => setErro(error.message)
+  });
   const [carregandoDetalheId, setCarregandoDetalheId] = useState(null);
   const [revalidacao, setRevalidacao] = useState(0);
   const buscaDeferred = useDeferredValue(busca);
@@ -3668,7 +3689,7 @@ function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
       }
     });
     return () => { cancelado = true; };
-  }, [pagina, buscaDeferred, agora, escopoTodos, revalidacao]);
+  }, [pagina, buscaDeferred, agora, escopoTodos, revalidacao, setPagina]);
 
   async function abrirDetalhe(linha) {
     if (carregandoDetalheId !== null) return;
@@ -3752,7 +3773,7 @@ function FuturosClientesComConsultorasView({ agora, escopoTodos }) {
       {erro && <div className="alert-error alert-timed alert-timed--error">{erro}</div>}
 
       <div className="list-table futuros-clientes-table consultoras-table" style={{ margin: 0 }}>
-        <div className="scroll">
+        <div className="scroll" data-navigation-scroll="FuturosClientesPage-8">
           <table>
             <thead>
               <tr>
@@ -3817,37 +3838,37 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
   const hojeMetricas = useMemo(() => dataLocalIso(new Date(agora)), [agora]);
   const [linhas, setLinhas] = useState([]);
   const [total, setTotal] = useState(0);
-  const [pagina, setPagina] = useState(1);
-  const [busca, setBusca] = useState('');
-  const [filtroSituacao, setFiltroSituacao] = useState('');
-  const [filtroRetorno, setFiltroRetorno] = useState('');
-  const [filtroResponsavel, setFiltroResponsavel] = useState('');
-  const [filtroPrimeiraLigacao, setFiltroPrimeiraLigacao] = useState('');
-  const [filtroDestino, setFiltroDestino] = useState('');
-  const [marcadoDe, setMarcadoDe] = useState('');
-  const [marcadoAte, setMarcadoAte] = useState('');
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const [pagina, setPagina] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:pagina`, 1);
+  const [busca, setBusca] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:busca`, '');
+  const [filtroSituacao, setFiltroSituacao] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:filtroSituacao`, '');
+  const [filtroRetorno, setFiltroRetorno] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:filtroRetorno`, '');
+  const [filtroResponsavel, setFiltroResponsavel] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:filtroResponsavel`, '');
+  const [filtroPrimeiraLigacao, setFiltroPrimeiraLigacao] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:filtroPrimeiraLigacao`, '');
+  const [filtroDestino, setFiltroDestino] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:filtroDestino`, '');
+  const [marcadoDe, setMarcadoDe] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:marcadoDe`, '');
+  const [marcadoAte, setMarcadoAte] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:marcadoAte`, '');
+  const [filtrosAbertos, setFiltrosAbertos] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:filtrosAbertos`, false);
   const [responsaveis, setResponsaveis] = useState([]);
-  const [filtroRecebidos, setFiltroRecebidos] = useState('acao');
+  const [filtroRecebidos, setFiltroRecebidos] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:filtroRecebidos`, 'acao');
   const buscaDeferred = useDeferredValue(busca);
   const [consultaConcluida, setConsultaConcluida] = useState('');
   const [revalidacao, setRevalidacao] = useState(0);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
-  const [linhaAtiva, setLinhaAtiva] = useState(null);
-  const [modoLixeira, setModoLixeira] = useState(false);
+
+  const [modoLixeira, setModoLixeira] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:modoLixeira`, false, { preferInitial: searchParams.has('linha_id') });
   const [processandoId, setProcessandoId] = useState(null);
   const [confirmacaoLixeira, setConfirmacaoLixeira] = useState(null);
   const [metricas, setMetricas] = useState([]);
   const [consultorAtivo, setConsultorAtivo] = useState(null);
   const [exportacaoAberta, setExportacaoAberta] = useState(false);
-  const [tipoPeriodoMetricas, setTipoPeriodoMetricas] = useState('hoje');
-  const [mesMetricas, setMesMetricas] = useState(() => dataLocalIso().slice(0, 7));
-  const [dataInicioMetricas, setDataInicioMetricas] = useState(() => dataLocalIso());
-  const [dataFimMetricas, setDataFimMetricas] = useState(() => dataLocalIso());
+  const [tipoPeriodoMetricas, setTipoPeriodoMetricas] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:tipoPeriodoMetricas`, 'hoje');
+  const [mesMetricas, setMesMetricas] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:mesMetricas`, () => dataLocalIso().slice(0, 7));
+  const [dataInicioMetricas, setDataInicioMetricas] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:dataInicioMetricas`, () => dataLocalIso());
+  const [dataFimMetricas, setDataFimMetricas] = useNavigationState(`FuturosClientesMainView:${tipo}:${escopoTodos}:dataFimMetricas`, () => dataLocalIso());
   const notificacaoAbertaRef = useRef(null);
 
-  const usuario = useMemo(() => getUsuarioLocal(), []);
+  const usuario = getUsuarioLocal();
   const modoRecebidos = tipo === 'recebidos';
   const { podeEnviarLixeira, podeExcluirDefinitivamente, podeAcessarLixeira } = resolverAcessoLixeiraFuturosClientes(
     usuario,
@@ -3897,6 +3918,19 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
     return { data_inicio: dataInicioMetricas, data_fim: dataFimMetricas };
   }, [tipoPeriodoMetricas, hojeMetricas, mesMetricas, dataInicioMetricas, dataFimMetricas]);
 
+  const [linhaAtiva, setLinhaAtiva] = useNavigationRecord(`FuturosClientesMainView:${tipo}:${escopoTodos}:linha`, {
+    load: async id => {
+      const listar = modoLixeira
+        ? filtros => listarFuturosClientesLixeira(filtros, escopoTodos)
+        : modoRecebidos ? listarFuturosClientesRecebidos
+          : escopoTodos ? listarQuadroFuturosClientes : listarFuturosClientesLeads;
+      const resultado = await listar({ linha_id: id, page: 1, page_size: 50, status: modoRecebidos ? filtroRecebidos : undefined });
+      return resultado.data?.find(item => String(item.id) === String(id));
+    },
+    ready: !searchParams.has('linha_id'),
+    onError: error => setErro(error.message)
+  });
+
   useEffect(() => {
     if (!escopoTodos || modoRecebidos) return undefined;
     let cancelado = false;
@@ -3926,7 +3960,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
       : modoRecebidos
         ? listarFuturosClientesRecebidos
         : escopoTodos ? listarQuadroFuturosClientes : listarFuturosClientesLeads;
-    listar({
+    const filtrosConsulta = {
       page: pagina,
       page_size: 50,
       busca: buscaDeferred,
@@ -3939,13 +3973,17 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
       marcado_ate: marcadoAte || undefined,
       status: modoRecebidos ? filtroRecebidos : undefined,
       linha_id: linhaNotificacaoId || undefined
-    })
+    };
+    listar(linhaNotificacaoId
+      ? { linha_id: linhaNotificacaoId, page: 1, page_size: 50, status: modoRecebidos ? 'todos' : undefined }
+      : filtrosConsulta)
       .then(data => {
         if (!cancelado) {
           const linhasRecebidas = data.data || [];
           const totalRecebido = data.total || 0;
           setLinhas(linhasRecebidas);
           setTotal(totalRecebido);
+          if (pagina > Math.max(1, Math.ceil(totalRecebido / 50))) setPagina(Math.max(1, Math.ceil(totalRecebido / 50)));
           setLinhaAtiva(atual => {
             if (!atual) return atual;
             const chaveAtual = Number(atual.atribuicao_id || atual.id);
@@ -3981,7 +4019,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
         if (!cancelado) setConsultaConcluida(chaveConsulta);
       });
     return () => { cancelado = true; };
-  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroResponsavel, filtroPrimeiraLigacao, filtroDestino, marcadoDe, marcadoAte, filtroRecebidos, modoLixeira, modoRecebidos, escopoTodos, linhaNotificacaoId, chaveConsulta, notificacaoId, revalidacao, agora]);
+  }, [pagina, buscaDeferred, filtroSituacao, filtroRetorno, filtroResponsavel, filtroPrimeiraLigacao, filtroDestino, marcadoDe, marcadoAte, filtroRecebidos, modoLixeira, modoRecebidos, escopoTodos, linhaNotificacaoId, chaveConsulta, notificacaoId, revalidacao, agora, setLinhaAtiva, setPagina]);
 
   useEffect(() => {
     if (!exibirMetricas || modoLixeira || periodoMetricasInvalido) return;
@@ -4293,7 +4331,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
             <div><span>Potencial mensal</span><strong>{resumoMetricas.potencial.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
           </div>
           <div className="list-table conversao-sondagem-table">
-            <div className="scroll">
+            <div className="scroll" data-navigation-scroll="FuturosClientesPage-9">
               <table>
                 <thead><tr><th>Consultor da primeira ligação</th><th>Ligações totais</th><th>Qualificados para venda</th><th>Retornos agendados</th><th>Clientes recusaram</th><th>Chamadas não atendidas</th><th>Vendas concluidas</th><th>Vendas recusadas</th><th>Conversao</th><th>Potencial mensal</th></tr></thead>
                 <tbody>
@@ -4485,7 +4523,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
       {erro && <div className="alert-error alert-timed alert-timed--error">{erro}</div>}
 
       <div className="list-table futuros-clientes-table" style={{ margin: 0 }}>
-        <div className="scroll">
+        <div className="scroll" data-navigation-scroll="FuturosClientesPage-10">
           <table>
             <thead>
               <tr>
@@ -4534,7 +4572,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
                     >
                       <td data-label="Envio" className="m-primary">
                         <span className="tag">{linha.envio?.nome || '-'}</span>
-                        <details className="mobile-row-drawer">
+                        <NavigationDetails navigationScope={`futuros:${tipo}:${escopoTodos}:${linha.atribuicao_id || linha.id}`} className="mobile-row-drawer">
                           <summary>Ver dados do futuro cliente</summary>
                           <dl>
                             <dt>Notas</dt>
@@ -4571,7 +4609,7 @@ function FuturosClientesMainView({ agora, tipo = 'meus', escopoTodos = false }) 
                               );
                             })}
                           </dl>
-                        </details>
+                        </NavigationDetails>
                       </td>
                       <td data-label="Notas" className="m-secondary">
                         <span
@@ -4704,18 +4742,27 @@ const INDICADORES_MOVIMENTACAO = [
 ];
 
 export function EstatisticasFuturosClientesView() {
-  const [preset, setPreset] = useState('mes');
-  const [dataInicio, setDataInicio] = useState(() => obterPeriodoEstatisticas('mes').data_inicio);
-  const [dataFim, setDataFim] = useState(() => obterPeriodoEstatisticas('hoje').data_fim);
-  const [usuario, setUsuario] = useState(null);
-  const [mailing, setMailing] = useState(null);
-  const [busca, setBusca] = useState('');
+  const [preset, setPreset] = useNavigationState('EstatisticasFuturosClientesView:preset', 'mes');
+  const [dataInicio, setDataInicio] = useNavigationState('EstatisticasFuturosClientesView:dataInicio', () => obterPeriodoEstatisticas('mes').data_inicio);
+  const [dataFim, setDataFim] = useNavigationState('EstatisticasFuturosClientesView:dataFim', () => obterPeriodoEstatisticas('hoje').data_fim);
+  const periodo = useMemo(() => obterPeriodoEstatisticas(preset, dataInicio, dataFim), [preset, dataInicio, dataFim]);
+  const [usuario, setUsuario] = useNavigationRecord('EstatisticasFuturosClientesView:usuario', {
+    idField: 'usuario_id',
+    load: async id => (await listarEstatisticasFuturosClientes(periodo)).usuarios?.find(item => String(item.usuario_id) === String(id)),
+    onError: error => setErroExportacao(error.message)
+  });
+  const [mailing, setMailing] = useNavigationRecord('EstatisticasFuturosClientesView:mailing', {
+    idField: 'envio_id',
+    ready: Boolean(usuario?.usuario_id),
+    load: async id => (await listarEstatisticasMailingsUsuario(usuarioId, periodo)).data?.find(item => String(item.envio_id) === String(id)),
+    onError: error => setErroExportacao(error.message)
+  });
+  const [busca, setBusca] = useNavigationState('EstatisticasFuturosClientesView:busca', '');
   const buscaDeferred = useDeferredValue(busca);
-  const [pagina, setPagina] = useState(1);
+  const [pagina, setPagina] = useNavigationState('EstatisticasFuturosClientesView:pagina', 1);
   const [resultado, setResultado] = useState(null);
   const [exportando, setExportando] = useState(false);
   const [erroExportacao, setErroExportacao] = useState('');
-  const periodo = useMemo(() => obterPeriodoEstatisticas(preset, dataInicio, dataFim), [preset, dataInicio, dataFim]);
   const usuarioId = usuario?.usuario_id;
   const envioId = mailing?.envio_id;
   const chaveConsulta = JSON.stringify([periodo, usuarioId, envioId, buscaDeferred, pagina]);
@@ -4883,7 +4930,7 @@ export function EstatisticasFuturosClientesView() {
             <tbody>{linhas.map(linha => <tr key={linha.id}>
               <td>{encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.razao_social) || encontrarValorLeadPorAliases(linha, CAMPOS_EMPRESA_FUTURO_CLIENTE.cnpj) || `Lead #${linha.id}`}</td>
               <td>{formatarDataHoraEstatisticas(linha.ultima_movimentacao_em)}</td><td>{linha.movimentacoes_periodo.length}</td>
-              <td><details className="future-stats__events"><summary>Ver movimentações</summary><ol>{[...linha.movimentacoes_periodo].reverse().map(item => <li key={item.id}><strong>{item.titulo}</strong><span>{formatarDataHoraEstatisticas(item.ocorrido_em)} · {item.autor.nome}</span></li>)}</ol></details></td>
+              <td><NavigationDetails navigationScope={`estatisticas:${usuarioId}:${envioId}:${linha.id}`} className="future-stats__events"><summary>Ver movimentações</summary><ol>{[...linha.movimentacoes_periodo].reverse().map(item => <li key={item.id}><strong>{item.titulo}</strong><span>{formatarDataHoraEstatisticas(item.ocorrido_em)} · {item.autor.nome}</span></li>)}</ol></NavigationDetails></td>
             </tr>)}</tbody>
           </table>{!linhas.length && <div className="empty-state">Nenhum cliente movimentado encontrado.</div>}</div>
           <div className="lead-pagination future-stats__pagination"><button className="btn" type="button" disabled={pagina <= 1} onClick={() => setPagina(value => value - 1)}>Anterior</button><span>Página {pagina} de {Math.max(1, Math.ceil(total / 50))}</span><button className="btn" type="button" disabled={pagina * 50 >= total} onClick={() => setPagina(value => value + 1)}>Próxima</button></div>
@@ -4914,8 +4961,8 @@ function FuturosClientesPage() {
   const podeVerTodos = temPermissao(usuario, 'futuros_clientes_ver_todos');
   const podeVerEstatisticas = temPermissao(usuario, 'gerenciar_leads');
   const abaDaNotificacao = resolverAbaFuturosClientes(searchParams.get('aba'), podeVerEstatisticas);
-  const [abaSelecionada, setAbaSelecionada] = useState('meus');
-  const [escopoTodos, setEscopoTodos] = useState(false);
+  const [abaSelecionada, setAbaSelecionada] = useNavigationState('FuturosClientesPage:abaSelecionada', abaDaNotificacao, { preferInitial: searchParams.has('aba'), allowed: ['meus', 'recebidos', 'mailings', 'consultoras', ...(podeVerEstatisticas ? ['estatisticas'] : [])] });
+  const [escopoTodos, setEscopoTodos] = useNavigationState('FuturosClientesPage:escopoTodos', false, { validate: value => typeof value === 'boolean' && (!value || podeVerTodos) });
   const abaAtiva = searchParams.has('aba') ? abaDaNotificacao : abaSelecionada;
   const [agora, setAgora] = useState(() => Date.now());
 
@@ -4933,7 +4980,7 @@ function FuturosClientesPage() {
 
   return (
     <LayoutPrivado>
-      <div className="futuros-clientes-page">
+      <div className="futuros-clientes-page" data-navigation-context={`${abaAtiva}:${escopoTodos}`}>
         <div className="clientes-tabs">
           <button
             type="button"

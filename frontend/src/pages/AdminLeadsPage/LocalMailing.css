@@ -1,0 +1,12 @@
+.local-mailing-modal { width: min(600px, calc(100vw - 32px)); max-height: 90vh; overflow: auto; margin: auto; padding: 0; border: 1px solid var(--border); color: var(--text); }
+.local-mailing-modal::backdrop { background: rgba(15, 23, 42, 0.55); }
+.local-mailing-modal p { margin: 0 0 12px; }
+.local-mailing-campos { display: flex; flex-direction: column; gap: 10px; max-height: 280px; overflow: auto; border: 1px solid var(--border); padding: 12px; }
+.local-mailing-campos label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; }
+.local-mailing-campos input[type='checkbox'] { flex: 0 0 auto; width: 16px; min-width: 16px; height: 16px; padding: 0; }
+.local-mailing-filtro { position: relative; font-size: 12px; }
+.local-mailing-filtro summary { padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; background: var(--surface); }
+.local-mailing-filtro-painel { position: absolute; z-index: 10; top: 100%; left: 0; width: min(380px, calc(100vw - 64px)); display: grid; gap: 10px; padding: 12px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.lead-doc-local { position: relative; z-index: 3; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 10px; padding: 4px 6px; cursor: pointer; }
+.lead-doc-local:disabled { opacity: 0.6; cursor: default; }
+.lead-doc-local-status { font-size: 10px; color: var(--text-3); overflow-wrap: anywhere; }

@@ -36,6 +36,38 @@ describe('busca de futuros clientes', () => {
     listarResponsaveisFuturosClientes.mockResolvedValue([]);
   });
 
+  it('restaura a aba e mantém buscas independentes nos escopos Meus e Todos', async () => {
+    localStorage.setItem('usuario', '{"id":1}');
+    const user = userEvent.setup();
+    const view = () => <MemoryRouter initialEntries={['/futuros-clientes']}><FuturosClientesPage /></MemoryRouter>;
+    const first = render(view());
+    await user.type(screen.getByPlaceholderText('Buscar futuros clientes...'), 'Minha carteira');
+    await user.click(screen.getByRole('button', { name: 'Todos' }));
+    expect(screen.getByPlaceholderText('Buscar futuros clientes...')).toHaveValue('');
+    await user.type(screen.getByPlaceholderText('Buscar futuros clientes...'), 'Equipe inteira');
+    first.unmount();
+    render(view());
+    expect(screen.getByRole('button', { name: 'Todos' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByPlaceholderText('Buscar futuros clientes...')).toHaveValue('Equipe inteira');
+    await user.click(screen.getByRole('button', { name: 'Meus', exact: true }));
+    expect(screen.getByPlaceholderText('Buscar futuros clientes...')).toHaveValue('Minha carteira');
+  });
+
+  it('um link explícito seleciona a aba recebida, mesmo com outra aba salva', () => {
+    localStorage.setItem('usuario', '{"id":1}');
+    sessionStorage.setItem('crm:navegacao:v1:1:FuturosClientesPage:abaSelecionada', '"consultoras"');
+    render(<MemoryRouter initialEntries={['/futuros-clientes?aba=meus']}><FuturosClientesPage /></MemoryRouter>);
+    expect(screen.getByRole('button', { name: 'Meus Futuros Clientes' })).toHaveClass('active');
+  });
+
+  it('não aplica filtros antigos ao destino explícito de um lead', async () => {
+    localStorage.setItem('usuario', '{"id":1}');
+    sessionStorage.setItem('crm:navegacao:v1:1:FuturosClientesMainView:meus:false:busca', '"Outra empresa"');
+    sessionStorage.setItem('crm:navegacao:v1:1:FuturosClientesMainView:meus:false:pagina', '4');
+    render(<MemoryRouter initialEntries={['/futuros-clientes?aba=meus&linha_id=42']}><FuturosClientesPage /></MemoryRouter>);
+    await waitFor(() => expect(listarFuturosClientesLeads).toHaveBeenCalledWith({ linha_id: 42, page: 1, page_size: 50, status: undefined }));
+  });
+
   it('mantem o foco no campo ao digitar mais de uma letra no escopo Todos', async () => {
     const user = userEvent.setup();
     render(

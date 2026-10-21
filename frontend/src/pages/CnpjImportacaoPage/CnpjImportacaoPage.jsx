@@ -1,3 +1,5 @@
+import NavigationDetails from '../../components/NavigationDetails';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as I from '../../components/Icons';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
@@ -271,7 +273,7 @@ function ConfirmarExclusaoResultadosModal({ confirmacao, total, excluindo, onClo
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="CnpjImportacaoPage-1">
           <div className="cnpj-import-delete-warning">
             <div className="cnpj-import-delete-icon">
               <I.AlertTriangle size={22} />
@@ -323,11 +325,11 @@ function CnpjImportacaoPage() {
   const [reconsultandoCnpjs, setReconsultandoCnpjs] = useState([]);
   const [confirmacaoExclusao, setConfirmacaoExclusao] = useState(null);
   const [exportando, setExportando] = useState(false);
-  const [buscaTexto, setBuscaTexto] = useState('');
-  const [filtroAdicionado, setFiltroAdicionado] = useState('todos');
-  const [ordenacao, setOrdenacao] = useState('recentes');
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
+  const [buscaTexto, setBuscaTexto] = useNavigationState('CnpjImportacaoPage:buscaTexto', '');
+  const [filtroAdicionado, setFiltroAdicionado] = useNavigationState('CnpjImportacaoPage:filtroAdicionado', 'todos');
+  const [ordenacao, setOrdenacao] = useNavigationState('CnpjImportacaoPage:ordenacao', 'recentes');
+  const [dataInicio, setDataInicio] = useNavigationState('CnpjImportacaoPage:dataInicio', '');
+  const [dataFim, setDataFim] = useNavigationState('CnpjImportacaoPage:dataFim', '');
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [progresso, setProgresso] = useState(null);
@@ -1039,7 +1041,7 @@ function CnpjImportacaoPage() {
                 </div>
               </div>
 
-              <div className="modal-body">
+              <div className="modal-body" data-navigation-scroll="CnpjImportacaoPage-2">
                 <form className="cnpj-import-key-add" onSubmit={salvarGoogleKey}>
                   <div className="form-field">
                     <label>Nome</label>
@@ -1270,7 +1272,7 @@ function CnpjImportacaoPage() {
             </div>
 
             <div className="list-table cnpj-import-table">
-              <div className="scroll">
+              <div className="scroll" data-navigation-scroll="CnpjImportacaoPage-3">
                 <table>
                   <thead>
                     <tr>
@@ -1299,7 +1301,7 @@ function CnpjImportacaoPage() {
                             {linha.message && <small>{linha.message}</small>}
                             <span>{valorCelula(linha, { key: 'razao_social' })}</span>
                             <span>{valorCelula(linha, { key: 'nome_fantasia' })}</span>
-                            <details className="cnpj-import-mobile-drawer">
+                            <NavigationDetails navigationScope={`cnpj:${linha.cnpj_digitos}`} className="cnpj-import-mobile-drawer">
                               <summary>Ver detalhes</summary>
                               <dl>
                                 <dt>Situacao</dt>
@@ -1309,7 +1311,7 @@ function CnpjImportacaoPage() {
                                   <dd key={`${coluna.key}-value`}>{renderValorCelula(linha, coluna)}</dd>
                                 ])}
                               </dl>
-                            </details>
+                            </NavigationDetails>
                           </div>
                         </td>
                         {COLUNAS_TABELA.map(coluna => (

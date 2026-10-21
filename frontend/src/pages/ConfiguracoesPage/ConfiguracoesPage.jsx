@@ -1,3 +1,5 @@
+import NavigationDetails from '../../components/NavigationDetails';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useEffect, useMemo, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
@@ -231,7 +233,7 @@ function ConfirmarExclusaoConfigModal({ item, tipo, excluindo, onClose, onConfir
             </button>
           </div>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="ConfiguracoesPage-1">
           <div className="config-delete-warning">
             <div className="config-delete-icon">
               <I.AlertTriangle size={22} />
@@ -286,7 +288,7 @@ function ConfiguracoesPage() {
     permissoes.horarioAcesso
   ]);
 
-  const [aba, setAba] = useState(abas[0]?.id || '');
+  const [aba, setAba] = useNavigationState('ConfiguracoesPage:aba', abas[0]?.id || '', { allowed: abas.map(item => item.id) });
   useEffect(() => {
     const atualizarUsuario = event => {
       const usuarioAtualizado = event.detail || getUsuarioLocal();
@@ -297,7 +299,7 @@ function ConfiguracoesPage() {
     };
     window.addEventListener('auth:usuario-atualizado', atualizarUsuario);
     return () => window.removeEventListener('auth:usuario-atualizado', atualizarUsuario);
-  }, []);
+  }, [setAba]);
 
   const [dados, setDados] = useState({
     operadoras: [],
@@ -760,7 +762,7 @@ function ConfiguracoesPage() {
                 <tr key={item.id}>
                   <td data-label="Nome" className="m-primary">
                     {item.nome}
-                    <details className="mobile-row-drawer">
+                    <NavigationDetails navigationScope={`configuracoes:${aba}:${item.id}`} className="mobile-row-drawer">
                       <summary>Ver detalhes</summary>
                       <dl>
                         <dt>URL</dt>
@@ -768,7 +770,7 @@ function ConfiguracoesPage() {
                         <dt>Marcador</dt>
                         <dd>{item.dot || '-'}</dd>
                       </dl>
-                    </details>
+                    </NavigationDetails>
                   </td>
                   <td data-label="URL" data-mobile-hidden="true" className="muted">{item.url}</td>
                   <td data-label="Marcador" data-mobile-hidden="true">{item.dot}</td>
@@ -900,7 +902,7 @@ function ConfiguracoesPage() {
                   <td data-label="Operadora" data-mobile-hidden="true">{item.operadora_nome || 'Todas'}</td>
                   <td data-label="Faixa" className="m-primary">
                     {fmtMoeda(item.valor_min)} até {fmtMoeda(item.valor_max)}
-                    <details className="mobile-row-drawer">
+                    <NavigationDetails navigationScope={`configuracoes:${aba}:${item.id}`} className="mobile-row-drawer">
                       <summary>Ver detalhes</summary>
                       <dl>
                         <dt>Operadora</dt>
@@ -914,7 +916,7 @@ function ConfiguracoesPage() {
                         <dt>Se estiver nas duas bases</dt>
                         <dd>{labelPrioridadeBaseDupla(item.prioridade_base_dupla)}</dd>
                       </dl>
-                    </details>
+                    </NavigationDetails>
                   </td>
                   <td data-label="Integral" data-mobile-hidden="true">{fmtMoeda(item.valor_comissao)}</td>
                   <td data-label="Base operadora" data-mobile-hidden="true">{fmtMoeda(item.valor_comissao_base ?? item.valor_comissao)}</td>
@@ -1173,7 +1175,7 @@ function ConfiguracoesPage() {
 
   return (
     <LayoutPrivado>
-      <div className="users-page configuracoes-page">
+      <div className="users-page configuracoes-page" data-navigation-context={aba}>
         <ConfirmarExclusaoConfigModal
           item={itemParaExcluir}
           tipo={abaAtual?.label || 'Configuração'}

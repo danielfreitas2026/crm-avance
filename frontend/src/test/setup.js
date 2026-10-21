@@ -1,3 +1,8 @@
+import { beforeEach } from 'vitest';
+import { clearNavigation } from '../utils/navigation-storage';
+
+beforeEach(() => clearNavigation());
+
 import '@testing-library/jest-dom/vitest';
 
 // jsdom não implementa o ciclo de abertura/fechamento de <dialog>.

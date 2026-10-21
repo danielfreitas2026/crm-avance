@@ -24,10 +24,14 @@ vi.mock('../../layouts/LayoutPrivado/LayoutPrivado', () => ({
 }));
 
 vi.mock('./VendaModal', () => ({
-  default: ({ initialValues, clientePreenchido, onSave }) => (
+  default: ({ venda, initialValues, initialTab, clientePreenchido, modoEdicao, onSave, onClose, onTabChange }) => (
     <section role="dialog" aria-label="modal venda">
-      {initialValues?.nome || 'Nova venda'}
+      {venda?.nome || initialValues?.nome || 'Nova venda'}
       <span>{clientePreenchido?.nome || ''}</span>
+      <output>edição:{String(modoEdicao)}</output>
+      <output>aba:{initialTab}</output>
+      <button type="button" onClick={() => onTabChange('arquivos')}>Abrir documentos simulados</button>
+      <button type="button" onClick={onClose}>Fechar detalhe</button>
       <button type="button" onClick={() => onSave(initialValues)}>Salvar venda simulada</button>
     </section>
   )
@@ -146,6 +150,70 @@ describe('VendasPage - carregamento e abertura do modal', () => {
 
     expect(screen.queryByText('Cliente antigo')).not.toBeInTheDocument();
     expect(screen.getByText('Cliente recente')).toBeInTheDocument();
+  });
+
+  it('restaura a busca e consulta a página selecionada após F5, sem voltar à primeira', async () => {
+    localStorage.setItem('usuario', '{"id":1}');
+    api.listarVendas.mockResolvedValue({ data: [venda(1, 'Cliente encontrado')], total: 100 });
+    const first = renderPage();
+    await screen.findByText('Cliente encontrado');
+    fireEvent.change(screen.getByPlaceholderText(/Buscar por protocolo/i), { target: { value: 'Cliente' } });
+    await waitFor(() => expect(api.listarVendas).toHaveBeenLastCalledWith(expect.objectContaining({ busca: 'Cliente', page: 1 })));
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima página' }));
+    await waitFor(() => expect(api.listarVendas).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })));
+    first.unmount();
+    api.listarVendas.mockClear();
+    renderPage();
+    expect(screen.getByPlaceholderText(/Buscar por protocolo/i)).toHaveValue('Cliente');
+    await waitFor(() => expect(api.listarVendas).toHaveBeenCalledTimes(1));
+    expect(api.listarVendas).toHaveBeenLastCalledWith(expect.objectContaining({ busca: 'Cliente', page: 2 }));
+  });
+
+  it('reabre o detalhe com dados atuais em visualização e não o reabre depois de fechar', async () => {
+    localStorage.setItem('usuario', '{"id":1}');
+    api.listarVendas.mockResolvedValue({ data: [venda(42, 'Cliente selecionado')], total: 1 });
+    api.buscarVendaPorId.mockResolvedValue(venda(42, 'Cliente selecionado'));
+    const first = renderPage();
+    fireEvent.click(await screen.findByText('Cliente selecionado'));
+    await screen.findByRole('dialog', { name: 'modal venda' });
+    first.unmount();
+    api.buscarVendaPorId.mockResolvedValue(venda(42, 'Dados atuais do cliente'));
+    const second = renderPage();
+    expect(await screen.findByRole('dialog', { name: 'modal venda' })).toHaveTextContent('Dados atuais do cliente');
+    expect(screen.getByRole('dialog', { name: 'modal venda' })).toHaveTextContent('edição:false');
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar detalhe' }));
+    second.unmount();
+    api.buscarVendaPorId.mockClear();
+    renderPage();
+    await screen.findByText('Cliente selecionado');
+    expect(screen.queryByRole('dialog', { name: 'modal venda' })).not.toBeInTheDocument();
+    expect(api.buscarVendaPorId).not.toHaveBeenCalled();
+    expect(api.criarVenda).not.toHaveBeenCalled();
+  });
+
+  it('dá prioridade ao destino explícito de uma notificação sobre o detalhe anterior', async () => {
+    localStorage.setItem('usuario', '{"id":1}');
+    sessionStorage.setItem('crm:navegacao:v1:1:VendasPage:detalhe', '42');
+    api.listarVendas.mockResolvedValue({ data: [], total: 0 });
+    api.buscarVendaPorId.mockResolvedValue(venda(99, 'Venda do link'));
+    renderPage('/vendas?venda_id=99&aba=notas');
+    expect(await screen.findByRole('dialog', { name: 'modal venda' })).toHaveTextContent('Venda do link');
+    expect(api.buscarVendaPorId).toHaveBeenCalledExactlyOnceWith('99');
+  });
+
+  it('atualiza a aba do link ao navegar dentro do detalhe e mantém a nova aba no F5', async () => {
+    localStorage.setItem('usuario', '{"id":1}');
+    api.listarVendas.mockResolvedValue({ data: [], total: 0 });
+    api.buscarVendaPorId.mockResolvedValue(venda(99, 'Venda do link'));
+    const first = renderPage('/vendas?venda_id=99&aba=notas');
+    await screen.findByRole('dialog', { name: 'modal venda' });
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir documentos simulados' }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('aba=arquivos'));
+    expect(api.buscarVendaPorId).toHaveBeenCalledTimes(1);
+    const updatedUrl = screen.getByTestId('location').textContent;
+    first.unmount();
+    renderPage(updatedUrl);
+    expect(await screen.findByRole('dialog', { name: 'modal venda' })).toHaveTextContent('aba:arquivos');
   });
 
   it('abre uma nova venda uma única vez pela URL e limpa o parâmetro de navegação', async () => {

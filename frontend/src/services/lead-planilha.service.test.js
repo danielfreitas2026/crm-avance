@@ -10,6 +10,9 @@ vi.mock('./api', () => ({
 
 import { apiDelete, apiGet, apiPost, apiPut } from './api';
 import {
+  buscarLeadPlanilhaStatus,
+  listarLocaisMailing,
+  preencherLocalMailing,
   adminDesvincularVendaLead,
   adminVincularVendaLead,
   atualizarFuturoClienteGlobal,
@@ -27,6 +30,17 @@ import {
   reverterVendaRecusadaFuturoCliente,
   restaurarFuturoCliente
 } from './lead-planilha.service';
+
+describe('localização do mailing', () => {
+  it('usa catálogo, preenchimento manual e status protegidos da planilha', async () => {
+    await listarLocaisMailing();
+    await preencherLocalMailing(12, ['Terminal', 'Fixo']);
+    await buscarLeadPlanilhaStatus(12);
+    expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/locais');
+    expect(apiPost).toHaveBeenCalledWith('/lead-planilhas/12/local', { campos: ['Terminal', 'Fixo'] });
+    expect(apiGet).toHaveBeenCalledWith('/lead-planilhas/12/status');
+  });
+});
 
 describe('vinculo administrativo de venda com futuro cliente', () => {
   beforeEach(() => vi.clearAllMocks());

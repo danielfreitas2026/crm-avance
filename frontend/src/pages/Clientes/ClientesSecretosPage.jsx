@@ -1,3 +1,7 @@
+import NavigationDetails from '../../components/NavigationDetails';
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { buscarClienteSecretoPorId } from '../../services/cliente.service';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as I from '../../components/Icons';
@@ -259,16 +263,21 @@ function ClientesSecretosPage() {
   const [clientes, setClientes] = useState([]);
   const [operadoras, setOperadoras] = useState([]);
   const [modalAberto, setModalAberto] = useState(false);
-  const [clienteModal, setClienteModal] = useState(null);
+  const [clienteModal, setClienteModal] = useNavigationRecord('ClientesSecretosPage:detalhe', {
+    load: id => buscarClienteSecretoPorId(id),
+    ready: !searchParams.has('cliente_id'),
+    onRestore: () => setModalAberto(true),
+    onError: error => setErro(error.message)
+  });
   const [clienteModalSomenteNotas, setClienteModalSomenteNotas] = useState(false);
   const [clienteCadastroDraft, setClienteCadastroDraft] = useState(null);
-  const [buscaCampo, setBuscaCampo] = useState('geral');
-  const [busca, setBusca] = useState('');
-  const [responsavelTipo, setResponsavelTipo] = useState('');
-  const [fidelidade, setFidelidade] = useState('');
-  const [chipsMin, setChipsMin] = useState('');
-  const [chipsMax, setChipsMax] = useState('');
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const [buscaCampo, setBuscaCampo] = useNavigationState('ClientesSecretosPage:buscaCampo', 'geral');
+  const [busca, setBusca] = useNavigationState('ClientesSecretosPage:busca', '');
+  const [responsavelTipo, setResponsavelTipo] = useNavigationState('ClientesSecretosPage:responsavelTipo', '');
+  const [fidelidade, setFidelidade] = useNavigationState('ClientesSecretosPage:fidelidade', '');
+  const [chipsMin, setChipsMin] = useNavigationState('ClientesSecretosPage:chipsMin', '');
+  const [chipsMax, setChipsMax] = useNavigationState('ClientesSecretosPage:chipsMax', '');
+  const [filtrosAbertos, setFiltrosAbertos] = useNavigationState('ClientesSecretosPage:filtrosAbertos', false);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
@@ -378,7 +387,7 @@ function ClientesSecretosPage() {
         console.error('Erro ao confirmar abertura da notificacao:', error);
       });
     });
-  }, [carregando, clientes, searchParams]);
+  }, [carregando, clientes, searchParams, setClienteModal]);
 
   function alterarBuscaCampo(campo) {
     setBuscaCampo(campo || 'geral');
@@ -581,7 +590,7 @@ function ClientesSecretosPage() {
         {erro && <div className="alert-error alert-timed alert-timed--error">{erro}</div>}
 
         <div className="list-table" style={{ margin: 0 }}>
-          <div className="scroll">
+          <div className="scroll" data-navigation-scroll="ClientesSecretosPage-1">
             <table>
               <thead>
                 <tr>
@@ -642,7 +651,7 @@ function ClientesSecretosPage() {
                               <span className="tag clientes-base-tag">Lead</span>
                             </div>
                             <span className="cliente-primary__document">{cliente.razao_social || 'Sem razao social'} - {cliente.cnpj || 'Sem CNPJ'}</span>
-                            <details className="cliente-mobile-drawer" onClick={event => event.stopPropagation()}>
+                            <NavigationDetails navigationScope={`leads:${cliente.id}`} className="cliente-mobile-drawer" onClick={event => event.stopPropagation()}>
                               <summary>Ver detalhes</summary>
                               <dl>
                                 <dt>Responsavel</dt>
@@ -679,7 +688,7 @@ function ClientesSecretosPage() {
                                   </>
                                 )}
                               </dl>
-                            </details>
+                            </NavigationDetails>
                           </div>
                         </td>
                         <td data-label="Responsavel" data-mobile-hidden="true">

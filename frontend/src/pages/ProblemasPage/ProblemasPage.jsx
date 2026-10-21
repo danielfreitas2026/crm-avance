@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigationState } from '../../utils/useNavigationState';
+import { useCallback, useEffect, useEffectEvent, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
 import Paginacao from '../../components/Paginacao/Paginacao';
@@ -83,10 +84,10 @@ function ResumoVendaCard({ resumo }) {
 }
 
 export default function ProblemasPage() {
-  const usuario = useMemo(() => getUsuarioLocal(), []);
+  const usuario = getUsuarioLocal();
   const chaveExpandidos = `problemas-page:expandidos:v1:${usuario?.id || 'anonimo'}`;
-  const [aba, setAba] = useState('abertos');
-  const [paginacao, setPaginacao] = useState(PAGINACAO_INICIAL);
+  const [aba, setAba] = useNavigationState('ProblemasPage:aba', 'abertos', { allowed: Object.keys(ABAS) });
+  const [paginacao, setPaginacao] = useNavigationState('ProblemasPage:paginacao', PAGINACAO_INICIAL);
   const [itens, setItens] = useState([]);
   const [total, setTotal] = useState(0);
   const [totais, setTotais] = useState({ abertos: 0, resolvidos: 0 });
@@ -99,7 +100,9 @@ export default function ProblemasPage() {
   const [vendaModal, setVendaModal] = useState(null);
   const [modalModoEdicao, setModalModoEdicao] = useState(false);
   const [carregandoVenda, setCarregandoVenda] = useState(null);
-  const [problemaVendaModal, setProblemaVendaModal] = useState(null);
+  const [problemaVendaModal, setProblemaVendaModal] = useNavigationState('ProblemasPage:detalhe', null, {
+    validate: value => value === null || (Number.isSafeInteger(value) && value > 0)
+  });
   const [referenciasModal, setReferenciasModal] = useState({ clientes: [], vendedoras: [], operadoras: [], tiposVenda: [], servicos: [] });
   const paginaAtual = paginacao[aba];
 
@@ -122,7 +125,7 @@ export default function ProblemasPage() {
     } finally {
       if (ativo.valor) setCarregando(false);
     }
-  }, [aba, paginaAtual.page, paginaAtual.perPage]);
+  }, [aba, paginaAtual.page, paginaAtual.perPage, setPaginacao]);
 
   useEffect(() => {
     const ativo = { valor: true };
@@ -178,11 +181,21 @@ export default function ProblemasPage() {
       setVendaModal(venda);
       setModalModoEdicao(false);
     } catch (error) {
+      setProblemaVendaModal(null);
       setErro(error.message || 'Erro ao abrir a venda vinculada.');
     } finally {
       setCarregandoVenda(null);
     }
   }
+
+  const restaurarVenda = useEffectEvent(async () => {
+    if (!problemaVendaModal || vendaModal) return;
+    await abrirVenda({ problema_id: problemaVendaModal });
+  });
+  useEffect(() => {
+    const timer = setTimeout(() => { void restaurarVenda(); }, 0);
+    return () => clearTimeout(timer);
+  }, [problemaVendaModal]);
 
   async function salvarVendaModal(dados) {
     await atualizarVenda(vendaModal.id, dados);

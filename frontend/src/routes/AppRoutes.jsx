@@ -1,3 +1,4 @@
+import { useEffect, useReducer } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import LoginPage from '../pages/LoginPage/LoginPage';
@@ -60,6 +61,11 @@ import AdminCampanhasPage from '../pages/AdminCampanhasPage/AdminCampanhasPage';
  * Processa app routes conforme as regras do dominio.
  */
 function AppRoutes() {
+  const [, atualizarAcesso] = useReducer(value => value + 1, 0);
+  useEffect(() => {
+    window.addEventListener('auth:usuario-atualizado', atualizarAcesso);
+    return () => window.removeEventListener('auth:usuario-atualizado', atualizarAcesso);
+  }, []);
   return (
     <Routes>
       <Route path="/" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />

@@ -30,6 +30,14 @@ export function listarLeadPlanilhas() {
   return apiGet('/lead-planilhas');
 }
 
+export function listarLocaisMailing() {
+  return apiGet('/lead-planilhas/locais');
+}
+
+export function preencherLocalMailing(id, campos) {
+  return apiPost(`/lead-planilhas/${id}/local`, { campos });
+}
+
 /**
  * Cria lead planilha com os dados informados.
  */

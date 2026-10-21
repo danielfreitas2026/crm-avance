@@ -1,3 +1,4 @@
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import * as I from '../../components/Icons';
 import SelectFiltro from '../../components/SelectFiltro/SelectFiltro';
@@ -428,9 +429,9 @@ function DetalhesAtivasModal({ secao = 'ativas', periodo, onClose, onAbrirVenda,
   const [dados, setDados] = useState(DADOS_VAZIOS);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useNavigationState(`DetalhesAtivasModal:${secao}:busca`, '');
   const buscaDeferred = useDeferredValue(busca);
-  const [filtros, setFiltros] = useState(FILTROS_INICIAIS);
+  const [filtros, setFiltros] = useNavigationState(`DetalhesAtivasModal:${secao}:filtros`, FILTROS_INICIAIS);
 
   useEffect(() => {
     let ativo = true;
@@ -589,7 +590,7 @@ function DetalhesAtivasModal({ secao = 'ativas', periodo, onClose, onAbrirVenda,
           </div>
         </div>
 
-        <div className="modal-body" style={{ padding: 0 }}>
+        <div className="modal-body" data-navigation-scroll="DetalhesAtivasModal-1" style={{ padding: 0 }}>
           {erro && <div className="alert-error" style={{ margin: 16 }}>{erro}</div>}
           {loading ? (
             <div className="fechamento-empty">Carregando...</div>

@@ -1,3 +1,7 @@
+import NavigationDetails from '../../components/NavigationDetails';
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { buscarClientePorId } from '../../services/cliente.service';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useDebounce } from '../../utils/useDebounce';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -418,7 +422,7 @@ function ConfirmarLixeiraModal({ cliente, excluindo, onClose, onConfirm }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="Clientes-1">
           <div className="trash-warning">
             <I.AlertTriangle size={20} />
             <div>
@@ -460,7 +464,7 @@ function ConfirmarLimpezaBaseModal({ aberto, limpando, onClose, onConfirm }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="Clientes-2">
           <div className="trash-warning">
             <I.AlertTriangle size={20} />
             <div>
@@ -576,7 +580,7 @@ function ImportarBaseAnteriorModal({ onClose, onImported }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="Clientes-3">
           <div className="form-field">
             <label>Arquivo .xlsx</label>
             <input
@@ -780,7 +784,7 @@ function ImportarVendasEmpresasModal({ onClose, onImported }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="Clientes-4">
           <div className="form-field">
             <label>Arquivo .xlsx</label>
             <input
@@ -924,25 +928,34 @@ function Clientes() {
   const [servicos, setServicos] = useState([]);
   const [dadosVendaModalCarregados, setDadosVendaModalCarregados] = useState(false);
   const [vendasConcluidasContagem, setVendasConcluidasContagem] = useState({});
-  const [buscaCampo, setBuscaCampo] = useState('geral');
-  const [busca, setBusca] = useState('');
-  const [operadoraId, setOperadoraId] = useState('');
-  const [responsavelTipo, setResponsavelTipo] = useState('');
-  const [fidelidade, setFidelidade] = useState(fidelidadeParam);
-  const [retorno, setRetorno] = useState(retornoParam);
-  const [baseAnterior, setBaseAnterior] = useState('');
-  const [chipsMin, setChipsMin] = useState('');
-  const [chipsMax, setChipsMax] = useState('');
-  const [clienteIdFiltro, setClienteIdFiltro] = useState(clienteIdParam);
+  const [buscaCampo, setBuscaCampo] = useNavigationState('Clientes:buscaCampo', 'geral');
+  const [busca, setBusca] = useNavigationState('Clientes:busca', '');
+  const [operadoraId, setOperadoraId] = useNavigationState('Clientes:operadoraId', '');
+  const [responsavelTipo, setResponsavelTipo] = useNavigationState('Clientes:responsavelTipo', '');
+  const [fidelidade, setFidelidade] = useNavigationState('Clientes:fidelidade', fidelidadeParam, { preferInitial: searchParams.has('fidelidade') });
+  const [retorno, setRetorno] = useNavigationState('Clientes:retorno', retornoParam, { preferInitial: searchParams.has('retorno') });
+  const [baseAnterior, setBaseAnterior] = useNavigationState('Clientes:baseAnterior', '');
+  const [chipsMin, setChipsMin] = useNavigationState('Clientes:chipsMin', '');
+  const [chipsMax, setChipsMax] = useNavigationState('Clientes:chipsMax', '');
+  const [clienteIdFiltro, setClienteIdFiltro] = useNavigationState('Clientes:clienteIdFiltro', clienteIdParam, { preferInitial: searchParams.has('cliente_id') });
   const [carregando, setCarregando] = useState(true);
   const [exportando, setExportando] = useState(false);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
-  const [clienteModal, setClienteModal] = useState(null);
+  const [clienteModal, setClienteModal] = useNavigationRecord('Clientes:detalhe', {
+    load: id => buscarClientePorId(id),
+    ready: !searchParams.has('cliente_id') && !searchParams.has('novo'),
+    onRestore: () => setModalAberto(true),
+    onError: error => setErro(error.message)
+  });
   const [clienteModalAba, setClienteModalAba] = useState('cliente');
   const [clienteModalSomenteNotas, setClienteModalSomenteNotas] = useState(false);
   const [modalAberto, setModalAberto] = useState(false);
-  const [vendaModal, setVendaModal] = useState(null);
+  const [vendaModal, setVendaModal] = useNavigationRecord('Clientes:venda', {
+    load: async id => { await carregarDadosVendaModal(); return buscarVendaPorId(id); },
+    onRestore: () => setVendaModalModoEdicao(false),
+    onError: error => setErro(error.message)
+  });
   const [vendaModalModoEdicao, setVendaModalModoEdicao] = useState(false);
   const [carregandoVendaModal, setCarregandoVendaModal] = useState(false);
   const [clienteCadastroDraft, setClienteCadastroDraft] = useState(null);
@@ -952,9 +965,9 @@ function Clientes() {
   const [clienteParaLixeira, setClienteParaLixeira] = useState(null);
   const [excluindo, setExcluindo] = useState(false);
   const [limpandoBase, setLimpandoBase] = useState(false);
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
-  const [paginaAtual, setPaginaAtual] = useState(1);
-  const [itensPorPagina, setItensPorPagina] = useState(20);
+  const [filtrosAbertos, setFiltrosAbertos] = useNavigationState('Clientes:filtrosAbertos', false);
+  const [paginaAtual, setPaginaAtual] = useNavigationState('Clientes:paginaAtual', 1);
+  const [itensPorPagina, setItensPorPagina] = useNavigationState('Clientes:itensPorPagina', 20);
   const [totalClientes, setTotalClientes] = useState(0);
   const aberturaNotificacaoProcessadaRef = useRef('');
 
@@ -1126,11 +1139,13 @@ function Clientes() {
 
   useEffect(() => {
     let ativo = true;
-    listarClientes({ ...filtros, page: 1, per_page: itensPorPagina })
+    listarClientes({ ...filtros, page: paginaAtual, per_page: itensPorPagina })
       .then(dados => {
         if (!ativo) return;
         setClientes(dados.data);
         setTotalClientes(dados.total);
+        const ultimaPagina = Math.max(1, Math.ceil(dados.total / itensPorPagina));
+        if (paginaAtual > ultimaPagina) setPaginaAtual(ultimaPagina);
       })
       .catch(error => {
         if (ativo) setErro(error.message || 'Erro ao carregar clientes.');
@@ -1139,22 +1154,17 @@ function Clientes() {
         if (ativo) setCarregando(false);
       });
     return () => { ativo = false; };
-  }, [filtros, itensPorPagina]);
+  }, [filtros, itensPorPagina, paginaAtual, setPaginaAtual]);
 
   useEffect(() => {
     if (carregando || !clienteIdParam || !notificacaoIdParam) return;
-    const chaveAbertura = `${clienteIdParam}:${abaNotificacaoParam || 'cliente'}:${notificacaoIdParam}`;
+    const chaveAbertura = `${clienteIdParam}:${notificacaoIdParam}`;
     if (aberturaNotificacaoProcessadaRef.current === chaveAbertura) return;
     aberturaNotificacaoProcessadaRef.current = chaveAbertura;
-    const cliente = clientes.find(item => String(item.id) === String(clienteIdParam));
-    if (!cliente) {
-      falharAberturaNotificacao(notificacaoIdParam);
-      queueMicrotask(() => setErro('O cliente desta notificação não está mais disponível.'));
-      return;
-    }
-
-    const abrirNotas = abaNotificacaoParam === 'notas';
-    queueMicrotask(() => {
+    const clienteLocal = clientes.find(item => String(item.id) === String(clienteIdParam));
+    Promise.resolve(clienteLocal || buscarClientePorId(clienteIdParam)).then(cliente => {
+      if (!cliente) throw new Error('O cliente desta notificação não está mais disponível.');
+      const abrirNotas = abaNotificacaoParam === 'notas';
       setClienteModal(cliente);
       setClienteModalAba(abrirNotas ? 'notas' : 'cliente');
       setClienteModalSomenteNotas(abrirNotas);
@@ -1162,8 +1172,11 @@ function Clientes() {
       void confirmarAberturaNotificacao(notificacaoIdParam).catch(error => {
         console.error('Erro ao confirmar abertura da notificacao:', error);
       });
+    }).catch(error => {
+      falharAberturaNotificacao(notificacaoIdParam);
+      setErro(error.message || 'O cliente desta notificação não está mais disponível.');
     });
-  }, [abaNotificacaoParam, carregando, clienteIdParam, clientes, notificacaoIdParam]);
+  }, [abaNotificacaoParam, carregando, clienteIdParam, clientes, notificacaoIdParam, setClienteModal]);
 
   useEffect(() => {
     /**
@@ -1451,12 +1464,20 @@ function Clientes() {
       {modalAberto && (
         <ClienteModal
           cliente={clienteModal}
+          onTabChange={aba => {
+            setClienteModalAba(aba);
+            if (!searchParams.has('cliente_id')) return;
+            const parametros = new URLSearchParams(searchParams);
+            parametros.set('aba', aba);
+            setSearchParams(parametros, { replace: true });
+          }}
           operadoras={operadoras}
           initialTab={clienteModalAba}
           initialDraft={clienteCadastroDraft}
           notesOnly={clienteModalSomenteNotas}
           onClose={() => {
             setModalAberto(false);
+            setClienteModal(null);
             setClienteModalAba('cliente');
             setClienteModalSomenteNotas(false);
           }}
@@ -1676,7 +1697,7 @@ function Clientes() {
         {erro && <div className="alert-error alert-timed alert-timed--error">{erro}</div>}
 
         <div className="list-table" style={{ margin: 0 }}>
-          <div className="scroll">
+          <div className="scroll" data-navigation-scroll="Clientes-5">
             <table>
               <thead>
                 <tr>
@@ -1752,7 +1773,7 @@ function Clientes() {
                               })()}
                             </div>
                             <span className="cliente-primary__document">{cliente.razao_social || 'Sem razão social'} - {cliente.cnpj || 'Sem CNPJ'}</span>
-                            <details className="cliente-mobile-drawer" onClick={event => event.stopPropagation()}>
+                            <NavigationDetails navigationScope={`clientes:${cliente.id}`} className="cliente-mobile-drawer" onClick={event => event.stopPropagation()}>
                               <summary>Ver detalhes</summary>
                               <dl>
                                 <dt>Responsavel</dt>
@@ -1803,7 +1824,7 @@ function Clientes() {
                                   </>
                                 )}
                               </dl>
-                            </details>
+                            </NavigationDetails>
                           </div>
                         </td>
                         <td data-label="Responsavel" data-mobile-hidden="true">
@@ -1886,7 +1907,7 @@ function Clientes() {
             total={totalClientes}
             paginaAtual={paginaAtual}
             itensPorPagina={itensPorPagina}
-            onPagina={pagina => { setPaginaAtual(pagina); carregarClientes(filtros, pagina); }}
+            onPagina={pagina => { setCarregando(true); setPaginaAtual(pagina); }}
             onItensPorPagina={n => { setCarregando(true); setItensPorPagina(n); setPaginaAtual(1); }}
           />
         </div>

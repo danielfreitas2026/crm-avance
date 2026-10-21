@@ -1,8 +1,11 @@
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as I from '../../components/Icons';
 import DocProgresso from '../../components/DocProgresso';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
+import { LocalMailingFiltro, LocalMailingModal } from './LocalMailing';
 import {
   confirmarAberturaNotificacao,
   falharAberturaNotificacao,
@@ -22,6 +25,7 @@ import {
   atualizarNomeLeadEnvio,
   cancelarEnviosPlanilha,
   atualizarLeadSchema,
+  buscarLeadPlanilhaStatus,
   criarLeadPlanilha,
   dividirLeadLinhas,
   excluirLeadPlanilha,
@@ -273,7 +277,7 @@ export function LeadStatusChips({ linha }) {
 const TabelaMailing = memo(function TabelaMailing({ linhas, colunas, carregando, onAbrirDetalhe, onEditarEnvio }) {
   return (
     <div className="list-table lead-table list-table--scroll-mobile">
-      <div className="scroll">
+      <div className="scroll" data-navigation-scroll="AdminLeadsPage-1">
         <table>
           <thead>
             <tr>
@@ -649,7 +653,7 @@ export function DividirModal({ totalLinhas, resumoLeads, colunas, vendedoras, fi
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="AdminLeadsPage-2">
           <div className="leads-divide-grid">
             <div className="form-field">
               <label>Nome do envio</label>
@@ -865,7 +869,7 @@ function MesclarColunasModal({ grupos, defaultSelecionadas, onClose, onConfirm }
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="AdminLeadsPage-3">
           <div className="leads-merge-actions">
             <button type="button" className="btn btn-sm" onClick={selecionarTodas}>Mesclar todas</button>
             <button type="button" className="btn btn-sm btn-ghost" onClick={limparTodas}>Separar todas</button>
@@ -907,7 +911,7 @@ function MesclarColunasModal({ grupos, defaultSelecionadas, onClose, onConfirm }
 function CancelarEnviosModal({ planilha, destinatarios, carregando, erro, onClose, onConfirm }) {
   const [usuarioId, setUsuarioId] = useState('');
   if (!planilha) return null;
-  return (<div className="modal-overlay"><div className="modal leads-delete-modal"><div className="modal-header"><div className="modal-header-row"><div><div className="modal-client">Cancelar envio de mailing?</div><div className="modal-sub">As linhas canceladas voltam para a fila, sem apagar os status ou o histórico de contato.</div></div><button type="button" className="btn btn-icon btn-ghost" onClick={onClose} disabled={carregando}><I.Close size={14} /></button></div></div><div className="modal-body"><div className="form-field"><label>Cancelar para</label><select value={usuarioId} onChange={event => setUsuarioId(event.target.value)} disabled={carregando}><option value="">Todas as vendedoras ({destinatarios.reduce((total, item) => total + Number(item.total_linhas || 0), 0)} linhas)</option>{destinatarios.map(item => <option key={item.usuario_id} value={item.usuario_id}>{item.usuario_nome} ({item.total_linhas} linhas)</option>)}</select></div>{erro && <div className="alert-error">{erro}</div>}</div><div className="modal-footer"><button type="button" className="btn" onClick={onClose} disabled={carregando}>Voltar</button><button type="button" className="btn btn-danger" onClick={() => onConfirm(usuarioId || null)} disabled={carregando}><I.Close size={13} /> {carregando ? 'Cancelando...' : 'Cancelar envio'}</button></div></div></div>);
+  return (<div className="modal-overlay"><div className="modal leads-delete-modal"><div className="modal-header"><div className="modal-header-row"><div><div className="modal-client">Cancelar envio de mailing?</div><div className="modal-sub">As linhas canceladas voltam para a fila, sem apagar os status ou o histórico de contato.</div></div><button type="button" className="btn btn-icon btn-ghost" onClick={onClose} disabled={carregando}><I.Close size={14} /></button></div></div><div className="modal-body" data-navigation-scroll="AdminLeadsPage-4"><div className="form-field"><label>Cancelar para</label><select value={usuarioId} onChange={event => setUsuarioId(event.target.value)} disabled={carregando}><option value="">Todas as vendedoras ({destinatarios.reduce((total, item) => total + Number(item.total_linhas || 0), 0)} linhas)</option>{destinatarios.map(item => <option key={item.usuario_id} value={item.usuario_id}>{item.usuario_nome} ({item.total_linhas} linhas)</option>)}</select></div>{erro && <div className="alert-error">{erro}</div>}</div><div className="modal-footer"><button type="button" className="btn" onClick={onClose} disabled={carregando}>Voltar</button><button type="button" className="btn btn-danger" onClick={() => onConfirm(usuarioId || null)} disabled={carregando}><I.Close size={13} /> {carregando ? 'Cancelando...' : 'Cancelar envio'}</button></div></div></div>);
 }
 
 const ROTULOS_ETAPA_HISTORICO = { sondagem: 'Sondagem', venda: 'Venda' };
@@ -1019,7 +1023,7 @@ function ExcluirPlanilhaModal({ planilha, carregando, erro, onClose, onConfirm }
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="AdminLeadsPage-5">
           <div className="leads-delete-summary">
             <div className="lead-doc-preview">
               <span></span><span></span><span></span><span></span>
@@ -1102,7 +1106,7 @@ function EditarNomeEnvioModal({ envio, onClose, onSave }) {
           <div><div className="modal-client">Editar nome do envio</div><div className="modal-sub">A distribuição dos clientes e o andamento dos vendedores não serão alterados.</div></div>
           <button type="button" className="btn btn-icon btn-ghost" onClick={onClose} disabled={salvando} title="Fechar"><I.Close size={14} /></button>
         </div></div>
-        <div className="modal-body"><label><span>Nome do envio</span><input autoFocus value={nome} maxLength={240} onChange={event => setNome(event.target.value)} disabled={salvando} /></label>{erro && <div className="alert-error">{erro}</div>}</div>
+        <div className="modal-body" data-navigation-scroll="AdminLeadsPage-6"><label><span>Nome do envio</span><input autoFocus value={nome} maxLength={240} onChange={event => setNome(event.target.value)} disabled={salvando} /></label>{erro && <div className="alert-error">{erro}</div>}</div>
         <div className="modal-footer"><button type="button" className="btn" onClick={onClose} disabled={salvando}>Cancelar</button><button type="submit" className="btn btn-primary" disabled={salvando || !nome.trim()}>{salvando ? 'Salvando...' : 'Salvar nome'}</button></div>
       </form>
     </div>
@@ -1279,7 +1283,7 @@ export function LeadDetalheAdminModal({ linha, onClose, onAtualizado }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="AdminLeadsPage-7">
           <div className="lead-detalhe-estado">
             <span className="lead-detalhe-estado__titulo">Estado atual</span>
             <LeadStatusChips linha={linhaPreview} />
@@ -1461,17 +1465,31 @@ function AdminLeadsPage() {
   const inputRef = useRef(null);
   const notificacaoAbertaRef = useRef(null);
   const [planilhas, setPlanilhas] = useState([]);
-  const [selecionadas, setSelecionadas] = useState([]);
+  const [modalLocal, setModalLocal] = useState(null);
+  const [local, setLocal] = useNavigationState('AdminLeadsPage:local', { ddds: [], naoIdentificado: false }, {
+    validate: value => value && Array.isArray(value.ddds) && value.ddds.length <= 67
+      && value.ddds.every(ddd => typeof ddd === 'string' && /^\d{2}$/.test(ddd))
+      && typeof value.naoIdentificado === 'boolean'
+  });
+  const filtrosLocais = useMemo(() => local.ddds.length || local.naoIdentificado
+    ? { local_ddds: local.ddds, local_nao_identificado: local.naoIdentificado } : {}, [local]);
+  const locaisEmAndamento = planilhas.filter(planilha => planilha.local_config?.status === 'processando').map(planilha => planilha.id).join(',');
+  const [selecionadas, setSelecionadas] = useNavigationState('AdminLeadsPage:selecionadas', []);
   const [linhas, setLinhas] = useState([]);
   const [totalLinhas, setTotalLinhas] = useState(0);
   const [resumoLeads, setResumoLeads] = useState({ total: 0, enviados: 0, qualificados: 0, nao_enviados: 0 });
   const [vendedoras, setVendedoras] = useState([]);
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useNavigationState('AdminLeadsPage:busca', '');
   const buscaDeferred = useDeferredValue(busca);
-  const [filtros, setFiltros] = useState([]);
+  const [filtros, setFiltros] = useNavigationState('AdminLeadsPage:filtros', [], {
+    validate: value => Array.isArray(value) && value.length <= 100 && value.every(item =>
+      item && typeof item.coluna === 'string' && typeof item.op === 'string'
+      && ['string', 'number', 'boolean', 'undefined'].includes(typeof item.valor)
+      && ['string', 'number', 'undefined'].includes(typeof item.valor2))
+  });
   const [avisoFiltros, setAvisoFiltros] = useState(false);
   const [novoFiltro, setNovoFiltro] = useState({ coluna: '', op: 'contains', valor: '', valor2: '' });
-  const [pagina, setPagina] = useState(1);
+  const [pagina, setPagina] = useNavigationState('AdminLeadsPage:pagina', 1);
   const [carregando, setCarregando] = useState(true);
   const [carregandoLinhas, setCarregandoLinhas] = useState(false);
   const [processando, setProcessando] = useState('');
@@ -1491,7 +1509,14 @@ function AdminLeadsPage() {
   const [cancelandoEnvios, setCancelandoEnvios] = useState(false);
   const [erroCancelamento, setErroCancelamento] = useState('');
   const [envioEditando, setEnvioEditando] = useState(null);
-  const [linhaDetalhe, setLinhaDetalhe] = useState(null);
+  const [linhaDetalhe, setLinhaDetalhe] = useNavigationRecord('AdminLeadsPage:linha', {
+    load: async id => {
+      const resultado = await listarLeadLinhas({ linha_id: id, page: 1, page_size: 1 });
+      return resultado.data?.find(item => String(item.id) === String(id));
+    },
+    ready: !searchParams.has('linha_id'),
+    onError: error => setErro(error.message)
+  });
   const [excluindoId, setExcluindoId] = useState(null);
   const [erroExclusao, setErroExclusao] = useState('');
   const [caArquivo, setCaArquivo] = useState(null);
@@ -1501,8 +1526,8 @@ function AdminLeadsPage() {
   const [caImportando, setCaImportando] = useState(false);
   const [caResultado, setCaResultado] = useState(null);
   const [caAbasSelecionadas, setCaAbasSelecionadas] = useState([]);
-  const [abaMailing, setAbaMailing] = useState('mailing');
-  const [filtroPlanilhas, setFiltroPlanilhas] = useState({
+  const [abaMailing, setAbaMailing] = useNavigationState('AdminLeadsPage:abaMailing', 'mailing');
+  const [filtroPlanilhas, setFiltroPlanilhas] = useNavigationState('AdminLeadsPage:filtroPlanilhas', {
     nome: '',
     statusEnvio: 'todos',
     totalMinimo: '',
@@ -1603,11 +1628,12 @@ function AdminLeadsPage() {
       });
 
     return () => { cancelado = true; };
-  }, [linhaNotificacaoId, notificacaoId]);
+  }, [linhaNotificacaoId, notificacaoId, setLinhaDetalhe]);
 
   const limparSelecao = useCallback(() => {
     setSelecionadas([]);
     setFiltros([]);
+    setLocal({ ddds: [], naoIdentificado: false });
     setAvisoFiltros(false);
     setNovoFiltro({ coluna: '', op: 'contains', valor: '', valor2: '' });
     setColunasMescladas([]);
@@ -1616,7 +1642,28 @@ function AdminLeadsPage() {
     setLinhas([]);
     setTotalLinhas(0);
     setResumoLeads({ total: 0, enviados: 0, qualificados: 0, nao_enviados: 0 });
-  }, []);
+  }, [setFiltros, setPagina, setSelecionadas, setLocal]);
+
+  useEffect(() => {
+    if (!locaisEmAndamento) return;
+    let ativo = true;
+    let timer;
+    async function consultar() {
+      try {
+        const atualizadas = await Promise.all(locaisEmAndamento.split(',').map(id => buscarLeadPlanilhaStatus(id)));
+        if (!ativo) return;
+        setPlanilhas(atuais => atuais.map(planilha => {
+          const atualizada = atualizadas.find(item => Number(item.id) === Number(planilha.id));
+          return atualizada ? { ...planilha, ...atualizada } : planilha;
+        }));
+      } catch (error) {
+        if (ativo) setErro(error.message || 'Erro ao consultar o preenchimento de Local.');
+      }
+      if (ativo) timer = setTimeout(consultar, 2000);
+    }
+    timer = setTimeout(consultar, 1000);
+    return () => { ativo = false; clearTimeout(timer); };
+  }, [locaisEmAndamento]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -1676,9 +1723,11 @@ function AdminLeadsPage() {
   const filtrosBackend = useMemo(() => (
     montarFiltrosBackend(filtros, colunas, planilhasSelecionadas, schema)
   ), [filtros, colunas, planilhasSelecionadas, schema]);
+  const localBloqueado = Object.keys(filtrosLocais).length > 0
+    && planilhasSelecionadas.some(planilha => planilha.local_config?.status !== 'concluido');
 
   useEffect(() => {
-    if (selecionadas.length === 0) {
+    if (selecionadas.length === 0 || localBloqueado) {
       return;
     }
 
@@ -1688,12 +1737,14 @@ function AdminLeadsPage() {
       page: pagina,
       page_size: PAGE_SIZE,
       busca: buscaDeferred,
-      filters: JSON.stringify(filtrosBackend)
+      filters: JSON.stringify(filtrosBackend),
+      ...filtrosLocais
     })
       .then(data => {
         if (!cancelado) {
           setLinhas(data.data || []);
           setTotalLinhas(data.total || 0);
+          if (pagina > Math.max(1, Math.ceil((data.total || 0) / PAGE_SIZE))) setPagina(Math.max(1, Math.ceil((data.total || 0) / PAGE_SIZE)));
           setResumoLeads(data.resumo || {
             total: data.total || 0,
             enviados: 0,
@@ -1715,7 +1766,7 @@ function AdminLeadsPage() {
     return () => {
       cancelado = true;
     };
-  }, [selecionadas, pagina, buscaDeferred, filtrosBackend]);
+  }, [selecionadas, pagina, buscaDeferred, filtrosBackend, setPagina, filtrosLocais, localBloqueado]);
 
   const linhasFiltradas = useMemo(() => {
     return linhas;
@@ -2074,18 +2125,23 @@ function AdminLeadsPage() {
    * Exporta csv backend no formato esperado.
    */
   async function exportarCsvBackend() {
-    const blob = await exportarLeadLinhas({
-      planilha_ids: selecionadas,
-      busca,
-      filters: filtrosBackend,
-      colunas
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'leads.csv';
-    link.click();
-    URL.revokeObjectURL(url);
+    try {
+      const blob = await exportarLeadLinhas({
+        planilha_ids: selecionadas,
+        busca,
+        filters: filtrosBackend,
+        ...filtrosLocais,
+        colunas
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'leads.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setErro(error.message || 'Erro ao exportar CSV.');
+    }
   }
 
   /** Baixa uma planilha sem alterar a selecao atual da tela. */
@@ -2126,7 +2182,8 @@ function AdminLeadsPage() {
       ...payload,
       filtros: {
         ...(payload.filtros || {}),
-        filters: filtrosBackend
+        filters: filtrosBackend,
+        ...filtrosLocais
       }
     });
     if (!resultado?.requires_manual_allocation) {
@@ -2421,6 +2478,10 @@ function AdminLeadsPage() {
 
       {modalCancelarEnvios && (<CancelarEnviosModal planilha={modalCancelarEnvios} destinatarios={destinatariosCancelamento} carregando={cancelandoEnvios} erro={erroCancelamento} onClose={() => { if (!cancelandoEnvios) setModalCancelarEnvios(null); }} onConfirm={confirmarCancelamentoEnvios} />)}
       {modalHistorico && <HistoricoDestinatariosModal planilha={modalHistorico} historico={historicoDestinatarios} carregando={carregandoHistorico} erro={erroHistorico} onClose={() => setModalHistorico(null)} />}
+      {modalLocal && <LocalMailingModal planilha={modalLocal} onClose={() => setModalLocal(null)} onIniciado={atualizada => {
+        setPlanilhas(atuais => atuais.map(planilha => planilha.id === atualizada.id ? { ...planilha, ...atualizada } : planilha));
+        setSucesso('Preenchimento de Local iniciado. Você pode acompanhar o progresso no card da planilha.');
+      }} />}
       {modalExcluir && (
         <ExcluirPlanilhaModal
           planilha={modalExcluir}
@@ -2456,7 +2517,8 @@ function AdminLeadsPage() {
           filtrosDivisao={{
             planilha_ids: selecionadas,
             busca,
-            filters: filtrosBackend
+            filters: filtrosBackend,
+            ...filtrosLocais
           }}
           onClose={() => setModalDividir(false)}
           onSave={salvarDivisao}
@@ -2598,6 +2660,15 @@ function AdminLeadsPage() {
                     ? 'Processando...'
                     : `${planilha.total_linhas} ${planilha.total_linhas === 1 ? 'cliente' : 'clientes'}`}
                 </small>
+                <button className="lead-doc-local" type="button" aria-label={`Preencher Local por DDD de ${planilha.nome}`} disabled={planilha.status !== 'concluida' || planilha.local_config?.status === 'processando'} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); setModalLocal(planilha); }}>
+                  Preencher Local por DDD
+                </button>
+                <span className="lead-doc-local-status" role="status">
+                  {!planilha.local_config && 'Local ainda não preenchido'}
+                  {planilha.local_config?.status === 'processando' && `Local: ${planilha.local_config.processadas}/${planilha.local_config.total} linhas (resultados parciais)`}
+                  {planilha.local_config?.status === 'concluido' && `Local: ${planilha.local_config.identificadas}/${planilha.local_config.total} identificadas`}
+                  {planilha.local_config?.status === 'erro' && `${planilha.local_config.erro} ${planilha.local_config.processadas}/${planilha.local_config.total} linhas processadas.`}
+                </span>
                 {planilha.status !== 'processando' && (
                   <DocProgresso
                     {...calcularProgressoEnvio(planilha)}
@@ -2628,6 +2699,7 @@ function AdminLeadsPage() {
         {renderClientesAntigosMailing()}
 
         <div className="admin-leads-toolbar">
+          <LocalMailingFiltro valor={local} onChange={valor => { setLocal(valor); setPagina(1); setCarregandoLinhas(true); setLinhas([]); setTotalLinhas(0); }} />
           <div className="search-box">
             <I.Search size={14} />
             <input value={busca} onChange={event => setBusca(event.target.value)} placeholder="Buscar em todas as colunas" />
@@ -2658,10 +2730,10 @@ function AdminLeadsPage() {
           <button className="btn" type="button" onClick={() => setSchemaAberto(prev => !prev)}>
             Tipos
           </button>
-          <button className="btn" type="button" onClick={exportarCsvBackend} disabled={totalLinhas === 0}>
+          <button className="btn" type="button" onClick={exportarCsvBackend} disabled={totalLinhas === 0 || localBloqueado}>
             Exportar CSV
           </button>
-          <button className="btn btn-primary" type="button" onClick={() => setModalDividir(true)} disabled={totalLinhas === 0}>
+          <button className="btn btn-primary" type="button" onClick={() => setModalDividir(true)} disabled={totalLinhas === 0 || localBloqueado}>
             Dividir clientes
           </button>
         </div>
@@ -2707,11 +2779,12 @@ function AdminLeadsPage() {
           </div>
         )}
 
+        {localBloqueado && <div className="leads-warning" role="alert">Conclua ou repita o preenchimento de Local nas planilhas selecionadas antes de filtrar por região.</div>}
         <div className="lead-results-meta">
-          {totalLinhas} {totalLinhas === 1 ? 'registro encontrado' : 'registros encontrados'}
+          {localBloqueado ? 'Filtro regional aguardando preenchimento de Local' : `${totalLinhas} ${totalLinhas === 1 ? 'registro encontrado' : 'registros encontrados'}`}
         </div>
 
-        {resumoLeads.total > 0 && (
+        {!localBloqueado && resumoLeads.total > 0 && (
           <div className="lead-summary-panel">
             <div className="lead-summary-card">
               <span>Total filtrado</span>
@@ -2742,18 +2815,18 @@ function AdminLeadsPage() {
         )}
 
         <TabelaMailing
-          linhas={linhasPagina}
+          linhas={localBloqueado ? [] : linhasPagina}
           colunas={colunas}
-          carregando={carregando || carregandoLinhas}
+          carregando={!localBloqueado && (carregando || carregandoLinhas)}
           onAbrirDetalhe={setLinhaDetalhe}
           onEditarEnvio={setEnvioEditando}
         />
 
-        <div className="lead-pagination">
+        {!localBloqueado && <div className="lead-pagination">
           <button className="btn" type="button" disabled={pagina <= 1} onClick={() => setPagina(prev => Math.max(1, prev - 1))}>Anterior</button>
           <span>Página {pagina} de {totalPaginas}</span>
           <button className="btn" type="button" disabled={pagina >= totalPaginas} onClick={() => setPagina(prev => Math.min(totalPaginas, prev + 1))}>Próxima</button>
-        </div>
+        </div>}
       </div>
     </LayoutPrivado>
   );

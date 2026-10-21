@@ -225,6 +225,12 @@ router.post(
 );
 
 router.get('/', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.index);
+router.get('/locais', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.locais);
+router.post('/:id/local', exigirUmaPermissao(['gerenciar_leads']), auditar({
+  acao: 'lead_planilha.local_iniciado', entidade: 'lead_planilhas',
+  entidade_id: req => req.params.id,
+  dados: (req, planilha) => ({ campos: planilha.local_config.campos, execucao_id: planilha.local_config.execucao_id })
+}), leadPlanilhaController.preencherLocal);
 router.post('/uploads', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.upload);
 router.post('/importar-excel', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.importarExcel);
 router.post('/importar-base-antiga', exigirUmaPermissao(['gerenciar_leads']), leadPlanilhaController.importarBaseAntiga);

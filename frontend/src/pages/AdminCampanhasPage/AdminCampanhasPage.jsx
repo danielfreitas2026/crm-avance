@@ -1,3 +1,4 @@
+import { useNavigationSet } from '../../utils/useNavigationState';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import { createCampanha, deleteCampanha, getCampanhas, getParticipantesCampanha, getVendasExcecaoCampanha, updateCampanhas } from '../../services/campanha.service';
@@ -149,7 +150,7 @@ function AdminCampanhasPage() {
   const [message, setMessage] = useState(null);
   const [campanhaConfirmandoExclusao, setCampanhaConfirmandoExclusao] = useState(null);
   const [campanhaExcecoesAberta, setCampanhaExcecoesAberta] = useState(null);
-  const [campanhasRecolhidas, setCampanhasRecolhidas] = useState(() => new Set());
+  const [campanhasRecolhidas, setCampanhasRecolhidas] = useNavigationSet('AdminCampanhasPage:recolhidas', () => new Set());
   const campanhaAdicionadaId = useRef(null);
   const elementosCampanhas = useRef(new Map());
 
@@ -181,7 +182,7 @@ function AdminCampanhasPage() {
         if (ativo) setLoading(false);
       });
     return () => { ativo = false; };
-  }, []);
+  }, [setCampanhasRecolhidas]);
   useLayoutEffect(() => {
     if (campanhaAdicionadaId.current === null) return;
     const elemento = elementosCampanhas.current.get(campanhaAdicionadaId.current);

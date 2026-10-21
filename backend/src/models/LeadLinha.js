@@ -17,6 +17,7 @@ class LeadLinha extends Model {
         planilha_id: { type: 'integer' },
         row_index: { type: 'integer' },
         dados_json: { type: ['object', 'string'] },
+        local_ddds: { type: ['array', 'string', 'null'] },
         atribuido_para_id: { type: ['integer', 'null'] },
         envio_id: { type: ['integer', 'null'] },
         futuro_cliente: { type: ['boolean', 'integer'] },
@@ -64,7 +65,7 @@ class LeadLinha extends Model {
   // toda coluna cujo type aceita 'object' — inclusive as de data, que iriam para o banco
   // com aspas e virariam 0000-00-00 no MySQL.
   static get jsonAttributes() {
-    return ['dados_json'];
+    return ['dados_json', 'local_ddds'];
   }
 
   static get relationMappings() {

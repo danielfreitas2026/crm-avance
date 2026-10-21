@@ -1,3 +1,5 @@
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
@@ -180,7 +182,7 @@ function ResolveReturnModal({ venda, stageLabels, onClose, onConfirm }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="RetornosPage-1">
           <div className="return-status-summary">
             <div>
               <span>Motivo do retorno</span>
@@ -236,13 +238,17 @@ function ResolveReturnModal({ venda, stageLabels, onClose, onConfirm }) {
  */
 function RetornosPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [operatorFilter, setOperatorFilter] = useState('todas');
-  const [reasonFilter, setReasonFilter] = useState('todos');
+  const [operatorFilter, setOperatorFilter] = useNavigationState('RetornosPage:operatorFilter', 'todas');
+  const [reasonFilter, setReasonFilter] = useNavigationState('RetornosPage:reasonFilter', 'todos');
   const [allSales, setAllSales] = useState([]);
   const [allReturns, setAllReturns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedReturn, setSelectedReturn] = useState(null);
+  const [selectedReturn, setSelectedReturn] = useNavigationRecord('RetornosPage:detalhe', {
+    load: id => allReturns.find(item => String(item.id) === String(id)),
+    ready: !loading && !searchParams.has('venda_id'),
+    onError: error => setError(error.message)
+  });
   const [stageLabels, setStageLabels] = useState(FALLBACK_STAGE_LABELS);
   const aberturaNotificacaoProcessadaRef = useRef('');
 
@@ -293,7 +299,7 @@ function RetornosPage() {
     }
     if (notificacaoId) falharAberturaNotificacao(notificacaoId);
     queueMicrotask(() => setError('O retorno desta notificação não está mais disponível.'));
-  }, [allReturns, loading, notificacaoId, vendaIdParam]);
+  }, [allReturns, loading, notificacaoId, setSelectedReturn, vendaIdParam]);
 
   useEffect(() => {
     if (loading) return;

@@ -7,7 +7,7 @@ const estilos = readFileSync(new URL('../../styles/global.css', import.meta.url)
 
 describe('estrutura rolavel do layout privado', () => {
   it('envolve o conteudo da pagina em um viewport dedicado', () => {
-    expect(componente).toMatch(/<div className="content__viewport">\s*\{children\}\s*<\/div>/s);
+    expect(componente).toMatch(/<div className="content__viewport" data-navigation-scroll="viewport">\s*\{children\}\s*<\/div>/s);
   });
 
   it('preserva a altura util para layouts internos flexiveis', () => {

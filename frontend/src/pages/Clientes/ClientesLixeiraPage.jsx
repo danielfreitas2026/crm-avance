@@ -1,3 +1,5 @@
+import NavigationDetails from '../../components/NavigationDetails';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as I from '../../components/Icons';
@@ -37,7 +39,7 @@ function ConfirmarExclusaoDefinitivaModal({ cliente, excluirVendasRelacionadas, 
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="ClientesLixeiraPage-1">
           <div className="trash-warning">
             <I.AlertTriangle size={20} />
             <div>
@@ -92,7 +94,7 @@ function ClientesLixeiraPage() {
   const usuario = getUsuarioLocal();
   const podeExcluir = temPermissao(usuario, 'clientes_excluir');
   const [clientes, setClientes] = useState([]);
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useNavigationState('ClientesLixeiraPage:busca', '');
   const buscaDeferred = useDeferredValue(busca);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
@@ -231,7 +233,7 @@ function ClientesLixeiraPage() {
         {erro && <div className="alert-error alert-timed alert-timed--error">{erro}</div>}
 
         <div className="list-table" style={{ margin: 0 }}>
-          <div className="scroll">
+          <div className="scroll" data-navigation-scroll="ClientesLixeiraPage-2">
             <table>
               <thead>
                 <tr>
@@ -264,7 +266,7 @@ function ClientesLixeiraPage() {
                         <div className="cliente-primary">
                           <strong>{cliente.nome}</strong>
                           <span>{cliente.razao_social || 'Sem razão social'} - {cliente.cnpj || 'Sem CNPJ'}</span>
-                          <details className="mobile-row-drawer">
+                          <NavigationDetails navigationScope={`clientes-lixeira:${cliente.id}`} className="mobile-row-drawer">
                             <summary>Ver dados da lixeira</summary>
                             <dl>
                               <dt>Responsável</dt>
@@ -278,7 +280,7 @@ function ClientesLixeiraPage() {
                               <dt>Enviado por</dt>
                               <dd>{cliente.excluidoPor?.nome || '-'}</dd>
                             </dl>
-                          </details>
+                          </NavigationDetails>
                         </div>
                       </td>
                       <td data-label="Responsavel" data-mobile-hidden="true">

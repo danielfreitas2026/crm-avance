@@ -1,3 +1,5 @@
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import { exportarVendasPeriodo, getResumo } from '../../services/fechamento.service';
@@ -84,16 +86,20 @@ function contarVendasPorCliente(vendas = []) {
  * Renderiza fechamento mensal page.
  */
 function FechamentoMensalPage() {
-  const [periodo, setPeriodo] = useState(() => periodoMesAtual());
-  const [periodoConsulta, setPeriodoConsulta] = useState(() => periodoMesAtual());
+  const [periodo, setPeriodo] = useNavigationState('FechamentoMensalPage:periodo', () => periodoMesAtual());
+  const [periodoConsulta, setPeriodoConsulta] = useNavigationState('FechamentoMensalPage:periodoConsulta', () => periodoMesAtual());
   const [resumo, setResumo] = useState({ total: [], tratando: [], ativas: [] });
   const [painel, setPainel] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exportando, setExportando] = useState(false);
   const [erro, setErro] = useState('');
-  const [modalDetalhes, setModalDetalhes] = useState(null);
+  const [modalDetalhes, setModalDetalhes] = useNavigationState('FechamentoMensalPage:secao', null, { validate: value => value === null || ['total', 'tratando', 'ativas'].includes(value) });
   const [detalhesReloadKey, setDetalhesReloadKey] = useState(0);
-  const [modalVenda, setModalVenda] = useState(null);
+  const [modalVenda, setModalVenda] = useNavigationRecord('FechamentoMensalPage:venda', {
+    load: async id => { await carregarDadosVenda(); return buscarVendaPorId(id); },
+    onRestore: () => { setModalModoEdicao(false); setModalVendaAberto(true); },
+    onError: error => setErro(error.message)
+  });
   const [modalVendaAberto, setModalVendaAberto] = useState(false);
   const [modalModoEdicao, setModalModoEdicao] = useState(false);
   const [vendaLoadingId, setVendaLoadingId] = useState(null);

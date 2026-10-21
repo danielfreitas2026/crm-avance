@@ -1,3 +1,5 @@
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
@@ -691,7 +693,7 @@ function agruparLogsVenda(logs = []) {
  * Processa venda historico grupo conforme as regras do dominio.
  */
 function VendaHistoricoGrupo({ grupo, etapasFunil, stageNamesMap, logSelecionado, onClick, onAbrirVenda, modalCarregando }) {
-  const [expandido, setExpandido] = useState(false);
+  const [expandido, setExpandido] = useNavigationState(`HistoricoPage:grupo:${grupo.vendaId}`, false);
   const progression = buildStageProgression(grupo.logs, etapasFunil);
   const currentStageName = stageNamesMap[progression.currentStage] || progression.currentStage;
   const skippedCount = progression.stages.filter(s => s.status === 'skipped').length;
@@ -908,21 +910,36 @@ function HistoricoPage() {
   const podeListarClientes = temPermissao(usuarioLogado, ['clientes_ver_proprios', 'clientes_ver_todos']);
   const podeEditarCliente = temPermissao(usuarioLogado, 'clientes_editar');
   const [logs, setLogs] = useState([]);
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useNavigationState('HistoricoPage:busca', '');
   const buscaDeferred = useDeferredValue(busca);
-  const [filtro, setFiltro] = useState('todos');
-  const [filtroStatus, setFiltroStatus] = useState('ativas');
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const [filtro, setFiltro] = useNavigationState('HistoricoPage:filtro', 'todos');
+  const [filtroStatus, setFiltroStatus] = useNavigationState('HistoricoPage:filtroStatus', 'ativas');
+  const [filtrosAbertos, setFiltrosAbertos] = useNavigationState('HistoricoPage:filtrosAbertos', false);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
-  const [logSelecionado, setLogSelecionado] = useState(null);
+  const [logSelecionado, setLogSelecionado] = useNavigationRecord('HistoricoPage:log', {
+    load: id => logs.find(item => String(item.id) === String(id)),
+    ready: !carregando,
+    onError: error => setErro(error.message)
+  });
   const [etapasFunil, setEtapasFunil] = useState([]);
-  const [paginaAtual, setPaginaAtual] = useState(1);
-  const [itensPorPagina, setItensPorPagina] = useState(20);
+  const [paginaAtual, setPaginaAtual] = useNavigationState('HistoricoPage:paginaAtual', 1);
+  const [itensPorPagina, setItensPorPagina] = useNavigationState('HistoricoPage:itensPorPagina', 20);
   const [total, setTotal] = useState(0);
-  const [vendaModal, setVendaModal] = useState(null);
+  const [vendaModal, setVendaModal] = useNavigationRecord('HistoricoPage:venda', {
+    load: async id => { await carregarDadosVendaModal(); return buscarVendaPorId(id); },
+    onRestore: () => setVendaModalModoEdicao(false),
+    onError: error => setErro(error.message)
+  });
   const [vendaModalModoEdicao, setVendaModalModoEdicao] = useState(false);
-  const [clienteModal, setClienteModal] = useState(null);
+  const [clienteModal, setClienteModal] = useNavigationRecord('HistoricoPage:cliente', {
+    load: async id => {
+      if (!podeEditarCliente) throw new Error('Você não tem acesso ao detalhe deste cliente.');
+      setOperadorasModal(await listarOperadoras());
+      return buscarClientePorId(id);
+    },
+    onError: error => setErro(error.message)
+  });
   const [clientesModal, setClientesModal] = useState([]);
   const [vendedorasModal, setVendedorasModal] = useState([]);
   const [operadorasModal, setOperadorasModal] = useState([]);
@@ -974,6 +991,8 @@ function HistoricoPage() {
 
       setLogs(resposta.data || []);
       setTotal(resposta.total || 0);
+      const ultimaPagina = Math.max(1, Math.ceil((resposta.total || 0) / porPagina));
+      if (pagina > ultimaPagina) setPaginaAtual(ultimaPagina);
       setEtapasFunil(normalizarEtapas(etapas));
     } catch (error) {
       setErro(error.message || 'Erro ao carregar histórico.');
@@ -982,15 +1001,20 @@ function HistoricoPage() {
     }
   }
 
-  const carregarAoFiltrar = useEffectEvent(() => {
+  const chaveFiltros = JSON.stringify([buscaDeferred, filtroAtual.id, filtroAtual.entidade, filtroAtual.tipo, filtroStatus]);
+  const [filtrosAnteriores, setFiltrosAnteriores] = useState(chaveFiltros);
+  if (filtrosAnteriores !== chaveFiltros) {
+    setFiltrosAnteriores(chaveFiltros);
     setPaginaAtual(1);
-    void carregar(1);
+  }
+  const carregarAoFiltrar = useEffectEvent(() => {
+    void carregar();
   });
 
   useEffect(() => {
     const timer = setTimeout(carregarAoFiltrar, 250);
     return () => clearTimeout(timer);
-  }, [buscaDeferred, filtroAtual.id, filtroAtual.entidade, filtroAtual.tipo, filtroStatus]);
+  }, [chaveFiltros, paginaAtual, itensPorPagina]);
 
   const modoVendasCompacto = filtro === 'vendas';
   const gruposVenda = useMemo(() => {
@@ -1239,7 +1263,7 @@ function HistoricoPage() {
           </div>
 
           <div className="history-panel">
-            <div className="history-panel__scroll">
+            <div className="history-panel__scroll" data-navigation-scroll="HistoricoPage-1">
               {carregando ? (
                 <div className="history-empty">Carregando histórico...</div>
               ) : erro ? (
@@ -1281,8 +1305,8 @@ function HistoricoPage() {
                 total={total}
                 paginaAtual={paginaAtual}
                 itensPorPagina={itensPorPagina}
-                onPagina={pagina => { setPaginaAtual(pagina); carregar(pagina); }}
-                onItensPorPagina={n => { setItensPorPagina(n); setPaginaAtual(1); carregar(1, n); }}
+                onPagina={setPaginaAtual}
+                onItensPorPagina={n => { setItensPorPagina(n); setPaginaAtual(1); }}
               />
             )}
 

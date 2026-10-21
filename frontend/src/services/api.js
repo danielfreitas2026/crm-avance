@@ -1,9 +1,11 @@
+import { clearNavigation } from '../utils/navigation-storage';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 let redirecionandoLogin = false;
 
 export const SYSTEM_CLOSED_MESSAGE = 'O sistema está temporariamente fechado. Tente novamente no horário de funcionamento.';
 
 function encerrarSessaoExpirada() {
+  clearNavigation();
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
 
@@ -14,6 +16,7 @@ function encerrarSessaoExpirada() {
 }
 
 function encerrarSessaoPorFechamento(message) {
+  clearNavigation();
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
   sessionStorage.setItem('system_closed_message', message || SYSTEM_CLOSED_MESSAGE);

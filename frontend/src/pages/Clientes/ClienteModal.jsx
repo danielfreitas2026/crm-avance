@@ -1,3 +1,4 @@
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
 import AutoResizeTextarea from '../../components/AutoResizeTextarea';
 import NotasEntidadeTab from '../../components/NotasEntidadeTab';
@@ -353,6 +354,7 @@ function ClienteModal({
   operadoras,
   onClose,
   onSave,
+  onTabChange,
   initialTab = 'cliente',
   initialDraft = null,
   onDraftChange,
@@ -402,7 +404,14 @@ function ClienteModal({
   const [cnpjDados, setCnpjDados] = useState(null);
   const [cnpjSugestoes, setCnpjSugestoes] = useState({});
   const [tipoBusca, setTipoBusca] = useState(() => sanitizarCnpj(form.cnpj).length === 11 ? 'cpf' : 'cnpj');
-  const [abaAtiva, setAbaAtiva] = useState(notesOnly ? 'notas' : initialTab);
+  const [abaAtiva, persistirAba] = useNavigationState(cliente?.id ? `cliente-modal:${window.location.pathname}:${entidade}:${cliente.id}` : null, notesOnly ? 'notas' : initialTab, {
+    allowed: notesOnly ? ['notas'] : ['cliente', 'notas', ...(onOpenVenda ? ['vendas'] : [])],
+    preferInitial: notesOnly || initialTab !== 'cliente' || new URLSearchParams(window.location.search).has('aba')
+  });
+  function setAbaAtiva(aba) {
+    persistirAba(aba);
+    onTabChange?.(aba);
+  }
   const [pendingNotas, setPendingNotas] = useState([]);
   const [consultoraIds, setConsultoraIds] = useState(() => (cliente?.consultoras || []).map(item => Number(item.id)));
   const [vendasCliente, setVendasCliente] = useState([]);
@@ -923,7 +932,7 @@ function ClienteModal({
         </div>
         )}
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll={`cliente:${cliente?.id || 'novo'}:${abaAtiva}`}>
           {erro && <div className="alert-error" style={{ marginBottom: 12 }}>{erro}</div>}
           {abaAtiva === 'notas' ? (
             <NotasEntidadeTab

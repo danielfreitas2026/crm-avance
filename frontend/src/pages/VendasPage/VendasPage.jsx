@@ -1,3 +1,6 @@
+import NavigationDetails from '../../components/NavigationDetails';
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { useDebounce } from '../../utils/useDebounce';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -755,7 +758,7 @@ function MarcarProblemaModal({ venda, usuarios, onClose, onSave }) {
             </button>
           </div>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="VendasPage-1">
           {erro && <div className="alert-error">{erro}</div>}
           <div className="form-field">
             <label>Motivo do problema</label>
@@ -815,7 +818,7 @@ function ConfirmarLixeiraModal({ venda, deletando, onClose, onConfirm }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="VendasPage-2">
           <div className="trash-warning">
             <I.AlertTriangle size={20} />
             <div>
@@ -857,7 +860,7 @@ function EmailTemplateModal({ dados, copiando, onClose, onCopy }) {
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="VendasPage-3">
           <textarea className="venda-email-preview" value={dados.texto || ''} readOnly />
         </div>
 
@@ -908,7 +911,7 @@ export function WhatsappMensagemModal({ dados, copiando, onClose, onChange, onDo
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="VendasPage-4">
           <div className="whatsapp-docs-panel">
             <div className="whatsapp-docs-panel__title">Falta doc</div>
             <div className="whatsapp-docs-options">
@@ -956,7 +959,7 @@ export function WhatsappMensagemModal({ dados, copiando, onClose, onChange, onDo
 function VendasPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const aberturaNotificacaoProcessadaRef = useRef('');
   const [vendas, setVendas] = useState([]);
   const [referenciasClientes, setReferenciasClientes] = useState([]);
@@ -968,25 +971,30 @@ function VendasPage() {
   const [servicos, setServicos] = useState([]);
   const [statusFunilFiltros, setStatusFunilFiltros] = useState(STATUS_FUNIL_FILTROS);
   const [etapasFunil, setEtapasFunil] = useState([]);
-  const [buscaCampo, setBuscaCampo] = useState('geral');
-  const [busca, setBusca] = useState('');
-  const [vendedoraId, setVendedoraId] = useState('');
-  const [operadoraId, setOperadoraId] = useState('');
-  const [tipoVendaId, setTipoVendaId] = useState('');
-  const [servicoId, setServicoId] = useState('');
-  const [statusFunil, setStatusFunil] = useState('');
-  const [prioridadeFunil, setPrioridadeFunil] = useState('');
-  const [uf, setUf] = useState('');
-  const [municipio, setMunicipio] = useState('');
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
-  const [valorMin, setValorMin] = useState('');
-  const [valorMax, setValorMax] = useState('');
+  const [buscaCampo, setBuscaCampo] = useNavigationState('VendasPage:buscaCampo', 'geral');
+  const [busca, setBusca] = useNavigationState('VendasPage:busca', '');
+  const [vendedoraId, setVendedoraId] = useNavigationState('VendasPage:vendedoraId', '');
+  const [operadoraId, setOperadoraId] = useNavigationState('VendasPage:operadoraId', '');
+  const [tipoVendaId, setTipoVendaId] = useNavigationState('VendasPage:tipoVendaId', '');
+  const [servicoId, setServicoId] = useNavigationState('VendasPage:servicoId', '');
+  const [statusFunil, setStatusFunil] = useNavigationState('VendasPage:statusFunil', '');
+  const [prioridadeFunil, setPrioridadeFunil] = useNavigationState('VendasPage:prioridadeFunil', '');
+  const [uf, setUf] = useNavigationState('VendasPage:uf', '');
+  const [municipio, setMunicipio] = useNavigationState('VendasPage:municipio', '');
+  const [dataInicio, setDataInicio] = useNavigationState('VendasPage:dataInicio', '');
+  const [dataFim, setDataFim] = useNavigationState('VendasPage:dataFim', '');
+  const [valorMin, setValorMin] = useNavigationState('VendasPage:valorMin', '');
+  const [valorMax, setValorMax] = useNavigationState('VendasPage:valorMax', '');
   const [carregando, setCarregando] = useState(true);
   const [exportando, setExportando] = useState(false);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
-  const [modalVenda, setModalVenda] = useState(null);
+  const [modalVenda, setModalVenda] = useNavigationRecord('VendasPage:detalhe', {
+    load: id => buscarVendaPorId(id),
+    ready: !searchParams.has('venda_id') && !searchParams.has('nova'),
+    onRestore: () => { setModalModoEdicao(false); setModalAberto(true); },
+    onError: error => setErro(error.message)
+  });
   const [modalAberto, setModalAberto] = useState(false);
   const [modalAbaInicial, setModalAbaInicial] = useState('venda');
   const [modalProblemaInicial, setModalProblemaInicial] = useState(null);
@@ -996,7 +1004,7 @@ function VendasPage() {
   const [vendaParaLixeira, setVendaParaLixeira] = useState(null);
   const [vendaProblema, setVendaProblema] = useState(null);
   const [deletando, setDeletando] = useState(false);
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const [filtrosAbertos, setFiltrosAbertos] = useNavigationState('VendasPage:filtrosAbertos', false);
   const [emailTemplate, setEmailTemplate] = useState(null);
   const [whatsappMensagem, setWhatsappMensagem] = useState(null);
   const [gerandoEmailId, setGerandoEmailId] = useState(null);
@@ -1010,8 +1018,8 @@ function VendasPage() {
   const [clientePreenchidoLead] = useState(() => location.state?.clientePreenchido || null);
   const [origemLeadCadastro] = useState(() => location.state?.origemLead || null);
   const [clientesCarregados, setClientesCarregados] = useState(false);
-  const [paginaAtual, setPaginaAtual] = useState(1);
-  const [itensPorPagina, setItensPorPagina] = useState(20);
+  const [paginaAtual, setPaginaAtual] = useNavigationState('VendasPage:paginaAtual', 1);
+  const [itensPorPagina, setItensPorPagina] = useNavigationState('VendasPage:itensPorPagina', 20);
   const [totalVendas, setTotalVendas] = useState(0);
   const buscaDeferred = useDeferredValue(busca);
   const buscaDebounced = useDebounce(buscaDeferred, 300);
@@ -1152,11 +1160,13 @@ function VendasPage() {
 
   useEffect(() => {
     let ativo = true;
-    listarVendas({ ...filtros, page: 1, per_page: itensPorPagina })
+    listarVendas({ ...filtros, page: paginaAtual, per_page: itensPorPagina })
       .then(vendasData => {
         if (!ativo) return;
         setVendas(vendasData.data);
         setTotalVendas(vendasData.total);
+        const ultimaPagina = Math.max(1, Math.ceil(vendasData.total / itensPorPagina));
+        if (paginaAtual > ultimaPagina) setPaginaAtual(ultimaPagina);
       })
       .catch(error => {
         if (ativo) setErro(error.message || 'Erro ao carregar vendas.');
@@ -1165,7 +1175,7 @@ function VendasPage() {
         if (ativo) setCarregando(false);
       });
     return () => { ativo = false; };
-  }, [filtros, itensPorPagina]);
+  }, [filtros, itensPorPagina, paginaAtual, setPaginaAtual]);
 
   const recarregarVendas = useEffectEvent(() => carregarVendas());
 
@@ -1272,13 +1282,14 @@ function VendasPage() {
     setModalAberto(true);
   }
 
+  const abrirNovaVendaViaEvento = useEffectEvent(() => abrirNovaVenda());
   useEffect(() => {
     /**
      * Trata o evento de nova venda.
      */
     function handleNovaVenda() {
       if (podeCriarVenda) {
-        abrirNovaVenda();
+        abrirNovaVendaViaEvento();
       }
     }
 
@@ -1330,7 +1341,7 @@ function VendasPage() {
         if (notificacaoId) falharAberturaNotificacao(notificacaoId);
         setErro(error.message || 'Erro ao abrir venda.');
       });
-  }, [searchParams, navigate, podeAcessarDocumentosVenda]);
+  }, [searchParams, navigate, podeAcessarDocumentosVenda, setModalVenda]);
   /**
    * Limpa rota modal venda e restaura o estado inicial.
    */
@@ -1689,6 +1700,12 @@ function VendasPage() {
         <VendaModal
           key={`${modalVenda?.id || 'nova'}-${modalAbaInicial}-${modalProblemaInicial || ''}`}
           venda={modalVenda}
+          onTabChange={aba => {
+            if (!searchParams.has('venda_id')) return;
+            const parametros = new URLSearchParams(searchParams);
+            parametros.set('aba', aba);
+            setSearchParams(parametros, { replace: true });
+          }}
           initialValues={vendaInicial}
           initialDraft={vendaCadastroDraft}
           clientes={clientes}
@@ -1961,7 +1978,7 @@ function VendasPage() {
         {erro && <div className="alert-error alert-timed alert-timed--error" style={{ marginBottom: 16 }}>{erro}</div>}
 
         <div className="list-table" style={{ margin: 0 }}>
-          <div className="scroll">
+          <div className="scroll" data-navigation-scroll="VendasPage-5">
             <table>
               <thead>
                 <tr>
@@ -2159,7 +2176,7 @@ function VendasPage() {
                               || '-'}
                             {venda.cliente_excluido_permanentemente_cnpj ? ` - ${venda.cliente_excluido_permanentemente_cnpj}` : ''}
                           </span>
-                          <details className="mobile-row-drawer">
+                          <NavigationDetails navigationScope={`vendas:${venda.id}`} className="mobile-row-drawer">
                             <summary>Ver detalhes da venda</summary>
                             <dl>
                               <dt>Operadora</dt>
@@ -2187,7 +2204,7 @@ function VendasPage() {
                               <dt>Criado em</dt>
                               <dd>{formatarDataHoraRegistro(venda.criado_em || venda.created_at)}</dd>
                             </dl>
-                          </details>
+                          </NavigationDetails>
                         </div>
                       </td>
                       <td data-label="Operadora" className="m-secondary">{(() => {
@@ -2295,7 +2312,7 @@ function VendasPage() {
             total={totalVendas}
             paginaAtual={paginaAtual}
             itensPorPagina={itensPorPagina}
-            onPagina={pagina => { setPaginaAtual(pagina); carregarVendas(filtros, pagina); }}
+            onPagina={pagina => { setCarregando(true); setPaginaAtual(pagina); }}
             onItensPorPagina={n => { setCarregando(true); setItensPorPagina(n); setPaginaAtual(1); }}
           />
         </div>

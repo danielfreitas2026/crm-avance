@@ -1,3 +1,5 @@
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
@@ -275,7 +277,7 @@ function FunilTracker({ progression, logSelecionado, onClickLog }) {
  * Renderiza venda excluida card.
  */
 function VendaExcluidaCard({ grupo, logSelecionado, onClick }) {
-  const [expandido, setExpandido] = useState(false);
+  const [expandido, setExpandido] = useNavigationState(`HistoricoLixeiraPage:grupo:${grupo.vendaId}`, false);
   const progression = buildStageProgression(grupo.logs);
   const currentStageName = STAGE_NAMES_MAP[progression.currentStage] || progression.currentStage;
   const nomeCliente = extrairNomeVenda(grupo.logs, grupo.vendaId);
@@ -436,13 +438,17 @@ function DetalheCard({ log, onClose }) {
 function HistoricoLixeiraPage() {
   const navigate = useNavigate();
   const [logs, setLogs] = useState([]);
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useNavigationState('HistoricoLixeiraPage:busca', '');
   const buscaDeferred = useDeferredValue(busca);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
-  const [logSelecionado, setLogSelecionado] = useState(null);
-  const [paginaAtual, setPaginaAtual] = useState(1);
-  const [itensPorPagina, setItensPorPagina] = useState(20);
+  const [logSelecionado, setLogSelecionado] = useNavigationRecord('HistoricoLixeiraPage:log', {
+    load: id => logs.find(item => String(item.id) === String(id)),
+    ready: !carregando,
+    onError: error => setErro(error.message)
+  });
+  const [paginaAtual, setPaginaAtual] = useNavigationState('HistoricoLixeiraPage:paginaAtual', 1);
+  const [itensPorPagina, setItensPorPagina] = useNavigationState('HistoricoLixeiraPage:itensPorPagina', 20);
   const [total, setTotal] = useState(0);
 
   /**
@@ -460,6 +466,8 @@ function HistoricoLixeiraPage() {
       });
       setLogs(resposta.data || []);
       setTotal(resposta.total || 0);
+      const ultimaPagina = Math.max(1, Math.ceil((resposta.total || 0) / porPagina));
+      if (pagina > ultimaPagina) setPaginaAtual(ultimaPagina);
     } catch (error) {
       setErro(error.message || 'Erro ao carregar histórico.');
     } finally {
@@ -467,15 +475,20 @@ function HistoricoLixeiraPage() {
     }
   }
 
-  const carregarAoFiltrar = useEffectEvent(() => {
+  const chaveFiltros = JSON.stringify([buscaDeferred]);
+  const [filtrosAnteriores, setFiltrosAnteriores] = useState(chaveFiltros);
+  if (filtrosAnteriores !== chaveFiltros) {
+    setFiltrosAnteriores(chaveFiltros);
     setPaginaAtual(1);
-    void carregar(1);
+  }
+  const carregarAoFiltrar = useEffectEvent(() => {
+    void carregar();
   });
 
   useEffect(() => {
     const timer = setTimeout(carregarAoFiltrar, 250);
     return () => clearTimeout(timer);
-  }, [buscaDeferred]);
+  }, [chaveFiltros, paginaAtual, itensPorPagina]);
 
   const grupos = useMemo(() => agruparLogsVenda(logs), [logs]);
 
@@ -506,7 +519,7 @@ function HistoricoLixeiraPage() {
           </div>
 
           <div className="history-panel">
-            <div className="history-panel__scroll">
+            <div className="history-panel__scroll" data-navigation-scroll="HistoricoLixeiraPage-1">
               {carregando ? (
                 <div className="history-empty">Carregando histórico...</div>
               ) : erro ? (
@@ -532,8 +545,8 @@ function HistoricoLixeiraPage() {
                 total={total}
                 paginaAtual={paginaAtual}
                 itensPorPagina={itensPorPagina}
-                onPagina={pagina => { setPaginaAtual(pagina); carregar(pagina); }}
-                onItensPorPagina={n => { setItensPorPagina(n); setPaginaAtual(1); carregar(1, n); }}
+                onPagina={setPaginaAtual}
+                onItensPorPagina={n => { setItensPorPagina(n); setPaginaAtual(1); }}
               />
             )}
 

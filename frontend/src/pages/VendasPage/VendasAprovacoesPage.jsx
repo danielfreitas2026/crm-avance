@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import NavigationDetails from '../../components/NavigationDetails';
+import { useNavigationRecord } from '../../utils/useNavigationRecord';
+import { useNavigationState } from '../../utils/useNavigationState';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import LayoutPrivado from '../../layouts/LayoutPrivado/LayoutPrivado';
 import * as I from '../../components/Icons';
@@ -85,7 +88,7 @@ function VendasAprovacoesPage() {
   const podeCompartilharVenda = temPermissao(usuario, 'compartilhar_venda');
   const podeVerDocumentosVenda = temPermissao(usuario, 'vendas_documentos');
   const podeAdicionarDocumentosVenda = temPermissao(usuario, 'adicionar_documentos');
-  const [status, setStatus] = useState(searchParams.get('status') || 'pendente');
+  const [status, setStatus] = useNavigationState('VendasAprovacoesPage:status', searchParams.get('status') || (searchParams.has('solicitacao_id') ? '' : 'pendente'), { preferInitial: searchParams.has('status') || searchParams.has('solicitacao_id') });
   const [solicitacoes, setSolicitacoes] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [vendedoras, setVendedoras] = useState([]);
@@ -98,7 +101,12 @@ function VendasAprovacoesPage() {
   const [vendaModal, setVendaModal] = useState(null);
   const [modalModoEdicao, setModalModoEdicao] = useState(false);
   const [, setCarregandoVendaId] = useState(null);
-  const [solicitacaoModal, setSolicitacaoModal] = useState(null);
+  const [solicitacaoModal, setSolicitacaoModal] = useNavigationRecord('VendasAprovacoesPage:solicitacao', {
+    load: id => solicitacoes.find(item => String(item.id) === String(id)),
+    ready: !carregando && !searchParams.has('solicitacao_id'),
+    onRestore: solicitacao => { void abrirVenda(solicitacao); },
+    onError: error => setErro(error.message)
+  });
   const [observacao, setObservacao] = useState('');
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
@@ -183,6 +191,31 @@ function VendasAprovacoesPage() {
     });
   }, [solicitacoes, solicitacaoFoco]);
 
+  /** Abre a venda vinculada com os dados atuais da solicitação. */
+  const abrirVenda = useCallback(async (solicitacao, notificacaoIdAbertura = null) => {
+    setErro('');
+    setCarregandoVendaId(solicitacao.venda_id);
+
+    try {
+      const venda = await buscarVendaPorId(solicitacao.venda_id);
+      setVendaModal(venda || solicitacao.venda);
+      setSolicitacaoModal(solicitacao);
+      setModalModoEdicao(false);
+      if (notificacaoIdAbertura) {
+        void confirmarAberturaNotificacao(notificacaoIdAbertura).catch(error => {
+          console.error('Erro ao confirmar abertura da notificacao:', error);
+        });
+      }
+    } catch (error) {
+      if (notificacaoIdAbertura) falharAberturaNotificacao(notificacaoIdAbertura);
+      setSolicitacaoModal(null);
+      setErro(error.message || 'Erro ao abrir venda.');
+    } finally {
+      setCarregandoVendaId(null);
+    }
+  }, [setSolicitacaoModal]);
+
+
   useEffect(() => {
     if (carregando || !solicitacaoFoco || !notificacaoId) return;
     const chaveAbertura = `${solicitacaoFoco}:${notificacaoId}`;
@@ -190,12 +223,15 @@ function VendasAprovacoesPage() {
     aberturaNotificacaoProcessadaRef.current = chaveAbertura;
     const encontrada = solicitacoes.find(item => String(item.id) === String(solicitacaoFoco));
     if (encontrada) {
-      void abrirVenda(encontrada, notificacaoId);
-      return;
+      const timer = setTimeout(() => { void abrirVenda(encontrada, notificacaoId); }, 0);
+      return () => {
+        clearTimeout(timer);
+        if (aberturaNotificacaoProcessadaRef.current === chaveAbertura) aberturaNotificacaoProcessadaRef.current = '';
+      };
     }
     falharAberturaNotificacao(notificacaoId);
     queueMicrotask(() => setErro('A solicitação desta notificação não está mais disponível.'));
-  }, [carregando, notificacaoId, solicitacaoFoco, solicitacoes]);
+  }, [abrirVenda, carregando, notificacaoId, solicitacaoFoco, solicitacoes]);
 
   /**
    * Processa aprovar conforme as regras do dominio.
@@ -234,31 +270,6 @@ function VendasAprovacoesPage() {
       setErro(error.message || 'Erro ao recusar solicitação.');
     } finally {
       setSalvandoId(null);
-    }
-  }
-
-  /**
-   * Abre venda e prepara o estado necessario.
-   */
-  async function abrirVenda(solicitacao, notificacaoIdAbertura = null) {
-    setErro('');
-    setCarregandoVendaId(solicitacao.venda_id);
-
-    try {
-      const venda = await buscarVendaPorId(solicitacao.venda_id);
-      setVendaModal(venda || solicitacao.venda);
-      setSolicitacaoModal(solicitacao);
-      setModalModoEdicao(false);
-      if (notificacaoIdAbertura) {
-        void confirmarAberturaNotificacao(notificacaoIdAbertura).catch(error => {
-          console.error('Erro ao confirmar abertura da notificacao:', error);
-        });
-      }
-    } catch (error) {
-      if (notificacaoIdAbertura) falharAberturaNotificacao(notificacaoIdAbertura);
-      setErro(error.message || 'Erro ao abrir venda.');
-    } finally {
-      setCarregandoVendaId(null);
     }
   }
 
@@ -335,7 +346,7 @@ function VendasAprovacoesPage() {
         {erro && <div className="alert-error alert-timed alert-timed--error" style={{ marginBottom: 16 }}>{erro}</div>}
 
         <div className="list-table" style={{ margin: 0 }}>
-          <div className="scroll">
+          <div className="scroll" data-navigation-scroll="VendasAprovacoesPage-1">
             <table>
               <thead>
                 <tr>
@@ -370,7 +381,7 @@ function VendasAprovacoesPage() {
                           <strong>{nomeVenda(solicitacao.venda)}</strong>
                         </div>
                         <span>{solicitacao.venda?.cliente?.razao_social || solicitacao.venda?.razao_social || `Venda #${solicitacao.venda_id}`}</span>
-                        <details className="mobile-row-drawer">
+                        <NavigationDetails navigationScope={`aprovacoes:${solicitacao.id}`} className="mobile-row-drawer">
                           <summary>Ver detalhes da solicitacao</summary>
                           <dl>
                             <dt>Motivos</dt>
@@ -390,7 +401,7 @@ function VendasAprovacoesPage() {
                                 : '-'}
                             </dd>
                           </dl>
-                        </details>
+                        </NavigationDetails>
                       </div>
                     </td>
                     <td data-label="Motivos" data-mobile-hidden="true">
@@ -471,7 +482,7 @@ function VendasAprovacoesPage() {
               </div>
             </div>
 
-            <div className="modal-body">
+            <div className="modal-body" data-navigation-scroll="VendasAprovacoesPage-2">
               <div className="form-field">
                 <label>Observação</label>
                 <textarea

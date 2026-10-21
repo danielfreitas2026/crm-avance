@@ -1,3 +1,5 @@
+import NavigationDetails from '../../components/NavigationDetails';
+import { useNavigationState } from '../../utils/useNavigationState';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as I from '../../components/Icons';
@@ -44,7 +46,7 @@ function ConfirmarExclusaoDefinitivaModal({ venda, excluindo, onClose, onConfirm
           </div>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" data-navigation-scroll="VendasLixeiraPage-1">
           <div className="trash-warning">
             <I.AlertTriangle size={20} />
             <div>
@@ -73,7 +75,7 @@ function VendasLixeiraPage() {
   const usuario = getUsuarioLocal();
   const podeExcluirVenda = temPermissao(usuario, 'vendas_excluir');
   const [vendas, setVendas] = useState([]);
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useNavigationState('VendasLixeiraPage:busca', '');
   const buscaDeferred = useDeferredValue(busca);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
@@ -202,7 +204,7 @@ function VendasLixeiraPage() {
         {erro && <div className="alert-error alert-timed alert-timed--error" style={{ marginBottom: 16 }}>{erro}</div>}
 
         <div className="list-table" style={{ margin: 0 }}>
-          <div className="scroll">
+          <div className="scroll" data-navigation-scroll="VendasLixeiraPage-2">
             <table>
               <thead>
                 <tr>
@@ -254,7 +256,7 @@ function VendasLixeiraPage() {
                               || '-'}
                             {venda.cliente_excluido_permanentemente_cnpj ? ` - ${venda.cliente_excluido_permanentemente_cnpj}` : ''}
                           </span>
-                          <details className="mobile-row-drawer">
+                          <NavigationDetails navigationScope={`vendas-lixeira:${venda.id}`} className="mobile-row-drawer">
                             <summary>Ver dados da lixeira</summary>
                             <dl>
                               <dt>Operadora</dt>
@@ -270,7 +272,7 @@ function VendasLixeiraPage() {
                               <dt>Enviada por</dt>
                               <dd>{venda.excluidoPor?.nome || '-'}</dd>
                             </dl>
-                          </details>
+                          </NavigationDetails>
                         </div>
                       </td>
                       <td data-label="Operadora" className="m-secondary"><span className="tag">{venda.operadora?.nome || '-'}</span> · {formatarNomeServico(venda.servico?.nome) || venda.tipoVenda?.nome || '-'}</td>

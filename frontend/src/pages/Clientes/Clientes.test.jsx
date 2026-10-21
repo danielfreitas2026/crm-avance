@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Clientes from './Clientes';
 import { getUsuarioLocal, temPermissao } from '../../services/auth.service';
 import {
+  buscarClientePorId,
   excluirCliente,
   listarClientes,
   listarClientesSelect
@@ -54,6 +55,7 @@ vi.mock('../../services/auth.service', () => ({
 }));
 
 vi.mock('../../services/cliente.service', () => ({
+  buscarClientePorId: vi.fn(),
   excluirCliente: vi.fn(),
   exportarClientesExcel: vi.fn(),
   importarBaseAnterior: vi.fn(),
@@ -61,6 +63,12 @@ vi.mock('../../services/cliente.service', () => ({
   listarClientes: vi.fn(),
   listarClientesSelect: vi.fn(),
   previewImportacaoBaseAnterior: vi.fn()
+}));
+
+vi.mock('../../services/notificacao-abertura.service', async original => ({
+  ...(await original()),
+  confirmarAberturaNotificacao: vi.fn().mockResolvedValue(undefined),
+  falharAberturaNotificacao: vi.fn()
 }));
 
 vi.mock('../../services/config.service', () => ({
@@ -127,9 +135,9 @@ function mockCargaInicial({ clientes = [clientePadrao], total = clientes.length 
   listarServicos.mockResolvedValue([]);
 }
 
-function renderClientes() {
+function renderClientes(entry = '/clientes') {
   return render(
-    <MemoryRouter initialEntries={['/clientes']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Clientes />
     </MemoryRouter>
   );
@@ -158,6 +166,18 @@ describe('Clientes page', () => {
     expect(screen.getByRole('button', { name: /importar excel/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /exportar excel/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /lixeira/i })).toBeInTheDocument();
+  });
+
+  it('abre o cliente da notificação mesmo quando filtros salvos o ocultam da lista', async () => {
+    localStorage.setItem('usuario', '{"id":1}');
+    sessionStorage.setItem('crm:navegacao:v1:1:Clientes:busca', '"Outra empresa"');
+    mockCargaInicial({ clientes: [] });
+    buscarClientePorId.mockResolvedValue(clientePadrao);
+    renderClientes(`/clientes?cliente_id=${clientePadrao.id}&aba=notas&notificacao_id=55`);
+    const modal = await screen.findByRole('dialog', { name: 'modal cliente' });
+    expect(modal).toHaveTextContent('cliente:Maria Silva');
+    expect(modal).toHaveTextContent('aba:notas');
+    expect(buscarClientePorId).toHaveBeenCalledExactlyOnceWith(String(clientePadrao.id));
   });
 
   it('esconde acoes protegidas quando o usuario nao tem permissoes', async () => {
