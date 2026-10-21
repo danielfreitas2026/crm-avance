@@ -32,6 +32,71 @@ beforeEach(() => {
 });
 
 describe('configuração manual do Local', () => {
+  it('atualiza o contador ao selecionar e desmarcar campos pelo rótulo', async () => {
+    const user = userEvent.setup();
+    render(<LocalMailingModal planilha={PLANILHA} onClose={vi.fn()} onIniciado={vi.fn()} />);
+    const contador = screen.getByRole('status');
+    expect(contador).toHaveTextContent('0 selecionados');
+    expect(screen.queryByText(/Ao repetir/)).not.toBeInTheDocument();
+    await user.click(screen.getByText('Terminal', { exact: true }));
+    expect(screen.getByRole('checkbox', { name: 'Terminal' })).toBeChecked();
+    expect(contador).toHaveTextContent('1 selecionado');
+    await user.click(screen.getByText('Fixo', { exact: true }));
+    expect(contador).toHaveTextContent('2 selecionados');
+    await user.click(screen.getByText('Terminal', { exact: true }));
+    expect(contador).toHaveTextContent('1 selecionado');
+    await user.click(screen.getByText('Fixo', { exact: true }));
+    expect(contador).toHaveTextContent('0 selecionados');
+    expect(screen.getByRole('button', { name: 'Preencher Local', exact: true })).toBeDisabled();
+  });
+
+  it.each(['Fechar localização', 'Cancelar'])('fecha por %s e devolve o foco ao acionador', async nome => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onIniciado = vi.fn();
+    const { rerender } = render(<><button type="button">Abrir localização</button></>);
+    const acionador = screen.getByRole('button', { name: 'Abrir localização' });
+    await user.click(acionador);
+    rerender(<><button type="button">Abrir localização</button><LocalMailingModal planilha={PLANILHA} onClose={onClose} onIniciado={onIniciado} /></>);
+    expect(screen.getByRole('button', { name: 'Fechar localização' })).toHaveFocus();
+    await user.click(screen.getByRole('button', { name: nome }));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onIniciado).not.toHaveBeenCalled();
+    expect(preencherLocalMailing).not.toHaveBeenCalled();
+    rerender(<><button type="button">Abrir localização</button></>);
+    expect(acionador).toHaveFocus();
+  });
+
+  it('bloqueia os controles e o Escape enquanto inicia o preenchimento', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onIniciado = vi.fn();
+    let concluir;
+    preencherLocalMailing.mockReturnValueOnce(new Promise(resolve => { concluir = resolve; }));
+    render(<LocalMailingModal planilha={{ ...PLANILHA, local_config: CONFIG }} onClose={onClose} onIniciado={onIniciado} />);
+    const modal = screen.getByRole('dialog', { name: 'Preencher Local por DDD' });
+    expect(screen.getByRole('status')).toHaveTextContent('2 selecionados');
+    expect(screen.getByText(/Ao repetir/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Preencher Local', exact: true }));
+    expect(screen.getByRole('button', { name: 'Iniciando…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Fechar localização' })).toBeDisabled();
+    for (const campo of screen.getAllByRole('checkbox')) expect(campo).toBeDisabled();
+    fireEvent(modal, new Event('cancel', { cancelable: true }));
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(onClose).not.toHaveBeenCalled();
+    concluir({ ...PLANILHA, local_config: CONFIG });
+    await waitFor(() => expect(onIniciado).toHaveBeenCalledOnce());
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('fecha pelo cancelamento nativo quando não está processando', () => {
+    const onClose = vi.fn();
+    render(<LocalMailingModal planilha={PLANILHA} onClose={onClose} onIniciado={vi.fn()} />);
+    fireEvent(screen.getByRole('dialog', { name: 'Preencher Local por DDD' }), new Event('cancel', { cancelable: true }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('seleciona vários campos e preserva o modal em caso de erro', async () => {
     const user = userEvent.setup();
     const onIniciado = vi.fn();

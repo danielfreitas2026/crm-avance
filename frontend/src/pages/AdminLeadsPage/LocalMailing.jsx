@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Close } from '../../components/Icons';
 import { listarLocaisMailing, preencherLocalMailing } from '../../services/lead-planilha.service';
 import './LocalMailing.css';
 
@@ -34,27 +35,38 @@ export function LocalMailingModal({ planilha, onClose, onIniciado }) {
         onKeyDown={event => { if (event.key === 'Escape') event.stopPropagation(); }}
         onCancel={event => { event.preventDefault(); if (!salvando) onClose(); }}>
         <form onSubmit={iniciar}>
-          <div className="modal-header">
-            <h2 id="local-mailing-titulo">Preencher Local por DDD</h2>
-            <button type="button" className="btn" onClick={onClose} disabled={salvando} aria-label="Fechar localização">Fechar</button>
+          <div className="modal-header modal-header-row">
+            <div className="local-mailing-heading">
+              <h2 id="local-mailing-titulo">Preencher Local por DDD</h2>
+              <p className="local-mailing-planilha">{planilha.nome}</p>
+            </div>
+            <button type="button" className="btn btn-icon btn-ghost" onClick={onClose} disabled={salvando} aria-label="Fechar localização"><Close size={18} aria-hidden="true" /></button>
           </div>
           <div className="modal-body">
-            <p><strong>{planilha.nome}</strong></p>
-            <p>Selecione os campos de telefone. Todas as áreas encontradas em cada linha serão reunidas, sem repetição.</p>
-            <p>O DDD indica a área do telefone e pode abranger várias cidades. Os dados importados serão preservados.</p>
-            {planilha.local_config && <p>Ao repetir, o Local será recalculado em todas as linhas.</p>}
-            <fieldset className="local-mailing-campos" disabled={salvando}>
-              <legend>Campos de telefone</legend>
-              {(planilha.colunas || []).filter(campo => campo !== planilha.local_config?.coluna && !campo.endsWith(' (atualizado)')).map(campo => (
-                <label key={campo}>
-                  <input type="checkbox" checked={campos.includes(campo)} onChange={event => setCampos(atuais => event.target.checked ? [...atuais, campo] : atuais.filter(item => item !== campo))} />
-                  {campo}
-                </label>
-              ))}
+            <p id="local-mailing-instrucao" className="local-mailing-instrucao">Selecione os campos que contêm telefones completos.</p>
+            <fieldset className="local-mailing-campos" disabled={salvando} aria-describedby="local-mailing-instrucao">
+              <legend>
+                <span>Campos de telefone</span>
+                <span className="local-mailing-contador" role="status">{campos.length} {campos.length === 1 ? 'selecionado' : 'selecionados'}</span>
+              </legend>
+              <div className="local-mailing-opcoes">
+                {(planilha.colunas || []).filter(campo => campo !== planilha.local_config?.coluna && !campo.endsWith(' (atualizado)')).map(campo => (
+                  <label key={campo}>
+                    <input type="checkbox" checked={campos.includes(campo)} onChange={event => setCampos(atuais => event.target.checked ? [...atuais, campo] : atuais.filter(item => item !== campo))} />
+                    <span>{campo}</span>
+                  </label>
+                ))}
+              </div>
             </fieldset>
+            <div className="local-mailing-info">
+              <p>O DDD indica a área do telefone e pode abranger várias cidades.</p>
+              <p>As áreas encontradas em cada linha serão reunidas, sem repetição. Os dados importados serão preservados.</p>
+            </div>
+            {planilha.local_config && <p className="local-mailing-aviso">Ao repetir, o Local será recalculado em todas as linhas.</p>}
             {erro && <div role="alert" className="alert-error">{erro}</div>}
           </div>
           <div className="modal-footer">
+            <button type="button" className="btn" onClick={onClose} disabled={salvando}>Cancelar</button>
             <button type="submit" className="btn btn-primary" disabled={salvando || !campos.length}>{salvando ? 'Iniciando…' : 'Preencher Local'}</button>
           </div>
         </form>

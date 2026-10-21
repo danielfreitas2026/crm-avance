@@ -1,9 +1,62 @@
-.local-mailing-modal { width: min(600px, calc(100vw - 32px)); max-height: 90vh; overflow: auto; margin: auto; padding: 0; border: 1px solid var(--border); color: var(--text); }
+.modal.local-mailing-modal {
+  width: min(600px, calc(100vw - 32px));
+  height: fit-content;
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+  animation: none;
+}
 .local-mailing-modal::backdrop { background: rgba(15, 23, 42, 0.55); }
-.local-mailing-modal p { margin: 0 0 12px; }
+.local-mailing-modal form { display: flex; flex-direction: column; min-height: 0; max-height: inherit; }
+.local-mailing-modal .modal-header { padding: 24px; border-bottom: 1px solid var(--border); }
+.local-mailing-modal .modal-header::before { content: none; }
+.local-mailing-heading { min-width: 0; }
+.local-mailing-modal h2 { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.local-mailing-modal p { margin: 0; }
+.local-mailing-modal .local-mailing-planilha { margin-top: 6px; color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; }
+.local-mailing-modal .btn-icon { flex: 0 0 40px; width: 40px; height: 40px; }
+.local-mailing-modal .modal-body { display: flex; flex-direction: column; gap: 16px; min-height: 0; padding: 20px 24px; }
+.local-mailing-instrucao { color: var(--text-2); font-size: 13px; }
+.local-mailing-modal .modal-footer { padding: 16px 24px; background: var(--surface-2); }
+.local-mailing-modal .modal-footer .btn { min-height: 40px; justify-content: center; }
+.local-mailing-modal .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.local-mailing-modal .btn:disabled:hover { background: var(--surface); }
+.local-mailing-modal .btn-primary:disabled:hover { background: var(--accent); }
+.local-mailing-modal .btn:focus-visible,
+.local-mailing-modal input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
 .local-mailing-campos { display: flex; flex-direction: column; gap: 10px; max-height: 280px; overflow: auto; border: 1px solid var(--border); padding: 12px; }
 .local-mailing-campos label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; }
 .local-mailing-campos input[type='checkbox'] { flex: 0 0 auto; width: 16px; min-width: 16px; height: 16px; padding: 0; }
+
+.local-mailing-modal .local-mailing-campos { display: block; flex-shrink: 0; min-width: 0; margin: 0; padding: 0; max-height: none; overflow: visible; border: 0; }
+.local-mailing-modal .local-mailing-campos legend { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; width: 100%; margin-bottom: 10px; padding: 0; font-size: 13px; font-weight: 600; }
+.local-mailing-contador { padding: 3px 8px; border-radius: var(--radius); background: var(--surface-2); color: var(--text-2); font-size: 11px; font-weight: 500; }
+.local-mailing-opcoes { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 6px; }
+.local-mailing-modal .local-mailing-campos label { flex-shrink: 0; gap: 10px; min-height: 44px; padding: 10px 12px; border: 1px solid transparent; border-radius: var(--radius); font-size: 13px; line-height: 1.4; }
+.local-mailing-modal .local-mailing-campos label span { min-width: 0; overflow-wrap: anywhere; }
+.local-mailing-modal .local-mailing-campos label:hover { background: var(--surface-2); }
+.local-mailing-modal .local-mailing-campos label:has(:checked) { background: var(--surface-2); border-color: var(--border-strong); }
+.local-mailing-modal .local-mailing-campos label:has(:focus-visible) { border-color: var(--accent); }
+.local-mailing-modal .local-mailing-campos input { accent-color: var(--accent); }
+.local-mailing-modal .local-mailing-campos:disabled label { cursor: not-allowed; opacity: 0.6; }
+.local-mailing-info { padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-2); font-size: 12px; line-height: 1.6; }
+.local-mailing-info p + p { margin-top: 6px; }
+.local-mailing-aviso { padding: 10px 12px; border-left: 3px solid var(--warn); border-radius: var(--radius); background: var(--warn-bg); color: var(--warn); font-size: 12px; }
+.local-mailing-modal .alert-error { margin: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 480px) {
+  .local-mailing-modal .modal-header { padding: 16px; }
+  .local-mailing-modal h2 { font-size: 18px; }
+  .local-mailing-modal .modal-body { padding: 16px; }
+  .local-mailing-modal .modal-footer { padding: 12px 16px; flex-wrap: wrap; }
+  .local-mailing-modal .modal-footer .btn { flex: 1; }
+}
+
 .local-mailing-filtro { position: relative; font-size: 12px; }
 .local-mailing-filtro summary { padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; background: var(--surface); }
 .local-mailing-filtro-painel { position: absolute; z-index: 10; top: 100%; left: 0; width: min(380px, calc(100vw - 64px)); display: grid; gap: 10px; padding: 12px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
