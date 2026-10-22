@@ -163,6 +163,37 @@ describe('estatísticas por movimentação', () => {
     expect(criadas).toHaveTextContent(/400,00/);
   });
 
+  it('resume os 22 adicionados com 22 envios e 2 vendas, mantendo os totais gerais em detalhes recolhidos', async () => {
+    const dados = raiz(264);
+    Object.assign(dados.total, { futuros_clientes_adicionados: 22, adicionados_enviados_telegram: 22,
+      adicionados_com_venda: 2, clientes_enviados_telegram: 39, vendas_registradas: 4,
+      valor_vendido: 204.99, total_acoes: 819 });
+    vi.mocked(service.listarEstatisticasFuturosClientes).mockResolvedValue(dados);
+    render(<EstatisticasFuturosClientesView />);
+    await screen.findByRole('button', { name: 'Analisar desempenho de Qualificadora' });
+    const resumoAdicionados = screen.getByRole('group', { name: 'Resumo dos clientes adicionados' });
+    expect(resumoAdicionados).toHaveTextContent('Adicionados no período: 22');
+    expect(resumoAdicionados).toHaveTextContent('Com envio confirmado no intervalo: 22');
+    expect(resumoAdicionados).toHaveTextContent('Atualmente com venda registrada: 2');
+    expect(resumoAdicionados).not.toHaveTextContent(/39|819|204,99/);
+
+    const abrir = screen.getByText('Ver movimentações gerais do período');
+    const detalhes = abrir.closest('details');
+    expect(detalhes).not.toHaveAttribute('open');
+    const criadas = within(detalhes).getByText(/Vendas criadas no período:/);
+    expect(criadas).not.toBeVisible();
+    fireEvent.click(abrir);
+    expect(detalhes).toHaveAttribute('open');
+    const gerais = within(detalhes).getByRole('group', { name: 'Movimentações gerais do período' });
+    expect(gerais).toBeVisible();
+    expect(gerais).toHaveTextContent('264 clientes movimentados');
+    expect(gerais).toHaveTextContent('819 ações no período');
+    expect(gerais).toHaveTextContent('Total de clientes enviados ao Telegram no período: 39');
+    expect(criadas).toHaveTextContent('Vendas criadas no período: 4');
+    expect(criadas).toHaveTextContent(/204,99/);
+    expect(gerais).toHaveTextContent('inclusive clientes adicionados em outras datas');
+  });
+
   it('trocar o período dentro do usuário atualiza o cabeçalho e mantém mailings antigos', async () => {
     const ontem = obterPeriodoEstatisticas('ontem');
     vi.mocked(service.listarEstatisticasMailingsUsuario).mockImplementation(async (id, periodo) => ({

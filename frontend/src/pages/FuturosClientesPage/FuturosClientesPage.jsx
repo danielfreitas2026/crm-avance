@@ -4895,8 +4895,18 @@ export function EstatisticasFuturosClientesView() {
             </article>
           ))}
         </section>
-        <p className="future-stats__note">Total de clientes enviados ao Telegram no período: <strong>{Number(indicadores.clientes_enviados_telegram || 0).toLocaleString('pt-BR')}</strong>. Esse total também considera clientes fora do grupo dos adicionados no período.</p>
-        <p className="future-stats__activity-total"><strong>{Number(indicadores.total_acoes || 0).toLocaleString('pt-BR')} ações no período</strong> · Vendas criadas no período: {Number(indicadores.vendas_registradas || 0).toLocaleString('pt-BR')} · Valor das vendas criadas no período: {formatarMoedaSondagem(indicadores.valor_vendido)}</p>
+        <div role="group" aria-label="Resumo dos clientes adicionados">
+          <p className="future-stats__activity-total">Adicionados no período: <strong>{Number(indicadores.futuros_clientes_adicionados || 0).toLocaleString('pt-BR')}</strong> · Com envio confirmado no intervalo: <strong>{Number(indicadores.adicionados_enviados_telegram || 0).toLocaleString('pt-BR')}</strong> · Atualmente com venda registrada: <strong>{Number(indicadores.adicionados_com_venda || 0).toLocaleString('pt-BR')}</strong></p>
+        </div>
+        <details className="future-stats__period-details">
+          <summary>Ver movimentações gerais do período</summary>
+          <div role="group" aria-label="Movimentações gerais do período">
+            <p className="future-stats__activity-total">Considera todos os clientes movimentados no intervalo, inclusive clientes adicionados em outras datas.</p>
+            <p className="future-stats__activity-total"><strong>{Number(indicadores.clientes_movimentados || 0).toLocaleString('pt-BR')} clientes movimentados</strong> · <strong>{Number(indicadores.total_acoes || 0).toLocaleString('pt-BR')} ações no período</strong></p>
+            <p className="future-stats__activity-total">Total de clientes enviados ao Telegram no período: <strong>{Number(indicadores.clientes_enviados_telegram || 0).toLocaleString('pt-BR')}</strong></p>
+            <p className="future-stats__activity-total">Vendas criadas no período: {Number(indicadores.vendas_registradas || 0).toLocaleString('pt-BR')} · Valor das vendas criadas no período: {formatarMoedaSondagem(indicadores.valor_vendido)}</p>
+          </div>
+        </details>
         {!usuario && <section className="future-stats__table-panel future-stats__team-panel" aria-labelledby="future-stats-team-title">
           <header>
             <div><span className="future-stats__section-kicker">Equipe</span><h3 id="future-stats-team-title">Resultados por responsável pela qualificação</h3><p>Abra uma pessoa para ver os mailings movimentados.</p></div>

@@ -8,8 +8,8 @@ Assim, o cartão nunca supera **Futuros clientes adicionados** no mesmo recorte.
 O mesmo cálculo atende ao total, aos agrupamentos por responsável e mailing,
 ao detalhamento e à exportação Excel.
 
-O total de todos os clientes enviados no período é apresentado separadamente abaixo
-dos cartões e em outra coluna do Excel. Pode superar os adicionados, pois também
+O total de todos os clientes enviados no período é apresentado na seção recolhida
+**Ver movimentações gerais do período** e em outra coluna do Excel. Pode superar os adicionados, pois também
 considera clientes de fora desse grupo, incluindo cadastros anteriores ou sem data de
 registro preservada. Por exemplo: 66 adicionados e enviados, mais 3 clientes anteriores
 enviados no período, resultam em 66 no cartão e 69 no total geral de envios.
@@ -66,3 +66,17 @@ O Excel apresenta ambos os números.
 
 A API expõe o cartão em `adicionados_com_venda` e preserva `vendas_registradas` e
 `valor_vendido` para os eventos de criação de vendas do mailing no intervalo.
+
+## Resumo abaixo dos cartões
+
+O resumo principal repete os mesmos grupos dos cartões: adicionados no período,
+adicionados com envio confirmado no intervalo e adicionados atualmente com venda.
+Ele não apresenta o total geral de envios ou o valor das vendas criadas como se
+fossem resultados apenas desses adicionados.
+
+A seção **Ver movimentações gerais do período** começa recolhida e pode ser aberta
+por teclado ou mouse. Ela identifica separadamente todos os clientes movimentados,
+as ações, os clientes enviados, as vendas criadas no período e o valor dessas vendas.
+Esses totais incluem clientes adicionados em outras datas e usam os mesmos filtros
+de responsável e mailing da consulta. Nenhum cálculo da API ou do Excel muda com
+essa organização visual.
