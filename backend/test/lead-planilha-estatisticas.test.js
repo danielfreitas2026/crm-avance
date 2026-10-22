@@ -61,6 +61,28 @@ test('auditoria inicial atrasada continua sendo um único cadastro, sem atualiza
   assert.equal(eventos[0].ocorrido_em, '2025-02-10T12:00:00.000Z');
 });
 
+test('cadastro usa a primeira data preservada mesmo após limpeza da marcação atual', () => {
+  const dados = fontes({ linhas: [{ id: 1, futuro_cliente_marcado_em: null,
+    futuro_cliente_primeiro_registro_em: '2025-02-10T12:00:00Z',
+    futuro_cliente_primeiro_registro_por_id: 9 }], usuarios: [{ id: 9, nome: 'Autora original' }] });
+  const eventos = periodo(dados);
+  assert.equal(resumirMovimentacoes(eventos).futuros_clientes_adicionados, 1);
+  assert.equal(eventos[0].ocorrido_em, '2025-02-10T12:00:00.000Z');
+  assert.deepEqual(eventos[0].autor, { id: 9, nome: 'Autora original' });
+});
+
+test('novo registro não desloca para o período atual um cadastro preservado de período anterior', () => {
+  const dados = fontes({ linhas: [{ id: 1,
+    futuro_cliente_primeiro_registro_em: '2025-01-20T12:00:00Z', futuro_cliente_primeiro_registro_por_id: 7,
+    futuro_cliente_marcado_em: '2025-02-10T12:00:00Z' }],
+    auditorias: [audit(1, 'futuro_cliente_marcado', '2025-02-10T12:00:00Z')] });
+  assert.equal(resumirMovimentacoes(periodo(dados)).futuros_clientes_adicionados, 0);
+  const registro = montarMovimentacoes(dados).find(item => item.tipo === 'futuro_cliente_adicionado');
+  assert.equal(registro.ocorrido_em, '2025-01-20T12:00:00.000Z');
+  assert.equal(registro.autor.id, 7);
+  assert.equal(resumirMovimentacoes(periodo(dados, {})).futuros_clientes_adicionados, 1);
+});
+
 test('reenvio usa a janela correta e total geral conta clientes distintos entre responsáveis', () => {
   const dados = fontes();
   dados.atribuicoes.push({ ...dados.atribuicoes[0], id: 11, usuario_id: 8, envio_id: 101, atribuido_em: '2025-02-11T12:00:00Z' });
@@ -110,20 +132,81 @@ test('clientes enviados inclui 58 legados confirmados e 8 primeiros envios sem d
   const eventos = periodo(dados);
   const resumo = resumirMovimentacoes(eventos);
   assert.equal(resumo.clientes_enviados_telegram, 66);
+  assert.equal(resumo.adicionados_enviados_telegram, 66);
   assert.equal(resumo.novos_envios_telegram, 8);
   assert.equal(resumirMovimentacoes(periodo(dados, {
     data_inicio: '2025-02-12', data_fim: '2025-02-12'
   })).clientes_enviados_telegram, 1);
+  assert.equal(resumirMovimentacoes(periodo(dados, {
+    data_inicio: '2025-02-12', data_fim: '2025-02-12'
+  })).adicionados_enviados_telegram, 0);
   assert.equal(resumirMovimentacoes(periodo(dados, {
     data_inicio: '2025-03-01', data_fim: '2025-03-31'
   })).clientes_enviados_telegram, 0);
   const workbook = montarWorkbook(dados.linhas, eventos, true);
   for (const nome of ['Resumo', 'Resumo por usuário', 'Mailings']) {
     const sheet = workbook.getWorksheet(nome);
-    const coluna = sheet.getRow(1).values.indexOf('Clientes enviados ao Telegram');
+    const coluna = sheet.getRow(1).values.indexOf('Adicionados enviados ao Telegram');
     assert.ok(coluna > 0, nome);
     assert.equal(sheet.getCell(2, coluna).value, 66, nome);
   }
+});
+
+test('66 adicionados e 69 enviados comparam apenas os 66 do mesmo período', () => {
+  const dados = fontes({ linhas: [], atribuicoes: [], publicacoes: [] });
+  for (let id = 1; id <= 69; id++) {
+    dados.linhas.push({ id, futuro_cliente_primeiro_registro_em:
+      id <= 66 ? '2025-02-10T11:00:00Z' : '2025-01-20T11:00:00Z' });
+    dados.atribuicoes.push({ id, lead_linha_id: id, usuario_id: 7, envio_id: 100,
+      atribuido_em: '2025-01-10T12:00:00Z' });
+    dados.publicacoes.push({ id, lead_linha_id: id, tipo: 'legado',
+      telegram_chat_id: 'grupo-teste', telegram_message_id: String(id), publicado_em: '2025-02-10T12:00:00Z' });
+  }
+  const eventos = periodo(dados);
+  for (const resumo of [resumirMovimentacoes(eventos),
+    ...agruparMovimentacoes(eventos, item => ({ id: item.responsavel_id })),
+    ...agruparMovimentacoes(eventos, item => ({ id: item.envio_id }))]) {
+    assert.equal(resumo.futuros_clientes_adicionados, 66);
+    assert.equal(resumo.adicionados_enviados_telegram, 66);
+    assert.equal(resumo.clientes_enviados_telegram, 69);
+  }
+  const workbook = montarWorkbook(dados.linhas, eventos, true);
+  for (const nome of ['Resumo', 'Resumo por usuário', 'Mailings']) {
+    const sheet = workbook.getWorksheet(nome);
+    const colunas = sheet.getRow(1).values;
+    assert.equal(sheet.getCell(2, colunas.indexOf('Adicionados enviados ao Telegram')).value, 66);
+    assert.equal(sheet.getCell(2, colunas.indexOf('Clientes enviados ao Telegram (total no período)')).value, 69);
+  }
+});
+
+test('envios dos adicionados cruza os clientes e respeita período, responsável e mailing', () => {
+  const dados = fontes({ linhas: [
+    { id: 1, futuro_cliente_marcado_em: '2025-02-10T11:00:00Z' },
+    { id: 2, futuro_cliente_marcado_em: '2025-02-10T11:00:00Z', futuro_cliente_destino: 'distribuicao' },
+    { id: 3, futuro_cliente_marcado_em: '2025-01-20T11:00:00Z' },
+    { id: 4 }
+  ], distribuicoes: [{ id: 20, lead_linha_id: 1, aceite_status: 'recusado', finalizado_em: '2025-02-13T12:00:00Z' }],
+  publicacoes: [1, 3, 4].map(id => ({ id, lead_linha_id: id, tipo: 'legado',
+    telegram_chat_id: 'grupo-teste', telegram_message_id: String(id), publicado_em: '2025-02-10T12:00:00Z' })) });
+  dados.atribuicoes = dados.linhas.map(linha => ({ ...dados.atribuicoes[0], id: linha.id,
+    lead_linha_id: linha.id }));
+  dados.atribuicoes.push({ ...dados.atribuicoes[0], id: 10, usuario_id: 8, envio_id: 101,
+    atribuido_em: '2025-02-11T12:00:00Z' });
+  dados.publicacoes.push({ id: 5, lead_linha_id: 1, atribuicao_sondagem_id: 10, tipo: 'republicacao',
+    telegram_chat_id: 'grupo-teste', telegram_message_id: '5', publicado_em: '2025-02-12T12:00:00Z' });
+  const eventos = periodo(dados);
+  const resumo = resumirMovimentacoes(eventos);
+  assert.equal(resumo.futuros_clientes_adicionados, 2);
+  assert.equal(resumo.clientes_enviados_telegram, 3);
+  assert.equal(resumo.adicionados_enviados_telegram, 1);
+  assert.equal(resumirMovimentacoes(filtrarMovimentacoes(eventos,
+    { usuario_id: 7, envio_id: 100 })).adicionados_enviados_telegram, 1);
+  const outraResponsavel = resumirMovimentacoes(filtrarMovimentacoes(eventos, { usuario_id: 8, envio_id: 101 }));
+  assert.equal(outraResponsavel.adicionados_enviados_telegram, 0);
+  assert.equal(outraResponsavel.clientes_enviados_telegram, 1);
+  const outroDia = resumirMovimentacoes(periodo(dados, { data_inicio: '2025-02-12', data_fim: '2025-02-12' }));
+  assert.equal(outroDia.adicionados_enviados_telegram, 0);
+  assert.equal(outroDia.clientes_enviados_telegram, 1);
 });
 
 test('clientes enviados exige mensagem e data válidas, sem inferir envio pelo destino ou solicitação', () => {

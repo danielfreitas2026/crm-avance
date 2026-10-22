@@ -132,12 +132,17 @@ function montarMovimentacoes({ linhas = [], atribuicoes = [], auditorias = [], d
       eventosLinha.push(evento);
     }
     const registros = audits.filter(item => item.acao.replace(/_admin$/, '') === 'lead_linha.futuro_cliente_marcado');
-    const registroEm = [linha.futuro_cliente_marcado_em, ...registros.map(item => item.ocorrido_em)]
+    const registroEm = [linha.futuro_cliente_primeiro_registro_em, linha.futuro_cliente_marcado_em,
+      ...registros.map(item => item.ocorrido_em)]
       .filter(item => parseUtcDateTime(item)).sort((a, b) => parseUtcDateTime(a) - parseUtcDateTime(b))[0];
     if (registroEm) {
       const audit = registros[0];
+      const dataPreservada = parseUtcDateTime(linha.futuro_cliente_primeiro_registro_em);
+      const autorPreservado = dataPreservada?.getTime() === parseUtcDateTime(registroEm).getTime()
+        ? linha.futuro_cliente_primeiro_registro_por_id : null;
       adicionar(`registro:${id}`, 'futuro_cliente_adicionado', registroEm,
-        audit?.usuario_id || linha.futuro_cliente_marcado_por_id, audit?.usuario_nome);
+        autorPreservado || audit?.usuario_id || linha.futuro_cliente_marcado_por_id,
+        autorPreservado ? null : audit?.usuario_nome);
     }
     for (const audit of audits) {
       const acao = audit.acao.replace(/^lead_linha\./, '').replace(/_admin$/, '');
@@ -215,12 +220,16 @@ function resumirMovimentacoes(eventos, base = {}) {
   const tipos = {};
   for (const item of eventos) tipos[item.tipo] = (tipos[item.tipo] || 0) + 1;
   const distintos = (tipo, chave) => new Set(eventos.filter(item => item.tipo === tipo).map(item => item[chave])).size;
+  const adicionados = new Set(eventos.filter(item => item.tipo === 'futuro_cliente_adicionado')
+    .map(item => item.lead_linha_id));
+  const enviados = new Set(eventos.filter(item => item.envio_telegram_confirmado)
+    .map(item => item.lead_linha_id));
   const vendas = new Map(eventos.filter(item => item.tipo === 'venda_registrada').map(item => [item.venda_id, item.valor]));
   return {
     ...base, clientes_movimentados: new Set(eventos.map(item => item.lead_linha_id)).size,
-    futuros_clientes_adicionados: distintos('futuro_cliente_adicionado', 'lead_linha_id'),
-    clientes_enviados_telegram: new Set(eventos.filter(item => item.envio_telegram_confirmado)
-      .map(item => item.lead_linha_id)).size,
+    futuros_clientes_adicionados: adicionados.size,
+    adicionados_enviados_telegram: [...adicionados].filter(id => enviados.has(id)).length,
+    clientes_enviados_telegram: enviados.size,
     // Mantém o contrato anterior para consumidores que ainda precisam distinguir primeiros envios.
     novos_envios_telegram: distintos('novo_envio_telegram', 'lead_linha_id'),
     vendas_registradas: vendas.size, valor_vendido: [...vendas.values()].reduce((soma, valor) => soma + Number(valor || 0), 0),
@@ -282,7 +291,8 @@ async function carregar(filtros = {}) {
     db('lead_venda_vinculos_manuais').whereIn('lead_linha_id', ids).select('*')
   ]);
   const idsAutores = [...new Set([
-    ...linhas.flatMap(item => [item.futuro_cliente_marcado_por_id, item.cliente_recusou_por_id,
+    ...linhas.flatMap(item => [item.futuro_cliente_primeiro_registro_por_id,
+      item.futuro_cliente_marcado_por_id, item.cliente_recusou_por_id,
       item.chamada_nao_atendida_por_id, item.venda_recusada_por_id,
       item.retorno_agendado_realizado_por_id, item.futuro_cliente_retorno_realizado_por_id]),
     ...vinculos.flatMap(item => [item.vinculado_por_id, item.desvinculado_por_id])
@@ -326,8 +336,9 @@ function montarWorkbook(linhas, eventos, historicoIncompleto = false) {
   workbook.creator = 'CRM Avance';
   const metricas = [
     ['Clientes movimentados', 'clientes_movimentados'], ['Futuros clientes adicionados', 'futuros_clientes_adicionados'],
-    ['Clientes enviados ao Telegram', 'clientes_enviados_telegram'], ['Vendas registradas', 'vendas_registradas'],
-    ['Ações no período', 'total_acoes'], ['Valor vendido', 'valor_vendido']
+    ['Adicionados enviados ao Telegram', 'adicionados_enviados_telegram'], ['Vendas registradas', 'vendas_registradas'],
+    ['Ações no período', 'total_acoes'], ['Valor vendido', 'valor_vendido'],
+    ['Clientes enviados ao Telegram (total no período)', 'clientes_enviados_telegram']
   ];
   function tabela(nome, colunas, dados) {
     const ws = workbook.addWorksheet(nome);

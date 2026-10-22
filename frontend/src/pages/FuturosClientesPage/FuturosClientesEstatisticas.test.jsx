@@ -14,7 +14,8 @@ vi.mock('../../services/lead-planilha.service', async importOriginal => ({
 
 function resumo(clientes = 4) {
   return { clientes_movimentados: clientes, futuros_clientes_adicionados: 2,
-    novos_envios_telegram: 1, clientes_enviados_telegram: 3, vendas_registradas: 1, total_acoes: 8,
+    novos_envios_telegram: 1, clientes_enviados_telegram: 3, adicionados_enviados_telegram: 1,
+    vendas_registradas: 1, total_acoes: 8,
     valor_vendido: 100, acoes_por_tipo: { retorno_telegram: 2 } };
 }
 function raiz(clientes = 4) {
@@ -100,8 +101,7 @@ describe('estatísticas por movimentação', () => {
     await abrirUsuario();
     const mailings = screen.getByRole('region', { name: 'Tabela de mailings' });
     expect(mailings).toHaveAttribute('tabindex', '0');
-    expect(within(mailings).getByRole('columnheader', { name: 'Clientes enviados ao Telegram' })).toBeVisible();
-    expect(within(mailings).getByText('3')).toBeVisible();
+    expect(within(mailings).getByRole('columnheader', { name: 'Adicionados enviados ao Telegram' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Abrir mailing Mailing antigo' }));
     const clientes = await screen.findByRole('region', { name: 'Clientes do mailing' });
     const tabela = within(clientes).getByRole('region', { name: 'Tabela de clientes' });
@@ -110,20 +110,39 @@ describe('estatísticas por movimentação', () => {
     expect(within(clientes).getByRole('button', { name: 'Próxima' }).closest('.future-stats__pagination')).not.toBeNull();
   });
 
-  it('usa clientes enviados confirmados no indicador e na equipe, preservando o total de retornos', async () => {
+  it('compara envios dos adicionados no indicador e na equipe e identifica o total geral separado', async () => {
     render(<EstatisticasFuturosClientesView />);
     await screen.findByRole('button', { name: 'Analisar desempenho de Qualificadora' });
     expect(valor('Clientes movimentados')).toBe('4');
     expect(valor('Futuros clientes adicionados')).toBe('2');
-    expect(valor('Clientes enviados ao Telegram')).toBe('3');
-    expect(screen.getByText('envio confirmado no período, sem repetir clientes')).toBeVisible();
+    expect(valor('Adicionados enviados ao Telegram')).toBe('1');
+    expect(screen.getByText('dos adicionados no período, com envio confirmado no período')).toBeVisible();
+    expect(screen.getByText(/Total de clientes enviados ao Telegram no período:/)).toHaveTextContent('3');
     const pessoa = screen.getByRole('button', { name: 'Analisar desempenho de Qualificadora' });
-    expect(within(pessoa).getByText('Clientes enviados ao Telegram').nextElementSibling).toHaveTextContent('3');
+    expect(within(pessoa).getByText('Adicionados enviados ao Telegram').nextElementSibling).toHaveTextContent('1');
     expect(screen.queryByText('Novos envios ao Telegram')).not.toBeInTheDocument();
     expect(valor('Vendas registradas')).toBe('1');
     expect(screen.getByText('Retornos ao Telegram').nextElementSibling).toHaveTextContent('2');
     expect(screen.queryByText('Produtividade')).not.toBeInTheDocument();
     expect(screen.queryByText('Conversão')).not.toBeInTheDocument();
+  });
+
+  it('nas datas específicas mantém 66 adicionados e 65 enviados desse grupo, com 69 envios gerais separados', async () => {
+    const dados = raiz(70);
+    Object.assign(dados.total, { futuros_clientes_adicionados: 66,
+      adicionados_enviados_telegram: 65, clientes_enviados_telegram: 69 });
+    vi.mocked(service.listarEstatisticasFuturosClientes).mockResolvedValue(dados);
+    render(<EstatisticasFuturosClientesView />);
+    await screen.findByRole('button', { name: 'Analisar desempenho de Qualificadora' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Período' }), { target: { value: 'personalizado' } });
+    fireEvent.change(screen.getByLabelText('De'), { target: { value: '2025-02-01' } });
+    fireEvent.change(screen.getByLabelText('Até'), { target: { value: '2025-02-28' } });
+    await waitFor(() => expect(service.listarEstatisticasFuturosClientes).toHaveBeenLastCalledWith({
+      data_inicio: '2025-02-01', data_fim: '2025-02-28'
+    }));
+    await waitFor(() => expect(valor('Futuros clientes adicionados')).toBe('66'));
+    expect(valor('Adicionados enviados ao Telegram')).toBe('65');
+    expect(screen.getByText(/Total de clientes enviados ao Telegram no período:/)).toHaveTextContent('69');
   });
 
   it('trocar o período dentro do usuário atualiza o cabeçalho e mantém mailings antigos', async () => {
@@ -199,7 +218,7 @@ describe('estatísticas por movimentação', () => {
     render(<EstatisticasFuturosClientesView />);
     await screen.findByText('Nenhuma movimentação encontrada no período.');
     expect(screen.getByRole('status')).toHaveTextContent('histórico antigo pode estar incompleto');
-    expect(screen.getByRole('status')).toHaveTextContent('Envios antigos com confirmação e data entram na contagem');
+    expect(screen.getByRole('status')).toHaveTextContent('Envios antigos com confirmação e data entram no total de envios');
     fireEvent.change(screen.getByRole('combobox', { name: 'Período' }), { target: { value: 'personalizado' } });
     expect(await screen.findByRole('alert')).toHaveTextContent('A data inicial deve ser anterior ou igual à data final.');
   });

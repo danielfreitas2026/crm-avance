@@ -4756,7 +4756,7 @@ const ATIVIDADES_TELEGRAM = [
 const INDICADORES_MOVIMENTACAO = [
   ['clientes_movimentados', 'Clientes movimentados', 'clientes distintos com ações', 'received'],
   ['futuros_clientes_adicionados', 'Futuros clientes adicionados', 'primeiro registro como futuro cliente', 'qualified'],
-  ['clientes_enviados_telegram', 'Clientes enviados ao Telegram', 'envio confirmado no período, sem repetir clientes', 'worked'],
+  ['adicionados_enviados_telegram', 'Adicionados enviados ao Telegram', 'dos adicionados no período, com envio confirmado no período', 'worked'],
   ['vendas_registradas', 'Vendas registradas', 'vendas novas originadas dos clientes', 'qualified']
 ];
 
@@ -4886,7 +4886,7 @@ export function EstatisticasFuturosClientesView() {
       {(erro || erroExportacao) && <div className="alert alert-danger" role="alert">{erro || erroExportacao}</div>}
       {carregando && <div className="future-stats__loading">Carregando movimentações...</div>}
       {!carregando && !erro && <>
-        {indicadores.historico_incompleto && <p className="future-stats__note" role="status">O histórico antigo pode estar incompleto. Envios antigos com confirmação e data entram na contagem. Registros sem identificação da mensagem ou data válida ficam fora.</p>}
+        {indicadores.historico_incompleto && <p className="future-stats__note" role="status">O histórico antigo pode estar incompleto. Envios antigos com confirmação e data entram no total de envios. Registros sem identificação da mensagem ou data válida ficam fora.</p>}
         <section className="future-stats__overview" aria-label="Indicadores principais">
           {INDICADORES_MOVIMENTACAO.map(([chave, rotulo, ajuda, estilo]) => (
             <article className={`future-stats__kpi future-stats__kpi--${estilo}`} key={chave}>
@@ -4895,6 +4895,7 @@ export function EstatisticasFuturosClientesView() {
             </article>
           ))}
         </section>
+        <p className="future-stats__note">Total de clientes enviados ao Telegram no período: <strong>{Number(indicadores.clientes_enviados_telegram || 0).toLocaleString('pt-BR')}</strong>. Esse total também considera clientes fora do grupo dos adicionados no período.</p>
         <p className="future-stats__activity-total"><strong>{Number(indicadores.total_acoes || 0).toLocaleString('pt-BR')} ações no período</strong> · Valor das vendas registradas: {formatarMoedaSondagem(indicadores.valor_vendido)}</p>
         {!usuario && <section className="future-stats__table-panel future-stats__team-panel" aria-labelledby="future-stats-team-title">
           <header>
