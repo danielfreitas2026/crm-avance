@@ -4757,7 +4757,7 @@ const INDICADORES_MOVIMENTACAO = [
   ['clientes_movimentados', 'Clientes movimentados', 'clientes distintos com ações', 'received'],
   ['futuros_clientes_adicionados', 'Futuros clientes adicionados', 'primeiro registro como futuro cliente', 'qualified'],
   ['adicionados_enviados_telegram', 'Adicionados enviados ao Telegram', 'dos adicionados no período, com envio confirmado no período', 'worked'],
-  ['vendas_registradas', 'Vendas registradas', 'vendas novas originadas dos clientes', 'qualified']
+  ['adicionados_com_venda', 'Adicionados com venda', 'dos adicionados no período, atualmente com venda registrada', 'qualified']
 ];
 
 export function EstatisticasFuturosClientesView() {
@@ -4896,7 +4896,7 @@ export function EstatisticasFuturosClientesView() {
           ))}
         </section>
         <p className="future-stats__note">Total de clientes enviados ao Telegram no período: <strong>{Number(indicadores.clientes_enviados_telegram || 0).toLocaleString('pt-BR')}</strong>. Esse total também considera clientes fora do grupo dos adicionados no período.</p>
-        <p className="future-stats__activity-total"><strong>{Number(indicadores.total_acoes || 0).toLocaleString('pt-BR')} ações no período</strong> · Valor das vendas registradas: {formatarMoedaSondagem(indicadores.valor_vendido)}</p>
+        <p className="future-stats__activity-total"><strong>{Number(indicadores.total_acoes || 0).toLocaleString('pt-BR')} ações no período</strong> · Vendas criadas no período: {Number(indicadores.vendas_registradas || 0).toLocaleString('pt-BR')} · Valor das vendas criadas no período: {formatarMoedaSondagem(indicadores.valor_vendido)}</p>
         {!usuario && <section className="future-stats__table-panel future-stats__team-panel" aria-labelledby="future-stats-team-title">
           <header>
             <div><span className="future-stats__section-kicker">Equipe</span><h3 id="future-stats-team-title">Resultados por responsável pela qualificação</h3><p>Abra uma pessoa para ver os mailings movimentados.</p></div>

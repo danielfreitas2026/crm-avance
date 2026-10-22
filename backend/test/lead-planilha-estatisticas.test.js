@@ -305,6 +305,64 @@ test('venda usa criação, deduplica venda e separa vinculação manual de venda
   assert.equal(resumo.acoes_por_tipo.venda_vinculada, 1);
 });
 
+test('13 adicionados com vendas vinculadas contam no cartão sem transformar vendas antigas em faturamento novo', () => {
+  const dados = fontes({ linhas: [], atribuicoes: [], vendas: [], vinculos: [] });
+  for (let id = 1; id <= 13; id++) {
+    dados.linhas.push({ id, futuro_cliente: true, futuro_cliente_marcado_em: '2025-02-10T12:00:00Z',
+      primeira_ligacao_usuario_id: 7, futuro_cliente_marcado_por_id: 7,
+      venda_id: 100 + id, status_operacional: 'vendido' });
+    dados.atribuicoes.push({ id, lead_linha_id: id, usuario_id: 7, envio_id: 100,
+      atribuido_em: '2025-01-10T12:00:00Z' });
+    dados.vendas.push({ id: 100 + id, created_at: '2025-01-20T12:00:00Z', valor_total: 100 });
+    dados.vinculos.push({ id, lead_linha_id: id, venda_id: 100 + id, vinculado_em: '2025-02-12T12:00:00Z' });
+  }
+  const eventos = periodo(dados);
+  for (const resumo of [resumirMovimentacoes(eventos),
+    ...agruparMovimentacoes(eventos, item => ({ id: item.responsavel_id })),
+    ...agruparMovimentacoes(eventos, item => ({ id: item.envio_id }))]) {
+    assert.equal(resumo.futuros_clientes_adicionados, 13);
+    assert.equal(resumo.adicionados_com_venda, 13);
+    assert.equal(resumo.vendas_registradas, 0);
+    assert.equal(resumo.valor_vendido, 0);
+  }
+  const workbook = montarWorkbook(dados.linhas, eventos);
+  for (const nome of ['Resumo', 'Resumo por usuário', 'Mailings']) {
+    const sheet = workbook.getWorksheet(nome);
+    const colunas = sheet.getRow(1).values;
+    assert.equal(sheet.getCell(2, colunas.indexOf('Adicionados com venda')).value, 13);
+    assert.equal(sheet.getCell(2, colunas.indexOf('Vendas criadas no período')).value, 0);
+    assert.equal(sheet.getCell(2, colunas.indexOf('Valor das vendas criadas no período')).value, 0);
+  }
+});
+
+test('adicionados com venda usa o estado atual da lista e a data do cadastro, não a data da venda', () => {
+  const linhas = [
+    { id: 1, venda_id: 30, status_operacional: 'qualificado' },
+    { id: 2, venda_id: null, status_operacional: 'vendido' },
+    { id: 3, venda_id: null, status_operacional: 'qualificado' },
+    { id: 4, venda_id: null, status_operacional: 'perdido' },
+    { id: 5, venda_id: 35, status_operacional: 'vendido', futuro_cliente_excluido_em: '2025-02-15T12:00:00Z' },
+    { id: 6, venda_id: 36, status_operacional: 'vendido', futuro_cliente: false },
+    { id: 7, venda_id: 37, status_operacional: 'vendido', futuro_cliente_marcado_em: '2025-01-20T12:00:00Z' }
+  ].map(linha => ({ futuro_cliente: true, futuro_cliente_marcado_em: '2025-02-10T12:00:00Z', ...linha }));
+  const dados = fontes({ linhas, atribuicoes: linhas.map(linha => ({ id: linha.id, lead_linha_id: linha.id,
+    usuario_id: linha.id === 2 ? 8 : 7, envio_id: linha.id === 2 ? 101 : 100,
+    atribuido_em: '2025-01-10T12:00:00Z' })),
+    vendas: [{ id: 30, created_at: '2025-03-10T12:00:00Z', valor_total: 100 }],
+    vinculos: [{ id: 1, lead_linha_id: 3, venda_id: 33, vinculado_em: '2025-02-11T12:00:00Z',
+      desvinculado_em: '2025-02-12T12:00:00Z' }] });
+  const eventos = periodo(dados);
+  assert.equal(resumirMovimentacoes(eventos).adicionados_com_venda, 2);
+  assert.equal(resumirMovimentacoes(filtrarMovimentacoes(eventos,
+    { usuario_id: 7, envio_id: 100 })).adicionados_com_venda, 1);
+  assert.equal(resumirMovimentacoes(filtrarMovimentacoes(eventos,
+    { usuario_id: 8, envio_id: 101 })).adicionados_com_venda, 1);
+  assert.equal(resumirMovimentacoes(periodo(dados, { data_inicio: '2025-03-01', data_fim: '2025-03-31' }))
+    .adicionados_com_venda, 0);
+  assert.equal(resumirMovimentacoes(eventos).vendas_registradas, 0);
+  assert.equal(resumirMovimentacoes(eventos).valor_vendido, 0);
+});
+
 test('fuso de São Paulo respeita limites inclusivos e exclui ações futuras', () => {
   assert.equal(dataIsoEstatisticas('2025-03-01T02:59:59Z'), '2025-02-28');
   assert.equal(dataIsoEstatisticas('2025-03-01T03:00:00Z'), '2025-03-01');

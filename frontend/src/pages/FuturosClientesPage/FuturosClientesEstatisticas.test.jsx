@@ -15,7 +15,7 @@ vi.mock('../../services/lead-planilha.service', async importOriginal => ({
 function resumo(clientes = 4) {
   return { clientes_movimentados: clientes, futuros_clientes_adicionados: 2,
     novos_envios_telegram: 1, clientes_enviados_telegram: 3, adicionados_enviados_telegram: 1,
-    vendas_registradas: 1, total_acoes: 8,
+    vendas_registradas: 1, adicionados_com_venda: 2, total_acoes: 8,
     valor_vendido: 100, acoes_por_tipo: { retorno_telegram: 2 } };
 }
 function raiz(clientes = 4) {
@@ -121,7 +121,10 @@ describe('estatísticas por movimentação', () => {
     const pessoa = screen.getByRole('button', { name: 'Analisar desempenho de Qualificadora' });
     expect(within(pessoa).getByText('Adicionados enviados ao Telegram').nextElementSibling).toHaveTextContent('1');
     expect(screen.queryByText('Novos envios ao Telegram')).not.toBeInTheDocument();
-    expect(valor('Vendas registradas')).toBe('1');
+    expect(valor('Adicionados com venda')).toBe('2');
+    expect(screen.getByText('dos adicionados no período, atualmente com venda registrada')).toBeVisible();
+    expect(within(pessoa).getByText('Adicionados com venda').nextElementSibling).toHaveTextContent('2');
+    expect(screen.getByText(/Vendas criadas no período:/)).toHaveTextContent('1');
     expect(screen.getByText('Retornos ao Telegram').nextElementSibling).toHaveTextContent('2');
     expect(screen.queryByText('Produtividade')).not.toBeInTheDocument();
     expect(screen.queryByText('Conversão')).not.toBeInTheDocument();
@@ -143,6 +146,21 @@ describe('estatísticas por movimentação', () => {
     await waitFor(() => expect(valor('Futuros clientes adicionados')).toBe('66'));
     expect(valor('Adicionados enviados ao Telegram')).toBe('65');
     expect(screen.getByText(/Total de clientes enviados ao Telegram no período:/)).toHaveTextContent('69');
+  });
+
+  it('mostra 13 adicionados com venda, preservando a contagem e o valor das vendas criadas no período', async () => {
+    const dados = raiz(66);
+    Object.assign(dados.total, { futuros_clientes_adicionados: 66, adicionados_com_venda: 13,
+      vendas_registradas: 4, valor_vendido: 400 });
+    dados.usuarios[0].adicionados_com_venda = 13;
+    vi.mocked(service.listarEstatisticasFuturosClientes).mockResolvedValue(dados);
+    render(<EstatisticasFuturosClientesView />);
+    const pessoa = await screen.findByRole('button', { name: 'Analisar desempenho de Qualificadora' });
+    expect(valor('Adicionados com venda')).toBe('13');
+    expect(within(pessoa).getByText('Adicionados com venda').nextElementSibling).toHaveTextContent('13');
+    const criadas = screen.getByText(/Vendas criadas no período:/);
+    expect(criadas).toHaveTextContent('4');
+    expect(criadas).toHaveTextContent(/400,00/);
   });
 
   it('trocar o período dentro do usuário atualiza o cabeçalho e mantém mailings antigos', async () => {

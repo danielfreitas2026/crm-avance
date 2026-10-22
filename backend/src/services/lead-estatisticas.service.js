@@ -142,7 +142,11 @@ function montarMovimentacoes({ linhas = [], atribuicoes = [], auditorias = [], d
         ? linha.futuro_cliente_primeiro_registro_por_id : null;
       adicionar(`registro:${id}`, 'futuro_cliente_adicionado', registroEm,
         autorPreservado || audit?.usuario_id || linha.futuro_cliente_marcado_por_id,
-        autorPreservado ? null : audit?.usuario_nome);
+        autorPreservado ? null : audit?.usuario_nome, {
+          // Mesmo estado considerado por "Vendas concluídas" na lista de futuros clientes.
+          com_venda_atual: Number(linha.futuro_cliente) === 1 && linha.futuro_cliente_excluido_em == null
+            && (linha.status_operacional === 'vendido' || linha.venda_id != null)
+        });
     }
     for (const audit of audits) {
       const acao = audit.acao.replace(/^lead_linha\./, '').replace(/_admin$/, '');
@@ -229,6 +233,8 @@ function resumirMovimentacoes(eventos, base = {}) {
     ...base, clientes_movimentados: new Set(eventos.map(item => item.lead_linha_id)).size,
     futuros_clientes_adicionados: adicionados.size,
     adicionados_enviados_telegram: [...adicionados].filter(id => enviados.has(id)).length,
+    adicionados_com_venda: new Set(eventos.filter(item => item.tipo === 'futuro_cliente_adicionado'
+      && item.com_venda_atual).map(item => item.lead_linha_id)).size,
     clientes_enviados_telegram: enviados.size,
     // Mantém o contrato anterior para consumidores que ainda precisam distinguir primeiros envios.
     novos_envios_telegram: distintos('novo_envio_telegram', 'lead_linha_id'),
@@ -336,9 +342,10 @@ function montarWorkbook(linhas, eventos, historicoIncompleto = false) {
   workbook.creator = 'CRM Avance';
   const metricas = [
     ['Clientes movimentados', 'clientes_movimentados'], ['Futuros clientes adicionados', 'futuros_clientes_adicionados'],
-    ['Adicionados enviados ao Telegram', 'adicionados_enviados_telegram'], ['Vendas registradas', 'vendas_registradas'],
-    ['Ações no período', 'total_acoes'], ['Valor vendido', 'valor_vendido'],
-    ['Clientes enviados ao Telegram (total no período)', 'clientes_enviados_telegram']
+    ['Adicionados enviados ao Telegram', 'adicionados_enviados_telegram'], ['Adicionados com venda', 'adicionados_com_venda'],
+    ['Ações no período', 'total_acoes'], ['Valor das vendas criadas no período', 'valor_vendido'],
+    ['Clientes enviados ao Telegram (total no período)', 'clientes_enviados_telegram'],
+    ['Vendas criadas no período', 'vendas_registradas']
   ];
   function tabela(nome, colunas, dados) {
     const ws = workbook.addWorksheet(nome);

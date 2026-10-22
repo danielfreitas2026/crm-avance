@@ -39,3 +39,30 @@ A API expõe o cartão em `adicionados_enviados_telegram` e mantém o total gera
 envios em `clientes_enviados_telegram`. O campo
 `novos_envios_telegram` mantém o comportamento anterior, restrito à classificação
 `primeiro_envio`, para compatibilidade.
+
+## Adicionados com venda
+
+O cartão **Adicionados com venda** conta clientes distintos adicionados no intervalo
+selecionado que atualmente satisfazem o filtro **Vendas concluídas** da lista:
+`futuro_cliente = true`, sem exclusão na lixeira, e `status_operacional = vendido`
+ou `venda_id` preenchido. Inclui vínculos manuais ativos e marcações legadas como
+vendido. O histórico de um vínculo desfeito não basta para contar o cliente.
+
+As datas filtram o cadastro do futuro cliente, não a criação ou conclusão da venda.
+O número pode mudar depois do intervalo selecionado se uma venda for vinculada ou
+desvinculada, pois representa o estado atual daquele grupo. Cada cliente conta uma
+vez, mesmo se houver mais de um evento de venda no histórico. A atribuição continua
+sendo à responsável pela qualificação no cadastro; o filtro de responsável atual
+da lista e a vendedora da tela Vendas são critérios diferentes.
+
+Esse estado não exige que a venda tenha alcançado a etapa final do funil: segue a
+mesma definição de "Vendas concluídas" da lista de futuros clientes.
+
+**Vendas criadas no período** e seu valor permanecem separados: usam a data de criação
+da venda, deduplicam pelo ID da venda e não transformam vínculos manuais de vendas
+antigas em novos resultados financeiros. Uma venda antiga vinculada a um cliente
+adicionado neste período conta em **Adicionados com venda**, sem aumentar esse valor.
+O Excel apresenta ambos os números.
+
+A API expõe o cartão em `adicionados_com_venda` e preserva `vendas_registradas` e
+`valor_vendido` para os eventos de criação de vendas do mailing no intervalo.
