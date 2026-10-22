@@ -21,7 +21,7 @@ describe('autorização de acesso externo', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     sessionStorage.clear();
-    sessionStorage.setItem('acesso_rede_pendente', JSON.stringify({ solicitacao_id: 'solicitacao-teste', expira_em: new Date(Date.now() + 600000).toISOString() }));
+    sessionStorage.setItem('acesso_rede_pendente', JSON.stringify({ solicitacao_id: 'solicitacao-teste', expira_em: new Date(Date.now() + 1800000).toISOString() }));
     logout.mockResolvedValue({});
   });
 
@@ -29,6 +29,7 @@ describe('autorização de acesso externo', () => {
     const user = userEvent.setup();
     validarAcessoRede.mockResolvedValue({ token: 'jwt', usuario: {} });
     montar();
+    expect(screen.getByText(/Código válido por (29min|30min)/)).toBeInTheDocument();
     await user.type(screen.getByLabelText('Código de 6 letras'), 'abc123def');
     expect(screen.getByLabelText('Código de 6 letras')).toHaveValue('ABCDEF');
     await user.click(screen.getByRole('button', { name: 'Liberar acesso' }));

@@ -20,6 +20,10 @@ function banco(seed = {}) {
         return query;
       },
       whereNotNull(chave) { filtros.push(item => item[chave] != null); return query; },
+      async select(...campos) {
+        return tabelas[tabela].filter(item => filtros.every(filtro => filtro(item)))
+          .map(item => Object.fromEntries(campos.map(campo => [campo, item[campo]])));
+      },
       forUpdate() { travas++; return query; },
       orderBy(chave, ordem) { ordens.push([chave, ordem]); return query; },
       async first() {
@@ -57,6 +61,62 @@ function banco(seed = {}) {
 function publicacao(id, extra = {}) {
   return { enviado: true, telegram_chat_id: 'grupo-teste', message_id: id, ...extra };
 }
+
+test('resumo identifica ausência de confirmação sem usar o destino ou a fila de tentativas', async () => {
+  const { db } = banco({
+    lead_linhas: [{ id: 1, futuro_cliente_destino: 'distribuicao' }],
+    lead_telegram_republicacoes: [{ lead_linha_id: 1, status: 'falhou' }],
+    lead_telegram_publicacoes: [{ lead_linha_id: 2, tipo: 'legado' }]
+  });
+  assert.deepEqual(await service.obterResumoEnvio(1, db), {
+    situacao: 'sem_confirmacao', ultimo_envio_em: null
+  });
+});
+
+test('resumo conserva o primeiro envio após devolução e usa a última republicação confirmada', async () => {
+  const { db, tabelas } = banco();
+  await service.registrar(1, publicacao(100), db);
+  const primeira = await service.obterResumoEnvio(1, db);
+  assert.equal(primeira.situacao, 'enviado');
+  assert.equal(primeira.ultimo_envio_em, tabelas.lead_telegram_publicacoes[0].publicado_em.toISOString());
+  for (const aceite_status of ['recusado', 'expirado_sem_aceite', 'expirado_sem_acao']) {
+    tabelas.lead_atribuicoes.push({ lead_linha_id: 1, etapa: 'venda', aceite_status });
+    assert.deepEqual(await service.obterResumoEnvio(1, db), primeira);
+  }
+  tabelas.lead_telegram_publicacoes.push(
+    { lead_linha_id: 1, tipo: 'republicacao', telegram_chat_id: 'teste', telegram_message_id: '102', publicado_em: '2030-02-10 15:00:00' },
+    { lead_linha_id: 1, tipo: 'republicacao', telegram_chat_id: 'teste', telegram_message_id: '101', publicado_em: '2030-02-09 15:00:00' },
+    { lead_linha_id: 1, tipo: 'legado', publicado_em: '2031-02-10 15:00:00' }
+  );
+  assert.deepEqual(await service.obterResumoEnvio(1, db), {
+    situacao: 'enviado', ultimo_envio_em: '2030-02-10T15:00:00.000Z'
+  });
+});
+
+test('resumo reconhece publicação legada com comprovação e normaliza o fuso para UTC', async () => {
+  const { db } = banco({ lead_telegram_publicacoes: [{
+    lead_linha_id: 1, tipo: 'legado', telegram_chat_id: 'teste', telegram_message_id: '100',
+    publicado_em: '2026-08-20T12:30:00-03:00'
+  }] });
+  assert.deepEqual(await service.obterResumoEnvio(1, db), {
+    situacao: 'enviado', ultimo_envio_em: '2026-08-20T15:30:00.000Z'
+  });
+});
+
+test('resumo não inventa confirmação quando falta data válida ou identificação da mensagem', async () => {
+  for (const extra of [
+    { publicado_em: null }, { publicado_em: 'inválida' }, { publicado_em: '0000-00-00 00:00:00' },
+    { telegram_chat_id: null }, { telegram_message_id: null }, { telegram_chat_id: ' ' }
+  ]) {
+    const { db } = banco({ lead_telegram_publicacoes: [{
+      lead_linha_id: 1, tipo: 'legado', telegram_chat_id: 'teste', telegram_message_id: '100',
+      publicado_em: '2026-08-20 15:30:00', ...extra
+    }] });
+    assert.deepEqual(await service.obterResumoEnvio(1, db), {
+      situacao: 'historico_incompleto', ultimo_envio_em: null
+    });
+  }
+});
 
 test('persistência serializa o lead, deduplica confirmação e preserva a primeira data', async () => {
   const { db, tabelas, travas } = banco();

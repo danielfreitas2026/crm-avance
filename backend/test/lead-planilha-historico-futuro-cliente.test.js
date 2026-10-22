@@ -6,6 +6,7 @@ const leadPlanilhaController = require('../src/controllers/lead-planilha.control
 const leadPlanilhaRoutes = require('../src/routes/lead-planilha.routes');
 const LeadLinha = require('../src/models/LeadLinha');
 const Usuario = require('../src/models/Usuario');
+const db = require('../src/database/connection');
 
 const { resolverEstadoAtualFuturoCliente, montarEventosHistoricoFuturoCliente } = _internals;
 
@@ -18,6 +19,50 @@ const linhaBase = {
   futuroClienteMarcadoPor: { id: 1, nome: 'Ana' },
   status_operacional: 'qualificado'
 };
+
+test('histórico inclui confirmação de envio mesmo após devolução e consulta somente o cliente solicitado', async t => {
+  const query = {
+    findById(id) { assert.equal(id, 10); return this; },
+    where() { return this; },
+    whereNull() { return this; },
+    async withGraphFetched() { return { ...linhaBase, futuro_cliente_destino: 'distribuicao' }; }
+  };
+  t.mock.method(LeadLinha, 'query', () => query);
+  const consultas = [];
+  t.mock.method(db.client, 'runner', builder => ({ run: async () => {
+    const consulta = builder.toSQL();
+    consultas.push(consulta);
+    if (consulta.sql.includes('from `lead_atribuicoes` as `la`')) return [{
+      id: 2, lead_linha_id: 10, etapa: 'venda', aceite_status: 'recusado', finalizado_em: '2026-08-20 16:00:00'
+    }];
+    if (consulta.sql.includes('from `lead_telegram_publicacoes`')) return [{
+      telegram_chat_id: 'teste', telegram_message_id: '100', publicado_em: '2026-08-20 15:30:00'
+    }];
+    if (consulta.sql.includes('from `funil_etapas`') || consulta.sql.includes('from `vendas` as `v`')) return undefined;
+    return [];
+  } }));
+  const historico = await leadPlanilhaService.obterHistoricoFuturoCliente(10);
+  assert.equal(historico.linha_id, 10);
+  assert.equal(historico.estado_atual.codigo, 'devolvido');
+  assert.deepEqual(historico.envio_telegram, {
+    situacao: 'enviado', ultimo_envio_em: '2026-08-20T15:30:00.000Z'
+  });
+  const consulta = consultas.find(item => item.sql.includes('from `lead_telegram_publicacoes`'));
+  assert.match(consulta.sql, /where `lead_linha_id` = \?/);
+  assert.deepEqual(consulta.bindings, [10]);
+  assert.ok(historico.eventos.some(item => item.tipo === 'devolucao'));
+});
+
+test('histórico não consulta publicações de um futuro cliente inexistente ou inativo', async t => {
+  const query = {
+    findById() { return this; }, where() { return this; }, whereNull() { return this; },
+    async withGraphFetched() { return null; }
+  };
+  t.mock.method(LeadLinha, 'query', () => query);
+  const runner = t.mock.method(db.client, 'runner', () => { throw new Error('Consulta indevida'); });
+  await assert.rejects(leadPlanilhaService.obterHistoricoFuturoCliente(10), { statusCode: 404 });
+  assert.equal(runner.mock.callCount(), 0);
+});
 
 test('resolve os estados canonicos sem promover uma atribuicao encerrada a estado atual', () => {
   const carteira = resolverEstadoAtualFuturoCliente(linhaBase);

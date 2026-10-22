@@ -98,18 +98,18 @@ async function avaliar(usuario, req, sessao) {
       row.versao_sessao === (pessoa.versao_sessao || 0) && tempo(row.expira_em) > agora.getTime() &&
       (sessao ? row.sessao_id === sessao.id : row.origem === 'login'));
     if (pendente) return respostaPendente(pendente);
-    if (registros.length >= 5 || registros.some(row => tempo(row.created_at) > agora.getTime() - MINUTO)) {
+    if (registros.length >= 20 || registros.filter(row => tempo(row.created_at) > agora.getTime() - MINUTO).length >= 3) {
       throw erro('Limite de solicitações atingido. Aguarde antes de tentar novamente.', 429);
     }
     const porIp = await trx(TABELA).where({ ip }).where('created_at', '>', new Date(agora.getTime() - MINUTO)).count('* as total').first();
-    if (Number(porIp.total) >= 20) throw erro('Muitas solicitações nesta rede. Aguarde um minuto.', 429);
+    if (Number(porIp.total) >= 100) throw erro('Muitas solicitações nesta rede. Aguarde um minuto.', 429);
     if (!telegramConfigurado()) throw erro('Não foi possível enviar o código. Contate o administrador.', 503);
     const id = crypto.randomUUID();
     const codigo = Array.from({ length: 6 }, () => String.fromCharCode(65 + crypto.randomInt(26))).join('');
     const row = { id, usuario_id: pessoa.id, sessao_id: sessao?.id || crypto.randomUUID(),
       versao_sessao: pessoa.versao_sessao || 0, ip, origem: sessao ? 'sessao' : 'login',
       codigo_hash: assinatura(id, codigo), estado: 'pendente', tentativas: 0,
-      created_at: agora, expira_em: new Date(agora.getTime() + 10 * MINUTO),
+      created_at: agora, expira_em: new Date(agora.getTime() + 30 * MINUTO),
       sessao_expira_em: sessao ? new Date(sessao.exp * 1000) : null };
     await trx(TABELA).insert(row);
     try {

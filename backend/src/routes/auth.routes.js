@@ -8,7 +8,7 @@ const { rateLimit } = require('express-rate-limit');
 const recuperacao = require('../controllers/recuperacao-conta.controller');
 const acessoRede = require('../controllers/acesso-rede.controller');
 const limitarAcessoRede = rateLimit({
-  windowMs: 60 * 1000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false,
+  windowMs: 60 * 1000, limit: 100, standardHeaders: 'draft-8', legacyHeaders: false,
   message: { message: 'Muitas tentativas de acesso. Tente novamente em um minuto.' }
 });
 

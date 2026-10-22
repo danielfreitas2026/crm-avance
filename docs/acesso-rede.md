@@ -68,12 +68,13 @@ requisição protegida. O Telegram recebe nome, e-mail, IP, horário de São Pau
 identificador da solicitação e seis letras. Confirme a identidade da pessoa e
 repasse o código por um canal escolhido por você.
 
-O código vale dez minutos, aceita maiúsculas/minúsculas, permite cinco erros e
-é consumido uma única vez em transação. O banco guarda apenas HMAC do código,
+Novos códigos valem trinta minutos, aceitam maiúsculas/minúsculas, permitem cinco
+erros e são consumidos uma única vez em transação. O banco guarda apenas HMAC do código,
 vinculado à solicitação, usando a chave JWT com contexto próprio. O identificador
 é aleatório; nenhuma resposta ao solicitante contém o código. Auditoria registra
 solicitações, falhas de validação, liberações e alterações de configuração sem
-códigos nem JWTs.
+códigos nem JWTs. Solicitações emitidas antes da alteração de validade mantêm
+o prazo já gravado, sem extensão automática.
 
 A autorização vale para um usuário, sessão, versão de sessão e IP, até o JWT
 expirar ou o logout revogá-la. Aprovar uma sessão existente mantém sua expiração.
@@ -95,9 +96,9 @@ de cada requisição protegida. Operações recusadas não são repetidas automa
 
 Solicitações pendentes da mesma sessão/IP são reutilizadas; antes da emissão
 do primeiro JWT, logins repetidos da mesma conta/IP reutilizam a solicitação
-pendente. Há uma emissão por minuto e cinco por hora por usuário e até vinte
+pendente. Há até três emissões por minuto e vinte por hora por usuário e até cem
 emissões por minuto por IP. Esses limites ficam no banco e valem entre instâncias.
-Login e validação também compartilham vinte chamadas por minuto/IP por processo.
+Login e validação também compartilham cem chamadas por minuto/IP por processo.
 
 Falha do Telegram mantém o bloqueio, invalida a solicitação e conta na cota de
 emissões, evitando tempestade de reenvios. Aguarde um minuto e tente novamente.

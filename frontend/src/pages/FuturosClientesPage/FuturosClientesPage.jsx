@@ -2806,10 +2806,13 @@ export function FuturoClienteDetalheModal({
   const [dataAtivacao, setDataAtivacao] = useState(() => String(linha.sondagem?.data_ativacao || '').slice(0, 10));
   const [distribuindo, setDistribuindo] = useState(false);
   const [abaDetalhe, setAbaDetalhe] = useNavigationState(`futuro-cliente-modal:${linha.id}:aba`, 'dados', { allowed: ['dados', ...(exibirHistorico ? ['historico'] : [])] });
-  const [historico, setHistorico] = useState(null);
+  const [resultadoHistorico, setResultadoHistorico] = useState(null);
   const [historicoRevisao, setHistoricoRevisao] = useState(0);
-  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
-  const [erroHistorico, setErroHistorico] = useState('');
+  const chaveHistorico = `${linha.id}:${historicoRevisao}`;
+  const consultaHistorico = resultadoHistorico?.chave === chaveHistorico ? resultadoHistorico : null;
+  const historico = consultaHistorico?.dados;
+  const carregandoHistorico = exibirHistorico && !consultaHistorico;
+  const erroHistorico = consultaHistorico?.erro || '';
   const valorMensalEstimado = chipsItens.reduce((total, item) => total
     + ((Number(item.quantidade) || 0) * moedaBRParaNumero(item.preco_por_chip)), 0);
 
@@ -2864,20 +2867,17 @@ export function FuturoClienteDetalheModal({
   const estadoAtual = historico?.estado_atual || linha.estado_atual;
 
   useEffect(() => {
-    if (abaDetalhe !== 'historico') return undefined;
+    if (!exibirHistorico) return undefined;
     let ativo = true;
     obterHistoricoFuturoCliente(linha.id).then(dados => {
-      if (ativo) { setHistorico(dados); setErroHistorico(''); }
+      if (ativo) setResultadoHistorico({ chave: chaveHistorico, dados });
     }).catch(error => {
-      if (ativo) setErroHistorico(error.message || 'Não foi possível carregar o histórico.');
-    }).finally(() => {
-      if (ativo) setCarregandoHistorico(false);
+      if (ativo) setResultadoHistorico({ chave: chaveHistorico, erro: error.message || 'Não foi possível carregar o histórico.' });
     });
     return () => { ativo = false; };
-  }, [abaDetalhe, linha.id, historicoRevisao]);
+  }, [exibirHistorico, linha.id, chaveHistorico]);
 
   function abrirAbaDetalhe(aba) {
-    if (aba === 'historico') setCarregandoHistorico(true);
     setAbaDetalhe(aba);
   }
 
@@ -2951,6 +2951,8 @@ export function FuturoClienteDetalheModal({
     setErro('');
     try {
       const resultado = await enviarFuturoClienteParaDistribuicao(linha.id);
+      setHistoricoRevisao(value => value + 1);
+      setDistribuindo(false);
       onDistribuido?.(resultado.linha, podeRetornarTelegram || jaEnviadoTelegram);
     } catch (error) {
       setErro(error.message || 'Erro ao enviar futuro cliente para distribuicao.');
@@ -3040,6 +3042,24 @@ export function FuturoClienteDetalheModal({
         <div className="modal-body futuro-cliente-detalhe__body" data-navigation-scroll={`futuro:${linha.id}:${abaDetalhe}`}>
           {exibirHistorico && (
             <>
+              <section className={`futuro-cliente-envio-telegram${historico?.envio_telegram?.situacao === 'enviado' ? ' is-confirmado' : ''}`} role="status" aria-label="Envio ao Telegram">
+                <I.Send size={20} aria-hidden="true" />
+                <div>
+                  {carregandoHistorico ? <strong>Consultando envio ao Telegram…</strong> : erroHistorico ? (
+                    <strong>Não foi possível consultar o envio</strong>
+                  ) : historico?.envio_telegram?.situacao === 'enviado' ? (
+                    <>
+                      <strong>Já enviado ao Telegram</strong>
+                      <span>Último envio confirmado em {formatUtcDateTime(historico.envio_telegram.ultimo_envio_em, {
+                        timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric'
+                      })} às {formatUtcDateTime(historico.envio_telegram.ultimo_envio_em, {
+                        timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
+                      })}</span>
+                    </>
+                  ) : <strong>{historico?.envio_telegram?.situacao === 'sem_confirmacao' ? 'Sem envio confirmado' : 'Histórico de envio incompleto'}</strong>}
+                </div>
+                {erroHistorico && <button type="button" className="btn btn-sm" onClick={() => setHistoricoRevisao(value => value + 1)}>Tentar novamente</button>}
+              </section>
               <section className="futuro-cliente-estado-atual" aria-label="Resumo operacional atual">
                 <div><span>Situação</span><strong>{estadoAtual?.rotulo || 'Situação não informada'}</strong></div>
                 <div><span>Com quem está</span><strong>{estadoAtual?.responsavel?.nome || 'Sem responsável'}</strong></div>
@@ -3058,7 +3078,6 @@ export function FuturoClienteDetalheModal({
               {carregandoHistorico ? <div className="futuro-cliente-detalhe__vazio">Carregando histórico...</div> : erroHistorico ? (
                 <div className="futuro-cliente-historico__erro">
                   <span>{erroHistorico}</span>
-                  <button type="button" className="btn btn-sm" onClick={() => { setCarregandoHistorico(true); setHistoricoRevisao(value => value + 1); }}>Tentar novamente</button>
                 </div>
               ) : historico?.eventos?.length ? (
                 <ol className="futuro-cliente-timeline">

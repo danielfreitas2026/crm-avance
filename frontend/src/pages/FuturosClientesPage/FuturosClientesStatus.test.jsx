@@ -864,7 +864,7 @@ describe('modal de adição de lead', () => {
     localStorage.removeItem('usuario');
   });
 
-  it('carrega o historico sob demanda na visao Todos e mantem os dados bloqueados', async () => {
+  it('carrega o historico ao abrir a visao Todos e reutiliza a consulta entre abas', async () => {
     const buscarHistorico = vi.spyOn(leadPlanilhaService, 'obterHistoricoFuturoCliente').mockResolvedValue({
       linha_id: 61,
       estado_atual: { rotulo: 'Em atendimento', etapa: 'Negociação', responsavel: { nome: 'Consultora atual' } },
@@ -885,7 +885,7 @@ describe('modal de adição de lead', () => {
       exibirHistorico
     />);
 
-    expect(buscarHistorico).not.toHaveBeenCalled();
+    await waitFor(() => expect(buscarHistorico).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText('CNPJ')).toBeDisabled();
     fireEvent.click(screen.getByRole('tab', { name: 'Histórico' }));
 
@@ -895,6 +895,9 @@ describe('modal de adição de lead', () => {
     expect(screen.getByText('Por: Consultora inicial')).toBeVisible();
     expect(screen.queryByRole('region', { name: 'Atualizar dados do futuro cliente' })).not.toBeInTheDocument();
     expect(screen.getByText('Consultora atual')).toBeVisible();
+    fireEvent.click(screen.getByRole('tab', { name: 'Dados atuais' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Histórico' }));
+    expect(buscarHistorico).toHaveBeenCalledTimes(1);
     buscarHistorico.mockRestore();
   });
 

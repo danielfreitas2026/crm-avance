@@ -1,5 +1,6 @@
 const db = require('../database/connection');
 const telegramService = require('./telegram.service');
+const { parseUtcDateTime } = require('../utils/datetime');
 
 const RETENTATIVA_INICIAL_MS = 30 * 1000;
 const RETENTATIVA_MAXIMA_MS = 30 * 60 * 1000;
@@ -172,6 +173,24 @@ function classificarPublicacao(historicoAnterior, atendimentoAnterior, contexto 
   return historicoAnterior || atendimentoAnterior || contexto.tipo === 'retorno' ? 'republicacao' : 'primeiro_envio';
 }
 
+/** O histórico confirmado permanece válido mesmo após devolução ou nova tentativa. */
+async function obterResumoEnvio(linhaId, database = db) {
+  const publicacoes = await database('lead_telegram_publicacoes')
+    .where('lead_linha_id', Number(linhaId))
+    .select('telegram_chat_id', 'telegram_message_id', 'publicado_em');
+  let ultimoEnvio = null;
+  for (const publicacao of publicacoes) {
+    const data = parseUtcDateTime(publicacao.publicado_em);
+    if (!String(publicacao.telegram_chat_id || '').trim()
+      || !String(publicacao.telegram_message_id || '').trim() || !data) continue;
+    if (!ultimoEnvio || data > ultimoEnvio) ultimoEnvio = data;
+  }
+  return {
+    situacao: ultimoEnvio ? 'enviado' : publicacoes.length ? 'historico_incompleto' : 'sem_confirmacao',
+    ultimo_envio_em: ultimoEnvio?.toISOString() || null
+  };
+}
+
 /** Serializa por lead e conserva a confirmação de cada mensagem junto do estado da fila. */
 async function registrar(linhaId, publicacao = {}, database = db) {
   const id = Number(linhaId);
@@ -311,6 +330,7 @@ async function marcarRevertido(linha, opcoes = {}) {
 }
 
 module.exports = {
+  obterResumoEnvio,
   registrar,
   registrarFalha,
   marcarRevertido,

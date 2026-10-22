@@ -4225,8 +4225,10 @@ async function obterHistoricoFuturoCliente(linhaId) {
     .orderBy('v.id', 'desc').first();
   const ultimaDistribuicao = atribuicoes.filter(item => item.etapa === 'venda').at(-1) || null;
   const formatada = (await adicionarClassificacaoVendas([formatarLinha(linha)]))[0];
+  const envioTelegram = await leadTelegramPublicacaoService.obterResumoEnvio(id);
   return {
     linha_id: id,
+    envio_telegram: envioTelegram,
     estado_atual: resolverEstadoAtualFuturoCliente(formatada, ultimaDistribuicao),
     eventos: montarEventosHistoricoFuturoCliente(formatada, atribuicoes, auditorias, venda)
   };

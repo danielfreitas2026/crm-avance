@@ -2246,6 +2246,38 @@
   gap: 20px;
 }
 
+.futuro-cliente-envio-telegram {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-subtle, #f8fafc);
+}
+
+.futuro-cliente-envio-telegram > svg {
+  flex-shrink: 0;
+}
+
+.futuro-cliente-envio-telegram > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.futuro-cliente-envio-telegram span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.futuro-cliente-envio-telegram.is-confirmado {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
 .futuro-cliente-estado-atual {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

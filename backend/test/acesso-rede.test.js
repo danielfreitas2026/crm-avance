@@ -184,6 +184,30 @@ test('chamadas concorrentes deduplicam emissão e apenas um consumo do código v
   assert.equal(jwt.decode(resultados.find(row => row.status === 'fulfilled').value.token).exp, sessao.exp);
 });
 
+test('novo código vale 30 minutos, informa o prazo no Telegram e pode ser usado após 29 minutos', async t => {
+  const enviarReal = telegram.enviarCodigoAcessoRede;
+  const b = await banco(t);
+  const { solicitacao_id, expira_em } = await b.solicitar();
+  const row = b.estado.acesso_rede_solicitacoes[0];
+  assert.equal(new Date(expira_em).getTime() - row.created_at.getTime(), 30 * 60000);
+  let mensagem;
+  t.mock.method(require('axios'), 'post', async (_url, dados) => {
+    mensagem = dados;
+    return { data: { ok: true, result: { message_id: 1 } } };
+  });
+  await enviarReal(b.envios[0]);
+  assert.equal(mensagem.chat_id, 'administracao-teste');
+  assert.match(mensagem.text, /Válido por 30 minutos/);
+  let agora = new Date(expira_em).getTime();
+  t.mock.method(Date, 'now', () => agora);
+  await assert.rejects(b.validar(solicitacao_id), /expirada/);
+  assert.equal(b.estado.acesso_rede_solicitacoes[0].estado, 'pendente');
+  agora = row.created_at.getTime() + 29 * 60000;
+  const sessao = await b.validar(solicitacao_id);
+  assert.equal(jwt.verify(sessao.token, process.env.JWT_SECRET).id, b.usuario.id);
+  await assert.rejects(b.validar(solicitacao_id), /inválida ou expirada/);
+});
+
 test('cinco erros persistem e bloqueiam, inclusive código com formato inválido', async t => {
   const b = await banco(t);
   const { solicitacao_id } = await b.solicitar();
@@ -234,12 +258,12 @@ test('mudança de IP, logout e versão de sessão encerram liberação; JWT anti
   await rede.avaliarSessao(b.req, jwt.decode(sessao.token), sessao.token);
   // Uma segunda rede exige outro código, sem reaproveitar a aprovação anterior.
   b.req.ip = '198.51.100.20';
-  await assert.rejects(rede.avaliarSessao(b.req, jwt.decode(sessao.token), sessao.token), error => error.status === 429);
+  await assert.rejects(rede.avaliarSessao(b.req, jwt.decode(sessao.token), sessao.token), error => error.status === 403 && error.code === 'NETWORK_ACCESS_REQUIRED');
   b.req.ip = '198.51.100.15';
   b.req.headers.authorization = `Bearer ${sessao.token}`;
   await rede.logout(b.req);
   assert.equal(b.estado.acesso_rede_solicitacoes[0].estado, 'revogado');
-  await assert.rejects(rede.avaliarSessao(b.req, jwt.decode(sessao.token), sessao.token), error => error.status === 429);
+  await assert.rejects(rede.avaliarSessao(b.req, jwt.decode(sessao.token), sessao.token), error => error.status === 403 && error.code === 'NETWORK_ACCESS_REQUIRED');
 });
 
 test('aprovar uma segunda rede substitui a liberação anterior da mesma sessão sem ampliar validade', async t => {
@@ -256,7 +280,7 @@ test('aprovar uma segunda rede substitui a liberação anterior da mesma sessão
   assert.equal(b.estado.acesso_rede_solicitacoes[1].estado, 'aprovado');
   await rede.avaliarSessao(b.req, jwt.decode(aprovada.token), aprovada.token);
   b.req.ip = '198.51.100.15';
-  await assert.rejects(rede.avaliarSessao(b.req, decoded, primeira.token), error => error.status === 429);
+  await assert.rejects(rede.avaliarSessao(b.req, decoded, primeira.token), error => error.status === 403 && error.code === 'NETWORK_ACCESS_REQUIRED');
   b.usuario.versao_sessao++;
   b.req.ip = '198.51.100.20';
   await assert.rejects(rede.avaliarSessao(b.req, decoded, primeira.token), error => error.status === 401);
@@ -265,8 +289,11 @@ test('aprovar uma segunda rede substitui a liberação anterior da mesma sessão
 test('falha Telegram mantém bloqueio, não salva código utilizável e respeita cota de nova emissão', async t => {
   const b = await banco(t);
   t.mock.method(telegram, 'enviarCodigoAcessoRede', async () => { throw new Error('segredo-do-transporte'); });
-  await assert.rejects(rede.avaliar(b.usuario, b.req), error => error.status === 503 && !error.message.includes('segredo'));
-  assert.equal(b.estado.acesso_rede_solicitacoes[0].estado, 'falha');
+  for (let i = 0; i < 3; i++) {
+    await assert.rejects(rede.avaliar(b.usuario, b.req), error => error.status === 503 && !error.message.includes('segredo'));
+  }
+  assert.equal(b.estado.acesso_rede_solicitacoes.length, 3);
+  assert.equal(b.estado.acesso_rede_solicitacoes.every(row => row.estado === 'falha'), true);
   await assert.rejects(rede.avaliar(b.usuario, b.req), error => error.status === 429);
 });
 
@@ -295,13 +322,24 @@ test('permissão concedida dispensa imediatamente; remoção preserva somente ap
   b.usuario.permissoes = '["acesso_rede_sem_codigo"]';
   await rede.avaliarSessao(b.req, { id: 1, jti: 'outra-sessao', exp: jwt.decode(sessao.token).exp }, 'outro-token');
   b.usuario.permissoes = '[]';
-  await assert.rejects(rede.avaliarSessao(b.req, { id: 1, jti: 'outra-sessao', exp: jwt.decode(sessao.token).exp }, 'outro-token'), error => error.status === 429);
+  await assert.rejects(rede.avaliarSessao(b.req, { id: 1, jti: 'outra-sessao', exp: jwt.decode(sessao.token).exp }, 'outro-token'), error => error.status === 403 && error.code === 'NETWORK_ACCESS_REQUIRED');
   await rede.avaliarSessao(b.req, jwt.decode(sessao.token), sessao.token);
 });
 
-test('cotas persistem por usuário e por IP entre solicitações, sem depender do processo', async t => {
+test('permite três emissões por minuto por usuário e recusa a quarta sem enviar outro código', async t => {
   const b = await banco(t);
-  for (let i = 0; i < 5; i++) {
+  const exp = Math.floor(Date.now() / 1000) + 3600;
+  for (let i = 0; i < 3; i++) await b.solicitar({ id: `sessao-${i}`, exp });
+  await assert.rejects(rede.avaliar(b.usuario, b.req, { id: 'sessao-4', exp }), error => error.status === 429);
+  assert.equal(b.envios.length, 3);
+  // Reutilizar a solicitação pendente não consome uma nova emissão.
+  await b.solicitar({ id: 'sessao-0', exp });
+  assert.equal(b.envios.length, 3);
+});
+
+test('permite vinte emissões por hora por usuário e cem por minuto por IP', async t => {
+  const b = await banco(t);
+  for (let i = 0; i < 20; i++) {
     await b.solicitar();
     const row = b.estado.acesso_rede_solicitacoes.at(-1);
     row.estado = 'bloqueado';
@@ -309,11 +347,12 @@ test('cotas persistem por usuário e por IP entre solicitações, sem depender d
   }
   await assert.rejects(rede.avaliar(b.usuario, b.req), error => error.status === 429);
   b.estado.acesso_rede_solicitacoes.splice(0);
-  for (let i = 0; i < 20; i++) b.estado.acesso_rede_solicitacoes.push({
+  for (let i = 0; i < 99; i++) b.estado.acesso_rede_solicitacoes.push({
     usuario_id: i + 2, ip: b.req.ip, estado: 'pendente', created_at: new Date()
   });
-  await assert.rejects(rede.avaliar(b.usuario, b.req), error => error.status === 429);
-  assert.equal(b.envios.length, 5);
+  await b.solicitar();
+  await assert.rejects(rede.avaliar(b.usuario, b.req, { id: 'nova-sessao', exp: Math.floor(Date.now() / 1000) + 3600 }), error => error.status === 429);
+  assert.equal(b.envios.length, 21);
 });
 
 test('rotas reais bloqueiam login e upload, validam código e permitem logout mesmo com horário fechado', async t => {
@@ -336,7 +375,7 @@ test('rotas reais bloqueiam login e upload, validam código e permitem logout me
   assert.equal(pendente.code, 'NETWORK_ACCESS_REQUIRED');
   assert.equal(pendente.token, undefined);
   const tokenInterno = jwt.sign({ id: 1, versao_sessao: 0, jti: 'sessao-interna' }, process.env.JWT_SECRET, { expiresIn: '1h' });
-  assert.equal((await post('/upload', {}, tokenInterno)).status, 429);
+  assert.equal((await post('/upload', {}, tokenInterno)).status, 403);
   assert.equal(uploads, 0);
   const validada = await post('/api/auth/acesso-rede/validar', { solicitacao_id: pendente.solicitacao_id, codigo: b.envios[0].codigo });
   assert.equal(validada.status, 200);
@@ -347,6 +386,27 @@ test('rotas reais bloqueiam login e upload, validam código e permitem logout me
   assert.equal((await post('/upload', {}, token)).status, 423);
   assert.equal((await post('/api/auth/logout', {}, token)).status, 200);
   assert.equal(b.estado.acesso_rede_solicitacoes[0].estado, 'revogado');
+});
+
+test('login e validação compartilham cem chamadas por minuto por IP e recusam a chamada seguinte', async t => {
+  const app = express();
+  app.set('trust proxy', ['127.0.0.1']);
+  app.use(express.json());
+  app.use('/api/auth', require('../src/routes/auth.routes'));
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const post = (rota, ip = '198.51.100.200') => fetch(`${url}/api/auth/${rota}`, { method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': ip }, body: '{}' });
+  for (let i = 0; i < 100; i++) {
+    const resposta = await post(i % 2 ? 'login' : 'acesso-rede/validar');
+    assert.equal(resposta.status, 400);
+    await resposta.json();
+  }
+  assert.equal((await post('login')).status, 429);
+  assert.equal((await post('acesso-rede/validar')).status, 429);
+  assert.equal((await post('login', '198.51.100.201')).status, 400);
 });
 
 test('migration gera schema MySQL aditivo, desativado e com permissões próprias sem lista de dispensados', async () => {
