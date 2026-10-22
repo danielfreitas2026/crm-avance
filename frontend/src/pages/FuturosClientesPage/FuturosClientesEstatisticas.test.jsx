@@ -14,7 +14,7 @@ vi.mock('../../services/lead-planilha.service', async importOriginal => ({
 
 function resumo(clientes = 4) {
   return { clientes_movimentados: clientes, futuros_clientes_adicionados: 2,
-    novos_envios_telegram: 1, vendas_registradas: 1, total_acoes: 8,
+    novos_envios_telegram: 1, clientes_enviados_telegram: 3, vendas_registradas: 1, total_acoes: 8,
     valor_vendido: 100, acoes_por_tipo: { retorno_telegram: 2 } };
 }
 function raiz(clientes = 4) {
@@ -100,7 +100,8 @@ describe('estatísticas por movimentação', () => {
     await abrirUsuario();
     const mailings = screen.getByRole('region', { name: 'Tabela de mailings' });
     expect(mailings).toHaveAttribute('tabindex', '0');
-    expect(within(mailings).getByRole('columnheader', { name: 'Novos envios ao Telegram' })).toBeVisible();
+    expect(within(mailings).getByRole('columnheader', { name: 'Clientes enviados ao Telegram' })).toBeVisible();
+    expect(within(mailings).getByText('3')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Abrir mailing Mailing antigo' }));
     const clientes = await screen.findByRole('region', { name: 'Clientes do mailing' });
     const tabela = within(clientes).getByRole('region', { name: 'Tabela de clientes' });
@@ -109,12 +110,16 @@ describe('estatísticas por movimentação', () => {
     expect(within(clientes).getByRole('button', { name: 'Próxima' }).closest('.future-stats__pagination')).not.toBeNull();
   });
 
-  it('destaca os quatro indicadores e distingue retornos ao Telegram de novos envios', async () => {
+  it('usa clientes enviados confirmados no indicador e na equipe, preservando o total de retornos', async () => {
     render(<EstatisticasFuturosClientesView />);
     await screen.findByRole('button', { name: 'Analisar desempenho de Qualificadora' });
     expect(valor('Clientes movimentados')).toBe('4');
     expect(valor('Futuros clientes adicionados')).toBe('2');
-    expect(valor('Novos envios ao Telegram')).toBe('1');
+    expect(valor('Clientes enviados ao Telegram')).toBe('3');
+    expect(screen.getByText('envio confirmado no período, sem repetir clientes')).toBeVisible();
+    const pessoa = screen.getByRole('button', { name: 'Analisar desempenho de Qualificadora' });
+    expect(within(pessoa).getByText('Clientes enviados ao Telegram').nextElementSibling).toHaveTextContent('3');
+    expect(screen.queryByText('Novos envios ao Telegram')).not.toBeInTheDocument();
     expect(valor('Vendas registradas')).toBe('1');
     expect(screen.getByText('Retornos ao Telegram').nextElementSibling).toHaveTextContent('2');
     expect(screen.queryByText('Produtividade')).not.toBeInTheDocument();
@@ -194,6 +199,7 @@ describe('estatísticas por movimentação', () => {
     render(<EstatisticasFuturosClientesView />);
     await screen.findByText('Nenhuma movimentação encontrada no período.');
     expect(screen.getByRole('status')).toHaveTextContent('histórico antigo pode estar incompleto');
+    expect(screen.getByRole('status')).toHaveTextContent('Envios antigos com confirmação e data entram na contagem');
     fireEvent.change(screen.getByRole('combobox', { name: 'Período' }), { target: { value: 'personalizado' } });
     expect(await screen.findByRole('alert')).toHaveTextContent('A data inicial deve ser anterior ou igual à data final.');
   });

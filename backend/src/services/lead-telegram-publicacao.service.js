@@ -1,6 +1,6 @@
 const db = require('../database/connection');
 const telegramService = require('./telegram.service');
-const { parseUtcDateTime } = require('../utils/datetime');
+const { dataPublicacaoTelegramConfirmada } = require('../utils/telegram-publicacao');
 
 const RETENTATIVA_INICIAL_MS = 30 * 1000;
 const RETENTATIVA_MAXIMA_MS = 30 * 60 * 1000;
@@ -180,9 +180,8 @@ async function obterResumoEnvio(linhaId, database = db) {
     .select('telegram_chat_id', 'telegram_message_id', 'publicado_em');
   let ultimoEnvio = null;
   for (const publicacao of publicacoes) {
-    const data = parseUtcDateTime(publicacao.publicado_em);
-    if (!String(publicacao.telegram_chat_id || '').trim()
-      || !String(publicacao.telegram_message_id || '').trim() || !data) continue;
+    const data = dataPublicacaoTelegramConfirmada(publicacao);
+    if (!data) continue;
     if (!ultimoEnvio || data > ultimoEnvio) ultimoEnvio = data;
   }
   return {

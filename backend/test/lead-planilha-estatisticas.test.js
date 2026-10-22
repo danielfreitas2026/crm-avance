@@ -96,6 +96,86 @@ test('legado com data desconhecida não inventa ação nem novo envio', () => {
   assert.equal(resumirMovimentacoes(eventos).historico_incompleto, true);
 });
 
+test('clientes enviados inclui 58 legados confirmados e 8 primeiros envios sem duplicar reenvios', () => {
+  const dados = fontes({ linhas: [], atribuicoes: [], publicacoes: [] });
+  for (let id = 1; id <= 66; id++) {
+    dados.linhas.push({ id, futuro_cliente_marcado_em: '2025-02-10T11:00:00Z' });
+    dados.atribuicoes.push({ id, lead_linha_id: id, usuario_id: 7, envio_id: 100,
+      atribuido_em: '2025-01-10T12:00:00Z' });
+    dados.publicacoes.push({ id, lead_linha_id: id, tipo: id <= 8 ? 'primeiro_envio' : 'legado',
+      telegram_chat_id: 'grupo-teste', telegram_message_id: String(id), publicado_em: '2025-02-10T12:00:00Z' });
+  }
+  dados.publicacoes.push({ id: 67, lead_linha_id: 1, tipo: 'republicacao',
+    telegram_chat_id: 'grupo-teste', telegram_message_id: '67', publicado_em: '2025-02-12T12:00:00Z' });
+  const eventos = periodo(dados);
+  const resumo = resumirMovimentacoes(eventos);
+  assert.equal(resumo.clientes_enviados_telegram, 66);
+  assert.equal(resumo.novos_envios_telegram, 8);
+  assert.equal(resumirMovimentacoes(periodo(dados, {
+    data_inicio: '2025-02-12', data_fim: '2025-02-12'
+  })).clientes_enviados_telegram, 1);
+  assert.equal(resumirMovimentacoes(periodo(dados, {
+    data_inicio: '2025-03-01', data_fim: '2025-03-31'
+  })).clientes_enviados_telegram, 0);
+  const workbook = montarWorkbook(dados.linhas, eventos, true);
+  for (const nome of ['Resumo', 'Resumo por usuário', 'Mailings']) {
+    const sheet = workbook.getWorksheet(nome);
+    const coluna = sheet.getRow(1).values.indexOf('Clientes enviados ao Telegram');
+    assert.ok(coluna > 0, nome);
+    assert.equal(sheet.getCell(2, coluna).value, 66, nome);
+  }
+});
+
+test('clientes enviados exige mensagem e data válidas, sem inferir envio pelo destino ou solicitação', () => {
+  for (const tipo of ['primeiro_envio', 'republicacao', 'legado']) {
+    for (const extra of [
+      { publicado_em: null }, { publicado_em: 'inválida' }, { publicado_em: '0000-00-00 00:00:00' },
+      { telegram_chat_id: null }, { telegram_chat_id: ' ' },
+      { telegram_message_id: null }, { telegram_message_id: ' ' }
+    ]) {
+      const dados = fontes({ linhas: [{ id: 1, futuro_cliente_destino: 'distribuicao' }],
+        auditorias: [audit(1, 'futuro_cliente_enviado_distribuicao', '2025-02-10T12:00:00Z')],
+        publicacoes: [{ id: 1, lead_linha_id: 1, tipo, telegram_chat_id: 'grupo-teste',
+          telegram_message_id: '100', publicado_em: '2025-02-10T12:00:00Z', ...extra }] });
+      assert.equal(resumirMovimentacoes(periodo(dados)).clientes_enviados_telegram, 0,
+        `${tipo}: ${JSON.stringify(extra)}`);
+    }
+  }
+});
+
+test('clientes enviados conserva devoluções e deduplica o total entre responsáveis e mailings', () => {
+  const dados = fontes({ publicacoes: [
+    { id: 1, lead_linha_id: 1, tipo: 'legado', telegram_chat_id: 'grupo-teste',
+      telegram_message_id: '100', publicado_em: '2025-02-10T12:00:00Z' },
+    { id: 2, lead_linha_id: 1, tipo: 'republicacao', telegram_chat_id: 'grupo-teste',
+      telegram_message_id: '101', publicado_em: '2025-02-12T12:00:00Z' }
+  ] });
+  dados.atribuicoes.push({ ...dados.atribuicoes[0], id: 11, usuario_id: 8,
+    envio_id: 101, atribuido_em: '2025-02-11T12:00:00Z' });
+  for (const aceite_status of ['recusado', 'expirado_sem_aceite', 'expirado_sem_acao', 'cancelado']) {
+    dados.distribuicoes = [{ id: 20, lead_linha_id: 1, aceite_status, finalizado_em: '2025-02-13T12:00:00Z' }];
+    const eventos = periodo(dados);
+    assert.equal(resumirMovimentacoes(eventos).clientes_enviados_telegram, 1);
+    for (const filtros of [{ usuario_id: 7, envio_id: 100 }, { usuario_id: 8, envio_id: 101 }]) {
+      assert.equal(resumirMovimentacoes(filtrarMovimentacoes(eventos, filtros)).clientes_enviados_telegram, 1);
+    }
+    assert.deepEqual(agruparMovimentacoes(eventos, item => ({ id: item.responsavel_id }))
+      .map(item => item.clientes_enviados_telegram), [1, 1]);
+  }
+});
+
+test('clientes enviados respeita o calendário de São Paulo e não conta confirmação futura', () => {
+  const datas = ['2025-02-01T02:59:59Z', '2025-02-01T03:00:00Z',
+    '2025-03-01T02:59:59Z', '2025-03-01T03:00:00Z', '2099-01-01T12:00:00Z'];
+  const dados = fontes({ linhas: datas.map((_, i) => ({ id: i + 1 })),
+    atribuicoes: datas.map((_, i) => ({ id: i + 1, lead_linha_id: i + 1, usuario_id: 7,
+      envio_id: 100, atribuido_em: '2025-01-01T12:00:00Z' })),
+    publicacoes: datas.map((publicado_em, i) => ({ id: i + 1, lead_linha_id: i + 1, tipo: 'legado',
+      telegram_chat_id: 'grupo-teste', telegram_message_id: String(i + 1), publicado_em })) });
+  assert.equal(resumirMovimentacoes(periodo(dados)).clientes_enviados_telegram, 2);
+  assert.equal(resumirMovimentacoes(periodo(dados, {})).clientes_enviados_telegram, 4);
+});
+
 test('fonte repetida e fallback de campo não duplicam a mesma ação', () => {
   const dados = fontes({ linhas: [{ id: 1, chamada_nao_atendida_em: '2025-02-10T12:00:00Z' }],
     auditorias: [audit(1, 'chamada_nao_atendida', '2025-02-10T12:00:01Z')] });

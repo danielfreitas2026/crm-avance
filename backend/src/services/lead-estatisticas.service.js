@@ -1,4 +1,5 @@
 const { parseUtcDateTime } = require('../utils/datetime');
+const { dataPublicacaoTelegramConfirmada } = require('../utils/telegram-publicacao');
 
 const FORMATADOR = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -184,7 +185,8 @@ function montarMovimentacoes({ linhas = [], atribuicoes = [], auditorias = [], d
       const tipo = item.tipo === 'primeiro_envio' ? 'novo_envio_telegram'
         : item.tipo === 'republicacao' ? 'retorno_telegram' : 'publicacao_legada';
       adicionar(`publicacao:${item.id}`, tipo, item.publicado_em, item.usuario_id, item.usuario_nome,
-        { atribuicao_sondagem_id: item.atribuicao_sondagem_id || undefined });
+        { atribuicao_sondagem_id: item.atribuicao_sondagem_id || undefined,
+          envio_telegram_confirmado: Boolean(dataPublicacaoTelegramConfirmada(item)) });
     }
     const links = vinculosMapa.get(id) || [];
     for (const link of links) {
@@ -217,6 +219,9 @@ function resumirMovimentacoes(eventos, base = {}) {
   return {
     ...base, clientes_movimentados: new Set(eventos.map(item => item.lead_linha_id)).size,
     futuros_clientes_adicionados: distintos('futuro_cliente_adicionado', 'lead_linha_id'),
+    clientes_enviados_telegram: new Set(eventos.filter(item => item.envio_telegram_confirmado)
+      .map(item => item.lead_linha_id)).size,
+    // Mantém o contrato anterior para consumidores que ainda precisam distinguir primeiros envios.
     novos_envios_telegram: distintos('novo_envio_telegram', 'lead_linha_id'),
     vendas_registradas: vendas.size, valor_vendido: [...vendas.values()].reduce((soma, valor) => soma + Number(valor || 0), 0),
     total_acoes: eventos.length, acoes_por_tipo: tipos,
@@ -321,7 +326,7 @@ function montarWorkbook(linhas, eventos, historicoIncompleto = false) {
   workbook.creator = 'CRM Avance';
   const metricas = [
     ['Clientes movimentados', 'clientes_movimentados'], ['Futuros clientes adicionados', 'futuros_clientes_adicionados'],
-    ['Novos envios ao Telegram', 'novos_envios_telegram'], ['Vendas registradas', 'vendas_registradas'],
+    ['Clientes enviados ao Telegram', 'clientes_enviados_telegram'], ['Vendas registradas', 'vendas_registradas'],
     ['Ações no período', 'total_acoes'], ['Valor vendido', 'valor_vendido']
   ];
   function tabela(nome, colunas, dados) {
