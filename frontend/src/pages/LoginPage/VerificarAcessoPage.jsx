@@ -53,10 +53,12 @@ export default function VerificarAcessoPage() {
           maxLength={6} pattern="[A-Za-z]{6}" required disabled={carregando || segundos === 0} />
       </div>
       {erro && <p role="alert" className="alert-error">{erro}</p>}
-      <button className="btn btn-primary" type="submit" disabled={carregando || segundos === 0 || codigo.length !== 6}>
-        {carregando ? 'Aguarde...' : 'Liberar acesso'}
-      </button>
-      <button className="btn" type="button" onClick={voltar} disabled={carregando}>Voltar ao login</button>
+      <div className="login-access-actions">
+        <button className="btn" type="button" onClick={voltar} disabled={carregando}>Voltar ao login</button>
+        <button className="btn login-access-submit" type="submit" disabled={carregando || segundos === 0 || codigo.length !== 6}>
+          {carregando ? 'Aguarde...' : 'Liberar acesso'}
+        </button>
+      </div>
     </form>
   </div></div>;
 }

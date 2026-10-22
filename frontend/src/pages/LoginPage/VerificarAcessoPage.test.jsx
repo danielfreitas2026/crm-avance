@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -5,6 +6,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import VerificarAcessoPage from './VerificarAcessoPage';
 import LoginPage from './LoginPage';
 import { login, logout, validarAcessoRede } from '../../services/auth.service';
+
+const estilosGlobais = readFileSync('src/styles/global.css', 'utf8');
 
 vi.mock('../../services/auth.service', () => ({ login: vi.fn(), logout: vi.fn(), validarAcessoRede: vi.fn() }));
 
@@ -23,6 +26,34 @@ describe('autorização de acesso externo', () => {
     sessionStorage.clear();
     sessionStorage.setItem('acesso_rede_pendente', JSON.stringify({ solicitacao_id: 'solicitacao-teste', expira_em: new Date(Date.now() + 1800000).toISOString() }));
     logout.mockResolvedValue({});
+  });
+
+  it('posiciona voltar à esquerda e liberar em verde à direita, com foco na mesma ordem', async () => {
+    const user = userEvent.setup();
+    render(<style>{estilosGlobais}</style>);
+    montar();
+    const voltar = screen.getByRole('button', { name: 'Voltar ao login' });
+    const liberar = screen.getByRole('button', { name: 'Liberar acesso' });
+    const acoes = voltar.parentElement;
+
+    expect(Array.from(acoes.children)).toEqual([voltar, liberar]);
+    expect(getComputedStyle(acoes).display).toBe('flex');
+    expect(getComputedStyle(acoes).justifyContent).toBe('space-between');
+    // O jsdom não resolve var() em cores; verificamos a regra aplicada e seu token.
+    const regraVerde = Array.from(document.querySelector('style').sheet.cssRules)
+      .find(regra => regra.selectorText === '.login-access-actions .login-access-submit');
+    expect(liberar.matches(regraVerde.selectorText)).toBe(true);
+    expect(regraVerde.style.getPropertyValue('background')).toBe('var(--success)');
+    expect(getComputedStyle(document.documentElement).getPropertyValue('--success').trim()).toBe('#15803d');
+    expect(getComputedStyle(liberar).color).toBe('rgb(255, 255, 255)');
+    expect(liberar).toBeDisabled();
+
+    await user.type(screen.getByLabelText('Código de 6 letras'), 'ABCDEF');
+    expect(liberar).toBeEnabled();
+    await user.tab();
+    expect(voltar).toHaveFocus();
+    await user.tab();
+    expect(liberar).toHaveFocus();
   });
 
   it('normaliza seis letras, valida a solicitação e abre o CRM', async () => {

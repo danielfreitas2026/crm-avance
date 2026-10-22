@@ -1799,6 +1799,21 @@ button.urgent-alert-panel__header {
   margin-bottom: 18px;
 }
 .login-card .row a { color: var(--text-2); text-decoration: none; }
+.login-access-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.login-access-actions .login-access-submit {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+.login-access-actions .login-access-submit:hover:not(:disabled) {
+  background: #166534;
+  border-color: #166534;
+}
 .login-public-links {
   margin-top: 20px;
   padding-top: 16px;
