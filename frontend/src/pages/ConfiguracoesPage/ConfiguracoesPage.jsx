@@ -280,7 +280,7 @@ function ConfiguracoesPage() {
     { id: 'regrasComissao', label: 'Comissões', permitido: permissoes.regrasComissao },
     { id: 'notificacoes', label: 'Notificações', permitido: permissoes.notificacoes },
     { id: 'horarioAcesso', label: 'Horário de acesso', permitido: permissoes.horarioAcesso },
-    { id: 'acessoRede', label: 'Acesso por rede', permitido: permissoes.acessoRede },
+    { id: 'acessoRede', label: 'Acesso por rede e dispositivos', permitido: permissoes.acessoRede },
   ].filter(abaItem => abaItem.permitido), [
     permissoes.operadoras,
     permissoes.tiposVenda,

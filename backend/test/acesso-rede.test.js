@@ -11,13 +11,14 @@ const auth = require('../src/services/auth.service');
 const horario = require('../src/services/horario-acesso.service');
 const telegram = require('../src/services/telegram.service');
 const auditoria = require('../src/services/audit-log.service');
+const dispositivos = require('../src/services/dispositivos-acesso.service');
 const { normalizarIp, validarRedes, pertenceRede, configurarProxy } = require('../src/utils/rede');
 
 // Persistência isolada, com snapshots e transações serializadas. O serviço real
 // pede bloqueios e usa seu próprio relógio, HMAC, JWT e envio (simulado).
 async function banco(t) {
   let estado = { configuracoes_acesso_rede: [{ id: 1, ativo: true, redes: '["203.0.113.10","2001:db8:1234::/48"]' }],
-    acesso_rede_solicitacoes: [], usuarios: [{ id: 1, nome: 'Ana', email: 'ana@crm.local',
+    acesso_dispositivos: [], acesso_rede_solicitacoes: [], usuarios: [{ id: 1, nome: 'Ana', email: 'ana@crm.local',
       senha: await bcrypt.hash('Senha123', 4), role_id: 2, role: { nome: 'usuario', permissoes: '{}' },
       permissoes: '[]', ativo: true, versao_sessao: 0 }] };
   let fila = Promise.resolve();
@@ -40,6 +41,7 @@ async function banco(t) {
       first() { unico = true; return this; },
       findById(id) { unico = true; return this.where({ id }); },
       withGraphFetched() { return this; },
+      select() { return this; },
       forUpdate() { assert.ok(trx, 'bloqueio exige transação'); bloqueios.push(tabela); return this; },
       orderBy() { return this; },
       count() { contar = true; return this; },
@@ -75,6 +77,8 @@ async function banco(t) {
   t.mock.method(db.client, '_query', async (_conexao, consulta) => {
     let rows;
     if (consulta.sql.includes('`configuracoes_acesso_rede`')) rows = structuredClone(estado.configuracoes_acesso_rede);
+    else if (consulta.sql.includes('`acesso_dispositivos`')) rows = structuredClone(estado.acesso_dispositivos.filter(row =>
+      !consulta.sql.includes('where') || (row.credencial_hash === consulta.bindings[0] && row.revogado_em === null)));
     else if (consulta.sql.includes('`acesso_rede_solicitacoes`')) rows = structuredClone(estado.acesso_rede_solicitacoes.filter(row => row.id === consulta.bindings[0]));
     else assert.fail(`Consulta inesperada: ${consulta.sql}`);
     return { ...consulta, response: [rows, []] };
@@ -87,7 +91,7 @@ async function banco(t) {
   t.mock.method(horario, 'avaliarAcesso', async () => ({ permitido: true, versao_sessao: estado.usuarios[0].versao_sessao }));
   return { get estado() { return estado; }, get usuario() { return estado.usuarios[0]; },
     get config() { return estado.configuracoes_acesso_rede[0]; }, envios, eventos, bloqueios,
-    req: { ip: '198.51.100.15', headers: {} },
+    req: { ip: '198.51.100.15', hostname: 'localhost', socket: { remoteAddress: '127.0.0.1' }, headers: {} },
     async solicitar(sessao) {
       let falha;
       try { await rede.avaliar(this.usuario, this.req, sessao); } catch (error) { falha = error; }
@@ -430,5 +434,277 @@ test('migration gera schema MySQL aditivo, desativado e com permissões própria
     assert.equal(sql.some(row => /alter table `usuarios`/i.test(row)), false);
     assert.deepEqual(inseridos.find(row => row.tabela === 'configuracoes_acesso_rede').dados, { id: 1, ativo: false, redes: '[]' });
     assert.deepEqual(inseridos.filter(row => row.tabela === 'permissoes').map(row => row.dados.chave), ['configurar_acesso_rede', 'acesso_rede_sem_codigo']);
+  } finally { await knex.destroy(); }
+});
+
+function tornarGestor(b) {
+  b.usuario.role.nome = 'admin';
+  b.usuario.permissoes = '{"configurar_acesso_rede":true}';
+  b.req.usuario = { id: 1, versao_sessao: 0, exp: Math.floor(Date.now() / 1000) + 3600 };
+}
+
+async function cadastrarNavegador(b) {
+  tornarGestor(b);
+  const resultado = await dispositivos.autorizar({ nome: 'Recepção Chrome', senha_atual: 'Senha123' }, b.req);
+  b.req.headers.cookie = `crm_dispositivo=${resultado.credencial}`;
+  return resultado;
+}
+
+test('navegador cadastrado serve a diferentes usuários, persiste no logout e independe do IP', async t => {
+  const b = await banco(t);
+  b.config.modo = 'dispositivo';
+  const cadastro = await cadastrarNavegador(b);
+  assert.match(cadastro.credencial, /^[a-f0-9]{64}$/);
+  assert.notEqual(b.estado.acesso_dispositivos[0].credencial_hash, cadastro.credencial);
+  assert.equal(JSON.stringify(b.estado).includes(cadastro.credencial), false);
+  assert.equal(JSON.stringify(b.eventos).includes(cadastro.credencial), false);
+  b.usuario.role.nome = 'usuario';
+  b.usuario.permissoes = '[]';
+  const primeiro = await auth.login(b.usuario.email, 'Senha123', b.req);
+  b.req.headers.authorization = `Bearer ${primeiro.token}`;
+  await rede.logout(b.req);
+  b.req.ip = '2001:db8:abcd::123';
+  const segundo = await auth.login(b.usuario.email, 'Senha123', b.req);
+  assert.notEqual(jwt.decode(primeiro.token).jti, jwt.decode(segundo.token).jti);
+  await rede.avaliarSessao(b.req, jwt.decode(segundo.token), segundo.token);
+  b.estado.usuarios.push({ ...structuredClone(b.usuario), id: 2, email: 'outra@crm.local' });
+  const outra = await auth.login('outra@crm.local', 'Senha123', b.req);
+  assert.equal(outra.usuario.id, 2);
+  assert.equal(b.envios.length, 0);
+  assert.equal(b.estado.acesso_rede_solicitacoes.length, 0);
+});
+
+test('cadastro reconhecido é idempotente; lista contém apenas metadados e identifica navegador atual', async t => {
+  const b = await banco(t);
+  const primeiro = await cadastrarNavegador(b);
+  const segundo = await dispositivos.autorizar({ nome: 'Recepção Edge', senha_atual: 'Senha123' }, b.req);
+  assert.equal(segundo.dispositivo.id, primeiro.dispositivo.id);
+  assert.equal(segundo.credencial, primeiro.credencial);
+  assert.equal(b.estado.acesso_dispositivos.length, 1);
+  const lista = await dispositivos.listar(b.req);
+  assert.equal(lista.dispositivo_atual_id, primeiro.dispositivo.id);
+  assert.equal(lista.dispositivos[0].responsavel_nome, 'Ana');
+  assert.equal(lista.dispositivos[0].nome, 'Recepção Edge');
+  assert.equal(lista.dispositivos[0].credencial_hash, undefined);
+  assert.equal(JSON.stringify(lista).includes(primeiro.credencial), false);
+  assert.deepEqual(b.bloqueios.slice(0, 2), ['configuracoes_acesso_rede', 'usuarios']);
+});
+
+test('modo dispositivo não aceita IP interno, cookie forjado, duplicado, outro navegador ou cookie ausente', async t => {
+  const b = await banco(t);
+  const { credencial } = await cadastrarNavegador(b);
+  b.usuario.role.nome = 'usuario';
+  b.usuario.permissoes = '[]';
+  b.config.modo = 'dispositivo';
+  b.req.ip = '203.0.113.10';
+  for (const cookie of ['', 'crm_dispositivo=invalido', `crm_dispositivo=${'a'.repeat(64)}`,
+    `crm_dispositivo=${credencial}; crm_dispositivo=${credencial}`]) {
+    b.req.headers.cookie = cookie;
+    const pendente = await b.solicitar();
+    assert.equal(pendente.modo, 'dispositivo');
+    assert.match(pendente.message, /Navegador não autorizado/);
+  }
+  assert.equal(b.envios.length, 1);
+  const sessao = await b.validar(b.estado.acesso_rede_solicitacoes[0].id);
+  assert.equal(b.estado.acesso_dispositivos.length, 1, 'validar código não cadastra navegador');
+  await rede.avaliarSessao(b.req, jwt.decode(sessao.token), sessao.token);
+  b.req.ip = '198.51.100.77';
+  await b.solicitar({ id: jwt.decode(sessao.token).jti, exp: jwt.decode(sessao.token).exp });
+});
+
+test('revogar corta a dispensa na próxima requisição sem reativar cookie antigo; código já aprovado permanece', async t => {
+  const b = await banco(t);
+  b.config.modo = 'dispositivo';
+  const cadastro = await cadastrarNavegador(b);
+  const token = (await auth.criarSessao(Usuario.fromJson(b.usuario))).token;
+  await dispositivos.revogar(cadastro.dispositivo.id, b.req);
+  assert.equal(await dispositivos.buscarAtual(b.req), undefined);
+  b.usuario.role.nome = 'usuario';
+  b.usuario.permissoes = '[]';
+  const pendente = await b.solicitar({ id: jwt.decode(token).jti, exp: jwt.decode(token).exp });
+  const aprovada = await b.validar(pendente.solicitacao_id);
+  await rede.avaliarSessao(b.req, jwt.decode(aprovada.token), aprovada.token);
+  tornarGestor(b);
+  const nova = await dispositivos.autorizar({ nome: 'Novo cadastro', senha_atual: 'Senha123' }, b.req);
+  assert.notEqual(nova.credencial, cadastro.credencial);
+  assert.notEqual(nova.dispositivo.id, cadastro.dispositivo.id);
+  assert.ok(b.estado.acesso_dispositivos[0].revogado_em);
+});
+
+test('cadastro exige senha correta, permissão, conta ativa, versão de sessão, prazo e horário', async t => {
+  const b = await banco(t);
+  tornarGestor(b);
+  const dados = { nome: 'Mesa', senha_atual: 'Senha123' };
+  await assert.rejects(dispositivos.autorizar({ ...dados, senha_atual: 'errada' }, b.req), /Senha atual incorreta/);
+  for (const invalido of [{ nome: '', senha_atual: 'Senha123' }, { nome: 'x'.repeat(81), senha_atual: 'Senha123' }, { nome: 'Mesa' }]) {
+    await assert.rejects(dispositivos.autorizar(invalido, b.req), /Informe/);
+  }
+  b.usuario.permissoes = '[]';
+  await assert.rejects(dispositivos.autorizar(dados, b.req), error => error.status === 403);
+  tornarGestor(b);
+  b.usuario.ativo = false;
+  await assert.rejects(dispositivos.autorizar(dados, b.req), error => error.status === 401);
+  b.usuario.ativo = true;
+  b.usuario.versao_sessao = 1;
+  await assert.rejects(dispositivos.autorizar(dados, b.req), error => error.status === 401);
+  b.usuario.versao_sessao = 0;
+  b.req.usuario.exp = 1;
+  await assert.rejects(dispositivos.autorizar(dados, b.req), error => error.status === 401);
+  tornarGestor(b);
+  t.mock.method(horario, 'avaliarAcesso', async () => ({ permitido: false, motivo: 'SYSTEM_CLOSED' }));
+  await assert.rejects(dispositivos.autorizar(dados, b.req), error => error.status === 423);
+  assert.equal(b.estado.acesso_dispositivos.length, 0);
+});
+
+test('falha de auditoria desfaz cadastro ou revogação; operações concorrentes não restauram dispensa', async t => {
+  const b = await banco(t);
+  tornarGestor(b);
+  t.mock.method(auditoria, 'registrar', async () => { throw new Error('falha local'); });
+  await assert.rejects(dispositivos.autorizar({ nome: 'Mesa', senha_atual: 'Senha123' }, b.req), /falha local/);
+  assert.equal(b.estado.acesso_dispositivos.length, 0);
+  t.mock.method(auditoria, 'registrar', async () => {});
+  const cadastro = await cadastrarNavegador(b);
+  t.mock.method(auditoria, 'registrar', async () => { throw new Error('falha local'); });
+  await assert.rejects(dispositivos.revogar(cadastro.dispositivo.id, b.req), /falha local/);
+  assert.equal(b.estado.acesso_dispositivos[0].revogado_em, null);
+  t.mock.method(auditoria, 'registrar', async () => {});
+  await Promise.all([dispositivos.autorizar({ nome: 'Mesa', senha_atual: 'Senha123' }, b.req),
+    dispositivos.revogar(cadastro.dispositivo.id, b.req)]);
+  assert.ok(b.estado.acesso_dispositivos[0].revogado_em);
+  assert.equal(await dispositivos.buscarAtual(b.req), undefined);
+});
+
+test('configuração preserva modo omitido, permite dispositivos sem redes e mantém cadastros', async t => {
+  const b = await banco(t);
+  await cadastrarNavegador(b);
+  await rede.atualizarConfiguracao({ ativo: true, modo: 'dispositivo', redes: [] }, b.req);
+  assert.equal((await rede.buscarConfiguracao(b.req)).modo, 'dispositivo');
+  await rede.atualizarConfiguracao({ ativo: true, redes: [] }, b.req);
+  assert.equal(b.config.modo, 'dispositivo');
+  assert.equal(b.estado.acesso_dispositivos.length, 1);
+  assert.equal(b.estado.acesso_dispositivos[0].revogado_em, null);
+  await assert.rejects(rede.atualizarConfiguracao({ ativo: true, modo: 'outro', redes: [] }, b.req), /Modo/);
+  delete process.env.TELEGRAM_ACESSO_REDE_CHAT_ID;
+  await assert.rejects(rede.atualizarConfiguracao({ ativo: true, modo: 'dispositivo', redes: [] }, b.req), /configure/);
+  assert.equal(b.usuario.permissoes, '{"configurar_acesso_rede":true}');
+});
+
+test('cookie é protegido, renovado apenas quando válido, e HTTP sem Secure fica restrito ao desenvolvimento local', async t => {
+  const b = await banco(t);
+  const cadastro = await cadastrarNavegador(b);
+  const cookies = [];
+  const res = { cookie: (...args) => cookies.push(args), clearCookie: (...args) => cookies.push(args) };
+  await dispositivos.renovarCookie(b.req, res);
+  assert.equal(cookies[0][0], 'crm_dispositivo');
+  assert.equal(cookies[0][1], cadastro.credencial);
+  assert.deepEqual(cookies[0][2], { httpOnly: true, secure: false, sameSite: 'lax', path: '/', maxAge: 400 * 86400000 });
+  const anterior = process.env.NODE_ENV;
+  t.after(() => { process.env.NODE_ENV = anterior; });
+  process.env.NODE_ENV = 'production';
+  b.req.headers.cookie = `crm_dispositivo=${cadastro.credencial}`;
+  assert.equal(await dispositivos.buscarAtual(b.req), null, 'produção não aceita cookie sem prefixo');
+  dispositivos.definirCookie(b.req, res, cadastro.credencial);
+  assert.equal(cookies[1][0], '__Host-crm_dispositivo');
+  assert.equal(cookies[1][2].secure, true);
+  assert.equal(cookies[1][2].domain, undefined);
+  b.req.headers.cookie = `__Host-crm_dispositivo=${cadastro.credencial}`;
+  await dispositivos.renovarCookie(b.req, res);
+  assert.equal(cookies.length, 3);
+  dispositivos.limparCookie(b.req, res);
+  assert.equal(cookies[3][1].maxAge, undefined);
+  await dispositivos.revogar(cadastro.dispositivo.id, b.req);
+  await dispositivos.renovarCookie(b.req, res);
+  assert.equal(cookies.length, 4, 'cookie revogado não é renovado');
+  process.env.NODE_ENV = 'development';
+  b.req.hostname = 'crm.exemplo.test';
+  dispositivos.definirCookie(b.req, res, cadastro.credencial);
+  assert.equal(cookies[4][2].secure, true);
+});
+
+test('rotas reais cadastram, renovam, revogam e protegem uploads/downloads/stream com cookie e JWT', async t => {
+  const b = await banco(t);
+  tornarGestor(b);
+  b.config.modo = 'dispositivo';
+  const app = express();
+  app.use(express.json());
+  app.use('/api/auth', require('../src/routes/auth.routes'));
+  app.use('/api/config', require('../src/routes/config.routes'));
+  let operacoes = 0;
+  for (const caminho of ['/upload', '/download', '/stream']) app.all(caminho, require('../src/middlewares/auth.middleware'), (_req, res) => {
+    operacoes++; res.json({ ok: true });
+  });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const admin = (await auth.criarSessao(Usuario.fromJson(b.usuario))).token;
+  const request = (rota, { method = 'GET', body, token = admin, cookie, origin = 'http://localhost:5173' } = {}) =>
+    fetch(`${url}${rota}`, { method, headers: { 'content-type': 'application/json',
+      authorization: `Bearer ${token}`, ...(origin ? { origin } : {}), ...(cookie ? { cookie } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}) });
+  const endpoint = '/api/config/admin/acesso-rede/dispositivos';
+  const body = { nome: 'Mesa Chrome', senha_atual: 'Senha123' };
+  for (const origin of ['https://malicioso.local', null]) {
+    assert.equal((await request(`${endpoint}/atual`, { method: 'POST', body, origin })).status, 403);
+  }
+  assert.equal(b.estado.acesso_dispositivos.length, 0);
+  const cadastrada = await request(`${endpoint}/atual`, { method: 'POST', body });
+  assert.equal(cadastrada.status, 200);
+  const resposta = await cadastrada.json();
+  assert.equal(resposta.credencial, undefined);
+  assert.equal(resposta.dispositivo.credencial_hash, undefined);
+  const cookie = cadastrada.headers.get('set-cookie').split(';')[0];
+  assert.match(cadastrada.headers.get('set-cookie'), /HttpOnly/);
+  assert.match(cadastrada.headers.get('set-cookie'), /SameSite=Lax/);
+  const me = await request('/api/auth/me', { cookie });
+  assert.match(me.headers.get('set-cookie'), /^crm_dispositivo=/);
+  assert.equal((await (await request(endpoint, { cookie })).json()).dispositivo_atual_id, resposta.dispositivo.id);
+  b.usuario.role.nome = 'usuario';
+  b.usuario.permissoes = '[]';
+  const login = await request('/api/auth/login', { method: 'POST', cookie, body: { email: b.usuario.email, senha: 'Senha123' } });
+  assert.equal(login.status, 200);
+  assert.match(login.headers.get('set-cookie'), /^crm_dispositivo=/);
+  const token = (await login.json()).token;
+  for (const rota of ['/upload', '/download', '/stream']) {
+    assert.equal((await request(rota, { token, cookie })).status, 200);
+    assert.equal((await request(rota, { token })).status, 403);
+  }
+  assert.equal(operacoes, 3);
+  assert.equal((await request(`${endpoint}/atual`, { method: 'POST', body, token, cookie })).status, 403);
+  t.mock.method(horario, 'avaliarAcesso', async () => ({ permitido: false, motivo: 'SYSTEM_CLOSED' }));
+  assert.equal((await request('/download', { token, cookie })).status, 423);
+  t.mock.method(horario, 'avaliarAcesso', async () => ({ permitido: false, versao_sessao: 0 }));
+  assert.equal((await request('/download', { token, cookie })).status, 401);
+  t.mock.method(horario, 'avaliarAcesso', async () => ({ permitido: true, versao_sessao: 1 }));
+  assert.equal((await request('/download', { token, cookie })).status, 401);
+  t.mock.method(horario, 'avaliarAcesso', async () => ({ permitido: true, versao_sessao: 0 }));
+  tornarGestor(b);
+  assert.equal((await request(`${endpoint}/${resposta.dispositivo.id}`, { method: 'DELETE', cookie, origin: 'https://malicioso.local' })).status, 403);
+  const revogada = await request(`${endpoint}/${resposta.dispositivo.id}`, { method: 'DELETE', cookie });
+  assert.equal(revogada.status, 200);
+  assert.match(revogada.headers.get('set-cookie'), /Expires=Thu, 01 Jan 1970/);
+  b.usuario.role.nome = 'usuario';
+  b.usuario.permissoes = '[]';
+  assert.equal((await request('/download', { token, cookie })).status, 403);
+  const expirada = jwt.sign({ id: 1, exp: 1 }, process.env.JWT_SECRET);
+  assert.equal((await request('/download', { token: expirada, cookie })).status, 401);
+});
+
+test('migration de dispositivos é aditiva, conserva configuração e não altera permissões ou usuários', async () => {
+  const knex = require('knex')({ client: 'mysql2' });
+  const migration = require('../src/database/migrations/20261023120000_add_dispositivos_acesso');
+  const sql = [];
+  const executor = { schema: {
+    alterTable(...args) { sql.push(...knex.schema.alterTable(...args).toSQL().map(row => row.sql)); },
+    createTable(...args) { sql.push(...knex.schema.createTable(...args).toSQL().map(row => row.sql)); }
+  } };
+  try {
+    await migration.up(executor);
+    assert.match(sql.join('\n'), /`modo` varchar\(16\) not null default 'rede'/);
+    assert.match(sql.join('\n'), /`credencial_hash` varchar\(64\) not null/);
+    assert.match(sql.join('\n'), /unique/);
+    assert.match(sql.join('\n'), /on delete SET NULL/i);
+    assert.equal(sql.some(row => /update|insert|drop|alter table `usuarios`/i.test(row)), false);
+    await assert.rejects(migration.down(executor), /não reversível/);
   } finally { await knex.destroy(); }
 });

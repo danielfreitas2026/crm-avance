@@ -139,6 +139,7 @@ export function uploadArquivoVenda(id, file, dados = {}, onProgress) {
     formData.append('descricao', dados.descricao || '');
 
     const xhr = new XMLHttpRequest();
+    xhr.withCredentials = true;
     xhr.open('POST', `${API_URL}/vendas/${id}/arquivos`);
 
     if (token) {

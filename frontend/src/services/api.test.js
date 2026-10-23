@@ -44,6 +44,7 @@ describe('api service', () => {
 
     expect(fetch).toHaveBeenCalledWith('http://localhost:3000/api/clientes', {
       method: 'POST',
+      credentials: 'include',
       body: JSON.stringify({ nome: 'Cliente' }),
       headers: {
         'Content-Type': 'application/json',
@@ -110,5 +111,21 @@ describe('api service', () => {
     fetch.mockResolvedValueOnce(new Response(blob, { status: 200 }));
 
     await expect(apiBlob('/arquivo')).resolves.toBeInstanceOf(Blob);
+  });
+
+  it.each(['json', 'blob', 'stream'])('envia cookie de navegador em chamadas %s preservando Bearer', async tipo => {
+    localStorage.setItem('token', 'jwt-atual');
+    fetch.mockResolvedValueOnce(tipo === 'json' ? jsonResponse({}) : new Response(''));
+    const executar = tipo === 'json' ? apiGet : tipo === 'blob' ? apiBlob : apiStreamNdjson;
+    await executar('/protegido');
+    expect(fetch.mock.calls[0][1]).toMatchObject({ credentials: 'include', headers: { Authorization: 'Bearer jwt-atual' } });
+  });
+
+  it('preserva o modo por dispositivo para a tela de verificação sem repetir a operação', async () => {
+    window.history.replaceState({}, '', '/verificar-acesso');
+    fetch.mockResolvedValueOnce(jsonResponse({ code: 'NETWORK_ACCESS_REQUIRED', modo: 'dispositivo', solicitacao_id: 'id-dispositivo', expira_em: '2026-10-23T15:00:00Z' }, { status: 403 }));
+    await expect(apiGet('/protegido')).rejects.toMatchObject({ code: 'NETWORK_ACCESS_REQUIRED' });
+    expect(JSON.parse(sessionStorage.getItem('acesso_rede_pendente')).modo).toBe('dispositivo');
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

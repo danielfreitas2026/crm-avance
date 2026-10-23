@@ -1,10 +1,86 @@
-# Acesso por rede e código administrativo
+# Acesso por rede, navegadores e código administrativo
 
 O recurso começa **desativado**, inclusive após a migration automática do deploy.
 Administradores sempre entram sem código, independentemente das permissões
 individuais. Para os demais, a permissão `acesso_rede_sem_codigo`, individual ou
 do perfil, dispensa o código. Essa dispensa não ignora conta inativa, horário de
 funcionamento, expiração do JWT nem a versão de sessão.
+
+## Navegadores autorizados
+
+Em **Configurações → Acesso por rede e dispositivos**, o controle pode funcionar
+**Por rede** ou **Por navegador autorizado**. No segundo modo, os IPs cadastrados
+não dispensam o código: apenas um navegador autorizado ou uma conta dispensada
+pode entrar sem código. Os computadores cadastrados devem permanecer na empresa.
+O cadastro vale para qualquer funcionário que use aquele perfil do navegador;
+login, senha, conta ativa e horários continuam sendo verificados.
+
+Para preparar, ainda sem mudar o estado atual do bloqueio:
+
+1. Publique a migration aditiva, backend e frontend em todas as instâncias.
+   A migration preserva o estado de ativação, redes e permissões, mantendo
+   inicialmente o modo `rede`. Não execute rollback para remover cadastros;
+   desative o controle pela configuração e faça reparos de schema aditivos.
+2. Em cada computador, abra o navegador usado pelo funcionário e entre com uma
+   conta que tenha `configurar_acesso_rede`. Em **Autorizar este navegador**,
+   informe um nome identificável (por exemplo, “Recepção Chrome”) e sua senha atual.
+   A tela confirma que o navegador recebeu a credencial antes de anunciar sucesso.
+3. Saia da conta administrativa. A autorização do navegador permanece e atende
+   os outros funcionários. Outro navegador, perfil ou janela anônima não recebe
+   essa autorização.
+4. Configure o Telegram e mantenha uma conta ativa dispensada com permissão de
+   configuração. Selecione **Por navegador autorizado**, ative e salve quando
+   estiver pronto. Este modo permite redes vazias e não exige IP fixo.
+5. Retire manualmente `acesso_rede_sem_codigo` dos funcionários que deverão
+   seguir o controle, conferindo também os perfis. A dispensa inicial não será
+   removida nem concedida novamente por este deploy. Administradores continuam
+   dispensados automaticamente.
+6. Confira uma conta comum em um navegador cadastrado e em outro não cadastrado,
+   incluindo login, upload, download, logout e revogação.
+
+A lista administrativa mostra nome, responsável, data, situação e o navegador
+atual. A revogação exige confirmação e retira a dispensa na próxima requisição
+protegida, inclusive em sessões já abertas. Uma liberação temporária já obtida
+por código permanece válida até o logout/expiração da sessão e somente naquele IP.
+Mudar a configuração invalida essas liberações temporárias, preservando os
+cadastros permanentes. Reautorizar um navegador revogado exige novo cadastro e
+nova credencial. A aprovação temporária do Telegram nunca cadastra um navegador.
+
+O cadastro não expira no servidor. A credencial de 256 bits fica em cookie
+`HttpOnly`, `Secure`, `SameSite=Lax`, exclusivo do host da API e com prefixo
+`__Host-` em produção. Não há `Domain`, JWT especial ou segredo no armazenamento
+JavaScript. Somente o hash fica no banco; respostas e auditoria contêm metadados.
+O cookie dura 400 dias, renovados em login ou consulta autenticada de perfil
+quando a credencial ainda é válida. Navegadores podem removê-lo antes disso;
+apagar dados, reinstalar sem preservar o perfil ou perder o cookie exige nova
+autorização. Logout e troca de usuário não apagam o cookie.
+
+Esta é uma identificação pela posse da credencial, não uma vinculação física
+inviolável ao computador. Uma cópia indevida do perfil/credencial pode transferir
+a autorização. O navegador autorizado deve ficar sob controle da empresa.
+
+Frontend e API devem usar HTTPS no mesmo site, como os subdomínios atuais.
+Todas as chamadas enviam cookies, preservando o JWT Bearer e CORS explícito.
+Somente desenvolvimento/testes em localhost permite cookie sem `Secure`; use
+o mesmo hostname local no frontend e backend. Não há nova variável de ambiente.
+As mutações exigem uma origem explicitamente permitida, inclusive o `PUT` de
+configuração; clientes administrativos devem enviar `Origin` permitido.
+
+### APIs de navegadores
+
+- `GET/PUT /api/config/admin/acesso-rede`: inclui `modo: "rede" | "dispositivo"`.
+  O `PUT` recebe `{ ativo, redes, modo }`; omitir `modo` preserva a opção vigente.
+- `GET /api/config/admin/acesso-rede/dispositivos`: retorna
+  `{ dispositivo_atual_id, dispositivos }`, sem credenciais ou hashes.
+- `POST /api/config/admin/acesso-rede/dispositivos/atual`: recebe
+  `{ nome, senha_atual }`, responde `{ dispositivo }` e define o cookie somente
+  após commit. Exige senha atual, sessão válida e permissão de configuração.
+  Limite adicional de dez tentativas por minuto/IP por instância.
+- `DELETE /api/config/admin/acesso-rede/dispositivos/:id`: revoga o cadastro
+  com permissão de configuração; remove o cookie se for o navegador atual.
+- `403 NETWORK_ACCESS_REQUIRED` preserva o contrato existente e acrescenta
+  `modo`, usado na mensagem de verificação. Os códigos mantêm validade de
+  trinta minutos, cinco erros e os limites já descritos abaixo.
 
 ## Liberação inicial de todos os usuários
 
@@ -42,7 +118,7 @@ concessão inicial de uma autorização ou remoção posterior feita manualmente
    genéricos de redes, `0.0.0.0/0` ou `::/0`. Restrinja o acesso direto à API
    conforme a topologia e assegure que os proxies tratem o encaminhamento do IP.
 4. Reinicie a API depois de configurar essas variáveis. Acesse **Configurações →
-   Acesso por rede** com a permissão `configurar_acesso_rede`. Administradores
+   Acesso por rede e dispositivos** com a permissão `configurar_acesso_rede`. Administradores
    existentes recebem essa permissão na migration; novos administradores podem
    recebê-la no gerenciamento de permissões.
 5. Ainda com o recurso desativado, confira o IP detectado usando a internet da
@@ -109,7 +185,8 @@ respeitando as cotas. Acompanhe respostas 429/503 e falhas genéricas de operaç
 ## Contratos e testes
 
 - `GET/PUT /api/config/admin/acesso-rede`: diagnóstico/configuração, com permissão
-  `configurar_acesso_rede`. A atualização recebe `{ ativo, redes }`.
+  `configurar_acesso_rede`. A atualização recebe `{ ativo, redes, modo }`, com
+  `modo` opcional para clientes anteriores.
 - Login e requisições protegidas retornam `403 NETWORK_ACCESS_REQUIRED` com
   `solicitacao_id` e `expira_em` quando um código está pendente.
 - `POST /api/auth/acesso-rede/validar`: recebe `{ solicitacao_id, codigo }` e,

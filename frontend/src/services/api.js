@@ -37,7 +37,7 @@ function criarErroApi(response, data) {
 export function tratarErroAutenticacao(response, data, token, endpoint) {
   if (response.status === 403 && data?.code === 'NETWORK_ACCESS_REQUIRED') {
     sessionStorage.setItem('acesso_rede_pendente', JSON.stringify({
-      solicitacao_id: data.solicitacao_id, expira_em: data.expira_em
+      solicitacao_id: data.solicitacao_id, expira_em: data.expira_em, ...(data.modo ? { modo: data.modo } : {})
     }));
     if (endpoint !== '/auth/login' && window.location.pathname !== '/verificar-acesso' && !redirecionandoLogin) {
       redirecionandoLogin = true;
@@ -70,6 +70,7 @@ export async function apiRequest(endpoint, options = {}) {
   const token = localStorage.getItem('token');
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
+    credentials: 'include',
     headers: montarHeaders(options, token)
   });
   const data = await lerJson(response);
@@ -86,6 +87,7 @@ export async function apiBlob(endpoint, options = {}) {
   const token = localStorage.getItem('token');
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
+    credentials: 'include',
     headers: montarHeaders(options, token)
   });
 
@@ -102,6 +104,7 @@ export async function apiStreamNdjson(endpoint, options = {}, onEvent = () => {}
   const token = localStorage.getItem('token');
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
+    credentials: 'include',
     headers: montarHeaders(options, token)
   });
 

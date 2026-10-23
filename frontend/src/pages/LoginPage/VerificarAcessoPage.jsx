@@ -41,8 +41,10 @@ export default function VerificarAcessoPage() {
   }
 
   return <div className="login-page"><div className="login-card">
-    <h1>Autorizar acesso externo</h1>
-    <p>Você está fora da rede da empresa. Peça ao administrador o código enviado pelo Telegram.</p>
+    <h1>{pendente.modo === 'dispositivo' ? 'Autorizar acesso neste navegador' : 'Autorizar acesso externo'}</h1>
+    <p>{pendente.modo === 'dispositivo'
+      ? 'Este navegador não está autorizado. Peça ao administrador o código enviado pelo Telegram. O código libera apenas esta sessão e não cadastra o navegador.'
+      : 'Você está fora da rede da empresa. Peça ao administrador o código enviado pelo Telegram.'}</p>
     <p>Solicitação: <small>{pendente.solicitacao_id}</small></p>
     <p>{segundos > 0 ? `Código válido por ${Math.floor(segundos / 60)}min ${segundos % 60}s.` : 'Código expirado. Volte ao login para solicitar outro.'}</p>
     <form onSubmit={confirmar}>

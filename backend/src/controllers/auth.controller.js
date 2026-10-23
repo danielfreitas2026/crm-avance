@@ -1,5 +1,6 @@
 const authService = require('../services/auth.service');
 const auditLogService = require('../services/audit-log.service');
+const dispositivos = require('../services/dispositivos-acesso.service');
 
 /**
  * Autentica usuario por e-mail e senha e registra auditoria do resultado.
@@ -30,6 +31,7 @@ async function login(req, res) {
       }
     });
 
+    await dispositivos.renovarCookie(req, res);
     return res.json(resultado);
   } catch (error) {
     await auditLogService.registrarSemBloquear(req, {
@@ -59,7 +61,7 @@ async function login(req, res) {
 async function me(req, res) {
   try {
     const usuario = await authService.buscarUsuarioLogado(req.usuario.id);
-
+    await dispositivos.renovarCookie(req, res);
     return res.json(usuario);
   } catch (error) {
     return res.status(401).json({

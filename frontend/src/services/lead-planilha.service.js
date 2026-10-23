@@ -55,6 +55,7 @@ export function uploadLeadPlanilha(file, onProgress) {
     formData.append('file', file);
 
     const xhr = new XMLHttpRequest();
+    xhr.withCredentials = true;
     xhr.open('POST', `${API_URL}/lead-planilhas/uploads`);
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
@@ -97,6 +98,7 @@ export function importarLeadPlanilhaExcel(file, onProgress, opcoes = {}) {
     if (Array.isArray(opcoes.abas)) formData.append('abas', JSON.stringify(opcoes.abas));
 
     const xhr = new XMLHttpRequest();
+    xhr.withCredentials = true;
     xhr.open('POST', `${API_URL}/lead-planilhas/importar-excel`);
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
@@ -132,6 +134,7 @@ export function importarBaseAntigaMailing(file, onProgress) {
     formData.append('file', file);
 
     const xhr = new XMLHttpRequest();
+    xhr.withCredentials = true;
     xhr.open('POST', `${API_URL}/lead-planilhas/importar-base-antiga`);
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 

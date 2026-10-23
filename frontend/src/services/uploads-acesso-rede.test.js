@@ -18,7 +18,7 @@ describe('bloqueio de rede nos uploads com progresso', () => {
       open() {}
       setRequestHeader() {}
       addEventListener(evento, callback) { this.eventos[evento] = callback; }
-      send() { enviados++; this.eventos.load(); }
+      send() { expect(this.withCredentials).toBe(true); enviados++; this.eventos.load(); }
     });
   });
   afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear(); });

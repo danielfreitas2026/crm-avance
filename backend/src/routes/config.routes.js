@@ -7,10 +7,20 @@ const acessoRede = require('../controllers/acesso-rede.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const { exigirPermissao } = require('../middlewares/permissao.middleware');
 const { auditar } = require('../middlewares/audit.middleware');
+const { exigirOrigemPermitida } = require('../config/allowed-origins');
+const { rateLimit } = require('express-rate-limit');
+const limitarCadastroDispositivo = rateLimit({ windowMs: 60000, limit: 10,
+  standardHeaders: 'draft-8', legacyHeaders: false,
+  message: { message: 'Muitas tentativas de cadastro. Aguarde um minuto.' } });
 
 router.use(authMiddleware);
 router.get('/admin/acesso-rede', exigirPermissao('configurar_acesso_rede'), acessoRede.show);
-router.put('/admin/acesso-rede', exigirPermissao('configurar_acesso_rede'), acessoRede.update);
+router.put('/admin/acesso-rede', exigirPermissao('configurar_acesso_rede'), exigirOrigemPermitida, acessoRede.update);
+router.get('/admin/acesso-rede/dispositivos', exigirPermissao('configurar_acesso_rede'), acessoRede.dispositivos);
+router.post('/admin/acesso-rede/dispositivos/atual', exigirPermissao('configurar_acesso_rede'),
+  exigirOrigemPermitida, limitarCadastroDispositivo, acessoRede.autorizarDispositivo);
+router.delete('/admin/acesso-rede/dispositivos/:id', exigirPermissao('configurar_acesso_rede'),
+  exigirOrigemPermitida, acessoRede.revogarDispositivo);
 
 router.get('/operadoras', configController.operadoras);
 router.get('/links-externos', configController.linksExternos);

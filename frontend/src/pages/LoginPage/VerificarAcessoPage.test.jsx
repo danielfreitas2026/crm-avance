@@ -96,6 +96,13 @@ describe('autorização de acesso externo', () => {
     expect(await screen.findByText('Tela de login')).toBeInTheDocument();
   });
 
+  it('explica bloqueio por navegador e que o código não cadastra autorização permanente', () => {
+    sessionStorage.setItem('acesso_rede_pendente', JSON.stringify({ modo: 'dispositivo', solicitacao_id: 'id-dispositivo', expira_em: new Date(Date.now() + 1800000).toISOString() }));
+    montar();
+    expect(screen.getByRole('heading', { name: 'Autorizar acesso neste navegador' })).toBeInTheDocument();
+    expect(screen.getByText(/não cadastra o navegador/)).toBeInTheDocument();
+  });
+
   it('login externo abre a etapa de código sem abrir o CRM', async () => {
     const user = userEvent.setup();
     login.mockRejectedValue(Object.assign(new Error('Rede externa'), { code: 'NETWORK_ACCESS_REQUIRED' }));
