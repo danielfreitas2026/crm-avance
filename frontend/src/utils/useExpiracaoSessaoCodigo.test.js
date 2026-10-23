@@ -26,12 +26,12 @@ describe('expiração de sessões liberadas por código', () => {
   });
   afterEach(() => { vi.useRealTimers(); localStorage.clear(); sessionStorage.clear(); });
 
-  it('encerra no prazo exato, sem renovar por atividade e limpa o temporizador ao desmontar', () => {
-    const valor = token(INICIO / 1000 + 7200);
+  it('encerra em cinco minutos, sem renovar por atividade e limpa o temporizador ao desmontar', () => {
+    const valor = token(INICIO / 1000 + 300);
     const { unmount } = montar(valor);
-    act(() => vi.advanceTimersByTime(3600000));
+    act(() => vi.advanceTimersByTime(150000));
     act(() => window.dispatchEvent(new Event('focus')));
-    act(() => vi.advanceTimersByTime(3599999));
+    act(() => vi.advanceTimersByTime(149999));
     expect(encerrarSessaoExpirada).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
     expect(encerrarSessaoExpirada).toHaveBeenCalledExactlyOnceWith(valor);

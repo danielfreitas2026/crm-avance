@@ -110,7 +110,7 @@ function configurarDuracao(t, valor) {
   t.after(() => { process.env.JWT_EXPIRES_IN = anterior; });
 }
 
-test('nova liberação por código limita JWT e aprovação a duas horas sem reduzir a validade de digitação', async t => {
+test('nova liberação por código limita JWT e aprovação a cinco minutos sem reduzir a validade de digitação', async t => {
   configurarDuracao(t, '1d');
   const b = await banco(t);
   const pendente = await b.solicitar();
@@ -119,15 +119,15 @@ test('nova liberação por código limita JWT e aprovação a duas horas sem red
   const sessao = await b.validar(pendente.solicitacao_id);
   const claims = jwt.verify(sessao.token, process.env.JWT_SECRET);
   assert.equal(claims.acesso_por_codigo, true);
-  assert.equal(claims.exp - claims.iat, 7200);
+  assert.equal(claims.exp - claims.iat, 300);
   assert.equal(new Date(b.estado.acesso_rede_solicitacoes[0].sessao_expira_em).getTime(), claims.exp * 1000);
   await assert.rejects(b.validar(pendente.solicitacao_id), /inválida ou expirada/);
 });
 
 for (const [descricao, normal, restante, esperado] of [
-  ['configuração normal mais curta', '45m', null, 2700],
-  ['sessão existente mais curta', '1d', 1200, 1200],
-  ['sessão existente mais longa', '1d', 21600, 7200]
+  ['configuração normal mais curta', '2m', null, 120],
+  ['sessão existente mais curta', '1d', 60, 60],
+  ['sessão existente mais longa', '1d', 21600, 300]
 ]) test(`liberação por código respeita ${descricao}`, async t => {
   configurarDuracao(t, normal);
   const b = await banco(t);
@@ -136,7 +136,7 @@ for (const [descricao, normal, restante, esperado] of [
   const sessao = await b.validar(pendente.solicitacao_id);
   const claims = jwt.verify(sessao.token, process.env.JWT_SECRET);
   assert.equal(claims.acesso_por_codigo, true);
-  assert.equal(claims.exp, restante && restante < 7200 ? agora + restante : claims.iat + esperado);
+  assert.equal(claims.exp, restante && restante < 300 ? agora + restante : claims.iat + esperado);
 });
 
 test('logins de admins, dispensados individuais/perfil e navegadores cadastrados mantêm duração normal', async t => {
@@ -191,7 +191,7 @@ test('JWT de código vence no limite em rotas reais sem emitir outro código; se
   assert.equal(operacoes, 3);
   assert.equal(b.envios.length, 1, 'expiração não emite código sem novo login');
   agora += 3600000;
-  assert.equal((await request('/download', legado)).status, 200, 'sessão anterior à regra continua válida após três horas');
+  assert.equal((await request('/download', legado)).status, 200, 'sessão anterior à regra mantém seu prazo original');
   assert.equal(b.envios.length, 1);
 });
 
@@ -266,7 +266,7 @@ test('login só solicita após senha válida, não emite JWT pendente e aprova c
 
 test('chamadas concorrentes deduplicam emissão e apenas um consumo do código vence', async t => {
   const b = await banco(t);
-  const sessao = { id: 'sessao-existente', exp: Math.floor(Date.now() / 1000) + 1800 };
+  const sessao = { id: 'sessao-existente', exp: Math.floor(Date.now() / 1000) + 180 };
   const respostas = await Promise.all([b.solicitar(sessao), b.solicitar(sessao), b.solicitar(sessao)]);
   assert.equal(new Set(respostas.map(row => row.solicitacao_id)).size, 1);
   assert.equal(b.envios.length, 1);
@@ -342,7 +342,7 @@ test('horário fechado impede aprovação e não consome o código', async t => 
 
 test('mudança de IP, logout e versão de sessão encerram liberação; JWT antigo continua identificável', async t => {
   const b = await banco(t);
-  const token = jwt.sign({ id: 1, versao_sessao: 0 }, process.env.JWT_SECRET, { expiresIn: '30m' });
+  const token = jwt.sign({ id: 1, versao_sessao: 0 }, process.env.JWT_SECRET, { expiresIn: '2m' });
   const decoded = jwt.decode(token);
   assert.equal(rede.identificarSessao(decoded, token).length, 64);
   const pendente = await b.solicitar({ id: rede.identificarSessao(decoded, token), exp: decoded.exp });

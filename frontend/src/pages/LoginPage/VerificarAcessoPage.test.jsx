@@ -102,7 +102,7 @@ describe('autorização de acesso externo', () => {
     montar();
     expect(screen.getByRole('heading', { name: 'Autorizar acesso neste navegador' })).toBeInTheDocument();
     expect(screen.getByText(/não cadastra o navegador/)).toBeInTheDocument();
-    expect(screen.getByText(/sessão dura até duas horas/)).toBeInTheDocument();
+    expect(screen.getByText(/sessão dura até cinco minutos/)).toBeInTheDocument();
   });
 
   it('login apresenta e consome o aviso de expiração da sessão liberada por código', () => {
