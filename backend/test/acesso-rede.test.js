@@ -104,6 +104,97 @@ async function banco(t) {
   };
 }
 
+function configurarDuracao(t, valor) {
+  const anterior = process.env.JWT_EXPIRES_IN;
+  process.env.JWT_EXPIRES_IN = valor;
+  t.after(() => { process.env.JWT_EXPIRES_IN = anterior; });
+}
+
+test('nova liberação por código limita JWT e aprovação a duas horas sem reduzir a validade de digitação', async t => {
+  configurarDuracao(t, '1d');
+  const b = await banco(t);
+  const pendente = await b.solicitar();
+  const row = b.estado.acesso_rede_solicitacoes[0];
+  assert.equal(new Date(pendente.expira_em).getTime() - row.created_at.getTime(), 30 * 60000);
+  const sessao = await b.validar(pendente.solicitacao_id);
+  const claims = jwt.verify(sessao.token, process.env.JWT_SECRET);
+  assert.equal(claims.acesso_por_codigo, true);
+  assert.equal(claims.exp - claims.iat, 7200);
+  assert.equal(new Date(b.estado.acesso_rede_solicitacoes[0].sessao_expira_em).getTime(), claims.exp * 1000);
+  await assert.rejects(b.validar(pendente.solicitacao_id), /inválida ou expirada/);
+});
+
+for (const [descricao, normal, restante, esperado] of [
+  ['configuração normal mais curta', '45m', null, 2700],
+  ['sessão existente mais curta', '1d', 1200, 1200],
+  ['sessão existente mais longa', '1d', 21600, 7200]
+]) test(`liberação por código respeita ${descricao}`, async t => {
+  configurarDuracao(t, normal);
+  const b = await banco(t);
+  const agora = Math.floor(Date.now() / 1000);
+  const pendente = await b.solicitar(restante ? { id: 'sessao-em-andamento', exp: agora + restante } : undefined);
+  const sessao = await b.validar(pendente.solicitacao_id);
+  const claims = jwt.verify(sessao.token, process.env.JWT_SECRET);
+  assert.equal(claims.acesso_por_codigo, true);
+  assert.equal(claims.exp, restante && restante < 7200 ? agora + restante : claims.iat + esperado);
+});
+
+test('logins de admins, dispensados individuais/perfil e navegadores cadastrados mantêm duração normal', async t => {
+  configurarDuracao(t, '1d');
+  const b = await banco(t);
+  for (const tipo of ['admin', 'individual', 'perfil', 'navegador']) {
+    b.usuario.role.nome = tipo === 'admin' ? 'admin' : 'usuario';
+    b.usuario.permissoes = tipo === 'individual' ? '["acesso_rede_sem_codigo"]' : '[]';
+    b.usuario.role.permissoes = tipo === 'perfil' ? '["acesso_rede_sem_codigo"]' : '[]';
+    if (tipo === 'navegador') {
+      await cadastrarNavegador(b);
+      b.usuario.role.nome = 'usuario';
+      b.usuario.permissoes = '[]';
+    }
+    const sessao = await auth.login(b.usuario.email, 'Senha123', b.req);
+    const claims = jwt.verify(sessao.token, process.env.JWT_SECRET);
+    assert.equal(claims.exp - claims.iat, 86400, tipo);
+    assert.equal(claims.acesso_por_codigo, undefined, tipo);
+  }
+  assert.equal(b.envios.length, 0);
+});
+
+test('JWT de código vence no limite em rotas reais sem emitir outro código; sessão antiga conserva prazo', async t => {
+  configurarDuracao(t, '1d');
+  const b = await banco(t);
+  b.req.ip = '127.0.0.1';
+  const pendente = await b.solicitar();
+  const sessao = await b.validar(pendente.solicitacao_id);
+  const claims = jwt.decode(sessao.token);
+  const legado = jwt.sign({ id: 1, versao_sessao: 0, jti: 'codigo-antigo' }, process.env.JWT_SECRET, { expiresIn: '1d' });
+  const claimsLegado = jwt.decode(legado);
+  b.estado.acesso_rede_solicitacoes.push({ id: 'aprovacao-legada', usuario_id: 1,
+    sessao_id: claimsLegado.jti, versao_sessao: 0, ip: b.req.ip, estado: 'aprovado',
+    sessao_expira_em: new Date(claimsLegado.exp * 1000), created_at: new Date() });
+  const app = express();
+  app.use(express.json());
+  app.use('/api/auth', require('../src/routes/auth.routes'));
+  let operacoes = 0;
+  for (const caminho of ['/upload', '/download', '/stream']) app.all(caminho, require('../src/middlewares/auth.middleware'), (_req, res) => {
+    operacoes++; res.json({ ok: true });
+  });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const request = (rota, token = sessao.token) => fetch(`${url}${rota}`, { headers: { authorization: `Bearer ${token}` } });
+  let agora = claims.exp * 1000 - 1;
+  t.mock.method(Date, 'now', () => agora);
+  for (const rota of ['/upload', '/download', '/stream']) assert.equal((await request(rota)).status, 200);
+  agora++;
+  for (const rota of ['/upload', '/download', '/stream', '/api/auth/me']) assert.equal((await request(rota)).status, 401);
+  assert.equal(operacoes, 3);
+  assert.equal(b.envios.length, 1, 'expiração não emite código sem novo login');
+  agora += 3600000;
+  assert.equal((await request('/download', legado)).status, 200, 'sessão anterior à regra continua válida após três horas');
+  assert.equal(b.envios.length, 1);
+});
+
 test('proxies validam IP/CIDR IPv4/IPv6 e normalizam IPv4 mapeado sem confiar em texto', () => {
   assert.equal(normalizarIp('::ffff:203.0.113.10'), '203.0.113.10');
   assert.deepEqual(validarRedes(['203.0.113.0/24', '2001:db8:1234::/48']), ['203.0.113.0/24', '2001:db8:1234::/48']);
@@ -204,7 +295,9 @@ test('novo código vale 30 minutos, informa o prazo no Telegram e pode ser usado
   assert.equal(b.estado.acesso_rede_solicitacoes[0].estado, 'pendente');
   agora = row.created_at.getTime() + 29 * 60000;
   const sessao = await b.validar(solicitacao_id);
-  assert.equal(jwt.verify(sessao.token, process.env.JWT_SECRET).id, b.usuario.id);
+  const claims = jwt.verify(sessao.token, process.env.JWT_SECRET);
+  assert.equal(claims.id, b.usuario.id);
+  assert.equal(claims.iat, Math.floor(agora / 1000), 'prazo da sessão começa na aprovação, não na emissão do código');
   await assert.rejects(b.validar(solicitacao_id), /inválida ou expirada/);
 });
 

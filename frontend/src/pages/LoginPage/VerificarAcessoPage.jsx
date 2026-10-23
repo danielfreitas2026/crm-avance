@@ -43,6 +43,7 @@ export default function VerificarAcessoPage() {
   return <div className="login-page"><div className="login-card">
     <h1>Autorizar acesso neste navegador</h1>
     <p>Este navegador não está autorizado. Peça ao administrador o código enviado pelo Telegram. O código libera apenas esta sessão e não cadastra o navegador.</p>
+    <p>Após a validação, a sessão dura até duas horas, sem renovação por atividade. Quando expirar, entre novamente e solicite outro código, se necessário.</p>
     <p>Solicitação: <small>{pendente.solicitacao_id}</small></p>
     <p>{segundos > 0 ? `Código válido por ${Math.floor(segundos / 60)}min ${segundos % 60}s.` : 'Código expirado. Volte ao login para solicitar outro.'}</p>
     <form onSubmit={confirmar}>

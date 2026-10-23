@@ -144,6 +144,32 @@ concessão inicial de uma autorização ou remoção posterior feita manualmente
 
 ## Solicitação e autorização
 
+Novas liberações por código permitem **até duas horas de sessão**, contadas da
+validação bem-sucedida. Atividade no CRM não renova esse prazo. Se a duração
+normal configurada ou a expiração original de uma sessão em andamento for menor,
+vale o menor prazo. Aprovar outro código depois de uma mudança de IP não estende
+a sessão. A validade de trinta minutos para digitar o código é independente
+da duração da sessão após aprovação.
+
+O JWT dessas novas liberações inclui `acesso_por_codigo: true`; seu `exp` é
+verificado pela API antes de toda requisição protegida e a mesma expiração fica
+registrada na liberação. Ao vencer, a API responde `401`, sem solicitar outro
+código automaticamente. O navegador limpa os dados da sessão e retorna ao login
+com o aviso: “Sua sessão expirou. Entre novamente e solicite um novo código ao
+administrador, se necessário.” Há temporizador pelo prazo absoluto, conferência
+ao retomar a aba e sincronização entre abas. Um token novo não é encerrado por
+um temporizador ou resposta `401` atrasados da sessão anterior.
+
+Para continuar, o usuário informa suas credenciais e, caso ainda não tenha
+dispensa nem navegador autorizado, solicita novo código ao administrador.
+O cookie de navegador autorizado permanece salvo. Logins que não precisaram de
+código continuam usando a duração normal configurada.
+
+Sessões emitidas antes desta atualização mantêm o vencimento já assinado.
+Não há migration, invalidação em massa, variável nova nem mudança global de
+`JWT_EXPIRES_IN`. Publique backend e frontend em todas as instâncias; novas
+aprovações em instâncias antigas ainda poderiam emitir sessões mais longas.
+
 Depois da senha correta, a API exige código em navegador não autorizado e conta
 sem dispensa, sem emitir JWT de acesso ao CRM. Uma sessão autorizada somente por
 código que muda de IP precisa de outro código. Navegadores cadastrados continuam

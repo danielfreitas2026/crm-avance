@@ -1,11 +1,19 @@
 import { clearNavigation } from '../utils/navigation-storage';
+import { expiracaoSessaoCodigo, SESSION_EXPIRED_MESSAGE } from '../utils/sessao-codigo';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 let redirecionandoLogin = false;
 
 export const SYSTEM_CLOSED_MESSAGE = 'O sistema está temporariamente fechado. Tente novamente no horário de funcionamento.';
 
-function encerrarSessaoExpirada() {
+export function encerrarSessaoExpirada(token = localStorage.getItem('token')) {
+  // Uma resposta atrasada ou temporizador antigo não encerra um novo login.
+  if (token !== localStorage.getItem('token')) return;
+  const expiraEm = expiracaoSessaoCodigo(token);
+  if (expiraEm !== null && expiraEm <= Date.now()) {
+    sessionStorage.setItem('logout_message', SESSION_EXPIRED_MESSAGE);
+  }
   clearNavigation();
+  sessionStorage.removeItem('acesso_rede_pendente');
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
 
@@ -50,7 +58,7 @@ export function tratarErroAutenticacao(response, data, token, endpoint) {
     return;
   }
 
-  if (response.status === 401) encerrarSessaoExpirada();
+  if (response.status === 401) encerrarSessaoExpirada(token);
 }
 
 async function lerJson(response) {

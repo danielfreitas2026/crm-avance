@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import VerificarAcessoPage from './VerificarAcessoPage';
 import LoginPage from './LoginPage';
 import { login, logout, validarAcessoRede } from '../../services/auth.service';
+import { SESSION_EXPIRED_MESSAGE } from '../../utils/sessao-codigo';
 
 const estilosGlobais = readFileSync('src/styles/global.css', 'utf8');
 
@@ -101,6 +102,14 @@ describe('autorização de acesso externo', () => {
     montar();
     expect(screen.getByRole('heading', { name: 'Autorizar acesso neste navegador' })).toBeInTheDocument();
     expect(screen.getByText(/não cadastra o navegador/)).toBeInTheDocument();
+    expect(screen.getByText(/sessão dura até duas horas/)).toBeInTheDocument();
+  });
+
+  it('login apresenta e consome o aviso de expiração da sessão liberada por código', () => {
+    sessionStorage.setItem('logout_message', SESSION_EXPIRED_MESSAGE);
+    montar(<LoginPage />);
+    expect(screen.getByText(SESSION_EXPIRED_MESSAGE)).toBeInTheDocument();
+    expect(sessionStorage.getItem('logout_message')).toBeNull();
   });
 
   it('login externo abre a etapa de código sem abrir o CRM', async () => {

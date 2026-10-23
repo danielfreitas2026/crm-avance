@@ -37,6 +37,7 @@ import PublicInfoPage from '../pages/PublicInfoPage/PublicInfoPage';
 import '../pages/HistoricoPage/HistoricoPage.css';
 
 import { getUsuarioLocal, temPermissao } from '../services/auth.service';
+import { useExpiracaoSessaoCodigo } from '../utils/useExpiracaoSessaoCodigo';
 
 /**
  * Processa private route conforme as regras do dominio.
@@ -44,6 +45,7 @@ import { getUsuarioLocal, temPermissao } from '../services/auth.service';
 function PrivateRoute({ children, permission }) {
   const token = localStorage.getItem('token');
   const usuario = getUsuarioLocal();
+  useExpiracaoSessaoCodigo(token);
 
   if (!token) {
     return <Navigate to="/login" replace />;

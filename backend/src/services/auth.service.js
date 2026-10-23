@@ -137,21 +137,31 @@ async function login(email, senha, req) {
   return criarSessao(usuario);
 }
 
-async function criarSessao(usuario, { sessaoId = randomUUID(), expiraEm } = {}) {
-  const token = jwt.sign(
+async function criarSessao(usuario, { sessaoId = randomUUID(), expiraEm, acessoPorCodigo = false } = {}) {
+  const preservarExpiracao = expiraEm && !acessoPorCodigo;
+  let token = jwt.sign(
     {
       id: usuario.id,
       email: usuario.email,
       role_id: usuario.role_id,
       versao_sessao: usuario.versao_sessao || 0,
       jti: sessaoId,
-      ...(expiraEm ? { exp: expiraEm } : {})
+      ...(acessoPorCodigo ? { acesso_por_codigo: true } : {}),
+      ...(preservarExpiracao ? { exp: expiraEm } : {})
     },
     process.env.JWT_SECRET,
     {
-      ...(expiraEm ? {} : { expiresIn: process.env.JWT_EXPIRES_IN || '1d' })
+      ...(preservarExpiracao ? {} : { expiresIn: process.env.JWT_EXPIRES_IN || '1d' })
     }
   );
+
+  if (acessoPorCodigo) {
+    // O JWT calcula a duração configurada. O código só pode reduzi-la,
+    // preservando também o prazo de uma sessão que já estava em andamento.
+    const claims = jwt.decode(token);
+    const exp = Math.min(claims.exp, claims.iat + 2 * 60 * 60, expiraEm ?? Infinity);
+    if (exp !== claims.exp) token = jwt.sign({ ...claims, exp }, process.env.JWT_SECRET);
+  }
 
   return {
     token,

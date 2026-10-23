@@ -168,7 +168,7 @@ async function validar(dados, req) {
       return { falha: tentativas >= 5 ? 'Limite de tentativas atingido. Faça login novamente.' : 'Código incorreto.' };
     }
     const auth = require('./auth.service');
-    const sessao = await auth.criarSessao(usuario, { sessaoId: row.sessao_id,
+    const sessao = await auth.criarSessao(usuario, { sessaoId: row.sessao_id, acessoPorCodigo: true,
       expiraEm: row.sessao_expira_em ? Math.floor(tempo(row.sessao_expira_em) / 1000) : undefined });
     const decoded = jwt.decode(sessao.token);
     await trx(TABELA).where({ usuario_id: usuario.id, sessao_id: row.sessao_id, estado: 'aprovado' })

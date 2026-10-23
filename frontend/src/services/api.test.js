@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiBlob, apiDelete, apiGet, apiPost, apiPut, apiRequest, apiStreamNdjson, tratarErroAutenticacao } from './api';
+import { SESSION_EXPIRED_MESSAGE } from '../utils/sessao-codigo';
 
 function jsonResponse(body, init = {}) {
   return new Response(JSON.stringify(body), {
@@ -127,5 +128,37 @@ describe('api service', () => {
     await expect(apiGet('/protegido')).rejects.toMatchObject({ code: 'NETWORK_ACCESS_REQUIRED' });
     expect(JSON.parse(sessionStorage.getItem('acesso_rede_pendente')).modo).toBe('dispositivo');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('401 de sessão por código expirada limpa sessão e navegação, preservando cookie e aviso no login', async () => {
+    window.history.replaceState({}, '', '/login');
+    const token = `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 1, acesso_por_codigo: true }))}.assinatura`;
+    localStorage.setItem('token', token);
+    localStorage.setItem('usuario', '{"id":1}');
+    sessionStorage.setItem('acesso_rede_pendente', '{"solicitacao_id":"antiga"}');
+    sessionStorage.setItem('crm:navegacao:v1:1:vendas', '{"pagina":2}');
+    document.cookie = 'crm_dispositivo=credencial-teste; path=/';
+    fetch.mockResolvedValueOnce(jsonResponse({ message: 'Token expirado.' }, { status: 401 }));
+    await expect(apiGet('/protegido')).rejects.toMatchObject({ status: 401 });
+    expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.getItem('usuario')).toBeNull();
+    expect(sessionStorage.getItem('acesso_rede_pendente')).toBeNull();
+    expect(sessionStorage.getItem('crm:navegacao:v1:1:vendas')).toBeNull();
+    expect(sessionStorage.getItem('logout_message')).toBe(SESSION_EXPIRED_MESSAGE);
+    expect(document.cookie).toContain('crm_dispositivo=credencial-teste');
+    document.cookie = 'crm_dispositivo=; path=/; max-age=0';
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('401 atrasado de um token antigo não encerra um novo login', async () => {
+    window.history.replaceState({}, '', '/login');
+    localStorage.setItem('token', 'token-antigo');
+    fetch.mockResolvedValueOnce(jsonResponse({ message: 'Token expirado.' }, { status: 401 }));
+    const requisicao = apiGet('/protegido');
+    localStorage.setItem('token', 'novo-login');
+    localStorage.setItem('usuario', '{"id":2}');
+    await expect(requisicao).rejects.toMatchObject({ status: 401 });
+    expect(localStorage.getItem('token')).toBe('novo-login');
+    expect(localStorage.getItem('usuario')).toBe('{"id":2}');
   });
 });
