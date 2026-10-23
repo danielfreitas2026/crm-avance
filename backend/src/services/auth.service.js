@@ -159,8 +159,7 @@ async function criarSessao(usuario, { sessaoId = randomUUID(), expiraEm, acessoP
     // O JWT calcula a duração configurada. O código só pode reduzi-la,
     // preservando também o prazo de uma sessão que já estava em andamento.
     const claims = jwt.decode(token);
-    // Temporário para teste; retornar a duas horas após a validação.
-    const exp = Math.min(claims.exp, claims.iat + 5 * 60, expiraEm ?? Infinity);
+    const exp = Math.min(claims.exp, claims.iat + 2 * 60 * 60, expiraEm ?? Infinity);
     if (exp !== claims.exp) token = jwt.sign({ ...claims, exp }, process.env.JWT_SECRET);
   }
 

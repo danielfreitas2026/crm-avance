@@ -144,9 +144,7 @@ concessão inicial de uma autorização ou remoção posterior feita manualmente
 
 ## Solicitação e autorização
 
-Temporariamente, para teste, novas liberações por código permitem **até cinco
-minutos de sessão**. O retorno às duas horas será feito em outra alteração após
-o teste; não há restauração automática. O prazo é contado a partir da
+Novas liberações por código permitem **até duas horas de sessão**, contadas da
 validação bem-sucedida. Atividade no CRM não renova esse prazo. Se a duração
 normal configurada ou a expiração original de uma sessão em andamento for menor,
 vale o menor prazo. Aprovar outro código depois de uma mudança de IP não estende
