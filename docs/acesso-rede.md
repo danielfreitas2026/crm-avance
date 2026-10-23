@@ -1,16 +1,33 @@
-# Acesso por rede, navegadores e código administrativo
+# Acesso por dispositivos e código administrativo
 
-O recurso começa **desativado**, inclusive após a migration automática do deploy.
+Em instalações novas, o controle começa **desativado**. Este deploy não ativa
+restrições automaticamente.
 Administradores sempre entram sem código, independentemente das permissões
 individuais. Para os demais, a permissão `acesso_rede_sem_codigo`, individual ou
 do perfil, dispensa o código. Essa dispensa não ignora conta inativa, horário de
 funcionamento, expiração do JWT nem a versão de sessão.
 
+## Retirada do controle por rede
+
+O modo por IP foi desativado. IPs/faixas da empresa não liberam mais acessos e
+não podem mais ser configurados pela tela. As rotas, nomes de tabelas e chaves
+`configurar_acesso_rede`/`acesso_rede_sem_codigo` foram mantidos por compatibilidade.
+
+A migration aditiva `20261023130000_disable_rede_access` transforma uma
+configuração antiga `rede` em `dispositivo` **desativado**, revogando solicitações
+e liberações temporárias do modo antigo. Isso evita ativar outro bloqueio sem
+preparação. Se o controle por navegador já estava configurado, seu estado de
+ativação e suas liberações são preservados. Contas, perfis, horários e cadastros
+de navegadores não são alterados. As redes antigas ficam arquivadas no banco,
+sem efeito na autorização. O rollback não reativa a política retirada.
+
+Publique backend, frontend e migrations em todas as instâncias. Não mantenha
+instâncias antigas recebendo tráfego, pois ainda poderiam aplicar a regra por IP.
+
 ## Navegadores autorizados
 
-Em **Configurações → Acesso por rede e dispositivos**, o controle pode funcionar
-**Por rede** ou **Por navegador autorizado**. No segundo modo, os IPs cadastrados
-não dispensam o código: apenas um navegador autorizado ou uma conta dispensada
+Em **Configurações → Acesso por dispositivos**, o controle funciona por
+navegador autorizado. Apenas um navegador autorizado ou uma conta dispensada
 pode entrar sem código. Os computadores cadastrados devem permanecer na empresa.
 O cadastro vale para qualquer funcionário que use aquele perfil do navegador;
 login, senha, conta ativa e horários continuam sendo verificados.
@@ -18,8 +35,7 @@ login, senha, conta ativa e horários continuam sendo verificados.
 Para preparar, ainda sem mudar o estado atual do bloqueio:
 
 1. Publique a migration aditiva, backend e frontend em todas as instâncias.
-   A migration preserva o estado de ativação, redes e permissões, mantendo
-   inicialmente o modo `rede`. Não execute rollback para remover cadastros;
+   A migração do modo antigo está descrita acima. Não execute rollback para remover cadastros;
    desative o controle pela configuração e faça reparos de schema aditivos.
 2. Em cada computador, abra o navegador usado pelo funcionário e entre com uma
    conta que tenha `configurar_acesso_rede`. Em **Autorizar este navegador**,
@@ -29,8 +45,8 @@ Para preparar, ainda sem mudar o estado atual do bloqueio:
    os outros funcionários. Outro navegador, perfil ou janela anônima não recebe
    essa autorização.
 4. Configure o Telegram e mantenha uma conta ativa dispensada com permissão de
-   configuração. Selecione **Por navegador autorizado**, ative e salve quando
-   estiver pronto. Este modo permite redes vazias e não exige IP fixo.
+   configuração. Ative e salve quando estiver pronto. Não é necessário
+   cadastrar redes nem contratar IP fixo.
 5. Retire manualmente `acesso_rede_sem_codigo` dos funcionários que deverão
    seguir o controle, conferindo também os perfis. A dispensa inicial não será
    removida nem concedida novamente por este deploy. Administradores continuam
@@ -68,8 +84,10 @@ configuração; clientes administrativos devem enviar `Origin` permitido.
 
 ### APIs de navegadores
 
-- `GET/PUT /api/config/admin/acesso-rede`: inclui `modo: "rede" | "dispositivo"`.
-  O `PUT` recebe `{ ativo, redes, modo }`; omitir `modo` preserva a opção vigente.
+- `GET/PUT /api/config/admin/acesso-rede`: retorna `modo: "dispositivo"`.
+  O `PUT` recebe `{ ativo, modo? }`. Omitir `modo` utiliza dispositivos;
+  `modo: "rede"` é recusado. O campo antigo `redes` é ignorado e não altera
+  os valores arquivados no banco.
 - `GET /api/config/admin/acesso-rede/dispositivos`: retorna
   `{ dispositivo_atual_id, dispositivos }`, sem credenciais ou hashes.
 - `POST /api/config/admin/acesso-rede/dispositivos/atual`: recebe
@@ -103,7 +121,7 @@ a inicialização informa a falha, sem apagar as permissões existentes. O `down
 dessa migration não modifica dados, pois não seria seguro distinguir uma
 concessão inicial de uma autorização ou remoção posterior feita manualmente.
 
-## Preparação e ativação
+## Infraestrutura
 
 1. Publique backend, frontend e a migration aditiva em todas as instâncias.
    Instâncias antigas não podem continuar recebendo tráfego quando a restrição
@@ -117,30 +135,19 @@ concessão inicial de uma autorização ou remoção posterior feita manualmente
    controlados e confiáveis, separados por vírgulas. Não use `true`, nomes
    genéricos de redes, `0.0.0.0/0` ou `::/0`. Restrinja o acesso direto à API
    conforme a topologia e assegure que os proxies tratem o encaminhamento do IP.
-4. Reinicie a API depois de configurar essas variáveis. Acesse **Configurações →
-   Acesso por rede e dispositivos** com a permissão `configurar_acesso_rede`. Administradores
-   existentes recebem essa permissão na migration; novos administradores podem
-   recebê-la no gerenciamento de permissões.
-5. Ainda com o recurso desativado, confira o IP detectado usando a internet da
-   empresa e uma conexão externa, por exemplo, o celular fora do Wi-Fi. Os IPs
-   devem corresponder às respectivas conexões. Se ambos mostram o endereço do
-   servidor/proxy, corrija a configuração antes de ativar. Não cadastre o IP do
-   proxy como se fosse a rede da empresa.
-6. Cadastre os IPs públicos ou faixas da empresa, incluindo IPv6 se usado. Ative
-   somente após essa conferência. É necessário manter pelo menos um usuário
-   ativo dispensado e autorizado a configurar o recurso.
-
-A comparação usa o IP visto pela API, não o nome do Wi-Fi. Uma VPN com saída
-pela empresa também será interna. IP público dinâmico pode exigir atualização
-do cadastro; enquanto isso, os usuários não dispensados precisarão de código.
-Para desativar, use a mesma tela com um administrador autorizado. Não execute
-rollback destrutivo: mantenha as tabelas e prefira uma correção aditiva.
+4. Reinicie a API e confira o IP identificado na resposta administrativa
+   `GET /api/config/admin/acesso-rede`, dentro e fora da empresa. O IP continua
+   necessário para vincular códigos temporários, limitar tentativas e auditar.
+   Ele não reconhece nem libera automaticamente a rede da empresa.
+5. Cadastre os navegadores e ative o controle conforme as instruções acima.
+   Para desativar, use a mesma tela com uma conta autorizada.
 
 ## Solicitação e autorização
 
-Depois da senha correta, a API exige autorização externa sem emitir JWT de
-acesso ao CRM. Uma sessão que muda de rede também é bloqueada na próxima
-requisição protegida. O Telegram recebe nome, e-mail, IP, horário de São Paulo,
+Depois da senha correta, a API exige código em navegador não autorizado e conta
+sem dispensa, sem emitir JWT de acesso ao CRM. Uma sessão autorizada somente por
+código que muda de IP precisa de outro código. Navegadores cadastrados continuam
+dispensados mesmo mudando de IP. O Telegram recebe nome, e-mail, IP, horário de São Paulo,
 identificador da solicitação e seis letras. Confirme a identidade da pessoa e
 repasse o código por um canal escolhido por você.
 
@@ -157,9 +164,9 @@ expirar ou o logout revogá-la. Aprovar uma sessão existente mantém sua expira
 Uma nova aprovação em outro IP substitui a liberação anterior da mesma sessão.
 Novos logins têm `jti` aleatório. Tokens antigos são identificados por SHA-256 e
 recebem essa identificação como `jti` após aprovação, sem ampliar a validade.
-Remover a dispensa exige código na próxima requisição externa, exceto quando a
-sessão já possui aprovação válida para aquele IP. Alterar a configuração de
-redes revoga todas as solicitações e aprovações anteriores.
+Remover a dispensa exige código na próxima requisição em navegador não autorizado,
+exceto quando a sessão já possui aprovação válida para aquele IP. Alterar a
+configuração revoga todas as solicitações e aprovações temporárias anteriores.
 
 O logout limpa os dados locais e tenta revogar a autorização no servidor. Se o
 servidor estiver indisponível, a tela de login informa que não foi possível
@@ -185,17 +192,17 @@ respeitando as cotas. Acompanhe respostas 429/503 e falhas genéricas de operaç
 ## Contratos e testes
 
 - `GET/PUT /api/config/admin/acesso-rede`: diagnóstico/configuração, com permissão
-  `configurar_acesso_rede`. A atualização recebe `{ ativo, redes, modo }`, com
+  `configurar_acesso_rede`. A atualização recebe `{ ativo, modo }`, com
   `modo` opcional para clientes anteriores.
 - Login e requisições protegidas retornam `403 NETWORK_ACCESS_REQUIRED` com
   `solicitacao_id` e `expira_em` quando um código está pendente.
 - `POST /api/auth/acesso-rede/validar`: recebe `{ solicitacao_id, codigo }` e,
   após revalidar conta, IP, horário e versão, responde `{ token, usuario }`.
 - `POST /api/auth/logout`: recebe o Bearer JWT e revoga solicitações/liberações
-  daquela sessão, mesmo quando a rede ou o horário estiver bloqueado.
+  daquela sessão, mesmo quando o navegador ou o horário estiver bloqueado.
 - O servidor do frontend deve entregar `index.html` em `/verificar-acesso`.
 
 Os testes simulam persistência e Telegram e usam HTTP apenas em localhost.
-Execute os testes direcionados de acesso por rede e autenticação, os testes
+Execute os testes direcionados de controle de acesso e autenticação, os testes
 das telas e `npm run verify`. Nenhum smoke test de Telegram ou mudança em
 produção faz parte da verificação automática.

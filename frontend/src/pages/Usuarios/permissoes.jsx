@@ -390,8 +390,8 @@ export const GRUPOS_PERMISSOES = [
       {
         titulo: 'Segurança de acesso',
         itens: [
-          { chave: 'configurar_acesso_rede', nome: 'Configurar acesso por rede', descricao: 'Configura as redes da empresa e o bloqueio externo.' },
-          { chave: 'acesso_rede_sem_codigo', nome: 'Acessar de qualquer rede sem código', descricao: 'Dispensa o código fora da empresa. Administradores são sempre dispensados.' }
+          { chave: 'configurar_acesso_rede', nome: 'Configurar acesso por dispositivos', descricao: 'Configura o bloqueio e gerencia navegadores autorizados.' },
+          { chave: 'acesso_rede_sem_codigo', nome: 'Acessar sem código em qualquer navegador', descricao: 'Dispensa o código em navegadores não autorizados. Administradores são sempre dispensados.' }
         ]
       },
       {

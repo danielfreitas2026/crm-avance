@@ -12,12 +12,13 @@ const horario = require('../src/services/horario-acesso.service');
 const telegram = require('../src/services/telegram.service');
 const auditoria = require('../src/services/audit-log.service');
 const dispositivos = require('../src/services/dispositivos-acesso.service');
-const { normalizarIp, validarRedes, pertenceRede, configurarProxy } = require('../src/utils/rede');
+const { normalizarIp, validarRedes, configurarProxy } = require('../src/utils/rede');
 
 // Persistência isolada, com snapshots e transações serializadas. O serviço real
 // pede bloqueios e usa seu próprio relógio, HMAC, JWT e envio (simulado).
 async function banco(t) {
-  let estado = { configuracoes_acesso_rede: [{ id: 1, ativo: true, redes: '["203.0.113.10","2001:db8:1234::/48"]' }],
+  let estado = { configuracoes_acesso_rede: [{ id: 1, ativo: true, modo: 'dispositivo', redes: '["203.0.113.10","2001:db8:1234::/48"]' }],
+    permissoes: [{ chave: 'configurar_acesso_rede', ativo: true }, { chave: 'acesso_rede_sem_codigo', ativo: true }],
     acesso_dispositivos: [], acesso_rede_solicitacoes: [], usuarios: [{ id: 1, nome: 'Ana', email: 'ana@crm.local',
       senha: await bcrypt.hash('Senha123', 4), role_id: 2, role: { nome: 'usuario', permissoes: '{}' },
       permissoes: '[]', ativo: true, versao_sessao: 0 }] };
@@ -103,12 +104,9 @@ async function banco(t) {
   };
 }
 
-test('redes validam IP/CIDR, normalizam IPv4 mapeado e reconhecem IPv4/IPv6 sem confiar em texto', () => {
+test('proxies validam IP/CIDR IPv4/IPv6 e normalizam IPv4 mapeado sem confiar em texto', () => {
   assert.equal(normalizarIp('::ffff:203.0.113.10'), '203.0.113.10');
-  assert.equal(pertenceRede('::ffff:203.0.113.10', ['203.0.113.0/24']), true);
-  assert.equal(pertenceRede('2001:db8:1234::abc', ['2001:db8:1234::/48']), true);
-  assert.equal(pertenceRede('2001:db8:5678::1', ['2001:db8:1234::/48']), false);
-  assert.equal(pertenceRede('invalido', ['203.0.113.10']), false);
+  assert.deepEqual(validarRedes(['203.0.113.0/24', '2001:db8:1234::/48']), ['203.0.113.0/24', '2001:db8:1234::/48']);
   for (const redes of [['0.0.0.0/0'], ['::/0'], ['1.2.3.4/33'], ['::1/129'], ['1.2.3.4/'], ['example.com'], ['1.2.3.4/24/x'], [12], null]) {
     assert.throws(() => validarRedes(redes));
   }
@@ -130,10 +128,8 @@ test('proxy ignora X-Forwarded-For forjado e só aceita encaminhamento do proxy 
   assert.throws(() => configurarProxy(app, 'true'));
 });
 
-test('rede interna, função desativada, admins e permissão individual ou de perfil dispensam o código', async t => {
+test('função desativada, admins e permissão individual ou de perfil dispensam o código', async t => {
   const b = await banco(t);
-  await rede.avaliar(b.usuario, { ip: '203.0.113.10' });
-  await rede.avaliar(b.usuario, { ip: '2001:db8:1234::10' });
   b.config.ativo = false;
   await rede.avaliar(b.usuario, b.req);
   b.config.ativo = true;
@@ -301,17 +297,16 @@ test('falha Telegram mantém bloqueio, não salva código utilizável e respeita
   await assert.rejects(rede.avaliar(b.usuario, b.req), error => error.status === 429);
 });
 
-test('configuração exige Telegram, rede e gestor dispensado; alteração revoga códigos e liberações', async t => {
+test('configuração exige Telegram e gestor dispensado; alteração revoga códigos e liberações', async t => {
   const b = await banco(t);
-  await assert.rejects(rede.atualizarConfiguracao({ ativo: true, redes: [] }, b.req), /cadastre/);
   delete process.env.TELEGRAM_ACESSO_REDE_CHAT_ID;
-  await assert.rejects(rede.atualizarConfiguracao({ ativo: true, redes: ['203.0.113.10'] }, b.req), /configure/);
+  await assert.rejects(rede.atualizarConfiguracao({ ativo: true }, b.req), /configure/);
   process.env.TELEGRAM_ACESSO_REDE_CHAT_ID = 'administracao-teste';
-  await assert.rejects(rede.atualizarConfiguracao({ ativo: true, redes: ['203.0.113.10'] }, b.req), /Mantenha/);
+  await assert.rejects(rede.atualizarConfiguracao({ ativo: true }, b.req), /Mantenha/);
   const { solicitacao_id } = await b.solicitar();
   b.usuario.role.nome = 'admin';
   b.usuario.permissoes = '{"configurar_acesso_rede":true}';
-  await rede.atualizarConfiguracao({ ativo: true, redes: ['203.0.113.0/24'] }, b.req);
+  await rede.atualizarConfiguracao({ ativo: true }, b.req);
   assert.equal(b.estado.acesso_rede_solicitacoes[0].estado, 'revogado');
   await assert.rejects(b.validar(solicitacao_id), /inválida/);
   const config = await rede.buscarConfiguracao(b.req);
@@ -583,10 +578,90 @@ test('configuração preserva modo omitido, permite dispositivos sem redes e man
   assert.equal(b.config.modo, 'dispositivo');
   assert.equal(b.estado.acesso_dispositivos.length, 1);
   assert.equal(b.estado.acesso_dispositivos[0].revogado_em, null);
-  await assert.rejects(rede.atualizarConfiguracao({ ativo: true, modo: 'outro', redes: [] }, b.req), /Modo/);
+  await assert.rejects(rede.atualizarConfiguracao({ ativo: true, modo: 'outro', redes: [] }, b.req), /desativado/);
   delete process.env.TELEGRAM_ACESSO_REDE_CHAT_ID;
   await assert.rejects(rede.atualizarConfiguracao({ ativo: true, modo: 'dispositivo', redes: [] }, b.req), /configure/);
   assert.equal(b.usuario.permissoes, '{"configurar_acesso_rede":true}');
+});
+
+test('IPs antigos IPv4/IPv6 não dispensam códigos; parâmetros de rede antigos não restauram a dispensa', async t => {
+  const b = await banco(t);
+  for (const ip of ['203.0.113.10', '2001:db8:1234::10']) {
+    b.req.ip = ip;
+    const resposta = await b.solicitar();
+    assert.equal(resposta.modo, 'dispositivo');
+  }
+  tornarGestor(b);
+  const anterior = b.config.redes;
+  await assert.rejects(rede.atualizarConfiguracao({ ativo: true, modo: 'rede', redes: ['203.0.113.10'] }, b.req), /desativado/);
+  await rede.atualizarConfiguracao({ ativo: true, redes: ['0.0.0.0/0'] }, b.req);
+  assert.equal(b.config.redes, anterior, 'o legado fica arquivado e não é editado');
+  assert.equal(b.config.modo, 'dispositivo');
+  b.usuario.role.nome = 'usuario';
+  b.usuario.permissoes = '[]';
+  await b.solicitar();
+});
+
+test('configuração de rede antiga é exposta desativada sem depender dos IPs armazenados', async t => {
+  const b = await banco(t);
+  b.config.modo = 'rede';
+  b.config.redes = 'legado ilegível';
+  const config = await rede.buscarConfiguracao(b.req);
+  assert.equal(config.ativo, false);
+  assert.equal(config.modo, 'dispositivo');
+  assert.equal(config.redes, undefined);
+  await rede.avaliar(b.usuario, b.req);
+  assert.equal(b.envios.length, 0, 'não ativa bloqueio por navegador ao retirar o antigo');
+});
+
+test('migration desativa somente modo rede e revoga seus códigos, preservando dispositivos e permissões individuais', async t => {
+  const b = await banco(t);
+  await cadastrarNavegador(b);
+  b.config.modo = 'rede';
+  b.estado.acesso_rede_solicitacoes.push({ estado: 'pendente' }, { estado: 'aprovado' }, { estado: 'falha' });
+  const usuarios = structuredClone(b.estado.usuarios);
+  const navegadores = structuredClone(b.estado.acesso_dispositivos);
+  const redes = b.config.redes;
+  const migration = require('../src/database/migrations/20261023130000_disable_rede_access');
+  await migration.up(db);
+  assert.equal(b.config.ativo, false);
+  assert.equal(b.config.modo, 'dispositivo');
+  assert.equal(b.config.redes, redes);
+  assert.deepEqual(b.estado.acesso_rede_solicitacoes.map(row => row.estado), ['revogado', 'revogado', 'falha']);
+  assert.deepEqual(b.estado.usuarios, usuarios);
+  assert.deepEqual(b.estado.acesso_dispositivos, navegadores);
+  assert.equal(b.estado.permissoes[0].nome, 'Configurar acesso por dispositivos');
+  assert.equal(b.estado.permissoes[1].ativo, true);
+  const apos = structuredClone(b.estado);
+  await migration.down(db);
+  assert.deepEqual(b.estado, apos, 'rollback não restaura política retirada');
+  assert.equal(b.bloqueios.at(-1), 'configuracoes_acesso_rede');
+});
+
+test('migration preserva controle por dispositivo ativo e suas liberações temporárias', async t => {
+  const b = await banco(t);
+  const pendente = await b.solicitar();
+  await b.validar(pendente.solicitacao_id);
+  const config = structuredClone(b.config);
+  const solicitacoes = structuredClone(b.estado.acesso_rede_solicitacoes);
+  await require('../src/database/migrations/20261023130000_disable_rede_access').up(db);
+  assert.deepEqual(b.config, config);
+  assert.deepEqual(b.estado.acesso_rede_solicitacoes, solicitacoes);
+});
+
+test('falha na migration desfaz desativação e revogação em conjunto', async t => {
+  const b = await banco(t);
+  b.config.modo = 'rede';
+  b.estado.acesso_rede_solicitacoes.push({ estado: 'aprovado' });
+  const antes = structuredClone(b.estado);
+  const transacao = db.transaction;
+  t.mock.method(db, 'transaction', callback => transacao(trx => callback(tabela => {
+    const query = trx(tabela);
+    if (tabela === 'permissoes') query.update = async () => { throw new Error('falha de persistência simulada'); };
+    return query;
+  })));
+  await assert.rejects(require('../src/database/migrations/20261023130000_disable_rede_access').up(db), /persistência/);
+  assert.deepEqual(b.estado, antes);
 });
 
 test('cookie é protegido, renovado apenas quando válido, e HTTP sem Secure fica restrito ao desenvolvimento local', async t => {

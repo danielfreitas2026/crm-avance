@@ -8,6 +8,12 @@ import {
 } from './permissoes';
 
 describe('catalogo de permissoes de vendas', () => {
+  it('mantém as chaves existentes descrevendo o controle por navegador e a dispensa', () => {
+    expect(getPermissoesDeclaradas()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ chave: 'configurar_acesso_rede', nome: 'Configurar acesso por dispositivos' }),
+      expect.objectContaining({ chave: 'acesso_rede_sem_codigo', nome: 'Acessar sem código em qualquer navegador' })
+    ]));
+  });
   it('dispensa administradores do código de rede e impede desmarcar ou persistir uma negação', () => {
     const disponiveis = [{ chave: 'acesso_rede_sem_codigo' }, { chave: 'configurar_acesso_rede' }];
     expect(getPermissoesSelecionadasUsuario({ role: { nome: 'admin' }, permissoes: { acesso_rede_sem_codigo: false } }, disponiveis)).toEqual(['acesso_rede_sem_codigo']);

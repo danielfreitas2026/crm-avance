@@ -94,7 +94,7 @@ test('concessão libera sessão externa com trava ativa sem ignorar conta inativ
   t.mock.method(db.client, 'releaseConnection', async () => {});
   t.mock.method(db.client, '_query', async (_conexao, consulta) => {
     assert.match(consulta.sql, /from `configuracoes_acesso_rede`/);
-    return { ...consulta, response: [[{ id: 1, ativo: true, redes: '["203.0.113.10"]' }], []] };
+    return { ...consulta, response: [[{ id: 1, ativo: true, modo: 'dispositivo', redes: '["203.0.113.10"]' }], []] };
   });
   t.mock.method(Usuario, 'query', () => ({ findById() { return this; }, withGraphFetched: async () => usuario }));
   let acesso = { permitido: true, versao_sessao: 0 };

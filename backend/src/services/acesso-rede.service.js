@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const db = require('../config/database');
 const Usuario = require('../models/Usuario');
 const { usuarioTemPermissaoLocal } = require('../utils/permissoes');
-const { normalizarIp, pertenceRede, validarRedes } = require('../utils/rede');
+const { normalizarIp } = require('../utils/rede');
 const horario = require('./horario-acesso.service');
 const telegram = require('./telegram.service');
 const auditoria = require('./audit-log.service');
@@ -13,7 +13,7 @@ const dispositivos = require('./dispositivos-acesso.service');
 const MINUTO = 60000;
 const TABELA = 'acesso_rede_solicitacoes';
 const CONFIG = 'configuracoes_acesso_rede';
-const NETWORK_MESSAGE = 'Acesso fora da rede da empresa. Solicite o código ao administrador.';
+const NETWORK_MESSAGE = 'Navegador não autorizado. Solicite o código ao administrador.';
 const erro = (message, status = 400, code) => Object.assign(new Error(message), { status, code, acessoRedeSeguro: true });
 const tempo = valor => typeof valor === 'string' && /^\d{4}-\d\d-\d\d /.test(valor)
   ? Date.parse(`${valor.replace(' ', 'T')}Z`) : new Date(valor).getTime();
@@ -35,10 +35,12 @@ function telegramConfigurado() {
 }
 
 function estadoConfiguracao(row) {
-  if (!row) throw erro('Configuração de acesso por rede indisponível.', 503);
+  if (!row) throw erro('Configuração de acesso indisponível.', 503);
   const modo = row.modo ?? 'rede';
   if (!['rede', 'dispositivo'].includes(modo)) throw erro('Modo de acesso indisponível.', 503);
-  return { ativo: Boolean(row.ativo), modo, redes: validarRedes(JSON.parse(row.redes)) };
+  // A política antiga não é convertida em bloqueio por dispositivo ativo.
+  // A migration faz a mesma transição persistente, sem alterar cadastros.
+  return { ativo: modo === 'dispositivo' && Boolean(row.ativo), modo: 'dispositivo' };
 }
 
 async function buscarConfiguracao(req) {
@@ -50,34 +52,30 @@ async function buscarConfiguracao(req) {
 
 async function atualizarConfiguracao(dados, req) {
   if (typeof dados?.ativo !== 'boolean') throw erro('Informe se o bloqueio está ativo.');
-  let redes;
-  try { redes = validarRedes(dados.redes); } catch (e) { throw erro(e.message); }
-  if (dados.modo !== undefined && !['rede', 'dispositivo'].includes(dados.modo)) throw erro('Modo de acesso inválido.');
+  if (dados.modo !== undefined && dados.modo !== 'dispositivo') {
+    throw erro('O acesso por rede foi desativado. Utilize navegadores autorizados.');
+  }
   await db.transaction(async trx => {
     const anterior = estadoConfiguracao(await trx(CONFIG).where({ id: 1 }).forUpdate().first());
-    const modo = dados.modo ?? anterior.modo;
-    if (dados.ativo && ((modo === 'rede' && !redes.length) || !telegramConfigurado())) {
-      throw erro(modo === 'rede'
-        ? 'Para ativar, cadastre uma rede e configure o bot e a conversa exclusiva do Telegram.'
-        : 'Para ativar, configure o bot e a conversa exclusiva do Telegram.');
+    if (dados.ativo && !telegramConfigurado()) {
+      throw erro('Para ativar, configure o bot e a conversa exclusiva do Telegram.');
     }
     if (dados.ativo) {
       const usuarios = await Usuario.query(trx).where('ativo', true).withGraphFetched('role');
       if (!usuarios.some(usuario => dispensado(usuario) && usuarioTemPermissaoLocal(usuario, 'configurar_acesso_rede'))) {
-        throw erro('Mantenha um usuário ativo dispensado do código com permissão para configurar o acesso por rede.');
+        throw erro('Mantenha um usuário ativo dispensado do código com permissão para configurar o acesso.');
       }
     }
-    await trx(CONFIG).where({ id: 1 }).update({ ativo: dados.ativo, modo, redes: JSON.stringify(redes), updated_at: new Date() });
+    await trx(CONFIG).where({ id: 1 }).update({ ativo: dados.ativo, modo: 'dispositivo', updated_at: new Date() });
     await trx(TABELA).whereIn('estado', ['pendente', 'aprovado']).update({ estado: 'revogado' });
     await auditoria.registrar(req, { acao: 'config.acesso_rede_atualizado', entidade: CONFIG, entidade_id: 1,
-      dados: { anterior, novo: { ativo: dados.ativo, modo, redes } } }, trx);
+      dados: { anterior, novo: { ativo: dados.ativo, modo: 'dispositivo' } } }, trx);
   });
   return buscarConfiguracao(req);
 }
 
-function respostaPendente(row, modo) {
-  return { code: 'NETWORK_ACCESS_REQUIRED', modo, message: modo === 'dispositivo'
-    ? 'Navegador não autorizado. Solicite o código ao administrador.' : NETWORK_MESSAGE,
+function respostaPendente(row) {
+  return { code: 'NETWORK_ACCESS_REQUIRED', modo: 'dispositivo', message: NETWORK_MESSAGE,
     solicitacao_id: row.id, expira_em: new Date(tempo(row.expira_em)).toISOString() };
 }
 
@@ -87,14 +85,12 @@ async function avaliar(usuario, req, sessao) {
   const config = estadoConfiguracao(await db(CONFIG).where({ id: 1 }).first());
   if (!config.ativo || dispensado(usuario)) return;
   const ip = normalizarIp(req.ip);
-  if (config.modo === 'rede' && pertenceRede(ip, config.redes)) return;
   const resultado = await db.transaction(async trx => {
     const atual = estadoConfiguracao(await trx(CONFIG).where({ id: 1 }).forUpdate().first());
     const pessoa = await Usuario.query(trx).findById(usuario.id).forUpdate().withGraphFetched('role');
     if (!pessoa?.ativo || (pessoa.versao_sessao || 0) !== (usuario.versao_sessao || 0)) throw erro('Sessão encerrada. Faça login novamente.', 401);
     if (!atual.ativo || dispensado(pessoa)) return;
-    if (atual.modo === 'rede' && pertenceRede(ip, atual.redes)) return;
-    if (atual.modo === 'dispositivo' && await dispositivos.buscarAtual(req, trx)) return;
+    if (await dispositivos.buscarAtual(req, trx)) return;
     if (!isIP(ip)) throw erro('Não foi possível identificar a rede de acesso.', 403);
     const agora = new Date();
     if (sessao) {
@@ -107,7 +103,7 @@ async function avaliar(usuario, req, sessao) {
     const pendente = registros.find(row => row.estado === 'pendente' && row.ip === ip &&
       row.versao_sessao === (pessoa.versao_sessao || 0) && tempo(row.expira_em) > agora.getTime() &&
       (sessao ? row.sessao_id === sessao.id : row.origem === 'login'));
-    if (pendente) return respostaPendente(pendente, atual.modo);
+    if (pendente) return respostaPendente(pendente);
     if (registros.length >= 20 || registros.filter(row => tempo(row.created_at) > agora.getTime() - MINUTO).length >= 3) {
       throw erro('Limite de solicitações atingido. Aguarde antes de tentar novamente.', 429);
     }
@@ -130,7 +126,7 @@ async function avaliar(usuario, req, sessao) {
     }
     await auditoria.registrar(req, { usuario_id: pessoa.id, acao: 'auth.acesso_rede_solicitado', entidade: TABELA,
       entidade_id: id, dados: { ip } }, trx);
-    return respostaPendente(row, atual.modo);
+    return respostaPendente(row);
   });
   if (resultado?.falha) throw erro('Não foi possível enviar o código. Aguarde um minuto e tente novamente.', 503);
   if (resultado) throw Object.assign(erro(resultado.message, 403, 'NETWORK_ACCESS_REQUIRED'), { detalhes: resultado });

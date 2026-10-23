@@ -110,7 +110,7 @@ describe('autorização de acesso externo', () => {
     await user.type(screen.getByPlaceholderText('seu@email.com'), 'ana@crm.local');
     await user.type(screen.getByPlaceholderText('••••••••'), 'Senha123');
     await user.click(screen.getByRole('button', { name: 'Entrar', exact: true }));
-    expect(await screen.findByRole('heading', { name: 'Autorizar acesso externo' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Autorizar acesso neste navegador' })).toBeInTheDocument();
     expect(screen.queryByText('CRM liberado')).not.toBeInTheDocument();
   });
 });
