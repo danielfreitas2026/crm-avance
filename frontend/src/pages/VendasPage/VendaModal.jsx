@@ -19,6 +19,7 @@ import {
   obterDataVendaPayload
 } from './venda-data';
 import { DDDS_VALIDOS, dddValido, dddsPorLinha } from './venda-ddd';
+import { filtrarVendedorasVisiveis } from './venda-vendedoras';
 import './VendasPage.css';
 
 const VENDA_VAZIA = {
@@ -4774,7 +4775,12 @@ function VendaModal({
         return;
       }
 
-      const vendedorasIds = normalizarIdsVendedorasInput(form.vendedoras);
+      // Considera somente as vendedoras exibidas no seletor; ids restantes de
+      // rascunhos ou valores iniciais ficariam invisiveis e bloqueariam o envio.
+      const vendedorasIds = filtrarVendedorasVisiveis(
+        normalizarIdsVendedorasInput(form.vendedoras),
+        vendedorasOpcoesModal
+      );
 
       if (vendedorasIds.length === 0) {
         setErro('Selecione pelo menos uma vendedora para cadastrar a venda.');

@@ -1095,6 +1095,21 @@ function validarVendedorasNosChips(payload, vendedorasIds = []) {
 }
 
 /**
+ * Atribui todos os chips a vendedora quando a venda possui uma unica vendedora,
+ * descartando atribuicoes antigas de vendedoras que sairam da venda.
+ */
+function atribuirChipsVendedoraUnica(payload, vendedorasIds = []) {
+  if (vendedorasIds.length !== 1) return;
+  if (!payload.valores_unitarios_chips) return;
+
+  const vendedoraId = Number(vendedorasIds[0]);
+  const itens = normalizarItensChips(payload.valores_unitarios_chips)
+    .map(item => ({ ...item, vendedora_id: vendedoraId }));
+
+  payload.valores_unitarios_chips = itens.length > 0 ? JSON.stringify(itens) : null;
+}
+
+/**
  * Verifica se conjuntos iguais atende a condicao esperada.
  */
 function conjuntosIguais(a = [], b = []) {
@@ -3558,6 +3573,7 @@ async function criarVenda(dados, usuarioId) {
   });
 
   validarVendedorasNosChips(payload, vendedorasIds);
+  atribuirChipsVendedoraUnica(payload, vendedorasIds);
 
   if (payload.cliente_id) {
     const cliente = await buscarClienteParaPayloadVenda(payload.cliente_id, usuarioId);
@@ -3864,6 +3880,7 @@ async function atualizarVenda(id, dados, usuarioId, opcoes = {}) {
 
   if (vendedorasIds && vendedorasIds.length > 0) {
     validarVendedorasNosChips(payload, vendedorasIds);
+    atribuirChipsVendedoraUnica(payload, vendedorasIds);
   }
 
   if (payload.cliente_id) {
@@ -5103,6 +5120,7 @@ module.exports = {
   _internals: {
     aplicarDadosClienteNaVenda,
     adicionarMesesDataISO,
+    atribuirChipsVendedoraUnica,
     aplicarEstiloExportacao,
     calcularTotalChips,
     montarColunasXlsxVendas,

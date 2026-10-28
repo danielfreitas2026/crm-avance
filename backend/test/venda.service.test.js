@@ -9,6 +9,7 @@ const {
   adicionarMesesDataISO,
   aplicarDadosClienteNaVenda,
   aplicarEstiloExportacao,
+  atribuirChipsVendedoraUnica,
   filtrarVendasRelatorioPorVendedora,
   montarDadosSincronizacaoClienteVenda,
   montarColunasXlsxVendas,
@@ -1190,6 +1191,29 @@ test('valida vendedoras atribuidas nos chips em venda compartilhada', () => {
   assert.throws(() => validarVendedorasNosChips({
     valores_unitarios_chips: [{ quantidade: 1, valor_unitario: 50, vendedora_id: 10 }]
   }, [10, 11]), /pelo menos um chip/i);
+});
+
+test('atribui todos os chips a vendedora unica da venda', () => {
+  const payload = montarPayload({
+    valores_unitarios_chips: [
+      { quantidade: 1, valor_unitario: 50, vendedora_id: 11 },
+      { quantidade: 1, valor_unitario: 60 }
+    ]
+  });
+
+  assert.doesNotThrow(() => validarVendedorasNosChips(payload, [10]));
+  atribuirChipsVendedoraUnica(payload, [10]);
+
+  const itens = JSON.parse(payload.valores_unitarios_chips);
+  assert.deepEqual(itens.map(item => item.vendedora_id), [10, 10]);
+  assert.deepEqual(itens.map(item => item.valor_unitario), [50, 60]);
+
+  const compartilhada = montarPayload({
+    valores_unitarios_chips: [{ quantidade: 1, valor_unitario: 50, vendedora_id: 11 }]
+  });
+  const original = compartilhada.valores_unitarios_chips;
+  atribuirChipsVendedoraUnica(compartilhada, [10, 11]);
+  assert.equal(compartilhada.valores_unitarios_chips, original);
 });
 
 test('aplica dados do cliente sem sobrescrever campos ja preenchidos', () => {
