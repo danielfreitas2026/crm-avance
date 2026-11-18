@@ -143,6 +143,8 @@ function parseItensChips(valor, gbPadrao = '') {
         ...(item.operadora_atual_nome ? { operadoraAtualNome: texto(item.operadora_atual_nome) } : {}),
         ...(item.operadora_id ? { operadoraId: Number(item.operadora_id) } : {}),
         ...(item.operadora_nome ? { operadoraNome: texto(item.operadora_nome) } : {}),
+        ...(item.vendedora_id ? { vendedoraId: Number(item.vendedora_id) } : {}),
+        ...(item.vendedora_nome ? { vendedoraNome: texto(item.vendedora_nome) } : {}),
         valorUnitario: parseNumero(item.valor_unitario)
       }))
       .filter(item => item.quantidade > 0);
@@ -251,10 +253,79 @@ function nomeCliente(venda) {
 }
 
 /**
+ * Retorna vendedoras vinculadas a venda mantendo a ordem.
+ */
+function obterVendedoras(venda) {
+  if (!Array.isArray(venda.vendedoras)) return [];
+  return venda.vendedoras
+    .map(item => {
+      if (item && typeof item === 'object') {
+        const id = Number(item.id || item.usuario_id || item.vendedora_id);
+        return {
+          id: Number.isInteger(id) && id > 0 ? id : null,
+          nome: texto(item.nome)
+        };
+      }
+      return { id: null, nome: texto(item) };
+    })
+    .filter(item => item.nome);
+}
+
+/**
  * Retorna nome vendedora no formato esperado pelo fluxo.
  */
 function nomeVendedora(venda) {
+  const vendedoras = obterVendedoras(venda);
+  if (vendedoras.length > 0) {
+    return vendedoras.map(item => item.nome).join(' e ');
+  }
   return texto(venda.vendedora?.nome);
+}
+
+/**
+ * Monta as linhas de divisao de chips por consultora em vendas compartilhadas.
+ */
+function linhasCompartilhamento(venda, itens) {
+  const vendedoras = obterVendedoras(venda);
+  if (vendedoras.length <= 1 || itens.length === 0) return [];
+
+  const nomesPorId = new Map(
+    vendedoras
+      .filter(item => item.id)
+      .map(item => [item.id, item.nome])
+  );
+  const ordemPorNome = new Map(
+    vendedoras.map((item, index) => [normalizarTexto(item.nome), index])
+  );
+  const semAtribuicaoExplicita = itens.every(item => !item.vendedoraId && !item.vendedoraNome);
+  const grupos = new Map();
+
+  itens.forEach((item, index) => {
+    const nome = item.vendedoraNome
+      || (item.vendedoraId ? nomesPorId.get(item.vendedoraId) : '')
+      || (semAtribuicaoExplicita && itens.length === vendedoras.length ? vendedoras[index]?.nome : '');
+    if (!nome) return;
+
+    const gb = gbComSufixo(item.gb || venda.gb);
+    const chave = `${normalizarTexto(nome)}|${normalizarTexto(gb)}`;
+    const existente = grupos.get(chave);
+
+    if (existente) {
+      existente.quantidade += Number(item.quantidade || 0);
+      return;
+    }
+
+    grupos.set(chave, {
+      nome,
+      quantidade: Number(item.quantidade || 0),
+      gb,
+      ordem: ordemPorNome.get(normalizarTexto(nome)) ?? vendedoras.length + index
+    });
+  });
+
+  return Array.from(grupos.values())
+    .sort((a, b) => a.ordem - b.ordem)
+    .map(grupo => [grupo.nome, `${grupo.quantidade}x`, grupo.gb].filter(Boolean).join(' '));
 }
 
 /**
@@ -290,7 +361,8 @@ function montarContexto(venda) {
     qtdNovas: Math.max(0, qtd - qtdPortados),
     precoUnitario: precoUnitarioPadrao(venda, qtd),
     cliente: nomeCliente(venda),
-    vendedora: nomeVendedora(venda)
+    vendedora: nomeVendedora(venda),
+    linhasCompartilhamento: linhasCompartilhamento(venda, itens)
   };
 }
 
@@ -420,6 +492,7 @@ function renderClaro(venda) {
     'Docs ok',
     '',
     `OBS CONSULTOR: ${texto(venda.observacoes)}`,
+    ...ctx.linhasCompartilhamento,
     `LOGIN: ${texto(venda.login)}   SENHA: ${texto(venda.senha)}   PROTOCOLO: ${texto(venda.protocolo)}`
   ].join('\n');
 }
@@ -496,7 +569,8 @@ function renderVivo(venda) {
     linha('VALOR TOTAL NEGOCIADO', valorTotal(venda)),
     '',
     linha('VENCIMENTO', venda.dia_vencimento),
-    linha('OBSERVAÇÃO', venda.observacoes)
+    linha('OBSERVAÇÃO', venda.observacoes),
+    ...ctx.linhasCompartilhamento
   ].join('\n');
 }
 

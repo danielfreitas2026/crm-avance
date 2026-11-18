@@ -199,3 +199,81 @@ test('não atribui o DDD de um bloco ao outro que foi deixado em branco', () => 
     assert.doesNotMatch(texto, /50GB[^\n]*DDD/);
   }
 });
+
+test('renderiza venda compartilhada Vivo com nomes no titulo e divisao de chips na observacao', () => {
+  const { texto } = renderEmailVenda({
+    operadora: { nome: 'Vivo' },
+    vendedora: { id: 1, nome: 'Nayara' },
+    vendedoras: [
+      { id: 1, nome: 'Nayara' },
+      { id: 2, nome: 'Camila' }
+    ],
+    razao_social: 'SANTAREM TRANSPORTES E RODOVIARIAS LTDA',
+    cnpj: '04505077000174',
+    quantidade_linhas: 4,
+    valor_total: 220,
+    dia_vencimento: 10,
+    ddd: '31',
+    valores_unitarios_chips: [
+      { quantidade: 2, gb: '80', tipo_linha: 'novo', valor_unitario: 55, vendedora_id: 1, operadora_atual_nome: 'TIM', operadora_nome: 'Vivo' },
+      { quantidade: 2, gb: '80', tipo_linha: 'novo', valor_unitario: 55, vendedora_id: 2, operadora_atual_nome: 'TIM', operadora_nome: 'Vivo' }
+    ]
+  });
+
+  assert.match(texto, /^VENDA Nayara e Camila - SANTAREM TRANSPORTES E RODOVIARIAS LTDA/m);
+  assert.match(texto, /OBSERVAÇÃO :\nNayara 2x 80GB\nCamila 2x 80GB$/);
+});
+
+test('mantem observacao existente e adiciona linhas das consultoras abaixo em venda compartilhada', () => {
+  const vivo = renderEmailVenda({
+    operadora: { nome: 'Vivo' },
+    vendedoras: [
+      { id: 10, nome: 'Consultora 1' },
+      { id: 20, nome: 'Consultora 2' }
+    ],
+    razao_social: 'Empresa Compartilhada LTDA',
+    observacoes: 'Entregar na portaria',
+    valores_unitarios_chips: [
+      { quantidade: 3, gb: '50', valor_unitario: 45, vendedora_id: 20 },
+      { quantidade: 1, gb: '80', valor_unitario: 55, vendedora_id: 10 },
+      { quantidade: 1, gb: '80', valor_unitario: 55, vendedora_id: 10 }
+    ]
+  });
+
+  assert.match(vivo.texto, /OBSERVAÇÃO : Entregar na portaria\nConsultora 1 2x 80GB\nConsultora 2 3x 50GB$/);
+
+  const claro = renderEmailVenda({
+    operadora: { nome: 'Claro' },
+    vendedoras: [
+      { id: 10, nome: 'Consultora 1' },
+      { id: 20, nome: 'Consultora 2' }
+    ],
+    razao_social: 'Empresa Compartilhada LTDA',
+    observacoes: 'Urgente',
+    valores_unitarios_chips: [
+      { quantidade: 2, gb: '80', valor_unitario: 55, vendedora_id: 10 },
+      { quantidade: 3, gb: '50', valor_unitario: 45, vendedora_id: 20 }
+    ]
+  });
+
+  assert.match(claro.texto, /^VENDA Consultora 1 e Consultora 2 - Empresa Compartilhada LTDA/m);
+  assert.match(claro.texto, /^Consultor: Consultora 1 e Consultora 2$/m);
+  assert.match(claro.texto, /OBS CONSULTOR: Urgente\nConsultora 1 2x 80GB\nConsultora 2 3x 50GB\nLOGIN:/);
+});
+
+test('nao adiciona linhas de compartilhamento quando venda possui apenas uma consultora', () => {
+  const { texto } = renderEmailVenda({
+    operadora: { nome: 'Vivo' },
+    vendedora: { id: 1, nome: 'Nayara' },
+    vendedoras: [{ id: 1, nome: 'Nayara' }],
+    razao_social: 'Cliente Individual LTDA',
+    valores_unitarios_chips: [
+      { quantidade: 2, gb: '80', valor_unitario: 55, vendedora_id: 1 }
+    ]
+  });
+
+  assert.match(texto, /^VENDA Nayara - Cliente Individual LTDA/m);
+  assert.match(texto, /OBSERVAÇÃO :$/);
+  assert.doesNotMatch(texto, /Nayara 2x 80GB/);
+});
+
