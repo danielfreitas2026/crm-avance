@@ -11,7 +11,7 @@ import VendaModal from './VendaModal';
 
 const chip = { quantidade: 1, gb: '25', valor_unitario: 30, tipo_linha: 'novo' };
 const venda = {
-  id: 7, nome: 'Cliente', cliente_id: 3, vendedora_id: 9,
+  id: 7, nome: 'Cliente', razao_social: 'Cliente LTDA', telefone: '11987654321', fixo_ddd: '1133334444', cliente_id: 3, vendedora_id: 9,
   servico_id: 1, data_venda: '2026-08-01', quantidade_linhas: 4,
   cliente_solicitou_servicos: ['nenhum_servico'],
   valores_unitarios_chips: [{ ...chip, ddd: '11' }, { ...chip, ddd: '21' }]
@@ -151,6 +151,17 @@ describe('DDD nos blocos de chips', () => {
     const payload = onSave.mock.calls[0][0];
     expect(payload.valores_unitarios_chips.map(item => item.ddd)).toEqual(['11', '21']);
     expect(payload.ddd).toBe('11');
+  });
+
+  it('exige os dados do cliente para salvar a venda', async () => {
+    const { container, onSave } = abrir(null, { initialValues: {
+      ...venda, id: undefined, nome: '', razao_social: ' ', telefone: '', fixo_ddd: ''
+    } });
+    fireEvent.submit(container.querySelector('form'));
+    expect(await screen.findByText(
+      'Preencha os campos obrigatórios: Nome / Fantasia, Razão Social, Telefone Celular, Telefone fixo.'
+    )).toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it('mostra a troca de DDD no histórico de reversão dos chips', async () => {
